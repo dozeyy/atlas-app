@@ -10,11 +10,12 @@ use crate::state::{AppInfo, AppState, SettingsPatch};
 
 type Shared<'a> = State<'a, Arc<AppState>>;
 
-/// System follows the OS; Light / Dark pin the window (and so Mica / vibrancy).
+/// System follows the OS; Light / Silver / Dark pin the window (and so Mica / vibrancy and the
+/// title bar). Silver is a light grey, so its window is a light one.
 pub fn apply_window_theme(window: &WebviewWindow, theme: Theme) {
     let t = match theme {
         Theme::System => None,
-        Theme::Light => Some(tauri::Theme::Light),
+        Theme::Light | Theme::Silver => Some(tauri::Theme::Light),
         Theme::Dark => Some(tauri::Theme::Dark),
     };
     let _ = window.set_theme(t);
@@ -62,6 +63,30 @@ pub async fn choose_config_dir(app: AppHandle, state: Shared<'_>) -> Result<AppI
 #[tauri::command(async)]
 pub fn clear_config_dir(state: Shared) -> AppInfo {
     state.set_config_override(None)
+}
+
+/// Shows the Claude folder Atlas reads in the file manager. Takes no path from the page:
+/// it opens the folder Atlas itself resolved, and nothing else.
+#[tauri::command(async)]
+pub fn open_config_dir(state: Shared) -> Result<(), String> {
+    let info = state.info();
+    let cfg = info.config.ok_or_else(|| "The folder is not ready yet.".to_string())?;
+    if !cfg.dir_exists {
+        return Err("That folder does not exist.".to_string());
+    }
+    open_in_file_manager(std::path::Path::new(&cfg.dir))
+}
+
+fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let mut cmd = std::process::Command::new("explorer");
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let mut cmd = std::process::Command::new("xdg-open");
+    // explorer reports exit code 1 even when it opened the folder, so only a failure to
+    // start it counts as an error.
+    cmd.arg(dir).spawn().map(|_| ()).map_err(|e| format!("Could not open the folder: {e}"))
 }
 
 /// The page has painted: show the window and record the time.

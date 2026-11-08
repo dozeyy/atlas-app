@@ -57,6 +57,8 @@ export interface Backend {
   setSandbox(enabled: boolean): Promise<AppInfo>;
   chooseConfigDir(): Promise<AppInfo>;
   clearConfigDir(): Promise<AppInfo>;
+  /** Shows the Claude folder Atlas reads in the file manager. */
+  openConfigDir(): Promise<void>;
   frontendReady(): Promise<void>;
   onInfo(cb: (info: AppInfo) => void): Promise<() => void>;
 
@@ -91,6 +93,7 @@ const tauriBackend: Backend = {
   setSandbox: (enabled) => invoke<AppInfo>("set_sandbox", { enabled }),
   chooseConfigDir: () => invoke<AppInfo>("choose_config_dir"),
   clearConfigDir: () => invoke<AppInfo>("clear_config_dir"),
+  openConfigDir: () => invoke<void>("open_config_dir"),
   frontendReady: async () => {
     await invoke("frontend_ready");
   },

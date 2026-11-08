@@ -81,6 +81,7 @@ fn main() {
             commands::set_sandbox,
             commands::choose_config_dir,
             commands::clear_config_dir,
+            commands::open_config_dir,
             commands::frontend_ready,
             usage::usage_status,
             usage::usage_dashboard,

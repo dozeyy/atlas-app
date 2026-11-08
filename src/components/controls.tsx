@@ -1,25 +1,48 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import * as Switch from "@radix-ui/react-switch";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 
+type Variant = "primary" | "secondary" | "danger";
+
+/**
+ * Buttons: primary lifts 1px with a spring on hover and presses to .96 on the same frame
+ * (CSS :active, no waiting for React). A danger button holds still: it never lifts.
+ *
+ * Two layers on purpose: the <button> is a fixed box that owns the click; the inner
+ * `.btn-face` carries the look and every transform. Moving the button itself moves its hit
+ * box and loses clicks near the edge (see trail.css, HIT BOX RULE).
+ */
 export function Button({
   variant = "secondary",
   className = "",
+  children,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" }) {
-  const look =
-    variant === "primary"
-      ? "bg-accent-solid text-on-accent hover:brightness-110"
-      : "border border-line-strong bg-surface text-ink hover:bg-raised";
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
   return (
-    <button
-      type="button"
-      {...rest}
-      className={`press inline-flex h-8 cursor-pointer items-center gap-2 rounded-control px-3 text-body font-medium disabled:cursor-not-allowed disabled:opacity-50 ${look} ${className}`}
-    />
+    <button type="button" {...rest} className={`btn btn-${variant} ${className}`}>
+      <span className="btn-face">{children}</span>
+    </button>
   );
 }
 
+/** A 32 px square button for one icon. Needs an aria-label. */
+export function IconButton({
+  className = "",
+  children,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { "aria-label": string }) {
+  return (
+    <button type="button" {...rest} className={`btn-icon ${className}`}>
+      <span className="btn-face">{children}</span>
+    </button>
+  );
+}
+
+/**
+ * Pick one of a few. One thumb slides (320 ms spring) behind the labels; the first paint
+ * puts it in place without moving.
+ */
 export function SegmentedControl<T extends string>({
   label,
   value,
@@ -31,21 +54,59 @@ export function SegmentedControl<T extends string>({
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
 }) {
+  const items = useRef(new Map<string, HTMLButtonElement>());
+  const [thumb, setThumb] = useState<{ x: number; w: number } | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = items.current.get(value);
+      if (el) setThumb({ x: el.offsetLeft, w: el.offsetWidth });
+    };
+    measure();
+    const root = items.current.get(value)?.parentElement;
+    let ro: ResizeObserver | undefined;
+    if (root && typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(measure);
+      ro.observe(root);
+    }
+    const t = requestAnimationFrame(() => setReady(true));
+    return () => {
+      ro?.disconnect();
+      cancelAnimationFrame(t);
+    };
+  }, [value, options]);
+
   return (
     <ToggleGroup.Root
       type="single"
       value={value}
       aria-label={label}
       onValueChange={(v) => v && onChange(v as T)}
-      className="inline-flex rounded-control border border-line-strong bg-raised p-0.5"
+      className="seg"
     >
+      {thumb && (
+        <span
+          aria-hidden="true"
+          className="seg-thumb"
+          style={{
+            width: thumb.w,
+            transform: `translateX(${thumb.x}px)`,
+            transitionDuration: ready ? undefined : "0ms",
+          }}
+        />
+      )}
       {options.map((o) => (
         <ToggleGroup.Item
           key={o.value}
           value={o.value}
-          className="press h-7 cursor-pointer rounded-[4px] px-3 text-body font-medium text-ink-2 hover:text-ink data-[state=on]:bg-surface data-[state=on]:text-ink data-[state=on]:shadow-[0_0_0_1px_var(--line)]"
+          ref={(el) => {
+            if (el) items.current.set(o.value, el);
+            else items.current.delete(o.value);
+          }}
+          className="seg-item text-body"
         >
-          {o.label}
+          <span className="seg-face">{o.label}</span>
         </ToggleGroup.Item>
       ))}
     </ToggleGroup.Root>
@@ -71,24 +132,58 @@ export function Toggle({
       disabled={disabled}
       className="press relative h-6 w-10 shrink-0 cursor-pointer rounded-full border border-line-strong bg-raised data-[state=checked]:border-transparent data-[state=checked]:bg-accent-solid disabled:cursor-not-allowed disabled:opacity-50"
     >
-      <Switch.Thumb className="block size-4 translate-x-[3px] rounded-full bg-ink-2 transition-transform duration-[var(--dur)] ease-[var(--ease-out)] data-[state=checked]:translate-x-[19px] data-[state=checked]:bg-on-accent" />
+      <Switch.Thumb className="block size-4 translate-x-[3px] rounded-full bg-ink-2 transition-transform duration-[var(--dur-spring)] ease-[var(--ease-spring)] data-[state=checked]:translate-x-[19px] data-[state=checked]:bg-on-accent" />
     </Switch.Root>
   );
 }
 
-export function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
+/** Page title in the display face. `aside` sits on the right (a caption, a button). */
+export function PageHeader({
+  title,
+  subtitle,
+  aside,
+}: {
+  title: string;
+  subtitle: ReactNode;
+  aside?: ReactNode;
+}) {
   return (
-    <header className="mb-6">
-      <h1 className="text-title font-semibold tracking-[-0.01em] text-ink">{title}</h1>
-      <p className="mt-1 text-lead text-ink-2">{subtitle}</p>
+    <header className="mb-6 flex items-end justify-between gap-4">
+      <div className="min-w-0">
+        <h1 className="d d-title text-ink">{title}</h1>
+        <p className="mt-1 text-lead text-ink-2">{subtitle}</p>
+      </div>
+      {aside}
     </header>
   );
 }
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-card border border-line bg-surface ${className}`}>{children}</div>
-  );
+/**
+ * A surface. With `onClick` it becomes a button that lifts 2px on hover and presses in;
+ * without, it is static and never moves. A clickable card is two layers (fixed outer button,
+ * moving `.card-face`): `className` styles the face (padding), `hitClassName` the outer box
+ * (grid span, margins).
+ */
+export function Card({
+  children,
+  className = "",
+  hitClassName = "",
+  onClick,
+  ...rest
+}: {
+  children: ReactNode;
+  className?: string;
+  hitClassName?: string;
+  onClick?: () => void;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick" | "children" | "className">) {
+  if (onClick) {
+    return (
+      <button type="button" {...rest} onClick={onClick} className={`card-hit hover-host ${hitClassName}`}>
+        <div className={`card card-face ${className}`}>{children}</div>
+      </button>
+    );
+  }
+  return <div className={`card ${hitClassName} ${className}`}>{children}</div>;
 }
 
 /** One labeled row inside a Card: label + hint on the left, a control on the right. */

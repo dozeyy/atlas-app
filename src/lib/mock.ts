@@ -135,6 +135,8 @@ export class MockBackend {
     return this.commit({ ...this.info, settings, config: cfg, realConfig: cfg });
   }
 
+  async openConfigDir(): Promise<void> {}
+
   async frontendReady(): Promise<void> {}
 
   // ---- usage: the stand-in lives in mockUsage.ts so this file stays small ----

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./tokens.css";
+@import "./trail.css";
 
 /* Base. Everything visual comes from tokens.css. */
 
@@ -154,7 +155,18 @@ main[tabindex="-1"]:focus-visible {
     color var(--dur-fast) var(--ease-out),
     border-color var(--dur-fast) var(--ease-out);
 }
+/*
+ * Press feedback WITHOUT moving the hit box. Scaling the clicked element itself shrinks its
+ * box, so a mouseup near the edge lands outside and the click is lost (Will, 2026-11-08).
+ * The element keeps its box; its children shrink and a faint wash marks the press.
+ */
 .press:active:not(:disabled) {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--ink) 6%, transparent),
+    color-mix(in srgb, var(--ink) 6%, transparent)
+  );
+}
+.press:active:not(:disabled) > * {
   transform: scale(var(--press-scale));
 }
 
@@ -168,6 +180,10 @@ main[tabindex="-1"]:focus-visible {
   .fade-in {
     animation-duration: 1ms;
   }
+}
+html.reduced .pulse-dot,
+html.reduced .skeleton {
+  animation: none !important;
 }
 
 /* ---- Launch intro ------------------------------------------------------------
