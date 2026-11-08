@@ -102,3 +102,7 @@ the end (the known-fix-lookup hook reads the tail; later entries win).
 - Root cause, editor rendered as stacked bare text in the real app: CodeMirror injects a style element and the CSP (`style-src 'self'`) blocks it. jsdom tests cannot see this. Fix: mount CodeMirror in a shadow root (it adopts a constructed stylesheet there); CSP unchanged.
 - Lessons: audit real hit areas with CDP presses 2 px inside each edge (`tools/edge-click-audit.mjs`); vitest cannot catch CSP or hit-testing bugs. Python json.dumps default separators break the usage engine byte finder for `"type":"assistant"`; write fixture JSONL compact.
 - Not verified: release-build writes to a real config, usage panel on real session data, "new" detection uses file mtime as a proxy for creation.
+
+## 2026-11-08 - Will picked more features
+- Tray readout (today tokens + estimated spend, click opens Atlas) and Search inside chats (full-text across every transcript). Not picked: Ctrl+K quick jump, spend alerts.
+- Title bar: three-line menu (Help: About, How to use, Shortcuts, Privacy, Terms, Report a problem) + sidebar toggle, Claude-app style split columns with hairline; Setup renamed Toolkit; no page headers.
