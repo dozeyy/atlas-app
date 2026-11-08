@@ -19,6 +19,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock", "s
 serde_yaml_ng = "0.10.0"
 notify = "8.2.2"
 notify-debouncer-mini = "0.7.0"
+similar = { version = "3.2.1", features = ["inline"] }
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -3,10 +3,13 @@
 
 import type { Backend, SettingsPatch } from "./ipc";
 import type { AppInfo, ConfigView, Platform, Settings } from "./types";
-import type { CreateKind, DeleteOutcome, Draft, Problem, RawEdit, SaveReply, SetupSnapshot, SourceView, UndoOutcome } from "./setup-types";
+import type { CostReport, CreateKind, DeleteOutcome, Draft, Problem, RawEdit, SaveReply, SetupSnapshot, SourceView, UndoOutcome } from "./setup-types";
 import { MockSetupWorld, mockSetupReveal, mockSetupSource } from "./setup-mock";
+import { mockCostReport } from "./setup-cost-mock";
 import { MockUsage } from "./mockUsage";
 import { MockSearch } from "./mockSearch";
+import { MockHistory } from "./mockHistory";
+import { MockNow } from "./mockNow";
 
 const KEY = "atlas.mock.settings";
 
@@ -32,6 +35,7 @@ function loadSettings(): Settings {
     sandbox: false,
     launchAnimation: true,
     closeToTray: false,
+    historyKeepVersions: 50,
   };
   try {
     return { ...base, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
@@ -174,6 +178,25 @@ export class MockBackend {
   searchStatus: Backend["searchStatus"] = () => this.search.searchStatus();
   onSearchStatus: Backend["onSearchStatus"] = (cb) => this.search.onSearchStatus(cb);
 
+  // ---- history: the stand-in lives in mockHistory.ts ----
+  readonly history = new MockHistory();
+  historyOverview: Backend["historyOverview"] = () => this.history.historyOverview();
+  historyEvents: Backend["historyEvents"] = (a) => this.history.historyEvents(a);
+  historyItem: Backend["historyItem"] = (k) => this.history.historyItem(k);
+  historyDiff: Backend["historyDiff"] = (a) => this.history.historyDiff(a);
+  historyCopyVersion: Backend["historyCopyVersion"] = (v) => this.history.historyCopyVersion(v);
+  historySaveCopy: Backend["historySaveCopy"] = (v) => this.history.historySaveCopy(v);
+  historyOpenFolder: Backend["historyOpenFolder"] = () => this.history.historyOpenFolder();
+  onHistoryChanged: Backend["onHistoryChanged"] = (cb) => this.history.onHistoryChanged(cb);
+  settingsOverview: Backend["settingsOverview"] = async () => ({
+    ...(await this.history.settingsOverview()),
+    keepVersions: this.info.settings.historyKeepVersions,
+  });
+  // ---- Now: the stand-in lives in mockNow.ts ----
+  readonly now = new MockNow();
+  nowSnapshot: Backend["nowSnapshot"] = () => this.now.nowSnapshot();
+  onNowUpdate: Backend["onNowUpdate"] = (cb) => this.now.onNowUpdate(cb);
+
   async onInfo(cb: (i: AppInfo) => void): Promise<() => void> {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
@@ -181,6 +204,10 @@ export class MockBackend {
 
   async setupSnapshot(includeWorktrees = false): Promise<SetupSnapshot> {
     return this.world.snapshot(includeWorktrees);
+  }
+
+  async setupCost(): Promise<CostReport> {
+    return mockCostReport(this.world.snapshot(false).items);
   }
 
   async setupReadSource(id: string): Promise<SourceView> {

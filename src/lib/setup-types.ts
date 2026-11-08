@@ -223,3 +223,43 @@ export interface Draft {
   folderName: string | null;
   whereNote: string;
 }
+
+/** One thing that costs context, from `setup_cost` (crates/core/src/setup/cost.rs). */
+export interface CostRow {
+  /** The setup item it is, when it is one (parent-folder files and tool groups are not). */
+  id: string | null;
+  name: string;
+  /** An `ItemKind` string. */
+  kind: string;
+  scopeLabel: string;
+  /** "All chats", "Chats in app", "Chats under Games". */
+  loadsIn: string;
+  global: boolean;
+  path: string | null;
+  /** Tokens added to every turn it loads in (0 = none). */
+  tokens: number;
+  /** Turns it loaded in during the window. */
+  turns: number;
+  usdLoaded: number;
+  /** Tokens it adds when it runs (0 = it never runs on demand). */
+  bodyTokens: number;
+  /** Times it ran in the window; null when Atlas cannot tell. */
+  uses: number | null;
+  usdUsed: number;
+  usdWeek: number;
+  /** Counted from a real prompt (tools) instead of from a file. */
+  measured: boolean;
+}
+
+export interface CostReport {
+  windowDays: number;
+  charsPerToken: number;
+  turns: number;
+  /** Tokens that load on every turn of every chat. */
+  globalTokens: number;
+  usdWeek: number;
+  /** Some turns could not be priced, or there is no usage yet: dollars are a floor. */
+  incomplete: boolean;
+  /** Most expensive first. */
+  rows: CostRow[];
+}

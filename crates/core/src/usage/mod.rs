@@ -6,6 +6,7 @@
 //! and a file watcher. Nothing in this folder writes a file: the cache and price
 //! file code lives in `crate::cache` (acceptance criterion 20).
 
+pub mod costmix;
 pub mod ingest;
 pub mod line;
 pub mod naming;
@@ -398,6 +399,11 @@ impl UsageEngine {
     /// How often each skill, helper type or tool was used in a period (see `query::usage_by_item`).
     pub fn usage_by_item(&self, q: &query::ItemQuery) -> Result<Vec<query::ItemUse>, String> {
         self.read(|c, _| query::usage_by_item(c, q))
+    }
+
+    /// The last `days` days as the setup-cost estimate needs them (see `costmix`).
+    pub fn cost_mix(&self, days: u32) -> Result<costmix::CostMix, String> {
+        self.read(|c, x| costmix::cost_mix(c, x, days))
     }
 
     pub fn filter_options(&self) -> Result<query::FilterOptions, String> {

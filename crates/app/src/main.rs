@@ -2,7 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod history;
 mod intro;
+mod now;
 mod search;
 mod setup_service;
 mod state;
@@ -93,6 +95,15 @@ fn main() {
             usage::usage_reindex,
             usage::pricing_get,
             usage::pricing_reveal,
+            history::history_overview,
+            history::history_events,
+            history::history_item,
+            history::history_diff,
+            history::history_copy_version,
+            history::history_save_copy,
+            history::history_open_folder,
+            history::settings_overview,
+            now::now_snapshot,
             search::search_chats,
             search::search_status,
             intro::splash_ready,
@@ -101,6 +112,7 @@ fn main() {
             intro::intro_main_painted,
             intro::splash_done,
             setup_service::setup_snapshot,
+            setup_service::setup_cost,
             setup_service::setup_read_source,
             setup_service::setup_reveal,
             setup_service::setup_item_raw,

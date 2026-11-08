@@ -133,6 +133,8 @@ impl UsageHost {
         let wanted = state.usage_roots();
         // The chat-search index follows the same folder (its own engine and file).
         state.search.sync(wanted.as_ref(), &state.local_data_dir, app);
+        // So does the Now tab's watcher of running chats.
+        state.now.sync(wanted.as_ref(), &state.local_data_dir, app);
         let old = {
             let mut cur = self.current.lock().unwrap_or_else(|p| p.into_inner());
             if cur.as_ref().map(|r| &r.roots) == wanted.as_ref() {

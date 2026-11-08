@@ -57,9 +57,28 @@ describe("UsagePanel", () => {
     render(<UsagePanel rows={rows} items={items} />);
     const fresh = screen.getByRole("heading", { name: "New, too soon to tell" }).parentElement!;
     expect(within(fresh).getByText("brand-new")).toBeInTheDocument();
-    expect(within(fresh).getByText("new")).toBeInTheDocument();
     const never = screen.getByRole("heading", { name: /Never used/ }).parentElement!;
     expect(within(within(never).getAllByRole("list")[0]!).queryByText("brand-new")).not.toBeInTheDocument();
+  });
+
+  it("keeps each list short and says how many are left out", () => {
+    // 6 used, 6 never used, 4 new.
+    const many = Array.from({ length: 16 }, (_, i) => ({ id: `m${i}`, kind: "skill", name: `skill-${i}` })) as SetupItem[];
+    const manyRows: UsageRow[] = many.map((it, i) => ({
+      id: it.id,
+      kind: "skill",
+      uses30d: i < 6 ? 10 - i : 0,
+      lastUsed: null,
+      isNew: i >= 12,
+    }));
+    render(<UsagePanel rows={manyRows} items={many} onOpen={() => {}} />);
+    const most = screen.getByRole("heading", { name: "Used most" }).parentElement!;
+    expect(within(most).getAllByRole("listitem")).toHaveLength(4);
+    const never = screen.getByRole("heading", { name: /Never used/ }).parentElement!;
+    expect(within(never).getByText("and 1 more")).toBeInTheDocument(); // 6 never used, 5 shown
+    const fresh = screen.getByRole("heading", { name: "New, too soon to tell" }).parentElement!;
+    expect(within(fresh).getAllByRole("button")).toHaveLength(3);
+    expect(within(fresh).getByText("and 1 more")).toBeInTheDocument();
   });
 
   it("opens an item when its name is pressed", () => {

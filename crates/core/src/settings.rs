@@ -38,6 +38,7 @@ pub enum Theme {
 pub enum View {
     #[default]
     Dashboard,
+    Now,
     Sessions,
     Setup,
     History,
@@ -60,6 +61,8 @@ pub struct Settings {
     pub launch_animation: bool,
     /// Closing the window hides Atlas to the tray instead of quitting (default off).
     pub close_to_tray: bool,
+    /// How many versions of each file History keeps (10 to 200, default 50).
+    pub history_keep_versions: u32,
     /// Keys this version does not know, kept as they were.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -75,12 +78,20 @@ impl Default for Settings {
             sandbox: false,
             launch_animation: true,
             close_to_tray: false,
+            history_keep_versions: DEFAULT_KEEP_VERSIONS,
             extra: Map::new(),
         }
     }
 }
 
-const KNOWN: [&str; 7] = [
+pub const DEFAULT_KEEP_VERSIONS: u32 = 50;
+
+/// The range History's "keep this many" stepper allows.
+pub fn clamp_keep_versions(n: u32) -> u32 {
+    n.clamp(10, 200)
+}
+
+const KNOWN: [&str; 8] = [
     "schemaVersion",
     "theme",
     "lastView",
@@ -88,6 +99,7 @@ const KNOWN: [&str; 7] = [
     "sandbox",
     "launchAnimation",
     "closeToTray",
+    "historyKeepVersions",
 ];
 
 impl Settings {
@@ -113,6 +125,10 @@ impl Settings {
         let launch_animation =
             take("launchAnimation").and_then(|v| v.as_bool()).unwrap_or(d.launch_animation);
         let close_to_tray = take("closeToTray").and_then(|v| v.as_bool()).unwrap_or(d.close_to_tray);
+        let history_keep_versions = take("historyKeepVersions")
+            .and_then(|v| v.as_u64())
+            .map(|n| clamp_keep_versions(n.min(u32::MAX as u64) as u32))
+            .unwrap_or(d.history_keep_versions);
         for k in KNOWN {
             map.remove(k);
         }
@@ -124,6 +140,7 @@ impl Settings {
             sandbox,
             launch_animation,
             close_to_tray,
+            history_keep_versions,
             extra: map,
         })
     }

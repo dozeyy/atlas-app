@@ -7,8 +7,11 @@ import { joinUsage, usageWindow } from "../../lib/usage-join";
 import type { SetupItem } from "../../lib/setup-types";
 import type { UsageRow } from "../../lib/usage-types";
 
-const TOP = 5;
-const NEVER_CAP = 8;
+// A glance, not an inventory: the full lists are one tile away. These caps keep the panel short
+// enough that the whole Toolkit page fits a 1280x800 window beside the cost ranking.
+const TOP = 4;
+const NEVER_CAP = 5;
+const FRESH_CAP = 3;
 
 /**
  * Skills and agents joined to the last 30 days of real use, or null when the usage
@@ -91,7 +94,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
     );
 
   return (
-    <section aria-labelledby="usage-title" className="rounded-card border border-line bg-surface px-5 py-4">
+    <section aria-labelledby="usage-title" className="@container min-w-0 rounded-card border border-line bg-surface px-5 py-4">
       <div className="flex flex-wrap items-baseline gap-x-3">
         <h2 id="usage-title" className="text-lead font-semibold text-ink">
           Used and never used
@@ -108,7 +111,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
         <span style={{ width: `${usedPct}%` }} className="bg-accent" />
       </div>
 
-      <div className="mt-4 grid gap-x-8 gap-y-4 min-[760px]:grid-cols-2">
+      <div className="mt-4 grid gap-x-8 gap-y-4 @min-[500px]:grid-cols-2">
         <div>
           <h3 className="mb-2 text-body font-semibold text-ink">Used most</h3>
           {used.length === 0 ? (
@@ -159,26 +162,21 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
               {never.length > NEVER_CAP && <li className="text-caption text-ink-2">and {never.length - NEVER_CAP} more</li>}
             </ul>
           )}
-          {fresh.length > 0 && (
-            <div className="mt-3">
-              <h4 className="mb-1.5 text-caption font-semibold text-ink-2">New, too soon to tell</h4>
-              <ul className="space-y-1.5">
-                {fresh.slice(0, NEVER_CAP).map((r) => {
-                  const it = byId.get(r.id)!;
-                  const Icon = KIND_BY_ID[it.kind].icon;
-                  return (
-                    <li key={r.id} className="flex items-center gap-2">
-                      <Icon size={14} aria-hidden="true" className="shrink-0 text-ink-2" />
-                      {open(r.id, it.name)}
-                      <span className="ml-auto shrink-0 rounded-full bg-accent-tint px-2 text-caption text-accent-text">new</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
         </div>
       </div>
+      {fresh.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-line pt-3">
+          <h4 className="shrink-0 text-caption font-semibold text-ink-2">New, too soon to tell</h4>
+          <ul className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            {fresh.slice(0, FRESH_CAP).map((r) => (
+              <li key={r.id} className="flex min-w-0">
+                {open(r.id, byId.get(r.id)!.name)}
+              </li>
+            ))}
+            {fresh.length > FRESH_CAP && <li className="text-caption text-ink-2">and {fresh.length - FRESH_CAP} more</li>}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

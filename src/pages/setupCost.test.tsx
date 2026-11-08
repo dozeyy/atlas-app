@@ -1,0 +1,109 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { App } from "../App";
+import { AtlasProvider } from "../state/AtlasProvider";
+import { setBackend } from "../lib/ipc";
+import { MockBackend } from "../lib/mock";
+import { resetSetupCost } from "../lib/useSetupCost";
+import { resetSetupStore } from "../state/setupStore";
+import { resetToasts } from "../state/toastStore";
+import type { CostReport } from "../lib/setup-types";
+
+// The viewer needs real layout; the cost figures do not depend on it.
+vi.mock("../lib/codemirror", () => ({
+  mountViewer: async (el: HTMLElement, text: string) => {
+    const pre = document.createElement("pre");
+    pre.textContent = text;
+    el.appendChild(pre);
+    return { destroy: () => pre.remove() };
+  },
+  mountEditor: async () => ({ focus: () => {}, markLine: () => {}, destroy: () => {} }),
+}));
+
+class Backend extends MockBackend {
+  cost: (() => Promise<CostReport>) | null = null;
+  calls = 0;
+  async setupCost(): Promise<CostReport> {
+    this.calls += 1;
+    return this.cost ? this.cost() : super.setupCost();
+  }
+}
+
+async function open(b: Backend) {
+  setBackend(b);
+  render(
+    <AtlasProvider>
+      <App />
+    </AtlasProvider>,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Toolkit" }));
+  await screen.findByRole("list", { name: "Types of things in your toolkit" });
+}
+
+let backend: Backend;
+beforeEach(() => {
+  localStorage.clear();
+  resetSetupStore();
+  resetSetupCost();
+  resetToasts();
+  backend = new Backend();
+});
+afterEach(() => {
+  resetSetupStore();
+  resetSetupCost();
+  resetToasts();
+});
+
+describe("Toolkit: what the setup costs", () => {
+  it("puts one weekly figure on each tile that has a cost, without changing the tile's name", async () => {
+    await open(backend);
+    const skills = await screen.findByRole("button", { name: /^Skills, \d+$/ });
+    await waitFor(() => expect(within(skills).getByText(/~\$/)).toBeInTheDocument());
+    expect(skills).toHaveAccessibleDescription(/a week/);
+    // A kind with nothing to price has no figure.
+    expect(document.querySelector('[data-cost="more"]')).toBeNull();
+  });
+
+  it("ranks the biggest costs above the tiles and opens an item with its own figures", async () => {
+    await open(backend);
+    const panel = await screen.findByRole("region", { name: "What your setup costs" });
+    expect(within(panel).getAllByRole("listitem").length).toBeGreaterThan(1);
+    await userEvent.click(within(panel).getAllByRole("button")[0]!);
+    const sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByRole("heading", { name: "What it costs" })).toBeInTheDocument();
+    expect(sheet).toHaveTextContent(/Estimate, last 7 days\./);
+  });
+
+  it("shows a cost section on an item's sheet and none on an item with no cost", async () => {
+    await open(backend);
+    await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
+    await screen.findByRole("heading", { level: 2, name: "Skills" });
+    const rowBtn = (await screen.findAllByRole("button", { name: /^skill / }))[0];
+    expect(rowBtn).toBeDefined();
+    await userEvent.click(rowBtn!);
+    const sheet = await screen.findByRole("dialog");
+    const costHeading = within(sheet).getByRole("heading", { name: "What it costs" });
+    expect(sheet).toHaveTextContent(/tokens to every turn/);
+    // The cost comes first, so it is on screen without scrolling the sheet.
+    const about = within(sheet).getByRole("heading", { name: "About" });
+    expect(costHeading.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("draws no figures at all when Atlas cannot give a cost", async () => {
+    backend.cost = () => Promise.reject(new Error("no usage"));
+    await open(backend);
+    await waitFor(() => expect(backend.calls).toBeGreaterThan(0));
+    expect(screen.queryByRole("heading", { name: "What your setup costs" })).not.toBeInTheDocument();
+    expect(document.querySelector("[data-cost]")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/~\$/);
+  });
+
+  it("asks again when the setup is reloaded, not on every render", async () => {
+    await open(backend);
+    await waitFor(() => expect(backend.calls).toBe(1));
+    await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
+    await screen.findByRole("heading", { level: 2, name: "Skills" });
+    expect(backend.calls).toBe(1);
+  });
+});

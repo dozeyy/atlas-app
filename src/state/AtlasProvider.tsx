@@ -10,6 +10,8 @@ interface AtlasContext {
   setView: (v: View) => void;
   setTheme: (t: Theme) => void;
   setLaunchAnimation: (on: boolean) => void;
+  setCloseToTray: (on: boolean) => void;
+  setHistoryKeep: (n: number) => void;
   setSandbox: (enabled: boolean) => Promise<void>;
   chooseConfigDir: () => Promise<void>;
   clearConfigDir: () => Promise<void>;
@@ -88,6 +90,16 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     [backend, run],
   );
 
+  const setCloseToTray = useCallback(
+    (on: boolean) => void run(backend.updateSettings({ closeToTray: on })),
+    [backend, run],
+  );
+
+  const setHistoryKeep = useCallback(
+    (n: number) => void run(backend.updateSettings({ historyKeepVersions: n })),
+    [backend, run],
+  );
+
   const value = useMemo<AtlasContext>(
     () => ({
       info,
@@ -95,13 +107,15 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       setView,
       setTheme,
       setLaunchAnimation,
+      setCloseToTray,
+      setHistoryKeep,
       setSandbox: (enabled) => run(backend.setSandbox(enabled)),
       chooseConfigDir: () => run(backend.chooseConfigDir()),
       clearConfigDir: () => run(backend.clearConfigDir()),
       openConfigDir: () => backend.openConfigDir().catch(() => {}),
       openDataDir: () => backend.openDataDir().catch(() => {}),
     }),
-    [info, view, setView, setTheme, setLaunchAnimation, run, backend],
+    [info, view, setView, setTheme, setLaunchAnimation, setCloseToTray, setHistoryKeep, run, backend],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

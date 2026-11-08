@@ -2,7 +2,7 @@
 
 /** "system" follows the OS (Light or Dark); the other three are pinned. */
 export type Theme = "system" | "light" | "silver" | "dark";
-export type View = "dashboard" | "sessions" | "setup" | "history" | "wrapped" | "settings";
+export type View = "dashboard" | "now" | "sessions" | "setup" | "history" | "wrapped" | "settings";
 export type Platform = "windows" | "macos" | "linux";
 export type ConfigSource = "flag" | "settings" | "env" | "default" | "sandbox";
 
@@ -15,6 +15,8 @@ export interface Settings {
   launchAnimation: boolean;
   /** Closing the window hides Atlas to the tray instead of quitting (default off). */
   closeToTray: boolean;
+  /** How many copies of each file History keeps (10 to 200). */
+  historyKeepVersions: number;
 }
 
 export interface ConfigView {
@@ -71,7 +73,7 @@ export interface AppInfo {
   firstPaintMs: number | null;
 }
 
-export const VIEWS: View[] = ["dashboard", "sessions", "setup", "history", "wrapped", "settings"];
+export const VIEWS: View[] = ["dashboard", "now", "sessions", "setup", "history", "wrapped", "settings"];
 
 export * from "./usageTypes";
 export * from "./searchTypes";

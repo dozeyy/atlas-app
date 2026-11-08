@@ -1,64 +1,153 @@
-import { Button, Card, PageTitle, Row, Toggle } from "../components/controls";
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { Minus, Plus } from "@phosphor-icons/react";
+import { Button, Card, IconButton, PageTitle, Row, Toggle } from "../components/controls";
+import { Dialog } from "../components/Dialog";
 import { ThemePicker } from "../components/ThemePicker";
 import { useAtlas } from "../state/AtlasProvider";
+import { pushToast } from "../state/toastStore";
+import { getBackend } from "../lib/ipc";
 import { describeSource, formatBytes } from "../lib/labels";
+import { agoText } from "../lib/historyModel";
+import { plural } from "../lib/usage";
+import { useFetched, useUsageStatus } from "../lib/useUsage";
+import { useWidth } from "../lib/useWidth";
 
-function SectionTitle({ children }: { children: string }) {
-  return <h2 className="d d-figure mb-3 mt-8 text-ink first:mt-0">{children}</h2>;
+const WIDE_AT = 760;
+const KEEP_MIN = 10;
+const KEEP_MAX = 200;
+const KEEP_STEP = 10;
+
+const SECTIONS = [
+  { id: "appearance", label: "Appearance" },
+  { id: "folder", label: "Claude folder" },
+  { id: "data", label: "Your data" },
+  { id: "history", label: "History" },
+  { id: "about", label: "About" },
+] as const;
+type SectionId = (typeof SECTIONS)[number]["id"];
+
+function Path({ children }: { children: string }) {
+  return <code className="selectable break-all text-ink">{children}</code>;
+}
+
+/** Fewer / more with the number between. Steps of ten, never outside the range. */
+function Stepper({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  return (
+    <div className="st-step" role="group" aria-label="Versions kept">
+      <IconButton aria-label="Keep fewer versions" disabled={value <= KEEP_MIN} onClick={() => onChange(Math.max(KEEP_MIN, value - KEEP_STEP))}>
+        <Minus size={14} aria-hidden="true" />
+      </IconButton>
+      <span className="st-step-value text-body font-medium text-ink" aria-live="polite">
+        {value}
+      </span>
+      <IconButton aria-label="Keep more versions" disabled={value >= KEEP_MAX} onClick={() => onChange(Math.min(KEEP_MAX, value + KEEP_STEP))}>
+        <Plus size={14} aria-hidden="true" />
+      </IconButton>
+    </div>
+  );
 }
 
 /**
- * Settings is the calm page: no charts, no count-ups. It is also the ONE place the Claude
- * folder is shown (path, Open folder, override); Dashboard and Sessions never show it.
+ * Settings is the calm page: no charts, no count-ups, no springs. One section at a time, picked
+ * from the rail, so the page never needs to scroll. It is also the ONE place the Claude folder
+ * is shown (path, Open folder, override); Dashboard and Sessions never show it.
  */
 export function Settings() {
   const {
     info,
     setTheme,
     setLaunchAnimation,
+    setCloseToTray,
+    setHistoryKeep,
     setSandbox,
     chooseConfigDir,
     clearConfigDir,
     openConfigDir,
+    openDataDir,
   } = useAtlas();
+  const backend = getBackend();
   const cfg = info.config;
   const sb = info.sandbox;
   const usingChosen = info.settings.configDirOverride !== null;
+  const { status } = useUsageStatus();
 
-  return (
-    <>
-      <PageTitle title="Settings" />
-      <div className="@[1100px]:columns-2 @[1100px]:gap-x-8">
+  const root = useRef<HTMLDivElement>(null);
+  const width = useWidth(root);
+  const wide = width === 0 || width >= WIDE_AT;
 
-      <section className="mb-8 break-inside-avoid">
-      <SectionTitle>Appearance</SectionTitle>
-      <Card>
+  const keep = info.settings.historyKeepVersions;
+  const overview = useFetched(() => backend.settingsOverview(), [backend, cfg?.dir, keep]);
+  const price = useFetched(() => backend.pricingGet(), [backend]);
+  const reloadOverview = overview.reload;
+
+  // History moved on: re-read the store size without blanking the numbers.
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let dead = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    backend
+      .onHistoryChanged(() => {
+        clearTimeout(timer);
+        timer = setTimeout(() => reloadOverview(true), 400);
+      })
+      .then((fn) => (dead ? fn() : (off = fn)))
+      .catch(() => {});
+    return () => {
+      dead = true;
+      clearTimeout(timer);
+      off?.();
+    };
+  }, [backend, reloadOverview]);
+
+  const ov = overview.data;
+  const [active, setActive] = useState<SectionId>("appearance");
+  const [confirmRebuild, setConfirmRebuild] = useState(false);
+  const [busy, setBusy] = useState<"changed" | "full" | null>(null);
+
+  const reindex = async (scope: "changed" | "full") => {
+    setBusy(scope);
+    try {
+      await backend.usageReindex(scope);
+      pushToast({ message: scope === "full" ? "Rebuilding from scratch. Numbers fill in as the files are read." : "Reading your logs again.", tone: "info" });
+    } catch (e) {
+      pushToast({ message: e instanceof Error ? e.message : "Could not start reading the logs.", tone: "error" });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const indexing = status?.state === "indexing";
+  const cleanup =
+    ov?.cleanupDays != null
+      ? `Claude Code keeps conversation logs for ${plural(ov.cleanupDays, "day")}.`
+      : "Claude Code keeps conversation logs for its default of 30 days.";
+
+  const bodies: Record<SectionId, ReactNode> = {
+    appearance: (
+      <>
         <ThemePicker theme={info.settings.theme} platform={info.platform} onChange={setTheme} />
         <Row
           label="Launch animation"
           hint="A short animation when Atlas opens. Click or press any key to skip it. A quick fade instead when your computer asks for reduced motion."
         >
-          <Toggle
-            label="Launch animation"
-            checked={info.settings.launchAnimation}
-            onChange={setLaunchAnimation}
-          />
+          <Toggle label="Launch animation" checked={info.settings.launchAnimation} onChange={setLaunchAnimation} />
         </Row>
-      </Card>
-      </section>
-
-      <section className="mb-8 break-inside-avoid">
-      <SectionTitle>Claude folder</SectionTitle>
-      <Card>
+        <Row
+          label="Keep running when closed"
+          hint={`Closing the window hides Atlas ${info.platform === "macos" ? "to the menu bar" : "to the tray"} instead of quitting, so it keeps watching. Off by default.`}
+        >
+          <Toggle label="Keep running when closed" checked={info.settings.closeToTray} onChange={setCloseToTray} />
+        </Row>
+      </>
+    ),
+    folder: (
+      <>
         <Row
           label="Folder Atlas reads"
           hint={
             <>
-              {cfg ? (
-                <code className="selectable break-all text-ink">{cfg.dir}</code>
-              ) : (
-                <span>Waiting for the sandbox copy</span>
-              )}
+              {cfg ? <Path>{cfg.dir}</Path> : <span>Waiting for the sandbox copy</span>}
               {cfg && <div className="mt-1 text-caption">{describeSource(cfg.source)}</div>}
             </>
           }
@@ -67,17 +156,11 @@ export function Settings() {
             <Button onClick={() => void openConfigDir()} disabled={!cfg}>
               Open folder
             </Button>
-            <Button
-              onClick={() => void chooseConfigDir()}
-              disabled={info.configLockedByFlag || sb.enabled}
-            >
+            <Button onClick={() => void chooseConfigDir()} disabled={info.configLockedByFlag || sb.enabled}>
               Choose folder
             </Button>
             {usingChosen && (
-              <Button
-                onClick={() => void clearConfigDir()}
-                disabled={info.configLockedByFlag || sb.enabled}
-              >
+              <Button onClick={() => void clearConfigDir()} disabled={info.configLockedByFlag || sb.enabled}>
                 Use default
               </Button>
             )}
@@ -85,9 +168,7 @@ export function Settings() {
         </Row>
         {(info.configLockedByFlag || sb.enabled) && (
           <p className="border-t border-line px-5 py-3 text-caption text-ink-2">
-            {info.configLockedByFlag
-              ? "This folder was set when Atlas was launched, so it cannot be changed here."
-              : "Turn off Sandbox mode to change the folder."}
+            {info.configLockedByFlag ? "This folder was set when Atlas was launched, so it cannot be changed here." : "Turn off Sandbox mode to change the folder."}
           </p>
         )}
         {info.settingsNote && (
@@ -95,29 +176,23 @@ export function Settings() {
             {info.settingsNote}
           </p>
         )}
-      </Card>
-      </section>
-
-      <section className="mb-8 break-inside-avoid">
-      <SectionTitle>Sandbox mode</SectionTitle>
-      <Card>
+        {cfg && <Row label="Claude Code settings" hint={ov?.claudeSettingsFile ? <Path>{ov.claudeSettingsFile}</Path> : "No settings file yet"} />}
+        {cfg && <Row label="Account and projects file" hint={<Path>{cfg.claudeJson}</Path>} />}
+        <Row label="Conversation logs" hint={cleanup}>
+          <span className="text-caption text-ink-2">Atlas keeps what it has read.</span>
+        </Row>
         <Row
           label="Work on a copy"
           hint="Atlas copies your Claude folder to a temporary place and only touches the copy. Your real files are never changed. Large conversation logs are linked read-only instead of copied."
         >
-          <Toggle
-            label="Sandbox mode"
-            checked={sb.enabled}
-            onChange={(v) => void setSandbox(v)}
-          />
+          <Toggle label="Sandbox mode" checked={sb.enabled} onChange={(v) => void setSandbox(v)} />
         </Row>
         {sb.enabled && (
           <div role="status" className="border-t border-line px-5 py-3 text-body text-ink-2">
             {sb.state === "preparing" && "Making the copy..."}
             {sb.state === "failed" && (
               <span className="text-danger">
-                The copy could not be made{sb.error ? `: ${sb.error}` : "."} Atlas is showing nothing
-                rather than your real folder.
+                The copy could not be made{sb.error ? `: ${sb.error}` : "."} Atlas is showing nothing rather than your real folder.
               </span>
             )}
             {sb.state === "ready" && sb.report && (
@@ -126,31 +201,155 @@ export function Settings() {
                 {sb.report.skippedTotal > 0 && `, left ${sb.report.skippedTotal} out`}.
                 {sb.path && (
                   <div className="mt-1">
-                    <code className="selectable break-all">{sb.path}</code>
+                    <Path>{sb.path}</Path>
                   </div>
                 )}
               </>
             )}
           </div>
         )}
-      </Card>
-      </section>
-
-      <section className="mb-8 break-inside-avoid">
-      <SectionTitle>About</SectionTitle>
-      <Card>
+      </>
+    ),
+    data: (
+      <>
+        <Row
+          label="Usage numbers"
+          hint={
+            status ? (
+              <>
+                {status.state === "error"
+                  ? status.error ?? "The usage cache could not be opened."
+                  : `${plural(status.filesTracked, "session log")} read${status.lastIndexedAt ? `, updated ${agoText(status.lastIndexedAt)}` : ""}.`}
+                <div className="mt-1 text-caption">
+                  {formatBytes(status.cacheBytes)} on disk. <Path>{status.cachePath}</Path>
+                </div>
+              </>
+            ) : (
+              "Starting up"
+            )
+          }
+        >
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button onClick={() => void reindex("changed")} disabled={indexing || busy !== null}>
+              Read logs again
+            </Button>
+            <Button onClick={() => setConfirmRebuild(true)} disabled={indexing || busy !== null}>
+              Rebuild from scratch
+            </Button>
+          </div>
+        </Row>
+        <Row
+          label="Price list"
+          hint={
+            price.data ? (
+              price.data.error ? (
+                <span className="text-danger">{price.data.error}</span>
+              ) : (
+                <>
+                  Updated {price.data.table.updated}. Costs on the Dashboard are worked out from it.
+                  <div className="mt-1 text-caption">
+                    <Path>{price.data.path}</Path>
+                  </div>
+                </>
+              )
+            ) : (
+              "Loading"
+            )
+          }
+        >
+          <Button onClick={() => void backend.pricingReveal().catch(() => {})}>Show file</Button>
+        </Row>
+        <Row label="Atlas data" hint={<Path>{info.dataDir}</Path>}>
+          <Button onClick={() => void openDataDir()}>Open Atlas data folder</Button>
+        </Row>
+      </>
+    ),
+    history: (
+      <>
+        <Row
+          label="Saved copies"
+          hint={
+            ov?.historyPaused
+              ? "Paused while Sandbox mode is on. Atlas keeps copies of your real Claude folder only."
+              : ov && ov.historyVersions > 0
+                ? `${plural(ov.historyVersions, "version")} of ${plural(ov.historyItems, "file")}, ${formatBytes(ov.historyBytes)}.`
+                : "Nothing saved yet. Atlas starts when it first looks at your folder."
+          }
+        >
+          <Button onClick={() => void backend.historyOpenFolder().catch(() => {})}>Open history folder</Button>
+        </Row>
+        <Row label="Keep up to" hint="Older copies of a file are let go once it passes this many. The newest are always kept.">
+          <Stepper value={keep} onChange={setHistoryKeep} />
+        </Row>
+      </>
+    ),
+    about: (
+      <>
         <Row label="Version">
           <span className="text-body text-ink-2">{info.version}</span>
         </Row>
-        <Row label="Started in" hint="Time from launch to the first screen.">
-          <span className="text-body text-ink-2">
-            {info.firstPaintMs === null ? "Not measured" : `${info.firstPaintMs} ms`}
-          </span>
+        <Row label="Build">
+          <span className="text-body text-ink-2">{info.build === "release" ? "Release" : "Debug"}</span>
         </Row>
-        <Row label="Atlas data" hint={<code className="selectable break-all">{info.dataDir}</code>} />
-      </Card>
-      </section>
+        <Row label="Started in" hint="Time from launch to the first screen.">
+          <span className="text-body text-ink-2">{info.firstPaintMs === null ? "Not measured" : `${info.firstPaintMs} ms`}</span>
+        </Row>
+        <Row label="Privacy" hint="Atlas never sends your data anywhere. Everything it shows is read from files on this computer." />
+      </>
+    ),
+  };
+  const current = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0];
+
+  return (
+    <div className="@container flex min-h-0 flex-1 flex-col gap-4" ref={root}>
+      <PageTitle title="Settings" />
+      <div className={wide ? "grid min-h-0 flex-1 grid-cols-[160px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-8" : "flex min-h-0 flex-1 flex-col gap-3"}>
+        <nav aria-label="Settings sections" className="st-nav" data-wide={wide ? "" : undefined}>
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              id={`st-tab-${s.id}`}
+              className="st-nav-item text-body"
+              aria-current={active === s.id ? "true" : undefined}
+              aria-controls="st-panel"
+              onClick={() => setActive(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </nav>
+        <section id="st-panel" key={active} aria-labelledby={`st-tab-${active}`} className="rise min-h-0 min-w-0 overflow-y-auto rounded-card">
+          <h2 className="sr-only">{current.label}</h2>
+          <Card>{bodies[active]}</Card>
+        </section>
       </div>
-    </>
+
+      {confirmRebuild && (
+        <Dialog
+          alert
+          title="Rebuild from scratch?"
+          onClose={() => setConfirmRebuild(false)}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setConfirmRebuild(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setConfirmRebuild(false);
+                  void reindex("full");
+                }}
+              >
+                Rebuild
+              </Button>
+            </div>
+          }
+        >
+          <p className="text-body text-ink">
+            Atlas reads every session log again and makes the numbers from scratch. Logs that Claude Code has already cleared cannot be read again, so their numbers are kept.
+          </p>
+        </Dialog>
+      )}
+    </div>
   );
 }

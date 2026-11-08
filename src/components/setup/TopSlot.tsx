@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Checklist } from "./Checklist";
+import { CostPanel } from "./CostPanel";
 import { UsagePanel, useUsageRows } from "./UsagePanel";
 import { progress } from "../../lib/setup-steps";
-import type { CreateKind, SetupItem } from "../../lib/setup-types";
+import type { CostReport, CreateKind, SetupItem } from "../../lib/setup-types";
 
 /** Set once the checklist has reached 100%; after that it never celebrates again. */
 export const CHECKLIST_DONE_KEY = "atlas.setup.checklistDone";
@@ -67,20 +68,27 @@ export function useChecklistPhase(complete: boolean): Phase {
 export function TopSlot({
   items,
   loads,
+  cost,
   onCreate,
   onOpen,
 }: {
   items: SetupItem[];
   loads: number;
+  cost: CostReport | null;
   onCreate: (kind: CreateKind) => void;
   onOpen: (id: string) => void;
 }) {
   const rows = useUsageRows(items, loads);
   const phase = useChecklistPhase(progress(items).complete);
   return (
-    <div className="mb-6 flex flex-col gap-4 empty:hidden">
+    <div className="mb-4 flex flex-col gap-4 empty:hidden">
       {phase !== "hidden" && <Checklist items={items} onCreate={onCreate} />}
-      <UsagePanel rows={rows} items={items} onOpen={onOpen} />
+      {/* Side by side when the window is wide enough for both (usage wide, cost narrow, so the
+          usage lists keep their two columns); alone, each takes the full width. */}
+      <div className="grid gap-4 empty:hidden min-[1240px]:[&:has(>:nth-child(2))]:grid-cols-[minmax(0,1fr)_24rem]">
+        <UsagePanel rows={rows} items={items} onOpen={onOpen} />
+        <CostPanel report={cost} items={items} onOpen={onOpen} />
+      </div>
     </div>
   );
 }

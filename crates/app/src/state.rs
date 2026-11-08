@@ -22,6 +22,7 @@ use atlas_core::sandbox::{self, Sandbox, SandboxError, SandboxOptions, SandboxRe
 use atlas_core::settings::{self, Settings, Theme, View};
 use serde::Serialize;
 
+use crate::now::NowHost;
 use crate::search::SearchHost;
 use crate::usage::{Roots, UsageHost};
 
@@ -71,6 +72,10 @@ pub struct AppState {
     pub usage: Arc<UsageHost>,
     /// The chat-search index; follows the same folder as `usage`.
     pub search: Arc<SearchHost>,
+    /// The record of how the setup changed (History).
+    pub history: Arc<crate::history::HistoryHost>,
+    /// The Now tab's live view of running chats; follows the same folder as usage.
+    pub now: Arc<NowHost>,
     home: PathBuf,
     cwd: PathBuf,
     env_config: Option<OsString>,
@@ -159,6 +164,7 @@ pub struct SettingsPatch {
     pub last_view: Option<View>,
     pub launch_animation: Option<bool>,
     pub close_to_tray: Option<bool>,
+    pub history_keep_versions: Option<u32>,
 }
 
 impl AppState {
@@ -200,6 +206,8 @@ impl AppState {
             local_data_dir,
             usage: Arc::new(UsageHost::default()),
             search: Arc::new(SearchHost::default()),
+            history: Arc::new(crate::history::HistoryHost::default()),
+            now: Arc::new(NowHost::default()),
             home,
             cwd,
             env_config,
@@ -264,6 +272,17 @@ impl AppState {
             projects_dir: root.projects_dir,
             config_dir: root.dir,
         })
+    }
+
+    /// The Claude folder History records: the user's real one, never a sandbox copy (so
+    /// `None` while Sandbox Mode is on or still copying).
+    pub fn history_root(&self) -> Option<ConfigRoot> {
+        let inner = self.lock();
+        matches!(inner.slot, Slot::Off).then(|| self.real_root(&inner))
+    }
+
+    pub fn history_keep(&self) -> u32 {
+        self.lock().settings.history_keep_versions
     }
 
     /// What Setup scans: the folder Atlas works on (the real one, or the sandbox
@@ -378,6 +397,10 @@ impl AppState {
             if let Some(c) = patch.close_to_tray {
                 changed |= inner.settings.close_to_tray != c;
                 inner.settings.close_to_tray = c;
+            }
+            if let Some(k) = patch.history_keep_versions.map(settings::clamp_keep_versions) {
+                changed |= inner.settings.history_keep_versions != k;
+                inner.settings.history_keep_versions = k;
             }
             changed
         };
@@ -503,6 +526,7 @@ impl AppState {
     pub fn shutdown(&self) {
         // The chat index first: it is the longer pass to cancel, and both stop at the
         // next line or batch.
+        self.now.shutdown();
         self.search.shutdown();
         self.usage.shutdown();
         let (old, build) = {
