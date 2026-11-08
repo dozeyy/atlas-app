@@ -46,9 +46,9 @@ const DOT = (
  * row is the click target. No icons, pills or boxes: the hierarchy is type alone.
  *
  *   line 1  the title, one step up the type scale (16, bold): what the chat was
- *   line 2  the meta line, 12px, in the order a person scans for it:
- *             when it happened  >  what it cost (spend, then the tokens behind it)
- *             >  whether helpers ran (accent-colored text, no chip)  >  which project
+ *   line 2  the meta line, 12px, in Will's order (2026-11-08), left to right:
+ *             which project / folder  >  what it cost  >  the tokens behind it
+ *             >  whether helpers ran (accent-colored text, no chip)  >  when it happened
  *           A removed file adds "File removed" at the end, as plain text.
  *   line 3  only when a message search found words inside this chat: one line of it, matches bold
  */
@@ -70,7 +70,7 @@ export function SessionLine({
         <span className={`block w-full truncate text-lead font-bold ${row.name ? "text-ink" : "text-ink-2"}`}>{name}</span>
         {/* One quiet line that never wraps: it is cut with an ellipsis instead. */}
         <span className="mt-0.5 block w-full truncate text-caption text-ink-2">
-          {formatWhen(row.startedAt)}
+          {row.projectName}
           {DOT}
           <CostText cost={row.cost} className="font-semibold text-ink" />
           {DOT}
@@ -89,7 +89,7 @@ export function SessionLine({
             </>
           )}
           {DOT}
-          {row.projectName}
+          {formatWhen(row.startedAt)}
           {row.missing && (
             <>
               {DOT}
