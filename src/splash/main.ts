@@ -8,13 +8,15 @@ import "../styles/tokens.css";
 import "./splash.css";
 import { ARM_WEDGES, DOT_PATH, MARK_CENTER, MARK_VIEWBOX, SPARK_PATH } from "./markGeometry";
 import {
-  EASE_BOOM,
+  DISC_R,
   EASE_BURST,
-  EASE_FLOOD,
+  EASE_RIPPLE,
   EASE_SETTLE,
-  EASE_SPLIT,
-  EASE_SWIRL,
+  EASE_SPIN_IN,
+  EASE_SPIN_OUT,
+  EASE_WIPE,
   T,
+  cubicBezier,
   summarizeFrames,
 } from "./timeline";
 
@@ -44,6 +46,15 @@ function markLayer(parent: HTMLElement, svgInner: string, cls = "layer"): HTMLDi
   d.innerHTML = `<svg viewBox="0 0 ${VB} ${VB}" aria-hidden="true">${svgInner}</svg>`;
   return d;
 }
+
+type RGB = readonly [number, number, number];
+const hex = (v: string, fallback: RGB): RGB => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(v.trim());
+  if (!m) return fallback;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const rgba = (c: RGB, a: number) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
 const pct = (v: number) => `${((v / VB) * 100).toFixed(3)}%`;
 
@@ -79,7 +90,7 @@ function build(stage: HTMLElement) {
   const origin = `${pct(MARK_CENTER.x)} ${pct(MARK_CENTER.y)}`;
 
   const solid = `<use href="#spark" class="clay"/><use href="#dot" class="clay"/>`;
-  const ghosts = T.ghosts.map(() => markLayer(mark, solid));
+  const ghosts = Array.from({ length: T.trail.count }, () => markLayer(mark, solid));
   const swirl = div("layer", mark);
   swirl.style.inset = "0";
   const arms = ARM_WEDGES.map((_, i) =>
@@ -87,36 +98,73 @@ function build(stage: HTMLElement) {
   );
   const dotInk = markLayer(swirl, `<use href="#dot" class="ink"/>`);
   const fill = markLayer(swirl, solid);
-  for (const el of [...ghosts, swirl, ...arms, fill]) el.style.transformOrigin = origin;
+  // The same solid mark in a lighter clay, faded in while spinning so the arms stay readable.
+  const lead = markLayer(swirl, `<use href="#spark" class="clay-light"/><use href="#dot" class="clay-light"/>`);
+  for (const el of [...ghosts, swirl, ...arms, fill, lead]) el.style.transformOrigin = origin;
+  mark.style.willChange = "opacity";
   dotInk.style.transformOrigin = `${pct(dotCx)} ${pct(dotCy)}`;
 
-  // The flood disc covers the window corner to corner; it grows from inside the middle.
+  // Ripple discs, bottom to top, all as big as the window's diagonal and scaled from the disc's
+  // rim. They sit behind the mark. The top one doubles as the solid disc and ends as flat clay.
   const D = Math.ceil(Math.hypot(W, H)) + 8;
-  const disc = div("", stage);
-  disc.id = "disc";
-  Object.assign(disc.style, {
-    width: `${D}px`,
-    height: `${D}px`,
-    left: `${(W - D) / 2}px`,
-    top: `${(H - D) / 2}px`,
+  const rings = Array.from({ length: T.ripple.rings }, (_, i) => {
+    const el = document.createElement("div");
+    el.className = i === T.ripple.rings - 1 ? "ring last" : `ring r${i}`;
+    Object.assign(el.style, {
+      width: `${D}px`,
+      height: `${D}px`,
+      left: `${(W - D) / 2}px`,
+      top: `${(H - D) / 2}px`,
+    });
+    stage.insertBefore(el, mark);
+    return el;
   });
-  const left = div("half left", stage);
-  const right = div("half right", stage);
-  return { S, D, mark, ghosts, swirl, arms, dotInk, fill, disc, left, right };
+  // The wipe: a canvas (the only part that is drawn per frame) holds the flat clay and, once
+  // the app is ready underneath, a growing hole in it. Hidden until the ripple has filled up.
+  const dpr = window.devicePixelRatio || 1;
+  const wipe = document.createElement("canvas");
+  wipe.className = "wipe";
+  wipe.width = Math.round(W * dpr);
+  wipe.height = Math.round(H * dpr);
+  stage.appendChild(wipe);
+  return { S, D, k, W, H, dpr, mark, ghosts, swirl, arms, dotInk, fill, lead, rings, wipe };
+}
+
+/** The page loads at a placeholder size; Rust resizes the window to the main window's rect.
+ *  Wait until the viewport really is that size before laying anything out. */
+async function viewportIs(width: number, height: number): Promise<void> {
+  const dpr = window.devicePixelRatio || 1;
+  const close = () =>
+    Math.abs(window.innerWidth * dpr - width) <= 2 && Math.abs(window.innerHeight * dpr - height) <= 2;
+  const until = performance.now() + 400;
+  while (!close() && performance.now() < until) await new Promise((r) => setTimeout(r, 4));
 }
 
 async function main() {
   const stage = document.getElementById("stage")!;
-  const parts = build(stage);
 
-  // Rust fits and shows this window, then answers; the timeline starts after that.
+  // Rust fits and shows this window, then answers; the layout and timeline start after that.
   let radius = 0;
   try {
-    radius = (await call<{ radius: number }>("splash_ready"))?.radius ?? 0;
+    const cfg = await call<{ radius: number; width: number; height: number }>("splash_ready");
+    radius = cfg?.radius ?? 0;
+    if (cfg) await viewportIs(cfg.width, cfg.height);
   } catch {
     return; // the intro was abandoned; Rust closes this window
   }
   stage.style.setProperty("--stage-radius", `${radius}px`);
+  const parts = build(stage);
+  // Let the compositor raster every layer once (three frames at 1 % opacity, which no one can
+  // see on a transparent window) so no frame of the real timeline pays for a first raster.
+  const warm = [...parts.ghosts, ...parts.rings, parts.lead, parts.fill];
+  stage.style.opacity = "0.01";
+  for (const el of warm) el.style.opacity = "1";
+  parts.wipe.style.visibility = "visible";
+  parts.wipe.getContext("2d")?.fillRect(0, 0, 1, 1);
+  for (let i = 0; i < 3; i++) await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  stage.style.opacity = "";
+  for (const el of warm) el.style.opacity = "";
+  parts.wipe.style.visibility = "";
 
   const anims: Animation[] = [];
   const run = (el: Element, keyframes: Keyframe[], opts: KeyframeAnimationOptions) => {
@@ -129,11 +177,15 @@ async function main() {
   const deltas: number[] = [];
   let last = 0;
   let t0 = 0;
+  let startMs = 0;
+  let frameNo = 0;
   let sampling = true;
   const tick = (now: number) => {
     if (!sampling) return;
-    if (last) deltas.push(now - last);
-    else t0 = now;
+    frameNo++;
+    if (frameNo === 1) t0 = now;
+    else if (frameNo === 2) startMs = now - last; // the animations start here; reported apart
+    else deltas.push(now - last);
     last = now;
     requestAnimationFrame(tick);
   };
@@ -144,7 +196,33 @@ async function main() {
     if (finishing) return;
     finishing = true;
     sampling = false;
-    void call("splash_done", { report: summarizeFrames(deltas, performance.now() - t0) });
+    void call("splash_done", { report: summarizeFrames(deltas, performance.now() - t0, startMs) });
+  };
+
+  // The clay layer. radius 0 = flat clay; otherwise a hole of that radius with a soft rim
+  // (a lighter clay ring inside the feather).
+  const css = getComputedStyle(document.documentElement);
+  const clay = hex(css.getPropertyValue("--brand-mark"), [220, 120, 77]);
+  const light = hex(css.getPropertyValue("--brand-mark-light"), [240, 153, 108]);
+  const ctx = parts.wipe.getContext("2d");
+  const drawClay = (radius: number) => {
+    if (!ctx) return;
+    const { W, H, dpr } = parts;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    if (radius <= 0) {
+      ctx.fillStyle = rgba(clay, 1);
+    } else {
+      const f = T.wipe.feather;
+      const r1 = radius + f;
+      const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, r1);
+      g.addColorStop(0, rgba(clay, 0));
+      g.addColorStop(radius / r1, rgba(clay, 0));
+      g.addColorStop((radius + f * 0.5) / r1, rgba(light, 0.9));
+      g.addColorStop(1, rgba(clay, 1));
+      ctx.fillStyle = g;
+    }
+    ctx.fillRect(0, 0, W, H);
   };
 
   // A click or any key goes straight to the app.
@@ -158,16 +236,18 @@ async function main() {
   window.addEventListener("keydown", skip, { capture: true });
 
   (window as unknown as Record<string, unknown>).__atlasSplashFinish = (mode: string) => {
-    if (mode === "split") {
-      const a = run(parts.left, [{ transform: "translateX(0)" }, { transform: "translateX(-101%)" }], {
-        duration: T.split.dur,
-        easing: EASE_SPLIT,
-      });
-      run(parts.right, [{ transform: "translateX(0)" }, { transform: "translateX(101%)" }], {
-        duration: T.split.dur,
-        easing: EASE_SPLIT,
-      });
-      void a.finished.then(done);
+    if (mode === "wipe") {
+      // The ripple played backwards: a hole opens from the middle and the clay is gone.
+      const ease = cubicBezier(...EASE_WIPE);
+      const rEnd = Math.hypot(parts.W, parts.H) / 2 + T.wipe.feather + 2;
+      const begin = performance.now();
+      const frame = (now: number) => {
+        const t = Math.min(1, Math.max(0, (now - begin) / T.wipe.dur));
+        drawClay(rEnd * ease(t));
+        if (t < 1) requestAnimationFrame(frame);
+        else done();
+      };
+      requestAnimationFrame(frame);
     } else if (mode === "fade") {
       void run(stage, [{ opacity: 1 }, { opacity: 0 }], { duration: T.reduced.fade, easing: "linear" }).finished.then(done);
     } else {
@@ -208,49 +288,54 @@ async function main() {
   // 2. Fill: every part goes solid together, on one curve.
   run(parts.fill, [{ opacity: 0 }, { opacity: 1 }], { delay: T.fill.at, duration: T.fill.dur, easing: EASE_SETTLE });
 
-  // 3 + 4. Swirl (rotate + shrink), then the boom punch.
-  const sw = T.swirl;
-  const bm = T.boom;
-  const total = sw.dur + bm.dur;
-  const swirlEnd = `rotate(${sw.turn}deg) scale(${sw.scale})`;
-  run(
-    parts.swirl,
-    [
-      { transform: "rotate(0deg) scale(1)", easing: EASE_SWIRL },
-      { transform: swirlEnd, offset: sw.dur / total, easing: EASE_BOOM },
-      { transform: `rotate(${sw.turn + bm.extraTurn}deg) scale(${bm.scale})` },
-    ],
-    { delay: sw.at, duration: total },
-  );
-  // Trails: the same swirl, a few frames late and see-through, so the arms leave a sweep.
+  // 3. Spin with trails: the mark turns, faster and faster, and every copy of it a little behind
+  // leaves a see-through trail. The trails close the gaps between the arms into a disc.
+  const sp = T.spin;
+  const total = sp.dur1 + sp.dur2;
+  const spinKeys: Keyframe[] = [
+    { transform: "rotate(0deg)", easing: EASE_SPIN_IN },
+    { transform: `rotate(${sp.turn1}deg)`, offset: sp.dur1 / total, easing: EASE_SPIN_OUT },
+    { transform: `rotate(${sp.turn1 + sp.turn2}deg)` },
+  ];
+  run(parts.swirl, spinKeys, { delay: sp.at, duration: total });
   parts.ghosts.forEach((g, i) => {
-    const { lag, alpha } = T.ghosts[i];
-    run(g, [{ transform: "rotate(0deg) scale(1)" }, { transform: swirlEnd }], {
-      delay: sw.at + lag,
-      duration: sw.dur,
-      easing: EASE_SWIRL,
-    });
-    run(g, [{ opacity: 0 }, { opacity: alpha, offset: 0.25 }, { opacity: alpha * 0.7, offset: 0.85 }, { opacity: 0 }], {
-      delay: sw.at + lag,
-      duration: sw.dur,
+    const lag = ((i + 1) * T.trail.lagMax) / T.trail.count;
+    run(g, spinKeys, { delay: sp.at + lag, duration: total });
+    run(g, [{ opacity: 0 }, { opacity: T.trail.alpha }], {
+      delay: sp.at + lag,
+      duration: T.trail.fadeIn,
       easing: "linear",
     });
   });
+  run(parts.lead, [{ opacity: 0 }, { opacity: 1 }], { delay: T.lead.at, duration: T.lead.dur, easing: EASE_SETTLE });
+  run(parts.mark, [{ opacity: 1 }, { opacity: 0 }], { delay: T.markFade.at, duration: T.markFade.dur, easing: "linear" });
 
-  // 4. The clay floods the whole window from the middle (same color as the mark).
-  const s0 = (parts.S * 0.2) / parts.D;
-  const flood = parts.disc.animate(
-    [
-      { transform: `scale(${s0})`, opacity: 1 },
-      { transform: "scale(1)", opacity: 1 },
-    ],
-    { delay: T.flood.at, duration: T.flood.dur, easing: EASE_FLOOD, fill: "forwards" },
-  );
-  anims.push(flood);
-  void flood.finished.then(() => {
-    // Flat clay screen: swap in the two halves (identical color), drop the rest.
-    parts.left.style.visibility = parts.right.style.visibility = "visible";
-    parts.disc.style.display = parts.mark.style.display = "none";
+  // 4. The disc firms up, then the ripple rolls out: nested rings of slightly different clay,
+  // the last (flat clay) fills the window.
+  const rim = (DISC_R * parts.k) / (parts.D / 2);
+  const top = parts.rings.length - 1;
+  let rippleDone: Animation | undefined;
+  parts.rings.forEach((el, i) => {
+    const start = T.ripple.at + i * T.ripple.stagger;
+    const from = i === top ? rim : rim * 0.92; // the inner rings wait under the top disc
+    if (i === top) {
+      run(el, [{ opacity: 0 }, { opacity: 1 }], { delay: T.core.at, duration: T.core.dur, easing: EASE_SETTLE });
+    } else {
+      run(el, [{ opacity: 0 }, { opacity: 1 }], { delay: start, duration: 1, easing: "linear" });
+    }
+    const a = run(el, [{ transform: `scale(${from})` }, { transform: "scale(1)" }], {
+      delay: start,
+      duration: T.ripple.dur,
+      easing: EASE_RIPPLE,
+    });
+    if (i === top) rippleDone = a;
+  });
+  void rippleDone!.finished.then(() => {
+    // Flat clay screen: the canvas takes over (identical color), drop the rest.
+    drawClay(0);
+    parts.wipe.style.visibility = "visible";
+    parts.mark.style.display = "none";
+    for (const el of parts.rings) el.style.display = "none";
     void call("splash_covered", { reduced: false });
   });
 }

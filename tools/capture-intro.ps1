@@ -23,7 +23,7 @@ New-Item -ItemType Directory -Force $Out | Out-Null
 $Out = (Resolve-Path $Out).Path
 if (-not $DataDir) { $DataDir = Join-Path $Out "data" }
 New-Item -ItemType Directory -Force $DataDir | Out-Null
-Get-Process atlas -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process atlas -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Stop-Process -Force
 Start-Sleep -Milliseconds 400
 
 $x, $y, $w, $h = $Region.Split(",")
@@ -45,4 +45,4 @@ $startMs = ([DateTimeOffset]$app.StartTime.ToUniversalTime()).ToUnixTimeMillisec
 "$launchMs`n$startMs" | Set-Content (Join-Path $Out "launch.txt")
 $ff.WaitForExit()
 
-Get-Process atlas -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process atlas -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Stop-Process -Force

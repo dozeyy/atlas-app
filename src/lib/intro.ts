@@ -1,7 +1,7 @@
 // The main window's half of the launch intro. While the splash plays, the page is
-// painted but hidden, with #root pre-scaled to 0.96 (`data-intro="pending"`). At the
+// painted but hidden, with #root pre-scaled to 0.98 (`data-intro="pending"`). At the
 // handoff Rust shows the window under the splash and calls __atlasIntroReveal, which
-// lets the app land (scale 0.96 -> 1, CSS in index.css) and tells Rust the first
+// lets the app land (scale 0.98 -> 1, CSS in index.css) and tells Rust the first
 // frame is on screen so the splash can slide away.
 
 import { invoke } from "@tauri-apps/api/core";
@@ -13,7 +13,7 @@ declare global {
   }
 }
 
-const LAND_MS = 560;
+const LAND_MS = 480;
 
 /** Before the first paint: start pre-scaled when the intro is going to play. */
 export function armIntro(root: HTMLElement = document.documentElement): void {

@@ -18,7 +18,7 @@ $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Exe = (Resolve-Path $Exe).Path
 New-Item -ItemType Directory -Force $DataDir | Out-Null
-Get-Process atlas -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process atlas -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Stop-Process -Force
 Start-Sleep -Milliseconds 400
 foreach ($e in $EnvVars) { $k, $v = $e.Split("=", 2); Set-Item "Env:$k" $v }
 $log = Join-Path $DataDir "drive.log"
@@ -36,11 +36,11 @@ if ($Second) {
   $sw = [Diagnostics.Stopwatch]::StartNew()
   $p2 = Start-Process $Exe -ArgumentList @("--config-dir", $cfg, "--data-dir", $DataDir) -PassThru
   $p2.WaitForExit(5000) | Out-Null
-  Write-Output "second instance exited=$($p2.HasExited) code=$(if ($p2.HasExited) { $p2.ExitCode }) after $($sw.ElapsedMilliseconds) ms; atlas processes now: $((Get-Process atlas -ErrorAction SilentlyContinue | Measure-Object).Count)"
+  Write-Output "second instance exited=$($p2.HasExited) code=$(if ($p2.HasExited) { $p2.ExitCode }) after $($sw.ElapsedMilliseconds) ms; atlas processes now: $((Get-Process atlas -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Measure-Object).Count)"
 } else {
   Start-Sleep -Seconds $Seconds
 }
 if ($Shot) { ffmpeg -y -v error -f gdigrab -offset_x 565 -offset_y 210 -video_size 1046x754 -draw_mouse 0 -i desktop -frames:v 1 $Shot; Write-Output "screenshot: $Shot" }
 Write-Output "--- log ---"
 Get-Content $log
-Get-Process atlas -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process atlas -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Stop-Process -Force

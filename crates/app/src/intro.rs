@@ -12,7 +12,7 @@
 //!  4. once the clay screen is up AND the main page has painted (`frontend_ready`),
 //!     Rust shows the main window UNDER the topmost splash, the main page lands its
 //!     first frame and calls `intro_main_painted`, and Rust tells the splash to
-//!     finish (clay halves slide away, or a fade, or a cut).
+//!     finish (a hole opens in the clay from the middle, or a fade, or a cut).
 //!  5. the splash reports its frame timing with `splash_done` and Rust closes it.
 //!
 //! Anything that goes wrong (splash page never loads, never finishes) is caught by
@@ -52,6 +52,8 @@ struct Flow {
     skipped: bool,
     revealing: bool,
     radius: f64,
+    /// The splash's size in physical pixels (the page waits for its viewport to match).
+    size: (u32, u32),
 }
 
 pub struct Intro {
@@ -152,7 +154,7 @@ pub fn fit_splash(app: &AppHandle, main: &WebviewWindow, backdrop: bool) {
         abort(app);
         return;
     };
-    match visible_bounds(main) {
+    let size = match visible_bounds(main) {
         Some((x, y, w, h)) => {
             // Position, size, position again: a move between monitors of different
             // scale can re-scale the window once.
@@ -160,12 +162,13 @@ pub fn fit_splash(app: &AppHandle, main: &WebviewWindow, backdrop: bool) {
             let _ = splash.set_size(PhysicalSize::new(w, h));
             let _ = splash.set_position(PhysicalPosition::new(x, y));
             eprintln!("[atlas] intro: splash rect {w}x{h} at {x},{y} ({})", stamp(app));
+            (w, h)
         }
         None => {
             abort(app);
             return;
         }
-    }
+    };
     let maximized = main.is_maximized().unwrap_or(false) || main.is_fullscreen().unwrap_or(false);
     let radius = if maximized {
         0.0
@@ -178,6 +181,7 @@ pub fn fit_splash(app: &AppHandle, main: &WebviewWindow, backdrop: bool) {
     };
     let mut f = intro.lock();
     f.radius = radius;
+    f.size = size;
     f.rect_set = true;
 }
 
@@ -296,6 +300,8 @@ fn handoff_if_ready(app: &AppHandle) {
 #[serde(rename_all = "camelCase")]
 pub struct SplashConfig {
     pub radius: f64,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// The splash page is loaded and has laid itself out: fit, show, start the timeline.
@@ -316,12 +322,12 @@ pub async fn splash_ready(app: AppHandle) -> Result<SplashConfig, String> {
         }
         tokio_sleep(5).await;
     }
-    let radius = {
+    let (radius, width, height) = {
         let f = intro.lock();
         if !f.rect_set {
             return Err("splash rect was never set".into());
         }
-        f.radius
+        (f.radius, f.size.0, f.size.1)
     };
     if let Some(s) = app.get_webview_window(SPLASH) {
         let _ = s.show();
@@ -329,7 +335,7 @@ pub async fn splash_ready(app: AppHandle) -> Result<SplashConfig, String> {
     }
     intro.lock().splash_shown = true;
     eprintln!("[atlas] intro: splash shown at {}", since_start(&app));
-    Ok(SplashConfig { radius })
+    Ok(SplashConfig { radius, width, height })
 }
 
 async fn tokio_sleep(ms: u64) {
@@ -383,7 +389,7 @@ pub fn intro_main_painted(app: AppHandle) {
         } else if f.reduced {
             "fade"
         } else {
-            "split"
+            "wipe"
         }
     };
     if mode == "cut" {
@@ -398,6 +404,10 @@ pub fn intro_main_painted(app: AppHandle) {
 pub struct FrameReport {
     pub frames: u32,
     pub worst_ms: f64,
+    #[serde(default)]
+    pub worst_at_ms: f64,
+    #[serde(default)]
+    pub start_ms: f64,
     pub over_20: u32,
     pub over_33: u32,
     pub p95_ms: f64,
@@ -408,10 +418,12 @@ pub struct FrameReport {
 #[tauri::command]
 pub fn splash_done(app: AppHandle, report: FrameReport) {
     eprintln!(
-        "[atlas] intro: done at {} ms; splash frames {} (rAF), worst {:.1} ms, p95 {:.1} ms, >20 ms: {}, >33 ms: {}, splash run {:.0} ms",
+        "[atlas] intro: done at {} ms; splash frames {} (rAF), start gap {:.1} ms, worst {:.1} ms at +{:.0} ms, p95 {:.1} ms, >20 ms: {}, >33 ms: {}, splash run {:.0} ms",
         since_start(&app),
         report.frames,
+        report.start_ms,
         report.worst_ms,
+        report.worst_at_ms,
         report.p95_ms,
         report.over_20,
         report.over_33,
