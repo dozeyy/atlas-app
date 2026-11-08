@@ -2,6 +2,8 @@
 // Settings persist in localStorage only so a browser reload keeps your choices.
 
 import type { AppInfo, ConfigView, Platform, Settings, Theme, View } from "./types";
+import type { Backend } from "./ipc";
+import { MockUsage } from "./mockUsage";
 
 const KEY = "atlas.mock.settings";
 
@@ -128,6 +130,22 @@ export class MockBackend {
   }
 
   async frontendReady(): Promise<void> {}
+
+  // ---- usage: the stand-in lives in mockUsage.ts so this file stays small ----
+  readonly usage = new MockUsage();
+  usageStatus = () => this.usage.usageStatus();
+  usageDashboard = () => this.usage.usageDashboard();
+  usageTimeline: Backend["usageTimeline"] = (a) => this.usage.usageTimeline(a);
+  sessionsList: Backend["sessionsList"] = (q) => this.usage.sessionsList(q);
+  sessionDetail: Backend["sessionDetail"] = (id) => this.usage.sessionDetail(id);
+  sessionTranscript: Backend["sessionTranscript"] = (id, c, l) => this.usage.sessionTranscript(id, c, l);
+  usageFilterOptions = () => this.usage.usageFilterOptions();
+  usageReindex: Backend["usageReindex"] = () => this.usage.usageReindex();
+  pricingGet = () => this.usage.pricingGet();
+  pricingReveal = () => this.usage.pricingReveal();
+  onUsageStatus: Backend["onUsageStatus"] = (cb) => this.usage.onUsageStatus(cb);
+  onUsageProgress: Backend["onUsageProgress"] = (cb) => this.usage.onUsageProgress(cb);
+  onUsageChanged: Backend["onUsageChanged"] = (cb) => this.usage.onUsageChanged(cb);
 
   async onInfo(cb: (i: AppInfo) => void): Promise<() => void> {
     this.listeners.add(cb);

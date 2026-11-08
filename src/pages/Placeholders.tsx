@@ -1,24 +1,6 @@
-import { ChatsCircle, ClockCounterClockwise, Sparkle, Wrench } from "@phosphor-icons/react";
+import { ClockCounterClockwise, Sparkle, Wrench } from "@phosphor-icons/react";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/controls";
-
-export function Sessions() {
-  return (
-    <>
-      <PageHeader
-        title="Sessions"
-        subtitle="Every Claude Code conversation on this computer, in one list."
-      />
-      <EmptyState
-        icon={ChatsCircle}
-        seed={11}
-        title="No sessions to show yet"
-        body="Each conversation will appear here with what it cost, how long it ran and which project it belonged to. You will be able to search them and open any one."
-        badge="Coming soon"
-      />
-    </>
-  );
-}
 
 export function Setup() {
   return (

@@ -249,16 +249,14 @@ pub fn run_tasks(
                             session_set.insert(s);
                         }
                     }
-                    if let Some(lo) = t.hour_lo {
-                        if hour_lo.as_ref().is_none_or(|c| lo < *c) {
+                    if let Some(lo) = t.hour_lo
+                        && hour_lo.as_ref().is_none_or(|c| lo < *c) {
                             hour_lo = Some(lo);
                         }
-                    }
-                    if let Some(hi) = t.hour_hi {
-                        if hour_hi.as_ref().is_none_or(|c| hi > *c) {
+                    if let Some(hi) = t.hour_hi
+                        && hour_hi.as_ref().is_none_or(|c| hi > *c) {
                             hour_hi = Some(hi);
                         }
-                    }
                     prog.bytes_done += batch.bytes;
                     if batch.done {
                         prog.files_done += 1;

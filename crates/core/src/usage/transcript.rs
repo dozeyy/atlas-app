@@ -137,11 +137,10 @@ pub fn page(
         };
         let mut stopped_at: Option<u64> = None;
         let committed = read_lines(file, offset, LINE_CAP, stats, |item, end| {
-            if let Item::Line(l) = item {
-                if let Some(it) = item_from_line(l) {
+            if let Item::Line(l) = item
+                && let Some(it) = item_from_line(l) {
                     items.push(it);
                 }
-            }
             if items.len() >= limit {
                 stopped_at = Some(end);
                 return false;

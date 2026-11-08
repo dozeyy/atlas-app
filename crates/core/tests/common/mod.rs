@@ -1,6 +1,8 @@
 //! Shared helpers for the usage integration tests.
 #![allow(dead_code)]
 
+pub mod synth;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

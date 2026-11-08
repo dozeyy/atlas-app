@@ -826,8 +826,8 @@ pub fn sessions_list(conn: &Connection, ctx: &QueryCtx, q: &SessionQuery) -> rus
 
     let mut page_vals = vals.clone();
     let mut page_where = where_sql.clone();
-    if let Some(cur) = q.cursor.as_deref() {
-        if let Some((k, id)) = cur.split_once('|') {
+    if let Some(cur) = q.cursor.as_deref()
+        && let Some((k, id)) = cur.split_once('|') {
             let kv = if let Some(f) = k.strip_prefix("f:") {
                 f.parse::<f64>().ok().map(Value::Real)
             } else {
@@ -841,7 +841,6 @@ pub fn sessions_list(conn: &Connection, ctx: &QueryCtx, q: &SessionQuery) -> rus
                 page_vals.push(Value::Text(id.to_string()));
             }
         }
-    }
     let order = if desc { "DESC" } else { "ASC" };
     let sql = format!(
         "{cte}SELECT s.session_id, {key_expr} FROM sessions s{join} WHERE {page_where} \

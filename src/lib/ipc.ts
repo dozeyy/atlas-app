@@ -4,7 +4,23 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { AppInfo, Theme, View } from "./types";
+import type {
+  AppInfo,
+  Bucket,
+  Dashboard,
+  FilterOptions,
+  IndexProgress,
+  PricingInfo,
+  SessionDetail,
+  SessionPage,
+  SessionQuery,
+  Theme,
+  Timeline,
+  TranscriptPage,
+  UsageChanged,
+  UsageStatus,
+  View,
+} from "./types";
 import { MockBackend } from "./mock";
 
 declare global {
@@ -15,6 +31,11 @@ declare global {
 }
 
 export const INFO_EVENT = "atlas://info";
+export const USAGE_STATUS_EVENT = "atlas://usage/status";
+export const USAGE_PROGRESS_EVENT = "atlas://usage/progress";
+export const USAGE_CHANGED_EVENT = "atlas://usage/changed";
+
+export type Unlisten = () => void;
 
 export const inTauri = (): boolean =>
   typeof window !== "undefined" && window.__TAURI_INTERNALS__ !== undefined;
@@ -27,6 +48,21 @@ export interface Backend {
   clearConfigDir(): Promise<AppInfo>;
   frontendReady(): Promise<void>;
   onInfo(cb: (info: AppInfo) => void): Promise<() => void>;
+
+  // Usage engine. Every call is async; none blocks the page.
+  usageStatus(): Promise<UsageStatus>;
+  usageDashboard(): Promise<Dashboard>;
+  usageTimeline(args: { from: string; to: string; bucket: Bucket; groupBy?: "model" | "project" }): Promise<Timeline>;
+  sessionsList(query: SessionQuery): Promise<SessionPage>;
+  sessionDetail(sessionId: string): Promise<SessionDetail | null>;
+  sessionTranscript(sessionId: string, cursor?: string | null, limit?: number): Promise<TranscriptPage>;
+  usageFilterOptions(): Promise<FilterOptions>;
+  usageReindex(scope: "changed" | "full"): Promise<UsageStatus>;
+  pricingGet(): Promise<PricingInfo>;
+  pricingReveal(): Promise<void>;
+  onUsageStatus(cb: (s: UsageStatus) => void): Promise<Unlisten>;
+  onUsageProgress(cb: (p: IndexProgress) => void): Promise<Unlisten>;
+  onUsageChanged(cb: (c: UsageChanged) => void): Promise<Unlisten>;
 }
 
 const tauriBackend: Backend = {
@@ -42,6 +78,23 @@ const tauriBackend: Backend = {
     const off = await listen<AppInfo>(INFO_EVENT, (e) => cb(e.payload));
     return off;
   },
+
+  usageStatus: () => invoke<UsageStatus>("usage_status"),
+  usageDashboard: () => invoke<Dashboard>("usage_dashboard"),
+  usageTimeline: (a) => invoke<Timeline>("usage_timeline", a),
+  sessionsList: (query) => invoke<SessionPage>("sessions_list", { query }),
+  sessionDetail: (sessionId) => invoke<SessionDetail | null>("session_detail", { sessionId }),
+  sessionTranscript: (sessionId, cursor = null, limit = 50) =>
+    invoke<TranscriptPage>("session_transcript", { sessionId, cursor, limit }),
+  usageFilterOptions: () => invoke<FilterOptions>("usage_filter_options"),
+  usageReindex: (scope) => invoke<UsageStatus>("usage_reindex", { scope }),
+  pricingGet: () => invoke<PricingInfo>("pricing_get"),
+  pricingReveal: async () => {
+    await invoke("pricing_reveal");
+  },
+  onUsageStatus: (cb) => listen<UsageStatus>(USAGE_STATUS_EVENT, (e) => cb(e.payload)),
+  onUsageProgress: (cb) => listen<IndexProgress>(USAGE_PROGRESS_EVENT, (e) => cb(e.payload)),
+  onUsageChanged: (cb) => listen<UsageChanged>(USAGE_CHANGED_EVENT, (e) => cb(e.payload)),
 };
 
 let backend: Backend | null = null;

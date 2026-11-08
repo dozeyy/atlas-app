@@ -270,15 +270,14 @@ pub fn plan(
         for f in &found {
             let k = key(&f.path);
             let existing = rows.remove(&k);
-            if let Some(row) = &existing {
-                if !force
+            if let Some(row) = &existing
+                && !force
                     && !row.missing
                     && row.size == f.size
                     && row.mtime_ns == f.mtime_ns
                 {
                     continue; // unchanged: no open, no bytes
                 }
-            }
             // Changed or new: open once for the identity check.
             let Ok(mut file) = open_read_only(&f.path) else { continue }; // vanished or locked
             let id = fs_id(&file).unwrap_or_default();

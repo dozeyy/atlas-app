@@ -322,7 +322,7 @@ impl UsageEngine {
             if left.is_zero() {
                 return false;
             }
-            g = self.shared.changed.wait_timeout(g, left).unwrap_or_else(|p| p.into_inner()).0;
+            g = self.shared.changed.wait_timeout(g, left.min(Duration::from_millis(100))).unwrap_or_else(|p| p.into_inner()).0;
         }
     }
 
@@ -509,11 +509,10 @@ impl Core {
         s.last_indexed_at = get_meta(conn, "last_full_index_at").and_then(|v| v.parse().ok());
         s.first_index_done = s.last_indexed_at.is_some();
         let table = self.prices.read().unwrap_or_else(|p| p.into_inner()).clone();
-        if let Ok(mut st) = conn.prepare("SELECT DISTINCT model FROM usage_hour ORDER BY model") {
-            if let Ok(rows) = st.query_map([], |r| r.get::<_, String>(0)) {
+        if let Ok(mut st) = conn.prepare("SELECT DISTINCT model FROM usage_hour ORDER BY model")
+            && let Ok(rows) = st.query_map([], |r| r.get::<_, String>(0)) {
                 s.unknown_models = rows.flatten().filter(|m| !table.is_known(m)).collect();
             }
-        }
         s
     }
 
@@ -797,16 +796,14 @@ impl Core {
                 p.ids.insert(id.clone());
             }
         }
-        if let Some(f) = from {
-            if p.from.as_ref().is_none_or(|c| f < *c) {
+        if let Some(f) = from
+            && p.from.as_ref().is_none_or(|c| f < *c) {
                 p.from = Some(f);
             }
-        }
-        if let Some(t) = to {
-            if p.to.as_ref().is_none_or(|c| t > *c) {
+        if let Some(t) = to
+            && p.to.as_ref().is_none_or(|c| t > *c) {
                 p.to = Some(t);
             }
-        }
     }
 
     fn emit_changed(&mut self) {
@@ -904,8 +901,12 @@ impl Core {
             .and_then(|c| c.query_row("SELECT COALESCE(SUM(messages),0) FROM sessions", [], |r| r.get(0)).ok())
             .unwrap_or(0);
         self.publish(State::Idle, None);
-        shared.passes.fetch_add(1, Ordering::SeqCst);
-        shared.changed.notify_all();
+        {
+            // Under the status lock, so a waiter cannot check, miss the bump and then sleep.
+            let _g = shared.status.lock().unwrap_or_else(|p| p.into_inner());
+            shared.passes.fetch_add(1, Ordering::SeqCst);
+            shared.changed.notify_all();
+        }
         if full && loud {
             self.log(&format!(
                 "usage: index done {total} messages ({} files read, {} ms)",

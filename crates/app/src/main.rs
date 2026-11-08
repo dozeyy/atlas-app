@@ -3,13 +3,14 @@
 
 mod commands;
 mod state;
+mod usage;
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use atlas_core::launch::LaunchArgs;
 use state::AppState;
-use tauri::{Manager, RunEvent, WebviewWindowBuilder};
+use tauri::{Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
 
 fn main() {
     let launch = LaunchArgs::parse(std::env::args_os().skip(1));
@@ -38,7 +39,22 @@ fn main() {
             commands::choose_config_dir,
             commands::clear_config_dir,
             commands::frontend_ready,
+            usage::usage_status,
+            usage::usage_dashboard,
+            usage::usage_timeline,
+            usage::sessions_list,
+            usage::session_detail,
+            usage::session_transcript,
+            usage::usage_filter_options,
+            usage::usage_reindex,
+            usage::pricing_get,
+            usage::pricing_reveal,
         ])
+        .on_window_event(|window, event| {
+            if let WindowEvent::Focused(focused) = event {
+                window.state::<Arc<AppState>>().usage.focus(*focused);
+            }
+        })
         .setup(|app| {
             let state = app.state::<Arc<AppState>>().inner().clone();
 

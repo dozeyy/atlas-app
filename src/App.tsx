@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 import { NAV, Sidebar } from "./components/Sidebar";
 import { useAtlas } from "./state/AtlasProvider";
 import { Dashboard } from "./pages/Dashboard";
-import { History, Sessions, Setup, Wrapped } from "./pages/Placeholders";
+import { History, Setup, Wrapped } from "./pages/Placeholders";
+import { Sessions } from "./pages/Sessions";
 import { Settings } from "./pages/Settings";
 import type { View } from "./lib/types";
 
