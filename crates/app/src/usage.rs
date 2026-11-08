@@ -12,7 +12,7 @@ use atlas_core::usage::query::{
     AgentDetail, Dashboard, FilterOptions, ItemQuery, ItemUse, SessionDetail, SessionPage, SessionQuery, Timeline, TimelineArgs,
 };
 use atlas_core::usage::transcript::TranscriptPage;
-use atlas_core::usage::{Event, EventSink, PricingInfo, UsageConfig, UsageEngine, UsageStatus};
+use atlas_core::usage::{Event, EventSink, PricingInfo, State as UsageState, UsageConfig, UsageEngine, UsageStatus};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::state::AppState;
@@ -23,6 +23,43 @@ pub const CHANGED_EVENT: &str = "atlas://usage/changed";
 pub const PRICING_EVENT: &str = "atlas://pricing/changed";
 
 type Shared<'a> = State<'a, Arc<AppState>>;
+
+/// What other parts of the app (the tray readout, the chat-search indexer) wait for. The
+/// usage engine is the one source of "the Claude folder changed", so they hang off it
+/// instead of watching the disk themselves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Signal {
+    /// New usage rows were written.
+    Changed,
+    /// The usage engine finished a pass and is idle.
+    Idle,
+    /// The window gained focus.
+    Focus,
+    /// The engine was replaced (another Claude folder, or none).
+    Restarted,
+}
+
+type Listener = Arc<dyn Fn(Signal) + Send + Sync>;
+
+#[derive(Default)]
+pub struct Signals {
+    listeners: Mutex<Vec<Listener>>,
+}
+
+impl Signals {
+    pub fn subscribe(&self, f: impl Fn(Signal) + Send + Sync + 'static) {
+        self.listeners.lock().unwrap_or_else(|p| p.into_inner()).push(Arc::new(f));
+    }
+
+    /// Runs the listeners on the caller's thread, outside the lock; they must be quick
+    /// (a channel send or a poke).
+    pub fn fire(&self, s: Signal) {
+        let all: Vec<Listener> = self.listeners.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        for f in all {
+            f(s);
+        }
+    }
+}
 
 /// What the engine reads and where its cache goes.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -46,20 +83,30 @@ pub struct UsageHost {
     syncing: Mutex<()>,
     /// The app handle events go out through; set once the window exists.
     app: Mutex<Option<AppHandle>>,
+    pub signals: Arc<Signals>,
 }
 
 struct TauriSink {
     app: AppHandle,
+    signals: Arc<Signals>,
 }
 
 impl EventSink for TauriSink {
     fn emit(&self, event: Event) {
+        let signal = match &event {
+            Event::Changed(_) => Some(Signal::Changed),
+            Event::Status(s) if s.state == UsageState::Idle => Some(Signal::Idle),
+            _ => None,
+        };
         let _ = match event {
             Event::Status(s) => self.app.emit(STATUS_EVENT, s),
             Event::Progress(p) => self.app.emit(PROGRESS_EVENT, p),
             Event::Changed(c) => self.app.emit(CHANGED_EVENT, c),
             Event::Pricing(p) => self.app.emit(PRICING_EVENT, p),
         };
+        if let Some(s) = signal {
+            self.signals.fire(s);
+        }
     }
     fn log(&self, line: &str) {
         eprintln!("{line}");
@@ -84,6 +131,8 @@ impl UsageHost {
     fn sync_now(&self, state: &AppState, app: &AppHandle) {
         let _one_at_a_time = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
         let wanted = state.usage_roots();
+        // The chat-search index follows the same folder (its own engine and file).
+        state.search.sync(wanted.as_ref(), &state.local_data_dir, app);
         let old = {
             let mut cur = self.current.lock().unwrap_or_else(|p| p.into_inner());
             if cur.as_ref().map(|r| &r.roots) == wanted.as_ref() {
@@ -99,7 +148,7 @@ impl UsageHost {
                     cache_db,
                 );
                 cfg.week_starts_sunday = week_starts_sunday();
-                let engine = UsageEngine::start(cfg, Arc::new(TauriSink { app: app.clone() }));
+                let engine = UsageEngine::start(cfg, Arc::new(TauriSink { app: app.clone(), signals: Arc::clone(&self.signals) }));
                 *cur = Some(Running { roots, engine });
             }
             old
@@ -107,6 +156,8 @@ impl UsageHost {
         if let Some(o) = old {
             o.engine.stop();
         }
+        // A new (or no) engine: the tray should not keep showing the old folder's numbers.
+        self.signals.fire(Signal::Restarted);
     }
 
     pub fn engine(&self) -> Result<Arc<UsageEngine>, String> {
@@ -125,6 +176,14 @@ impl UsageHost {
                 e.focus();
             }
         }
+        if focused {
+            self.signals.fire(Signal::Focus);
+        }
+    }
+
+    /// The first full pass over the transcripts has finished.
+    pub fn first_index_done(&self) -> bool {
+        self.engine().is_ok_and(|e| e.status().first_index_done)
     }
 
     pub fn shutdown(&self) {

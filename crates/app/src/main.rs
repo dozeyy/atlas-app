@@ -3,8 +3,10 @@
 
 mod commands;
 mod intro;
+mod search;
 mod setup_service;
 mod state;
+mod tray;
 mod usage;
 
 use std::sync::Arc;
@@ -47,17 +49,9 @@ fn main() {
     // never plays the intro (it dies before setup). Must be the first plugin.
     // ATLAS_MULTI=1 lifts the lock for parallel dev and test runs.
     if std::env::var_os("ATLAS_MULTI").is_none() {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // While the intro still owns the launch, the main window is not shown yet.
-            if app.try_state::<intro::Intro>().is_some_and(|i| i.is_active()) {
-                return;
-            }
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
-        }));
+        // (While the intro still owns the launch the main window is not shown yet;
+        // `focus_main` leaves it alone then.)
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::focus_main(app)));
     }
     let app = builder
         .plugin(tauri_plugin_dialog::init())
@@ -94,6 +88,8 @@ fn main() {
             usage::usage_reindex,
             usage::pricing_get,
             usage::pricing_reveal,
+            search::search_chats,
+            search::search_status,
             intro::splash_ready,
             intro::splash_covered,
             intro::intro_skip,
@@ -111,10 +107,19 @@ fn main() {
             setup_service::setup_create,
             setup_service::setup_validate_draft,
         ])
-        .on_window_event(|window, event| {
-            if let WindowEvent::Focused(focused) = event {
-                window.state::<Arc<AppState>>().usage.focus(*focused);
+        .on_window_event(|window, event| match event {
+            WindowEvent::Focused(focused) => window.state::<Arc<AppState>>().usage.focus(*focused),
+            // Close-to-tray (opt-in): hide instead of quitting, but only when the icon
+            // exists, or the window could never be brought back.
+            WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
+                let state = window.state::<Arc<AppState>>();
+                if state.close_to_tray() && window.try_state::<tray::Tray>().is_some() {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    state.usage.focus(false);
+                }
             }
+            _ => {}
         })
         .setup(|app| {
             let state = app.state::<Arc<AppState>>().inner().clone();
@@ -188,6 +193,11 @@ fn main() {
 
             // Background changes (a sandbox copy finishing) reach the page as events.
             state.usage.attach(app.handle().clone());
+            // The tray readout and the chat index both follow the usage engine.
+            search::wire(&state);
+            if let Err(e) = tray::install(app.handle(), &state) {
+                eprintln!("[atlas] tray: not available: {e}");
+            }
             let handle = app.handle().clone();
             state.set_notifier(Arc::new(move |info| {
                 let _ = handle.emit(state::INFO_EVENT, info);
@@ -207,8 +217,9 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building Atlas");
 
-    app.run(move |_handle, event| {
+    app.run(move |handle, event| {
         if let RunEvent::Exit = event {
+            tray::remove(handle);
             state.shutdown();
         }
     });

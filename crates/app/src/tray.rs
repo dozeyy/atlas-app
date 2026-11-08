@@ -1,0 +1,129 @@
+//! The tray icon (Windows notification area, macOS menu bar): a tooltip and a menu that
+//! read "Today: N tokens, ~$X est." (see `atlas_core::readout`), a left click that opens
+//! Atlas, and the opt-in close-to-tray.
+//!
+//! The numbers come from the usage engine's own queries (headline tokens, estimated
+//! cost). They refresh when the usage cache says it changed, with a slow timer as the
+//! fallback (it also carries the readout across midnight). All of it runs on one small
+//! background thread; the UI thread only builds the icon once.
+
+use std::sync::mpsc::{channel, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use atlas_core::readout;
+use atlas_core::usage::State as UsageState;
+use tauri::image::Image;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager};
+
+use crate::state::AppState;
+use crate::usage::Signal;
+
+pub const TRAY_ID: &str = "atlas";
+/// Refresh even when nothing announced a change (midnight, a missed event).
+const FALLBACK: Duration = Duration::from_secs(60);
+/// A burst of change events becomes one refresh.
+const DEBOUNCE: Duration = Duration::from_millis(400);
+const MAX_BURST: Duration = Duration::from_secs(2);
+
+/// Managed state; present only when the icon was created (close-to-tray needs it).
+pub struct Tray;
+
+/// Bring the main window forward, the way a second launch does. Ignored while the launch
+/// intro still owns the start (the window is not shown yet).
+pub fn focus_main(app: &AppHandle) {
+    if app.try_state::<crate::intro::Intro>().is_some_and(|i| i.is_active()) {
+        return;
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// The text for right now.
+fn line_for(state: &AppState) -> String {
+    let Ok(engine) = state.usage.engine() else { return readout::WAITING.to_string() };
+    let status = engine.status();
+    if status.state == UsageState::Error && !status.first_index_done {
+        return "Atlas: usage is unavailable".to_string();
+    }
+    if !status.first_index_done {
+        return readout::WAITING.to_string();
+    }
+    match engine.today() {
+        Ok(p) => readout::today_line(&p),
+        Err(_) => readout::WAITING.to_string(),
+    }
+}
+
+pub fn install(app: &AppHandle, state: &Arc<AppState>) -> tauri::Result<()> {
+    let today = MenuItem::with_id(app, "today", readout::WAITING, false, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open Atlas", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&today, &PredefinedMenuItem::separator(app)?, &open, &quit])?;
+
+    let builder = TrayIconBuilder::with_id(TRAY_ID)
+        .tooltip(readout::WAITING)
+        .menu(&menu)
+        // A left click opens Atlas; the menu is the right click.
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, ev| match ev.id().as_ref() {
+            "open" => focus_main(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, ev| {
+            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = ev {
+                focus_main(tray.app_handle());
+            }
+        });
+    // macOS draws the menu-bar icon from the shape alone (a template image).
+    #[cfg(target_os = "macos")]
+    let builder = builder.icon(Image::from_bytes(include_bytes!("../icons/tray-template.png"))?).icon_as_template(true);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.icon(Image::from_bytes(include_bytes!("../icons/tray.png"))?);
+    let icon = builder.build(app)?;
+    app.manage(Tray);
+
+    let (tx, rx) = channel::<()>();
+    let tx = Mutex::new(tx);
+    state.usage.signals.subscribe(move |sig| {
+        if matches!(sig, Signal::Changed | Signal::Idle | Signal::Restarted) {
+            let _ = tx.lock().unwrap_or_else(|p| p.into_inner()).send(());
+        }
+    });
+
+    let st = Arc::clone(state);
+    std::thread::Builder::new()
+        .name("tray-readout".into())
+        .spawn(move || {
+            let mut shown = String::new();
+            loop {
+                let text = line_for(&st);
+                if text != shown {
+                    let _ = icon.set_tooltip(Some(text.as_str()));
+                    let _ = today.set_text(&text);
+                    shown = text;
+                }
+                match rx.recv_timeout(FALLBACK) {
+                    Ok(()) => {
+                        let burst = Instant::now();
+                        while burst.elapsed() < MAX_BURST && rx.recv_timeout(DEBOUNCE).is_ok() {}
+                    }
+                    Err(RecvTimeoutError::Timeout) => {}
+                    Err(RecvTimeoutError::Disconnected) => break,
+                }
+            }
+        })
+        .map(|_| ())
+        .map_err(tauri::Error::Io)
+}
+
+/// Remove the icon at exit so Windows does not leave a ghost in the notification area.
+pub fn remove(app: &AppHandle) {
+    let _ = app.remove_tray_by_id(TRAY_ID);
+}
