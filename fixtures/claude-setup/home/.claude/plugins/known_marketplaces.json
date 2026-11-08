@@ -1,0 +1,8 @@
+{
+  "fixture-market": {
+    "source": {
+      "source": "github",
+      "repo": "fixture/market"
+    }
+  }
+}

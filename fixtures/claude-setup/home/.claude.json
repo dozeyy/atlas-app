@@ -1,0 +1,88 @@
+{
+  "numStartups": 5,
+  "mcpServers": {
+    "user-srv": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "user-srv.js",
+        "--token=FIXTURE-PLACEHOLDER"
+      ],
+      "env": {
+        "SECRET_TOKEN": "FIXTURE-PLACEHOLDER"
+      }
+    },
+    "shared-srv": {
+      "command": "node",
+      "args": [
+        "user-shared.js"
+      ]
+    },
+    "http-srv": {
+      "type": "http",
+      "url": "https://example.test/mcp",
+      "headers": {
+        "Authorization": "Bearer FIXTURE-PLACEHOLDER"
+      }
+    }
+  },
+  "githubRepoPaths": {
+    "fixture/github-only": [
+      "@ROOT@/work/github-only"
+    ]
+  },
+  "projects": {
+    "@ROOT@/home": {
+      "mcpServers": {}
+    },
+    "@ROOT@/work/app": {
+      "mcpServers": {
+        "shared-srv": {
+          "command": "node",
+          "args": [
+            "local-shared.js"
+          ]
+        },
+        "local-only": {
+          "type": "http",
+          "url": "https://example.test/local",
+          "headers": {
+            "X-Api-Key": "FIXTURE-PLACEHOLDER"
+          }
+        }
+      },
+      "disabledMcpServers": [
+        "user-srv"
+      ],
+      "enabledMcpjsonServers": [
+        "proj-srv"
+      ],
+      "disabledMcpjsonServers": [
+        "rejected-srv"
+      ]
+    },
+    "@ROOT@\\WORK\\app": {
+      "mcpServers": {
+        "twin-only": {
+          "command": "node",
+          "args": [
+            "twin.js"
+          ]
+        }
+      }
+    },
+    "@ROOT@/work/empty-proj": {},
+    "@ROOT@/work/gone": {
+      "mcpServers": {
+        "gone-srv": {
+          "command": "node",
+          "args": [
+            "gone.js"
+          ]
+        }
+      }
+    },
+    "@ROOT@/work/dotclaude-only": {},
+    "@ROOT@/work/app/.claude/worktrees/agent-x": {}
+  }
+}

@@ -1,0 +1,1 @@
+[fixture] A project rule.
