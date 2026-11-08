@@ -59,12 +59,12 @@ Reliability beats feature count.
 > References with reasons: Apple macOS apps (native chrome, hierarchy by type), Things 3
 > (check-fill moment, one accent), Linear (fast tooltips, sliding controls), Raycast (icon
 > blobs, instant feedback), GitHub contribution graph + Apple Fitness rings + Duolingo
-> streaks (data as progress), USGS topo maps (terrain, trails, summit markers).
+> streaks (data as progress), USGS topo maps (terrain, summit markers).
 - Category: Desktop tools / utilities, warmer and more playful than Will's own tools
   (a gift, not an instrument panel): keyboard-first, instant, layered surfaces over
   shadows, exact state restore.
 - Personality: warm, playful, exact, crafted, quietly proud of you. Not a spreadsheet:
-  usage is a landscape, streaks are a dotted trail, the clay spark flags every peak,
+  usage is a landscape, streak days are ringed in clay, the clay spark flags every peak,
   record and finish line.
 - Palette (proposal; tokens in one source, `src/styles/tokens.css`):
   - Light: bg `#FAF8F5` warm off-white · surface `#FFFFFF` · raised `#F3F0EB` ·
@@ -85,7 +85,8 @@ Reliability beats feature count.
     `--heat-0..5` clay elevation bands; resting bars `--bar-rest`. Hand-written SVG
     components, no chart library (Recharts dropped).
 - Typography: body stays the system stack (SF Pro / Segoe UI Variable); display and
-  numbers in **Recursive Variable, Casual axis on** (`CASL 1`, weights 740-820, OFL,
+  numbers in **Recursive Variable, a little Casual** (`CASL 0.4`, weights 700-760; Will
+  found `CASL 1` too playful, 2026-11-08; OFL,
   bundled via `@fontsource-variable/recursive`, no CDN; digits are tabular). Ramp:
   hero 56 · title 32 · stat 28 · tile 24 · figure 20 · small 15 in Recursive; lead 15 ·
   body 14 · caption 12 in system. Code stays SF Mono / Cascadia. Never Recursive for
@@ -98,11 +99,13 @@ Reliability beats feature count.
   (setup checklist complete, streak milestones, new busiest day), no confetti or sound.
   Calm zones: Settings, detail sheet, code viewer, History, Pending Changes, errors,
   anything destructive. "Reduce motion" swaps everything for fades.
-- Signature effects: (1) the summit spark: the clay mark planted on chart peaks, the
-  streak head and completed checklists; (2) terrain charts: heat grid in clay elevation
-  bands with a dotted streak trail, ridge sparkline; (3) faint topographic contour lines
+- Signature effects: (1) the summit spark: the clay mark planted on chart peaks and
+  completed checklists; (2) terrain charts: heat grid in clay elevation
+  bands, streak days ringed in clay, today always the bottom-right cell labelled "Today"
+  (no trail), ridge sparkline; (3) faint topographic contour lines
   behind empty states, onboarding and Wrapped; plus count-up hero numbers and the native
-  vibrancy / Mica sidebar. No "Live" tags anywhere (show "Updated just now").
+  vibrancy / Mica sidebar. No "Live" tags anywhere; Setup has no header chips (Will's Setup layout: checklist first,
+  equal type tiles, cards with an X delete + inline confirm).
 - Icon: **DECIDED by Will (2026-11-08)**. Cream tile `#F7EBDC`, mark `#DC784D`.
   Sources and rebuild script in `assets/brand/` (`atlas-icon-1024.png` macOS tile,
   `atlas-icon-fullbleed-1024.png` Windows/full bleed, `atlas-mark-1024.png` mark only

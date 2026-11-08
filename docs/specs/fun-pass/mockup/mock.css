@@ -26,6 +26,8 @@
   --accent-tint: rgb(201 100 66 / 0.12);
   --success: #36704e;
   --success-tint: rgb(54 112 78 / 0.12);
+  --danger: #b80f4a;
+  --danger-tint: rgb(184 15 74 / 0.1);
   --slate: #5b7083;
   --sidebar-solid: #f1ede7;
   --shadow-pop: 0 8px 24px rgb(31 29 26 / 0.12), 0 1px 3px rgb(31 29 26 / 0.1);
@@ -35,7 +37,7 @@
 
   /* ---- PROPOSED additions (light) ---- */
   --font-display: "Recursive Variable", var(--font-ui);
-  --display-axes: "CASL" 1;
+  --display-axes: "CASL" 0.4;
   --heat-0: #f0ebe4; /* no activity: one step under raised */
   --heat-1: #f2d9c6;
   --heat-2: #e9b394;
@@ -88,6 +90,8 @@ html[data-theme="dark"] {
   --accent-tint: rgb(224 122 85 / 0.16);
   --success: #6fbf8e;
   --success-tint: rgb(111 191 142 / 0.14);
+  --danger: #ff6b8b;
+  --danger-tint: rgb(255 107 139 / 0.14);
   --slate: #8fa3b5;
   --sidebar-solid: #211f1c;
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
@@ -134,11 +138,11 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
   font-variation-settings: var(--display-axes);
   letter-spacing: -0.01em;
 }
-.d-hero { font-size: 56px; line-height: 56px; font-weight: 820; letter-spacing: -0.02em; }
-.d-title { font-size: 32px; line-height: 38px; font-weight: 780; }
-.d-stat { font-size: 28px; line-height: 32px; font-weight: 800; }
-.d-figure { font-size: 20px; line-height: 24px; font-weight: 760; }
-.d-small { font-size: 15px; line-height: 20px; font-weight: 740; }
+.d-hero { font-size: 56px; line-height: 56px; font-weight: 760; letter-spacing: -0.02em; }
+.d-title { font-size: 32px; line-height: 38px; font-weight: 720; }
+.d-stat { font-size: 28px; line-height: 32px; font-weight: 760; }
+.d-figure { font-size: 20px; line-height: 24px; font-weight: 720; }
+.d-small { font-size: 15px; line-height: 20px; font-weight: 700; }
 
 .caption { font-size: 12px; line-height: 16px; color: var(--ink-2); }
 .muted { color: var(--ink-2); }
@@ -277,19 +281,22 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
   background: var(--tip-bg); border-radius: 2px; rotate: 45deg;
 }
 .tip .t1 { font-size: 12px; line-height: 16px; opacity: 0.72; }
-.tip .t2 { font-family: var(--font-display); font-variation-settings: var(--display-axes); font-weight: 760; font-size: 17px; line-height: 22px; }
+.tip .t2 { font-family: var(--font-display); font-variation-settings: var(--display-axes); font-weight: 720; font-size: 17px; line-height: 22px; }
 .tip .t3 { font-size: 12px; line-height: 16px; opacity: 0.72; }
 
 /* ---- Charts --------------------------------------------------------------- */
 svg.chart { display: block; overflow: visible; }
 .bar { fill: var(--bar-rest); transform-box: fill-box; transform-origin: 50% 100%;
-  transition: fill var(--dur-fast) var(--ease-out), translate var(--dur-hover) var(--ease-spring); }
+  transition: fill var(--dur-fast) var(--ease-out), scale var(--dur-hover) var(--ease-spring); }
 .bar.today { fill: var(--accent); }
 .bar.zero { fill: var(--heat-0); }
 .bar-hit { fill: transparent; cursor: pointer; }
-.bar-g:hover .bar, .bar-g.hover .bar { fill: var(--accent-text); translate: 0 -4px; }
-.bar-shadow { fill: var(--ink); opacity: 0; transition: opacity var(--dur-hover) var(--ease-out); }
-.bar-g:hover .bar-shadow, .bar-g.hover .bar-shadow { opacity: 0.1; }
+/* Hover: the whole bar fills and its top rises 4px; the bottom never leaves the baseline
+   (scale from the bottom edge, --hs = (h + 4) / h set per bar). */
+.bar-g:hover .bar, .bar-g.hover .bar { fill: var(--accent-text); scale: 1 var(--hs, 1); }
+/* The peak spark steps aside while a bar tooltip is open, so nothing pokes out above it. */
+.summit { transition: opacity var(--dur-fast) var(--ease-out); }
+:has(> .tip.show) > svg .summit { opacity: 0; }
 .grid-line { stroke: var(--line); stroke-dasharray: 2 4; }
 .axis-label { font-size: 11px; fill: var(--ink-2); }
 .base-line { stroke: var(--line-strong); }
@@ -306,8 +313,9 @@ svg.chart { display: block; overflow: visible; }
 .cell { transform-box: fill-box; transform-origin: center; cursor: pointer;
   transition: scale var(--dur-hover) var(--ease-spring); }
 .cell:hover, .cell.hover { scale: 1.35; }
-.cell.today { stroke: var(--ink); stroke-width: 1.5; }
-.trail { fill: none; stroke: var(--ink); stroke-opacity: .7; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 0 7; }
+.streak-ring { fill: none; stroke: var(--accent); stroke-width: 1.5; pointer-events: none; }
+.streak-ring.today { stroke: var(--accent-text); stroke-width: 2; }
+.today-label { font-size: 11px; font-weight: 600; fill: var(--accent-text); }
 
 .stack { display: flex; gap: 3px; height: 14px; align-items: center; }
 .seg-bar {
@@ -327,19 +335,19 @@ svg.chart { display: block; overflow: visible; }
 .spark-line { fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---- First paint: empty to full (once per launch; ?still=1 skips) ---------- */
-html.intro .bar { animation: grow 560ms var(--ease-spring) both; animation-delay: calc(var(--i) * 14ms); }
+html.intro .bar { animation: grow 560ms var(--ease-spring) backwards; animation-delay: calc(var(--i) * 14ms); }
 @keyframes grow { from { scale: 1 0; } to { scale: 1 1; } }
 html.intro .ridge-stroke { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw var(--dur-draw) var(--ease-out) forwards; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
-html.intro .ridge-area, html.intro .summit { animation: fadein 300ms var(--ease-out) both; animation-delay: 650ms; }
-html.intro .summit { animation: summit 460ms var(--ease-spring) both; animation-delay: 760ms; }
+html.intro .ridge-area, html.intro .summit { animation: fadein 300ms var(--ease-out) backwards; animation-delay: 650ms; }
+html.intro .summit { animation: summit 460ms var(--ease-spring) backwards; animation-delay: 760ms; }
 @keyframes summit { from { opacity: 0; translate: 0 8px; scale: .6; } to { opacity: 1; translate: 0 0; scale: 1; } }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 html.intro .ring-arc { animation: ring 900ms var(--ease-expo) both; animation-delay: 120ms; }
 @keyframes ring { from { stroke-dashoffset: var(--circ); } }
-html.intro .cell { animation: cellin 300ms var(--ease-spring) both; animation-delay: calc(var(--c) * 18ms + 200ms); }
+html.intro .cell { animation: cellin 300ms var(--ease-spring) backwards; animation-delay: calc(var(--c) * 18ms + 200ms); }
 @keyframes cellin { from { opacity: 0; scale: .4; } to { opacity: 1; scale: 1; } }
-html.intro .trail { animation: fadein 400ms var(--ease-out) both; animation-delay: 700ms; }
+html.intro .streak-ring, html.intro .today-label { animation: fadein 400ms var(--ease-out) backwards; animation-delay: 700ms; }
 html.intro .seg-bar { animation: segin 520ms var(--ease-expo) both; animation-delay: calc(var(--i) * 80ms + 200ms); transform-origin: left; }
 @keyframes segin { from { scale: 0 1; } }
 html.intro .rise { animation: rise 260ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * var(--stagger)); }

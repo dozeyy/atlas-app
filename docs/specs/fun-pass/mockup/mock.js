@@ -119,9 +119,9 @@ function bars(el, data, w, h, opts = {}) {
     const x = left + i * step + (step - bw) / 2;
     const zero = d.v === 0;
     const yt = zero ? base - 3 : y(d.v);
+    const hh = Math.max(base - yt, 2);
     g += `<g class="bar-g" data-i="${i}" data-pin="bar-${i}">
-      <ellipse class="bar-shadow" cx="${x + bw / 2}" cy="${base + 1}" rx="${bw / 2 + 1}" ry="2"/>
-      <path class="bar ${zero ? "zero" : ""} ${i === n - 1 ? "today" : ""}" style="--i:${i}" d="${path(x, yt)}"/>
+      <path class="bar ${zero ? "zero" : ""} ${i === n - 1 ? "today" : ""}" style="--i:${i};--hs:${((hh + 4) / hh).toFixed(4)}" d="${path(x, yt)}"/>
       <rect class="bar-hit" x="${left + i * step}" y="${top - 10}" width="${step}" height="${base - top + 10}"/>
     </g>`;
   });
@@ -165,27 +165,30 @@ function ring(el, frac, size, stroke, inner) {
     <div style="position:absolute;inset:0;display:grid;place-items:center;text-align:center">${inner}</div></div>`;
 }
 
-/* Heat grid: weeks as columns (Mon first), elevation bands, dotted streak trail. */
-function heat(el, days, streak, cell = 14, gap = 4) {
-  const weeks = Math.ceil(days.length / 7), w = weeks * (cell + gap), h = 7 * (cell + gap);
+/* Heat grid: rolling weeks ending today. Each column is 7 consecutive days, oldest top-left,
+   today always the bottom-right cell with a "Today" label beside it. Streak days get a clay
+   ring around the cell; no connecting line. Streak length is counted from the data. */
+function heat(el, days, cell = 13, gap = 4) {
+  const n = days.length, pad = (7 - (n % 7)) % 7, weeks = (n + pad) / 7, step = cell + gap;
+  const labelW = 34, w = weeks * step - gap + 6 + labelW, h = 7 * step - gap;
   const vals = days.filter((d) => d.v > 0).map((d) => d.v).sort((a, b) => a - b);
   const q = (p) => vals[Math.floor(p * (vals.length - 1))];
   const cuts = [q(0.2), q(0.45), q(0.7), q(0.9)];
   const band = (v) => (v === 0 ? 0 : 1 + cuts.filter((c) => v > c).length);
-  const pos = (i) => [Math.floor(i / 7) * (cell + gap), (i % 7) * (cell + gap)];
-  let cells = "";
+  const pos = (i) => [Math.floor((i + pad) / 7) * step, ((i + pad) % 7) * step];
+  let streak = 0;
+  for (let i = n - 1; i >= 0 && days[i].v > 0; i--) streak++;
+  let cells = "", rings = "";
   days.forEach((d, i) => {
-    const [x, y] = pos(i);
-    cells += `<rect class="cell ${i === days.length - 1 ? "today" : ""}" data-pin="cell-${i}" style="--c:${Math.floor(i / 7)}" x="${x}" y="${y}" width="${cell}" height="${cell}" rx="4" fill="var(--heat-${band(d.v)})"><title>${d.label}: ${fmt(d.v)} tokens</title></rect>`;
+    const [x, y] = pos(i), today = i === n - 1;
+    cells += `<rect class="cell" data-pin="cell-${i}" style="--c:${Math.floor((i + pad) / 7)}" x="${x}" y="${y}" width="${cell}" height="${cell}" rx="3.5" fill="var(--heat-${band(d.v)})"><title>${today ? "Today, " : ""}${d.label}: ${fmt(d.v)} tokens</title></rect>`;
+    if (i >= n - streak) rings += `<rect class="streak-ring ${today ? "today" : ""}" x="${x - 1}" y="${y - 1}" width="${cell + 2}" height="${cell + 2}" rx="4.5"/>`;
   });
-  const tp = [];
-  for (let i = days.length - streak; i < days.length; i++) { const [x, y] = pos(i); tp.push(`${x + cell / 2},${y + cell / 2}`); }
-  const [lx, ly] = pos(days.length - 1);
+  const [lx, ly] = pos(n - 1);
   el.innerHTML = `<svg class="chart" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-    ${cells}<polyline class="trail" points="${tp.join(" ")}"/>
-    <g class="summit"><foreignObject x="${lx + cell + 2}" y="${ly - 2}" width="18" height="18"><span class="spark"></span></foreignObject></g>
+    ${cells}${rings}<text class="today-label" x="${lx + cell + 6}" y="${ly + cell / 2 + 4}">Today</text>
   </svg>`;
-  return { band };
+  return { band, streak };
 }
 
 function pinHovers() {

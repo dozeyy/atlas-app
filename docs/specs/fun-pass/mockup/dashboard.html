@@ -8,8 +8,8 @@
 <script src="icons.js"></script>
 <script src="mock.js"></script>
 <style>
-  .grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
-  .grid11 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; }
+  .grid11 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
   .head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; }
   .hero { display: flex; justify-content: space-between; align-items: stretch; gap: 16px; padding: 20px 20px 16px 24px; }
   .hero-num { display: flex; align-items: baseline; gap: 10px; margin: 14px 0 6px; }
@@ -38,7 +38,7 @@ const weekLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const start = new Date(2026, 9, 10);
 const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-const off = new Set([1, 2, 8, 9, 16, 22]);
+const off = new Set([1, 2, 8, 9, 16, 20]); // last day off is Oct 30, so the streak is 9
 const days30 = [];
 for (let i = 0; i < 30; i++) {
   const dt = new Date(start); dt.setDate(start.getDate() + i);
@@ -129,10 +129,10 @@ document.getElementById("app").innerHTML = sidebar("dashboard") + `
   </div>
 </div></main>`;
 
-ridge(document.getElementById("ridge"), week, ["M", "T", "W", "T", "F", "S", "S"], 236, 128);
+ridge(document.getElementById("ridge"), week, ["M", "T", "W", "T", "F", "S", "S"], 196, 128);
 ring(document.getElementById("ring"), 0.64, 104, 11, `<div><div class="d d-figure">182k</div><div class="caption">tokens</div></div>`);
 const B = bars(document.getElementById("bars"), days30, 547, 192, { ticks: [[0, "Oct 10"], [7, "Oct 17"], [14, "Oct 24"], [21, "Oct 31"], [29, "Today"]] });
-heat(document.getElementById("heat"), days84, 9, 15, 4);
+const hg = heat(document.getElementById("heat"), days84, 13, 4);
 const projects = [["recipe-box", 412300, [3, 5, 4, 9, 6, 2, 7]], ["garden-planner", 318900, [6, 4, 7, 5, 8, 6, 3]], ["photo-sorter", 241050, [1, 2, 6, 7, 3, 1, 4]], ["boat-log", 162400, [4, 3, 2, 5, 4, 0, 2]]];
 document.getElementById("projects").innerHTML = projects.map(([n, v, s], i) => {
   const max = Math.max(...s), pts = s.map((y, j) => [2 + j * 10, 18 - (y / max) * 15]);

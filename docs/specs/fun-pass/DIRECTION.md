@@ -2,31 +2,34 @@
 
 **What it is:** the decided visual direction that takes Atlas from tidy-and-calm to warm and
 playful, without losing the tool. One direction, no options (Will: "you decide").
-**Status:** decided 2026-11-08. Builder applies it after `phase2-usage` and `setup-write` merge.
+**Status:** decided 2026-11-08; revised the same day after Will's review (display type toned
+down, hovered-bar gap fixed, streak trail replaced by ringed cells, Setup on his new layout,
+a section per screen). Builder applies it after `phase2-usage` and `setup-write` merge.
 **Mockup:** `mockup/dashboard.html`, `mockup/setup.html` (open through any local server, e.g.
 `python -m http.server` in `mockup/`; `?theme=dark`, `?still=1` skips first-paint motion,
-`?pin=bar-24,tile-3,btn-new` forces hover states). Screenshots, 1280x800:
+`?pin=bar-24,tile-3,btn-new` forces hover states, `?pin=confirm-1` shows a delete confirm,
+Setup `?done=0..4` sets the checklist). Screenshots, 1280x800:
 `dashboard-light.png`, `dashboard-light-hover.png`, `dashboard-dark-hover.png`,
-`setup-light-hover.png`, `setup-dark.png`.
+`setup-light-hover.png`, `setup-dark.png`; `font-tone.png` compares the display tones.
 
 ## The idea in one line
 
-Your Claude use is a landscape you have walked: busy days are terrain, streaks are a dotted
-trail, and the clay spark is the flag planted on every peak, record and finish line.
+Your Claude use is a landscape you have walked: busy days are terrain, streak days are
+ringed in clay, and the clay spark is the flag planted on every peak, record and finish line.
 
 - **Kept:** palette, the spark logo, the launch intro, Phosphor icons, system body type,
   the topo-contour thread, every safety and performance rule.
 - **Changed:** a bundled display face for numbers and titles, a real chart language
-  (terrain, trail, flag), rounder shapes, springy hover/press, icon micro-motions, friendly
+  (terrain, ringed streak, flag), rounder shapes, springy hover/press, icon micro-motions, friendly
   copy, three rationed celebrations.
-- **Removed:** the "Live" chip on Setup (banned in every app); replace with a quiet
-  `Updated just now` caption.
+- **Removed:** the "Live" chip (banned in every app), and on Setup the "Read only" chip, the
+  "Updated" caption and the "Where it all lives" summary card (Will's Setup layout).
 
 ## References (what to take, and why)
 
 | Reference | Take this | Why it fits Atlas |
 |---|---|---|
-| GitHub contribution graph | The heat-grid grammar: weeks as columns, 5 quantile bands, today outlined, tooltip per cell | Everyone reads it instantly; we swap green for clay elevation bands |
+| GitHub contribution graph | The heat-grid grammar: 7-day columns, 5 quantile bands, today in a fixed corner, tooltip per cell | Everyone reads it instantly; we swap green for clay elevation bands |
 | Apple Fitness rings | Ring vs a personal baseline ("of a usual day"), round caps, a second lap past 100 % | Dad is an Apple fan; a ring says "how am I doing" with no axis to read |
 | Duolingo | Streak as the friendly hook; celebrate only milestones; chunky friendly numerals | Fun from progress, not decoration. We take the restraint, not the mascot |
 | Spotify Wrapped | One huge number with one plain sentence under it | The hero card and the page greeting work the same way |
@@ -37,7 +40,7 @@ trail, and the clay spark is the flag planted on every peak, record and finish l
 | Stripe dashboard | Sparkline per row, "+18 % vs last week" deltas, exact tooltip numbers | Data stays exact while looking friendly |
 | Cron / Notion Calendar | Time-of-day greeting, today emphasis | "Good evening." as the page title |
 | Headspace | Rounded warmth, playful empty states | The topo-blob empty states and softer radii |
-| USGS topographic maps | Elevation bands, dotted trails, summit markers | The "atlas" thread made into the chart language |
+| USGS topographic maps | Elevation bands, summit markers | The "atlas" thread made into the chart language |
 
 ## Anti-references (must NOT look like)
 
@@ -56,7 +59,7 @@ blocks; `tokens.test.ts` checks the two dark copies match).
 ```css
 /* :root (light) */
 --font-display: "Recursive Variable", var(--font-ui);
---display-axes: "CASL" 1;           /* Recursive Casual; weight comes from font-weight */
+--display-axes: "CASL" 0.4;         /* Recursive, a little Casual; weight comes from font-weight */
 --heat-0: #f0ebe4;  --heat-1: #f2d9c6;  --heat-2: #e9b394;
 --heat-3: #dc8a63;  --heat-4: #c96442;  --heat-5: #9c4524;
 --chart-1: #c96442; /* accent */   --chart-2: #5b7083; /* slate */
@@ -108,32 +111,37 @@ tooltip per cell and the existing Table view, so color is never the only carrier
 - Why not change the body: SF Pro on the Mac is what an Apple fan expects, it costs nothing at
   first paint, and Segoe UI Variable is fine on Windows. The spreadsheet feel came from
   uniform cards, thin bars and grey labels, not from the body face.
-- Why Recursive: OFL, variable, made by Arrow Type. Its Casual axis (`CASL 1`) reads like a
-  cartographer's hand lettering, which is the atlas thread in type. Its digits are tabular by
+- Why Recursive: OFL, variable, made by Arrow Type. Its Casual axis warms the letterforms
+  like a cartographer's hand lettering, which is the atlas thread in type.
+- **Tone (Will, 2026-11-08: "a little too playful, tone it down"):** `CASL 0.4`, not 1, and
+  weights eased by about 40 (hero 760, title 720). Compared side by side in
+  `mockup/font-tone.png` (CASL 1 / 0.5 / 0.4 / 0.3 / 0 at hero and title size): 0.4 keeps
+  the soft terminals and the friendly `a`, `g` and `y` while reading as a confident sans;
+  0 loses the warmth (plain Linear). Its digits are tabular by
   default (measured: every digit is the same 0.6 em advance), so count-ups never jitter.
   Not used by any sibling app (checked: Inter, Onest, Outfit, Space Grotesk, Instrument,
   Source Sans and Geist are taken elsewhere).
 - Install: `npm i @fontsource-variable/recursive` and `import "@fontsource-variable/recursive/casl.css";`
   in `main.tsx` (wght 300-1000 + CASL axes; latin file is 108 KB; Vite bundles it, no CDN).
-  In `main.tsx`, `await Promise.race([document.fonts.load('800 1em "Recursive Variable"'), sleep(150)])`
+  In `main.tsx`, `await Promise.race([document.fonts.load('760 1em "Recursive Variable"'), sleep(150)])`
   before handing off from the launch splash, so the first frame never swaps fonts.
 
 | Role | Face | Size / line | Weight | Extra | Use |
 |---|---|---|---|---|---|
-| hero | Recursive CASL 1 | 56 / 56 | 820 | -0.02 em | The one hero number per page |
-| title | Recursive CASL 1 | 32 / 38 | 780 | -0.01 em | Page greeting / page title |
-| stat | Recursive CASL 1 | 28 / 32 | 800 | -0.01 em | Card stats (streak days, totals) |
-| tile | Recursive CASL 1 | 24 / 26 | 800 | | Setup tile counts |
-| figure | Recursive CASL 1 | 20 / 24 | 760 | | Ring centers, section headings ("Skills") |
-| small | Recursive CASL 1 | 15 / 20 | 740 | | Inline figures (412k, 62 %), "All set." |
-| tooltip value | Recursive CASL 1 | 17 / 22 | 760 | | Tooltip line 2 |
+| hero | Recursive CASL 0.4 | 56 / 56 | 760 | -0.02 em | The one hero number per page |
+| title | Recursive CASL 0.4 | 32 / 38 | 720 | -0.01 em | Page greeting / page title |
+| stat | Recursive CASL 0.4 | 28 / 32 | 760 | -0.01 em | Card stats (streak days, totals) |
+| tile | Recursive CASL 0.4 | 24 / 26 | 760 | | Setup tile counts |
+| figure | Recursive CASL 0.4 | 20 / 24 | 720 | | Ring centers, section headings ("Skills") |
+| small | Recursive CASL 0.4 | 15 / 20 | 700 | | Inline figures (412k, 62 %) |
+| tooltip value | Recursive CASL 0.4 | 17 / 22 | 720 | | Tooltip line 2 |
 | lead | system | 15 / 22 | 400 | | Page sub line |
 | body | system | 14 / 20 | 400 / 500 / 600 | | Everything else |
 | caption | system | 12 / 16 | 400 / 600 | | Labels, axis, legend |
 | code | SF Mono / Cascadia | 12 | 400 | | Paths, code viewer (unchanged) |
 
 Never Recursive for body copy, buttons, nav, inputs, tables or code. Display weights stay in
-740-820; nothing else.
+700-760 and CASL stays 0.4 everywhere; nothing else.
 
 ## Hero numbers
 
@@ -160,7 +168,9 @@ per datum; keyboard: the chart group is focusable, Left/Right moves the active d
 its tooltip; each chart has an `aria-label` summary and the existing Table toggle stays.
 
 **First paint (all charts):** animate once per chart per app launch (a module-level `Set`
-of seen chart ids); later visits render complete. `html.reduced` or OS reduced motion: no
+of seen chart ids); later visits render complete. Entry keyframes use
+`animation-fill-mode: backwards`, never `both`: a filled `scale` or `opacity` keeps
+overriding the element afterwards and silently kills its hover transition. `html.reduced` or OS reduced motion: no
 draw, no grow, values appear with a 120 ms fade.
 
 ### Activity bars (30 days / 7 days)
@@ -169,10 +179,16 @@ draw, no grow, values appear with a 120 ms fade.
   looks broken).
 - Y: no axis line; two dashed gridlines (`--line`, dash 2 4) at 50 % and 100 % of a nice max,
   labels right-aligned 11 px `ink-2` ("250k", "500k"). X: 4-5 ticks, last one "Today".
-- Hover/focus: fill `--accent-text`, `translate: 0 -4px` with `--dur-hover` `--ease-spring`, a
-  2 px ellipse shadow under the bar at 10 % ink, tooltip.
+- Hover/focus: the **whole** bar fills `--accent-text` and its top rises 4 px while its
+  bottom stays on the baseline: `scale: 1 var(--hs)` with `transform-origin` at the bottom
+  edge (`transform-box: fill-box`), `--hs = (h + 4) / h` per bar, `--dur-hover`
+  `--ease-spring`. No gap at the baseline, no shadow under it, then the tooltip.
+  (Bug fixed 2026-11-08: the first mockup lifted the bar with `translate: 0 -4px`, which
+  moved its bottom too and left a 4 px empty strip above the axis, and a 10 % ellipse
+  "shadow" sat in that strip; Will saw the bottom of the hovered bar as empty.)
 - Busiest bar in the range: the spark (18 px) floats 12 px above it; its tooltip line 1 adds
-  "busiest day".
+  "busiest day". The spark fades out while any bar's tooltip is open, so it never pokes
+  out above the tooltip.
 - First paint: each bar `scale: 1 0 -> 1 1` from the bottom, 560 ms `--ease-spring`,
   stagger 14 ms per bar.
 
@@ -199,20 +215,28 @@ draw, no grow, values appear with a 120 ms fade.
 - First paint: arc from empty, 900 ms `--ease-expo`, 120 ms delay.
 
 ### Activity heat grid ("On a roll", 12 weeks)
-- Weeks as columns, Monday first (Sunday first when the OS locale says so); cell 15 px,
-  gap 4, radius 4.
+- **Today is always the bottom-right cell.** Columns are rolling weeks: each column is 7
+  consecutive days, top to bottom, the last column ends today, so the oldest day is
+  top-left. (Rows are not weekdays; the tooltip carries the date.) With a range that is not
+  a multiple of 7, the empty slots are at the top-left, never at the end.
+- Cell 13 px, gap 4, radius 3.5. A small "Today" label (11 px, 600, `accent-text`) sits
+  6 px right of the bottom-right cell, vertically centred on it.
 - Color: `--heat-0` for no activity, else `--heat-1..5` by quantile of active days in view
-  (cuts at 20 / 45 / 70 / 90 %). Today: 1.5 px `--ink` outline.
-- The streak trail: a polyline through the centers of the streak days, `--ink` at 70 %,
-  3 px, `stroke-dasharray: 0 7` with round caps (it renders as dots, a hiking route).
-  The spark (18 px) sits just right of today's cell.
+  (cuts at 20 / 45 / 70 / 90 %).
+- **Streak days get a clay ring** (Will: "just have the border of the square highlighted for
+  every day that you're on"): a rect 1 px outside the cell, radius 4.5, 1.5 px `--accent`
+  stroke, no fill; today's ring is 2 px `--accent-text`. Nothing connects the cells: no
+  trail, no line, no dots. The streak length is counted from the data (consecutive active
+  days ending today, or ending yesterday while today is still empty), so the ringed cells
+  always match the "N days in a row" stat.
 - Header: "On a roll", the stat ("9 days in a row"); the pill "Longest yet" only when the
   current streak is the longest on record. Footer: "Last 12 weeks" and a Less-More legend.
-- Hover/focus a cell: `scale: 1.35` with `--ease-spring`, tooltip (date, tokens, sessions).
+- Hover/focus a cell: `scale: 1.35` with `--ease-spring`, tooltip (date, tokens, sessions;
+  the last cell says "Today, Sun, Nov 8").
 - First paint: cells pop in by column (scale .4 -> 1, 300 ms spring, 18 ms per column), the
-  trail fades in at 700 ms.
-- No streak (today inactive and yesterday inactive): no trail, header becomes "Last 12
-  weeks", no pill.
+  rings and the Today label fade in at 700 ms.
+- No streak (today inactive and yesterday inactive): no rings, header becomes "Last 12
+  weeks", no pill. The Today label always shows.
 
 ### Model share (stacked bar)
 - 14 px tall, 3 px gaps, inner segment radius 4, outer ends pill. Colors `--chart-1..4` in
@@ -220,8 +244,7 @@ draw, no grow, values appear with a 120 ms fade.
 - Legend rows under it: 10 px rounded-square dot, name 600, tokens `ink-2`, percent in
   display `small`, right-aligned; row hover `raised`.
 - Hover a segment or its legend row: that segment grows to 22 px (`--ease-spring`), the others
-  drop to 35 % opacity, the legend row highlights. The same component draws Setup's
-  "Where it all lives" (Global / Projects / Plugins / claude.ai).
+  drop to 35 % opacity, the legend row highlights.
 - First paint: segments grow from the left, 520 ms `--ease-expo`, 80 ms apart.
 
 ### Tooltip (all charts)
@@ -247,8 +270,10 @@ All transforms and opacity only; press feedback starts on `pointerdown` in the s
 | Nav active | one shared `accent-tint` pill slides between items, 320 ms spring; icon switches to Phosphor `fill` in `accent-text`, label 600 | | | |
 | Clickable card | `surface`, 1 px `line`, radius 14 | `translateY(-2px)`, `--shadow-lift`, `line-strong`, 220 ms spring | `scale(.985)`, 90 ms | ring |
 | Static card | same rest, never lifts | none | none | n/a |
-| Setup type tile | icon blob 40 px radius 12 `accent-tint` / `accent-text`, count in display `tile` | clickable-card lift, blob fills `--accent` with `on-accent` icon, icon swaps to duotone + its motion | `scale(.985)` | ring |
-| Project chip | 30 px pill, `raised`, count in display 780 `accent-text` | `accent-tint`, `translateY(-1px)`, icon nudge | `scale(.96)` | ring |
+| Setup type tile | equal size (72 px tall, 5 per row), icon blob 40 px radius 12 `accent-tint` / `accent-text`, count in display `tile`, label caption | clickable-card lift, blob fills `--accent` with `on-accent` icon, icon swaps to duotone + its motion, a caret slides in from the right (4 px, spring) | `scale(.985)` | ring |
+| Setup tile, open | filled blob, 1 px `--accent` border, `accent-tint` wash at 60 %, caret stays in `accent-text`, `aria-pressed="true"` | | | |
+| Delete (X) button | 28 px, radius 8, Phosphor `X` 16 px in `ink-2`, top-right of the card | `danger-tint` background, `danger` icon, the X turns 90 deg (220 ms spring) | `scale(.92)` | ring |
+| Delete confirm | the card swaps in place: border `--danger`, `danger-tint` wash, "Delete <name>?" 600 + caption, Cancel (secondary) + Delete (`--danger` fill, `--bg` text) | Delete brightens 8 %, never lifts or wiggles | plain press scale | focus starts on Cancel |
 
 No 3D tilt and no cursor spotlight on working screens; tilt is allowed only in Wrapped.
 
@@ -305,8 +330,8 @@ it shows up here." Dashboard before the first index: the cards render with flat
 a spinner over the whole page).
 
 ### The spark and clay thread
-- The spark marks only meaning: the peak (ridge, bars), the streak head, completion, the
-  sidebar streak pill, empty states, Wrapped. Max one spark per card. Never a bullet,
+- The spark marks only meaning: the peak (ridge, bars), completion, the sidebar streak
+  pill, empty states, Wrapped. Max one spark per card. Never a bullet,
   divider or decoration.
 - Clay (`--accent`) is the only expressive color. Slate and sand appear only inside charts.
 
@@ -328,6 +353,89 @@ a spinner over the whole page).
   pulse while loading. Charts with > 200 marks (heat grid at a full year) skip the
   per-cell stagger and fade as one group.
 
+## Screens: how the style lands on each page
+
+Every screen gets the same type, cards, controls and motion; each has at most one loud zone
+and the rest stays calm (Guardrails below). One hero number and one display title per page.
+
+### Dashboard
+As `mockup/dashboard.html`: greeting title, hero card (number + ridge), Today ring,
+Activity bars, On a roll heat grid, Models stack, Projects with sparklines. The loud zone
+is the hero card; everything below it is charts with hover only.
+
+### Setup (Will's layout, 2026-11-08; `mockup/setup.html`)
+- Header: display title "Setup" + the count line; Open folder (secondary) and New skill
+  (primary) on the right. No path chip, no "Read only" chip, no "Updated" caption.
+- **Setup checklist first**, full width: the 72 px ring (fraction done, "3/4" in display
+  `figure`; the spark once complete), the card title + "3 of 4" pill, four steps in a row.
+  A done step is a `raised` box with a filled clay tick, its name 600 and one fact
+  ("24 skills found"). An open step has a dashed `line-strong` border, an empty tick ring
+  and a small secondary "Set up" button. Completing the last step plays celebration 1 once.
+- **Type tiles**, 10 equal tiles, 5 x 2, same size whatever the count. Clicking a tile opens
+  that type below it: the section title, search placeholder and scope filter follow the
+  open type (Skills by default). The open tile keeps its filled state (table above).
+- **Item cards**, 2 columns: icon blob, name 600, two-line description, and an X in the
+  corner instead of the old "On" chip. X never deletes on the first click: it swaps the card
+  into the inline confirm; Esc or Cancel puts it back. After Delete the card collapses
+  (height + opacity, 200 ms ease-out, no spring) and the tile count updates. The confirm
+  copy comes from the `setup-write` spec (the mockup's "Claude stops using it." is a
+  placeholder).
+- The Setup detail sheet and code viewer stay calm.
+
+### Sessions (with nested helpers; the built screens are in `docs/shots/phase2/`)
+The layout stays as built (list, session detail, helper cards, helper detail); the style
+goes on top. Subagents are "helpers" in the UI, as built.
+- **List:** display title "Sessions" + the existing sub line; filters as built (dropdowns
+  get the segmented-control hover and press). Rows stay a list, not cards: hover `raised`,
+  no lift. Cost and tokens right-aligned with cost in display `small`; model chips keep
+  their `--chart-1..4` dots in the Dashboard stack order. The "5 helpers" pill becomes
+  `accent-tint` / `accent-text` with the Robot icon (its motion is `tilt` on row hover).
+- **Session detail:** the cost is the page's one hero number (display `hero`, count-up on
+  the first view); the split bar ("You and Claude" vs helpers) is the Dashboard stacked
+  bar component (slate for you and Claude, clay for helpers) with its hover; "Spend as it
+  ran" is the ridge component (no summit spark unless the run has a clear peak). Stat
+  tiles (Tokens, Messages, Tool calls, Helpers) use display `stat`, static cards, no lift.
+- **Helper cards** (2 columns, as built): clickable cards with the lift; the share bar
+  ("6% of the session") is a 4 px rounded clay bar on a `--heat-0` track that grows from
+  the left on first paint (520 ms `--ease-expo`, 40 ms stagger, cap 12). A helper started
+  by another helper keeps the "Started by ..." line with the return-arrow icon, and the
+  Started order indents it 20 px under its starter, hung off a 1.5 px `--line-strong`
+  rail with a short elbow, so the nesting reads as a tree. The Started / Spend toggle is
+  the segmented control (sliding thumb).
+- **Through the session** bars are the Activity bars component, same hover (whole bar
+  fills, top rises 4 px, baseline fixed) and tooltip.
+- **Helper detail:** same hero treatment for its cost, "What it was asked" stays a calm
+  quote box, "Through its run" uses the bars. Back links get the `nudge` motion.
+- Transcript text and any code are calm zones: no springs, no count-ups.
+
+### History
+- Mostly calm. Header: display title "History" and one figure ("214 files kept").
+- Timeline by day: caption 600 day headers; each event hangs off the same 1.5 px rail used
+  for nested helpers, with an 8 px dot: `--accent` added or changed, `--chart-3` sand for
+  "dated" (before Atlas), `ink-2` removed or renamed. Row: kind icon (Plus,
+  ArrowsClockwise, X, ArrowRight), item name, the event summary, time. Row hover `raised`.
+- The diff viewer, restore and anything destructive are calm zones: code font, no motion,
+  the inline confirm pattern from Setup for restore or delete.
+
+### Wrapped
+- The one loud screen. Slides, each one huge number and one plain sentence (Spotify
+  Wrapped): display at 96 / 96, weight 760, the same CASL 0.4; the sentence in body 20.
+- Charts are the Dashboard components at slide size: busiest day = bars with the spark;
+  streak = the heat grid for the year, clay rings on the longest streak, the last day
+  bottom-right (labelled "Today" while the year is running, its date once it is over);
+  longest session = the ridge.
+- Slide change: slide + fade, 320 ms `--ease-spring`; Left / Right keys. Card tilt (max
+  4 deg) is allowed here and nowhere else. The cover and the closing slide carry the spark.
+- The honest coverage line (from the screens spec) sits under the cover in caption size;
+  never extrapolate. Reduced motion: crossfade only.
+
+### Settings
+- Entirely calm. Section rail with the same sliding pill as the sidebar; sections stay
+  cards of rows (label, hint, control). The "Atlas on this computer" hero card uses the app
+  icon and body type, no display number, no count-up.
+- Controls keep their normal hover and press. "Rebuild from scratch" uses the inline
+  confirm pattern from Setup's delete; destructive buttons never lift.
+
 ## Guardrails (what stays calm)
 
 - Settings, the Setup detail sheet and code viewer, History diffs, the Pending Changes queue,
@@ -347,8 +455,10 @@ a spinner over the whole page).
 3. `useCountUp`, `IconMotion`, `ChartTooltip`, the six chart components, `chartPaths.ts`.
 4. Dashboard: greeting header, hero (number + ridge), Today ring, Activity bars, On a roll
    heat grid, Models stack, Projects with sparklines. Matches `mockup/dashboard.html`.
-5. Setup: remove the Live chip, header + actions, Where it all lives (stack + project
-   chips), Getting set up checklist, tiles with icon motions. Matches `mockup/setup.html`.
-6. Sidebar: sliding pill, fill-weight active icon, icon motions, streak pill in the footer.
-7. Verify: screenshots light + dark at 1280x800 and at the 900x600 minimum, reduced motion
+5. Setup on Will's layout: header + actions (no chips), the setup checklist first, equal
+   type tiles that open each type, item cards with X + inline confirm. Matches
+   `mockup/setup.html`.
+6. Sessions, History, Wrapped and Settings per "Screens" above.
+7. Sidebar: sliding pill, fill-weight active icon, icon motions, streak pill in the footer.
+8. Verify: screenshots light + dark at 1280x800 and at the 900x600 minimum, reduced motion
    on, keyboard through every chart; `npm test` green.
