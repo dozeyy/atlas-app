@@ -2,7 +2,9 @@ import { KIND_BY_ID } from "../../lib/setup-model";
 import { approx, fmtCount, hasDollars, loadLine, topRows, windowLabel } from "../../lib/setup-cost";
 import type { CostReport, ItemKind, SetupItem } from "../../lib/setup-types";
 
-const TOP = 5;
+// Four rows keep this panel about as tall as the usage panel beside it, so the Toolkit page
+// fits a 1280x800 window without scrolling.
+const TOP = 4;
 
 /**
  * The biggest costs in the setup, most expensive first. Draws nothing until Atlas has an
