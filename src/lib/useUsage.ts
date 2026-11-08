@@ -33,6 +33,16 @@ function useEvent<T>(subscribe: (cb: (v: T) => void) => Promise<() => void>, cb:
   }, []);
 }
 
+/**
+ * True while the cache cannot answer yet because the engine is still starting or doing
+ * its first read. A failed question in that window is not an error to show: the numbers
+ * arrive on their own (the status and changed events reload the page).
+ */
+export function cacheNotReady(status: UsageStatus | null): boolean {
+  if (status === null) return true;
+  return status.state === "recovering" || (status.state === "indexing" && !status.firstIndexDone);
+}
+
 export function useUsageStatus(): { status: UsageStatus | null; progress: IndexProgress | null } {
   const backend = getBackend();
   const [status, setStatus] = useState<UsageStatus | null>(null);

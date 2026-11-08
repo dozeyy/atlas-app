@@ -49,8 +49,8 @@ export function Activity({ today }: { today: string }) {
           valueText: metric === "tokens" ? compact(tokens) : formatUsd(usd),
           detail:
             metric === "tokens"
-              ? `tokens, ${p.cost.usd === null ? "no price" : `${formatUsd(usd)} estimated`}, ${plural(p.sessions, "session")}`
-              : `estimated, ${compact(tokens)} tokens, ${plural(p.sessions, "session")}`,
+              ? `tokens, ${p.cost.usd === null ? "no price" : `${formatUsd(usd)} estimated`}, ${plural(p.sessions, "session")} started`
+              : `estimated, ${compact(tokens)} tokens, ${plural(p.sessions, "session")} started`,
         };
       }),
     [points, metric, span.bucket],
@@ -121,7 +121,7 @@ export function Activity({ today }: { today: string }) {
                 </th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Tokens</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Est. cost</th>
-                <th scope="col" className="px-3 py-2 text-right font-medium">Sessions</th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">Sessions started</th>
               </tr>
             </thead>
             <tbody className="tabular-nums">

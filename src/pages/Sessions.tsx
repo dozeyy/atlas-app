@@ -10,9 +10,9 @@ import { SessionDetailView } from "./SessionDetail";
 import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
 import { clearPendingSession, peekPendingSession } from "../lib/nav";
-import { useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
+import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
 import { addDays, localDay, modelLabel, plural } from "../lib/usage";
-import type { SessionQuery, SessionRow } from "../lib/types";
+import type { SessionPage, SessionQuery, SessionRow } from "../lib/types";
 
 const PAGE = 50;
 
@@ -77,28 +77,29 @@ export function Sessions() {
   const first = useFetched(() => backend.sessionsList(query), [JSON.stringify(query), info.config?.projectsDir ?? null]);
   useLiveReload(first.reload);
 
-  // Pages after the first are kept here; a new query or a refresh starts over.
-  const [more, setMore] = useState<SessionRow[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
+  // Pages after the first are kept here, tied to the first page they follow: a new query
+  // or a refresh produces a new first page, which drops them without an effect and so
+  // without a render where the count and the "Show more" button disagree.
+  const [tail, setTail] = useState<{ base: SessionPage | null; rows: SessionRow[]; cursor: string | null; error: string | null }>({
+    base: null,
+    rows: [],
+    cursor: null,
+    error: null,
+  });
   const [busy, setBusy] = useState(false);
-  const [moreError, setMoreError] = useState<string | null>(null);
-  useEffect(() => {
-    setMore([]);
-    setCursor(first.data?.nextCursor ?? null);
-    setMoreError(null);
-  }, [first.data]);
+  const live = tail.base !== null && tail.base === first.data;
+  const more = live ? tail.rows : [];
+  const cursor = live ? tail.cursor : (first.data?.nextCursor ?? null);
+  const moreError = live ? tail.error : null;
 
   const loadMore = () => {
-    if (!cursor) return;
+    const base = first.data;
+    if (!cursor || !base) return;
     setBusy(true);
-    setMoreError(null);
     backend
       .sessionsList({ ...query, cursor })
-      .then((p) => {
-        setMore((cur) => [...cur, ...p.rows]);
-        setCursor(p.nextCursor);
-      })
-      .catch((e) => setMoreError(e instanceof Error ? e.message : String(e)))
+      .then((p) => setTail({ base, rows: [...more, ...p.rows], cursor: p.nextCursor, error: null }))
+      .catch((e) => setTail({ base, rows: more, cursor, error: e instanceof Error ? e.message : String(e) }))
       .finally(() => setBusy(false));
   };
 
@@ -154,9 +155,9 @@ export function Sessions() {
           <p role="status" className="rounded-card border border-line bg-surface px-5 py-4 text-body text-ink-2">
             Waiting for your Claude folder. Your sessions appear here as soon as it is ready.
           </p>
-        ) : first.error ? (
+        ) : first.error && !cacheNotReady(status) ? (
           <ErrorBlock title="Could not load your sessions" message={first.error} onRetry={() => first.reload(false)} />
-        ) : first.loading && !first.data ? (
+        ) : (first.loading || first.error) && !first.data ? (
           <Card>
             <div role="status" aria-label="Loading sessions" className="divide-y divide-line">
               {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -175,6 +176,7 @@ export function Sessions() {
           <EmptyState
             icon={ChatsCircle}
             seed={11}
+            className="min-h-[max(320px,calc(100vh-14.5rem))]"
             title="No sessions match"
             body="Nothing fits the search and filters you set. Loosen them or start again."
           >
@@ -184,6 +186,7 @@ export function Sessions() {
           <EmptyState
             icon={ChatsCircle}
             seed={11}
+            className="min-h-[max(320px,calc(100vh-14.5rem))]"
             title="No sessions yet"
             body="Each Claude Code conversation shows up here with what it cost, how long it ran and which project it belonged to."
           />

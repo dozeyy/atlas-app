@@ -86,6 +86,23 @@ describe("Dashboard", () => {
     await waitFor(() => expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50"));
   });
 
+  it("does not show an error when the cache simply is not ready during the first read", async () => {
+    const backend = new MockBackend();
+    backend.usage.scenario = "indexing";
+    backend.usage.failNext = true; // the real engine answers "not ready yet" before its file exists
+    localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "dashboard" }));
+    setBackend(backend);
+    render(
+      <AtlasProvider>
+        <App />
+      </AtlasProvider>,
+    );
+    expect(await screen.findByRole("progressbar")).toBeInTheDocument();
+    expect(await screen.findByRole("status", { name: "Loading your usage" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("Could not load your usage")).not.toBeInTheDocument();
+  });
+
   it("explains an engine error and recovers on retry", async () => {
     const backend = mount("error");
     const alerts = await screen.findAllByRole("alert");

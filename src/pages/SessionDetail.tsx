@@ -194,12 +194,17 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
   const bins: BarDatum[] = useMemo(() => {
     const tl = d.data?.timeline ?? [];
     if (tl.length === 0) return [];
-    const longRun = (d.data?.row.durationMs ?? 0) > 24 * 3_600_000;
+    const dur = d.data?.row.durationMs ?? 0;
+    const longRun = dur > 24 * 3_600_000;
+    const withSeconds = dur < 10 * 60_000; // a short run needs seconds or neighbouring bars share a label
     return binEvenly(tl, 48).map((group, i) => {
       const tokens = group.reduce((s, m) => s + headline(m.tokens), 0);
       const usd = group.reduce((s, m) => s + (m.cost.usd ?? 0), 0);
       const first = group[0].ts;
-      const hhmm = new Date(first).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+      const hhmm = new Date(first).toLocaleTimeString(
+        "en-US",
+        withSeconds ? { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false } : { hour: "2-digit", minute: "2-digit", hour12: false },
+      );
       return {
         key: String(i),
         value: tokens,

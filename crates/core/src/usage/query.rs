@@ -378,11 +378,16 @@ pub fn base_name(path: &str) -> String {
     path.trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next().unwrap_or("").to_string()
 }
 
-fn sessions_started(conn: &Connection, tz: Tz, from_day: &str, to_day: &str) -> rusqlite::Result<u64> {
+/// Sessions with at least one message in `[from_day, to_day]`. A conversation that began
+/// yesterday and carried on today counts for today: the cards show tokens by when they were
+/// used, so the session count must follow the same rule. Candidates come from the indexed
+/// `sessions` span; the per-session probe uses `messages_session`, so this stays cheap.
+fn sessions_active(conn: &Connection, tz: Tz, from_day: &str, to_day: &str) -> rusqlite::Result<u64> {
     let lo = day_start_ms(tz, from_day);
     let hi = day_start_ms(tz, &add_days(to_day, 1));
     conn.query_row(
-        "SELECT COUNT(*) FROM sessions WHERE messages > 0 AND first_ts >= ?1 AND first_ts < ?2",
+        "SELECT COUNT(*) FROM sessions s WHERE s.messages > 0 AND s.last_ts >= ?1 AND s.first_ts < ?2 \
+         AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.session_id AND m.ts_utc_ms >= ?1 AND m.ts_utc_ms < ?2)",
         [lo, hi],
         |r| r.get::<_, i64>(0),
     )
@@ -405,9 +410,9 @@ pub fn dashboard(conn: &Connection, ctx: &QueryCtx) -> rusqlite::Result<Dashboar
     let d30 = add_days(&today, -29);
     let by_day = fetch_hours(conn, "substr(hour_local,1,10)", "''", &d30, &today)?;
 
-    let today_p = period(&by_day, &today, &today, sessions_started(conn, ctx.tz, &today, &today)?);
-    let week_p = period(&by_day, &d7, &today, sessions_started(conn, ctx.tz, &d7, &today)?);
-    let month_p = period(&by_day, &d30, &today, sessions_started(conn, ctx.tz, &d30, &today)?);
+    let today_p = period(&by_day, &today, &today, sessions_active(conn, ctx.tz, &today, &today)?);
+    let week_p = period(&by_day, &d7, &today, sessions_active(conn, ctx.tz, &d7, &today)?);
+    let month_p = period(&by_day, &d30, &today, sessions_active(conn, ctx.tz, &d30, &today)?);
 
     let mut models: BTreeMap<&str, Acc> = BTreeMap::new();
     for r in &by_day {
@@ -440,8 +445,10 @@ pub fn dashboard(conn: &Connection, ctx: &QueryCtx) -> rusqlite::Result<Dashboar
     let mut counts: HashMap<String, u64> = HashMap::new();
     {
         let mut st = conn.prepare_cached(
-            "SELECT COALESCE(project_key,''), COUNT(*) FROM sessions \
-             WHERE messages > 0 AND first_ts >= ?1 AND first_ts < ?2 GROUP BY 1",
+            "SELECT COALESCE(s.project_key,''), COUNT(*) FROM sessions s \
+             WHERE s.messages > 0 AND s.last_ts >= ?1 AND s.first_ts < ?2 \
+             AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.session_id AND m.ts_utc_ms >= ?1 AND m.ts_utc_ms < ?2) \
+             GROUP BY 1",
         )?;
         for r in st.query_map([lo, hi], |r| Ok((r.get::<_, String>(0)?, u(r.get::<_, i64>(1)?))))? {
             let (k, n) = r?;

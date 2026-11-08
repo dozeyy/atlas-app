@@ -11,7 +11,7 @@ import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
 import { describeSource } from "../lib/labels";
 import { openSessionNext } from "../lib/nav";
-import { useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
+import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
 import { compact, exact, headline, localDay, modelLabel, plural } from "../lib/usage";
 import type { Dashboard as DashboardData, Period, UsageStatus } from "../lib/types";
 
@@ -164,7 +164,7 @@ export function Dashboard() {
         <p role="status" className="rounded-card border border-line bg-surface px-5 py-4 text-body text-ink-2">
           Waiting for your Claude folder. Your usage appears here as soon as it is ready.
         </p>
-      ) : dash.error ? (
+      ) : dash.error && !cacheNotReady(status) ? (
         <ErrorBlock title="Could not load your usage" message={dash.error} onRetry={() => dash.reload(false)} />
       ) : !data || (nothing && firstIndex) ? (
         <PeriodSkeleton />
@@ -172,6 +172,7 @@ export function Dashboard() {
         <EmptyState
           icon={SquaresFour}
           seed={7}
+          className="min-h-[max(320px,calc(100vh-20rem))]"
           title="No Claude Code usage found yet"
           body="Atlas reads the conversations Claude Code saves in your Claude folder. Use Claude Code once and the numbers show up here on their own."
         />
