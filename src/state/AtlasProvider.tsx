@@ -9,6 +9,7 @@ interface AtlasContext {
   view: View;
   setView: (v: View) => void;
   setTheme: (t: Theme) => void;
+  setLaunchAnimation: (on: boolean) => void;
   setSandbox: (enabled: boolean) => Promise<void>;
   chooseConfigDir: () => Promise<void>;
   clearConfigDir: () => Promise<void>;
@@ -80,17 +81,23 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     [backend, run],
   );
 
+  const setLaunchAnimation = useCallback(
+    (on: boolean) => void run(backend.updateSettings({ launchAnimation: on })),
+    [backend, run],
+  );
+
   const value = useMemo<AtlasContext>(
     () => ({
       info,
       view,
       setView,
       setTheme,
+      setLaunchAnimation,
       setSandbox: (enabled) => run(backend.setSandbox(enabled)),
       chooseConfigDir: () => run(backend.chooseConfigDir()),
       clearConfigDir: () => run(backend.clearConfigDir()),
     }),
-    [info, view, setView, setTheme, run, backend],
+    [info, view, setView, setTheme, setLaunchAnimation, run, backend],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

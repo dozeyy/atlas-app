@@ -5,12 +5,15 @@ import { App } from "./App";
 import { AtlasProvider } from "./state/AtlasProvider";
 import { getBackend } from "./lib/ipc";
 import { applyBoot } from "./lib/theme";
+import { armIntro, installIntroReveal } from "./lib/intro";
 
 const backend = getBackend();
 
 // Theme, platform and backdrop classes go on <html> before the first paint so
 // the window never flashes the wrong colors.
 applyBoot(backend.boot());
+armIntro();
+installIntroReveal();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

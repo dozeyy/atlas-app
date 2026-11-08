@@ -147,6 +147,7 @@ pub struct AppInfo {
 pub struct SettingsPatch {
     pub theme: Option<Theme>,
     pub last_view: Option<View>,
+    pub launch_animation: Option<bool>,
 }
 
 impl AppState {
@@ -315,6 +316,10 @@ impl AppState {
             if let Some(v) = patch.last_view {
                 changed |= inner.settings.last_view != v;
                 inner.settings.last_view = v;
+            }
+            if let Some(a) = patch.launch_animation {
+                changed |= inner.settings.launch_animation != a;
+                inner.settings.launch_animation = a;
             }
             changed
         };
@@ -661,13 +666,13 @@ mod tests {
         let blocker = tmp.path().join("data").join(settings::FILE_NAME);
         fs::create_dir_all(&blocker).unwrap();
 
-        let info = state.update_settings(SettingsPatch { theme: Some(Theme::Dark), last_view: None });
+        let info = state.update_settings(SettingsPatch { theme: Some(Theme::Dark), last_view: None, launch_animation: None });
         assert_eq!(info.settings.theme, Theme::Dark, "the choice still applies for this session");
         let msg = info.settings_save_error.expect("failure must be surfaced");
         assert!(msg.contains("could not save"), "{msg}");
 
         fs::remove_dir_all(&blocker).unwrap();
-        let info = state.update_settings(SettingsPatch { theme: None, last_view: Some(View::Setup) });
+        let info = state.update_settings(SettingsPatch { theme: None, last_view: Some(View::Setup), launch_animation: None });
         assert!(info.settings_save_error.is_none());
         let on_disk = settings::load(&tmp.path().join("data")).settings;
         assert_eq!(on_disk.theme, Theme::Dark, "the latest in-memory copy is what gets written");
@@ -678,7 +683,7 @@ mod tests {
     fn snapshots_carry_a_rising_sequence_number() {
         let (_tmp, state) = fixture(false);
         let a = state.info().seq;
-        let b = state.update_settings(SettingsPatch { theme: Some(Theme::Light), last_view: None }).seq;
+        let b = state.update_settings(SettingsPatch { theme: Some(Theme::Light), last_view: None, launch_animation: None }).seq;
         let c = state.info().seq;
         assert!(a < b && b < c, "{a} {b} {c}");
     }

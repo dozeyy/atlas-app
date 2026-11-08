@@ -167,5 +167,19 @@ via a CI-built `.dmg` that dad (or Will on a Mac) installs and runs.
   app crate by design), `npx tauri build --debug --no-bundle` then run
   `target/debug/atlas.exe --config-dir fixtures/claude-basic --data-dir <scratch>`.
   Fixtures regenerate with `python tools/make-fixtures.py`.
-- Deferred on purpose: single-instance lock, Framer Motion, tray (Phase 7); the window
+- Deferred on purpose: Framer Motion, tray (Phase 7); the window
   state plugin stores bounds in its own app-config folder, not in `--data-dir`.
+- Launch intro (`crates/app/src/intro.rs`, `splash.html`, `src/splash/`): a transparent
+  `splash` window (denylisted from window-state) sits over the hidden main window's rect
+  and plays the mark animation (burst, fill, spin that leaves gradient orange trails until
+  the mark is a solid disc, a ripple of clay-tone rings out to flat clay, then a feathered
+  circular hole opens from the middle and the app lands from scale .98; timeline in
+  `src/splash/timeline.ts`, only the hole is drawn per frame, on a canvas); Rust hands
+  off to the real window (`launch_animation`
+  setting, on by default; any click or key skips; reduced motion = 150 ms fade).
+  `ATLAS_NO_INTRO=1` turns it off, `ATLAS_REDUCE_MOTION=1` forces the reduced path. The
+  mark's SVG is `assets/brand/atlas-mark.svg` (`python assets/brand/trace_mark.py`).
+  Single-instance (`tauri-plugin-single-instance`): a second launch focuses and restores
+  the running window, no intro; `ATLAS_MULTI=1` disables the lock for tests. Evidence
+  tools: `tools/capture-intro.ps1`, `tools/analyze-intro.py`, `tools/drive-intro.ps1`,
+  `tools/record-intro.ps1` (minimizes every window, never closes one, restores them).

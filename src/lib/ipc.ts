@@ -19,9 +19,15 @@ export const INFO_EVENT = "atlas://info";
 export const inTauri = (): boolean =>
   typeof window !== "undefined" && window.__TAURI_INTERNALS__ !== undefined;
 
+export interface SettingsPatch {
+  theme?: Theme;
+  lastView?: View;
+  launchAnimation?: boolean;
+}
+
 export interface Backend {
   boot(): AppInfo;
-  updateSettings(patch: { theme?: Theme; lastView?: View }): Promise<AppInfo>;
+  updateSettings(patch: SettingsPatch): Promise<AppInfo>;
   setSandbox(enabled: boolean): Promise<AppInfo>;
   chooseConfigDir(): Promise<AppInfo>;
   clearConfigDir(): Promise<AppInfo>;

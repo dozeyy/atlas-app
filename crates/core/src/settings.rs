@@ -54,6 +54,8 @@ pub struct Settings {
     pub config_dir_override: Option<String>,
     /// Start in Sandbox Mode.
     pub sandbox: bool,
+    /// Play the launch animation on a cold start (default on).
+    pub launch_animation: bool,
     /// Keys this version does not know, kept as they were.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -67,12 +69,14 @@ impl Default for Settings {
             last_view: View::Dashboard,
             config_dir_override: None,
             sandbox: false,
+            launch_animation: true,
             extra: Map::new(),
         }
     }
 }
 
-const KNOWN: [&str; 5] = ["schemaVersion", "theme", "lastView", "configDirOverride", "sandbox"];
+const KNOWN: [&str; 6] =
+    ["schemaVersion", "theme", "lastView", "configDirOverride", "sandbox", "launchAnimation"];
 
 impl Settings {
     /// Read settings from JSON text. `None` when the text is not a JSON object.
@@ -94,10 +98,20 @@ impl Settings {
             .and_then(|v| v.as_str().map(str::to_owned))
             .filter(|s| !s.trim().is_empty());
         let sandbox = take("sandbox").and_then(|v| v.as_bool()).unwrap_or(false);
+        let launch_animation =
+            take("launchAnimation").and_then(|v| v.as_bool()).unwrap_or(d.launch_animation);
         for k in KNOWN {
             map.remove(k);
         }
-        Some(Settings { schema_version, theme, last_view, config_dir_override, sandbox, extra: map })
+        Some(Settings {
+            schema_version,
+            theme,
+            last_view,
+            config_dir_override,
+            sandbox,
+            launch_animation,
+            extra: map,
+        })
     }
 
     pub fn to_json(&self) -> String {
@@ -182,6 +196,20 @@ mod tests {
         assert_eq!(s.theme, Theme::System);
         assert_eq!(s.last_view, View::Wrapped);
         assert!(!s.sandbox);
+    }
+
+    #[test]
+    fn launch_animation_defaults_on_and_persists() {
+        assert!(Settings::default().launch_animation);
+        assert!(Settings::from_json("{}").unwrap().launch_animation);
+        assert!(Settings::from_json(r#"{"launchAnimation":"no"}"#).unwrap().launch_animation);
+        let d = tempdir().unwrap();
+        let mut s = Settings::default();
+        s.launch_animation = false;
+        save(d.path(), &s).unwrap();
+        let text = fs::read_to_string(path_in(d.path())).unwrap();
+        assert!(text.contains("\"launchAnimation\": false"), "{text}");
+        assert!(!load(d.path()).settings.launch_animation);
     }
 
     #[test]

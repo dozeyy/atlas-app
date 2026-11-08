@@ -1,7 +1,8 @@
 // In-memory stand-in for the Rust side: used in a plain browser and in tests.
 // Settings persist in localStorage only so a browser reload keeps your choices.
 
-import type { AppInfo, ConfigView, Platform, Settings, Theme, View } from "./types";
+import type { SettingsPatch } from "./ipc";
+import type { AppInfo, ConfigView, Platform, Settings } from "./types";
 
 const KEY = "atlas.mock.settings";
 
@@ -25,6 +26,7 @@ function loadSettings(): Settings {
     lastView: "dashboard",
     configDirOverride: null,
     sandbox: false,
+    launchAnimation: true,
   };
   try {
     return { ...base, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
@@ -73,7 +75,7 @@ export class MockBackend {
     return next;
   }
 
-  async updateSettings(patch: { theme?: Theme; lastView?: View }): Promise<AppInfo> {
+  async updateSettings(patch: SettingsPatch): Promise<AppInfo> {
     return this.commit({ ...this.info, settings: { ...this.info.settings, ...patch } });
   }
 

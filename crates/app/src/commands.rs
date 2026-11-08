@@ -68,9 +68,12 @@ pub fn clear_config_dir(state: Shared) -> AppInfo {
 #[tauri::command]
 pub fn frontend_ready(app: AppHandle, state: Shared) -> u64 {
     let ms = state.mark_first_paint();
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.set_focus();
+    // During the launch intro the intro shows the window at the handoff.
+    if !crate::intro::main_ready(&app) {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
     }
     eprintln!("[atlas] startup: {ms} ms to first paint");
     // The page booted with first_paint_ms unset; tell it the number now.

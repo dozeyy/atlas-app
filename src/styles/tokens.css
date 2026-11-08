@@ -134,6 +134,15 @@
   --travel: 8px;
   --press-scale: 0.97;
 
+  /* Brand: the icon's own colors (not theme colors). The launch splash is drawn in these. */
+  --brand-mark: #dc784d;
+  --brand-tile: #f7ebdc;
+  --brand-mark-light: #f0996c; /* the spinning mark on the clay disc */
+  --brand-ripple-1: #e68a5d; /* ripple rings: slightly different clays */
+  --brand-ripple-2: #d06f45;
+  --brand-ripple-3: #e37f53;
+  --ease-launch: cubic-bezier(0.16, 1, 0.3, 1); /* the app landing after the launch splash */
+
   /* Layout */
   --sidebar-w: 232px;
   --content-max: 960px;

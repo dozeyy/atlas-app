@@ -21,6 +21,10 @@ tauri-plugin-window-state = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-version = "0.1"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"
 
 [features]
 # tauri build turns this on: the front end is served from the binary instead of
