@@ -8,7 +8,6 @@ import {
   SquaresFour,
   Wrench,
 } from "@phosphor-icons/react";
-import icon from "../assets/atlas-icon-64.png";
 import { useAtlas } from "../state/AtlasProvider";
 import type { View } from "../lib/types";
 
@@ -28,14 +27,9 @@ export function Sidebar() {
 
   return (
     <aside
-      className="flex w-[var(--sidebar-w)] shrink-0 flex-col px-3 pb-4 pt-[calc(var(--titlebar-inset)+16px)]"
+      className="flex w-[var(--sidebar-w)] shrink-0 flex-col px-3 pb-4 pt-[calc(var(--titlebar-inset)+8px)]"
       style={{ background: info.backdrop ? "var(--sidebar-glass)" : "var(--sidebar-solid)" }}
     >
-      <div className="mb-6 flex items-center gap-3 px-2">
-        <img src={icon} alt="" width={28} height={28} className="size-7 rounded-[7px]" />
-        <span className="text-lead font-semibold tracking-[-0.01em] text-ink">Atlas</span>
-      </div>
-
       <nav aria-label="Main" className="flex flex-col gap-0.5">
         {NAV.map(({ view: v, label, icon: Icon }, i) => {
           const active = v === view;

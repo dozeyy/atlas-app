@@ -39,6 +39,14 @@
   --warning-tint: rgb(134 87 15 / 0.13);
   --slate: #5b7083; /* the cool second chart hue */
 
+  /* Code in the read-only viewer (Setup): all >= 4.5:1 on surface and raised. */
+  --syntax-keyword: #9c4524;
+  --syntax-string: #36704e;
+  --syntax-number: #86570f;
+  --syntax-comment: #6b655c;
+  --syntax-name: #44586a;
+  --syntax-heading: #1f1d1a;
+
   --sidebar-solid: #f1ede7; /* sidebar when there is no Mica / vibrancy */
   --sidebar-glass: rgb(250 248 245 / 0.4); /* warm wash over Mica / vibrancy */
   --shadow-pop: 0 8px 24px rgb(31 29 26 / 0.12), 0 1px 3px rgb(31 29 26 / 0.1);
@@ -75,6 +83,13 @@
   --warning-tint: rgb(227 179 65 / 0.14);
   --slate: #8fa3b5;
 
+  --syntax-keyword: #e8896a;
+  --syntax-string: #6fbf8e;
+  --syntax-number: #e3b341;
+  --syntax-comment: #a39b90;
+  --syntax-name: #8fa3b5;
+  --syntax-heading: #ede8e1;
+
   --sidebar-solid: #211f1c;
   --sidebar-glass: rgb(28 26 23 / 0.4);
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
@@ -106,6 +121,13 @@
     --warning-tint: rgb(227 179 65 / 0.14);
     --slate: #8fa3b5;
 
+    --syntax-keyword: #e8896a;
+    --syntax-string: #6fbf8e;
+    --syntax-number: #e3b341;
+    --syntax-comment: #a39b90;
+    --syntax-name: #8fa3b5;
+    --syntax-heading: #ede8e1;
+
     --sidebar-solid: #211f1c;
     --sidebar-glass: rgb(28 26 23 / 0.4);
     --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
@@ -134,10 +156,22 @@
   --travel: 8px;
   --press-scale: 0.97;
 
+  /* Brand: the icon's own colors (not theme colors). The launch splash is drawn in these. */
+  --brand-mark: #dc784d;
+  --brand-tile: #f7ebdc;
+  --brand-mark-light: #f0996c; /* the spinning mark on the clay disc */
+  --brand-ripple-1: #e68a5d; /* ripple rings: slightly different clays */
+  --brand-ripple-2: #d06f45;
+  --brand-ripple-3: #e37f53;
+  --ease-launch: cubic-bezier(0.16, 1, 0.3, 1); /* the app landing after the launch splash */
+
   /* Layout */
   --sidebar-w: 232px;
   --content-max: 960px;
   --titlebar-inset: 0px; /* macOS overlay title bar sets this to 28px */
+  /* Same numbers as MIN_WIDTH / MIN_HEIGHT in crates/app/src/main.rs. */
+  --window-min-w: 900px;
+  --window-min-h: 600px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -168,6 +202,12 @@
   --color-warning: var(--warning);
   --color-warning-tint: var(--warning-tint);
   --color-slate: var(--slate);
+  --color-syntax-keyword: var(--syntax-keyword);
+  --color-syntax-string: var(--syntax-string);
+  --color-syntax-number: var(--syntax-number);
+  --color-syntax-comment: var(--syntax-comment);
+  --color-syntax-name: var(--syntax-name);
+  --color-syntax-heading: var(--syntax-heading);
 
   --font-sans: var(--font-ui);
   --font-mono: var(--font-code);

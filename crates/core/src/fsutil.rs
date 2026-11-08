@@ -28,6 +28,7 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let target = resolve_link_target(path)?;
     check_write_allowed(&target)?;
+    fail_fast_if_read_only(&target)?;
 
     let dir = target
         .parent()
@@ -51,13 +52,45 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
             // Keep the mode of the file we replace (no-op on a fresh file).
             let _ = fs::set_permissions(&tmp, meta.permissions());
         }
-        rename_with_retry(&tmp, &target)
+        rename_with_retry(&tmp, &target)?;
+        sync_parent_dir(dir);
+        Ok(())
     })();
 
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
     }
     result
+}
+
+/// Windows refuses to replace a read-only file, and the rename retry below would
+/// spend about a second finding that out. Say so at once, in plain words.
+fn fail_fast_if_read_only(target: &Path) -> io::Result<()> {
+    if cfg!(windows)
+        && let Ok(meta) = fs::metadata(target)
+            && meta.permissions().readonly() {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!("{} is read-only; clear its read-only flag to let Atlas change it", target.display()),
+                ));
+            }
+    Ok(())
+}
+
+/// Make the rename itself durable: after a crash or power cut the directory entry
+/// must point at the new file. Unix only (Windows cannot open a folder this way);
+/// best effort, since the data is already safe on disk.
+fn sync_parent_dir(dir: &Path) {
+    #[cfg(unix)]
+    {
+        if let Ok(d) = fs::File::open(dir) {
+            let _ = d.sync_all();
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+    }
 }
 
 /// Windows can refuse a rename while an antivirus scanner or another program
@@ -140,50 +173,49 @@ pub fn is_real_claude_path(path: &Path, home: &Path, env_config_dir: Option<&Pat
     false
 }
 
-/// Absolute, with symlinks resolved as far as the path exists, and lowercase on
+/// Absolute, with links resolved as far as the path exists, and lowercase on
 /// Windows (case-insensitive file system). Works for paths that do not exist yet.
+///
+/// Components are walked left to right and the part that exists is canonicalized
+/// *before* a `..` is applied, so `link/../x` follows the link first (as the OS
+/// does) and junctions and 8.3 short names resolve to the real long path. Past
+/// the first component that does not exist, `..` is applied lexically.
 fn comparable(path: &Path) -> PathBuf {
-    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-    let mut tail: Vec<std::ffi::OsString> = Vec::new();
-    let mut cur = abs.as_path();
-    let base = loop {
-        if let Ok(c) = fs::canonicalize(cur) {
-            break c;
-        }
-        // `file_name()` is None for a trailing `..`; keep it in the tail so it is
-        // resolved below instead of ending the walk (it does not on Unix, where
-        // `absolute` leaves `..` alone).
-        let name = match cur.components().next_back() {
-            Some(Component::ParentDir) => Some(std::ffi::OsString::from("..")),
-            _ => cur.file_name().map(|n| n.to_os_string()),
-        };
-        match (cur.parent(), name) {
-            (Some(parent), Some(name)) => {
-                tail.push(name);
-                cur = parent;
-            }
-            _ => break cur.to_path_buf(),
-        }
+    let abs: PathBuf = if path.is_absolute() {
+        path.to_path_buf()
+    } else if !path.has_root() && !matches!(path.components().next(), Some(Component::Prefix(_))) {
+        // Plain relative path: keep any `..` for the walk below (`absolute` would
+        // collapse it lexically on Windows).
+        std::env::current_dir().map(|c| c.join(path)).unwrap_or_else(|_| path.to_path_buf())
+    } else {
+        std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
     };
-    let mut out = strip_verbatim(&base);
-    for part in tail.iter().rev() {
-        if part != "." {
-            out.push(part);
-        }
-    }
-    // Resolve `..` lexically in the part that does not exist yet.
-    let mut norm = PathBuf::new();
-    for c in out.components() {
+
+    let mut cur = PathBuf::new();
+    let mut exists = true;
+    for c in abs.components() {
         match c {
             Component::CurDir => {}
             Component::ParentDir => {
-                norm.pop();
+                cur.pop();
+                // Back in a folder that exists, if the walk had left the real tree.
+                if !exists {
+                    exists = fs::canonicalize(&cur).is_ok();
+                }
             }
-            other => norm.push(other.as_os_str()),
+            other => {
+                cur.push(other.as_os_str());
+                // `C:` alone means "the current folder on C:", so wait for a real name.
+                if exists && matches!(other, Component::Normal(_)) {
+                    match fs::canonicalize(&cur) {
+                        Ok(real) => cur = strip_verbatim(&real),
+                        Err(_) => exists = false,
+                    }
+                }
+            }
         }
     }
-    let out = norm;
-    if cfg!(windows) { PathBuf::from(out.to_string_lossy().to_lowercase()) } else { out }
+    if cfg!(windows) { PathBuf::from(cur.to_string_lossy().to_lowercase()) } else { cur }
 }
 
 /// Drop the verbatim prefix Windows `canonicalize` adds, so paths shown to people look normal.
@@ -288,6 +320,91 @@ mod tests {
         assert!(!is_real_claude_path(&d.path().join("fixture").join(".claude.json"), &home, None));
         // `..` cannot sneak in.
         assert!(is_real_claude_path(&home.join("x").join("..").join(".claude").join("a"), &home, None));
+    }
+
+    /// A directory link: a symlink on Unix, a junction on Windows (needs no privilege).
+    fn make_dir_link(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+    }
+
+    #[test]
+    fn a_junction_or_link_into_the_real_config_is_still_the_real_config() {
+        let d = tempdir().unwrap();
+        let home = d.path().join("home");
+        fs::create_dir_all(home.join(".claude")).unwrap();
+        let link = d.path().join("shortcut");
+        if !make_dir_link(&home.join(".claude"), &link) {
+            eprintln!("skipped: could not make a directory link");
+            return;
+        }
+        assert!(is_real_claude_path(&link.join("settings.json"), &home, None));
+        assert!(is_real_claude_path(&link.join("new").join("deeper.json"), &home, None));
+        assert!(!is_real_claude_path(&d.path().join("elsewhere").join("settings.json"), &home, None));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dot_dot_after_a_link_follows_the_link_first() {
+        let d = tempdir().unwrap();
+        let home = d.path().join("home");
+        fs::create_dir_all(home.join(".claude").join("sub")).unwrap();
+        fs::create_dir_all(d.path().join("other")).unwrap();
+        // other/link -> home/.claude/sub, so other/link/../a is home/.claude/a
+        // (collapsing `..` as text would have said other/a).
+        let link = d.path().join("other").join("link");
+        std::os::unix::fs::symlink(home.join(".claude").join("sub"), &link).unwrap();
+        assert!(is_real_claude_path(&link.join("..").join("a"), &home, None));
+        // And the other way round: a link that leaves the real config.
+        let out = home.join(".claude").join("out");
+        fs::create_dir_all(d.path().join("far").join("deep")).unwrap();
+        std::os::unix::fs::symlink(d.path().join("far").join("deep"), &out).unwrap();
+        assert!(!is_real_claude_path(&out.join("..").join("x"), &home, None));
+    }
+
+    #[test]
+    fn relative_paths_are_judged_from_the_current_folder() {
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(comparable(Path::new("some/./new/../file.txt")), comparable(&cwd.join("some").join("file.txt")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_read_only_target_fails_at_once_with_a_clear_message() {
+        let d = tempdir().unwrap();
+        let f = d.path().join("locked.json");
+        fs::write(&f, b"keep").unwrap();
+        let mut perms = fs::metadata(&f).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&f, perms).unwrap();
+
+        let started = std::time::Instant::now();
+        let err = atomic_write(&f, b"new").unwrap_err();
+        let took = started.elapsed();
+
+        let mut perms = fs::metadata(&f).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        fs::set_permissions(&f, perms).unwrap();
+
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+        assert!(err.to_string().contains("read-only"), "{err}");
+        assert!(took < Duration::from_millis(300), "should not retry: {took:?}");
+        assert_eq!(fs::read(&f).unwrap(), b"keep");
+        let names: Vec<_> = fs::read_dir(d.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names.len(), 1, "temp file left behind: {names:?}");
     }
 
     #[test]

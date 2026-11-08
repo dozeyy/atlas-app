@@ -1,24 +1,6 @@
-import { ClockCounterClockwise, Sparkle, Wrench } from "@phosphor-icons/react";
+import { ClockCounterClockwise, Sparkle } from "@phosphor-icons/react";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/controls";
-
-export function Setup() {
-  return (
-    <>
-      <PageHeader
-        title="Setup"
-        subtitle="The agents, skills, commands and rules that shape how Claude works for you."
-      />
-      <EmptyState
-        icon={Wrench}
-        seed={23}
-        title="Nothing to set up here yet"
-        body="You will be able to read and edit your agents, skills, commands, output styles and rules in one place, with a safe backup before every change."
-        badge="Coming soon"
-      />
-    </>
-  );
-}
 
 export function History() {
   return (

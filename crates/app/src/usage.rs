@@ -44,6 +44,8 @@ pub struct UsageHost {
     pub dashboard_logged: AtomicBool,
     /// Held while a start or a restart is in flight, so two syncs never interleave.
     syncing: Mutex<()>,
+    /// The app handle events go out through; set once the window exists.
+    app: Mutex<Option<AppHandle>>,
 }
 
 struct TauriSink {
@@ -68,9 +70,15 @@ impl UsageHost {
     /// Start, keep or restart the engine so it matches the folder Atlas works on.
     /// Always runs on a background thread: starting reads nothing, but stopping the
     /// old engine waits for it to wind down.
-    pub fn sync_in_background(self: &Arc<Self>, state: &Arc<AppState>, app: &AppHandle) {
-        let (host, state, app) = (Arc::clone(self), Arc::clone(state), app.clone());
+    pub fn sync_in_background(self: &Arc<Self>, state: &Arc<AppState>) {
+        let Some(app) = self.app.lock().unwrap_or_else(|p| p.into_inner()).clone() else { return };
+        let (host, state) = (Arc::clone(self), Arc::clone(state));
         std::thread::spawn(move || host.sync_now(&state, &app));
+    }
+
+    /// Give the host the handle it emits events through (called once, from `setup`).
+    pub fn attach(&self, app: AppHandle) {
+        *self.app.lock().unwrap_or_else(|p| p.into_inner()) = Some(app);
     }
 
     fn sync_now(&self, state: &AppState, app: &AppHandle) {

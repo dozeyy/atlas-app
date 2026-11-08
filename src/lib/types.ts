@@ -11,6 +11,7 @@ export interface Settings {
   lastView: View;
   configDirOverride: string | null;
   sandbox: boolean;
+  launchAnimation: boolean;
 }
 
 export interface ConfigView {
@@ -26,7 +27,7 @@ export interface ConfigView {
 
 export interface SkippedItem {
   path: string;
-  reason: "sensitive" | "bulk" | "tooLarge" | "overBudget" | "folderLink" | "unreadable";
+  reason: "sensitive" | "bulk" | "tooLarge" | "overBudget" | "folderLink" | "fileLink" | "unreadable";
 }
 
 export interface SandboxReport {
@@ -47,6 +48,8 @@ export interface SandboxView {
 }
 
 export interface AppInfo {
+  /** Rises with every snapshot from Rust; an older one is stale and ignored. */
+  seq: number;
   version: string;
   platform: Platform;
   backdrop: boolean;
@@ -58,6 +61,8 @@ export interface AppInfo {
   configLockedByFlag: boolean;
   settings: Settings;
   settingsNote: string | null;
+  /** The last write of Atlas's settings failed: what was changed will not survive a restart. */
+  settingsSaveError: string | null;
   firstPaintMs: number | null;
 }
 

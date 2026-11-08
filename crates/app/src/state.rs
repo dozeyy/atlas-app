@@ -1,27 +1,51 @@
 //! App state: Atlas's settings, the resolved Claude config root and the
 //! Sandbox Mode slot. Everything the front end sees goes through `AppInfo`.
+//!
+//! Threading rules (the UI thread must never wait on the disk):
+//! - the `inner` mutex guards memory only; no file is read, written or deleted
+//!   while it is held;
+//! - settings are written after the guard is dropped, one writer at a time, and
+//!   always from the latest in-memory copy;
+//! - a sandbox copy is made on its own thread, and an old sandbox is deleted on
+//!   its own thread (it can be 256 MB), so switching Sandbox Mode never blocks.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Instant;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use atlas_core::launch::LaunchArgs;
 use atlas_core::paths::{self, ConfigInputs, ConfigRoot, ConfigSource};
-use atlas_core::sandbox::{self, Sandbox, SandboxOptions, SandboxReport};
+use atlas_core::sandbox::{self, Sandbox, SandboxError, SandboxOptions, SandboxReport};
 use atlas_core::settings::{self, Settings, Theme, View};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
 
 use crate::usage::{Roots, UsageHost};
 
 pub const INFO_EVENT: &str = "atlas://info";
+
+/// How often the running app tells other Atlas instances its sandbox is in use.
+const HEARTBEAT: Duration = Duration::from_secs(10 * 60);
+/// How long exit waits for a copy to stop or a delete to finish.
+const EXIT_WAIT: Duration = Duration::from_secs(5);
+
+/// Called with a fresh snapshot whenever state changes outside a command
+/// (a sandbox copy finishing). The app wires this to the Tauri event.
+pub type Notify = Arc<dyn Fn(AppInfo) + Send + Sync>;
 
 enum Slot {
     Off,
     Preparing,
     Ready(Box<Sandbox>),
     Failed(String),
+}
+
+/// The sandbox copy in progress: a flag to stop it and the thread making it.
+struct Build {
+    cancel: Arc<AtomicBool>,
+    handle: JoinHandle<()>,
 }
 
 struct Inner {
@@ -31,7 +55,10 @@ struct Inner {
     slot: Slot,
     /// Bumped on every change so a slow copy that finished late is thrown away.
     generation: u64,
+    build: Option<Build>,
     first_paint_ms: Option<u64>,
+    /// Why the last settings write failed; cleared by the next one that works.
+    save_error: Option<String>,
 }
 
 pub struct AppState {
@@ -47,6 +74,13 @@ pub struct AppState {
     sandbox_parent: PathBuf,
     settings_note: Option<String>,
     inner: Mutex<Inner>,
+    /// Orders settings writes without holding `inner` during the disk write.
+    save_lock: Mutex<()>,
+    /// Sequence number stamped on every snapshot, so the page can drop a stale one.
+    seq: AtomicU64,
+    notify: Mutex<Option<Notify>>,
+    /// Deletes of old sandboxes still running; exit waits for them.
+    discards: Mutex<Vec<JoinHandle<()>>>,
 }
 
 #[derive(Serialize, Clone)]
@@ -91,6 +125,8 @@ pub struct SandboxView {
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
+    /// Rises with every snapshot; the page ignores one older than what it has.
+    pub seq: u64,
     pub version: &'static str,
     pub platform: &'static str,
     /// Mica / vibrancy is active, so the page background must stay transparent.
@@ -106,6 +142,8 @@ pub struct AppInfo {
     pub config_locked_by_flag: bool,
     pub settings: Settings,
     pub settings_note: Option<String>,
+    /// The last write of Atlas's settings failed: what changed will not survive a restart.
+    pub settings_save_error: Option<String>,
     pub first_paint_ms: Option<u64>,
 }
 
@@ -114,11 +152,11 @@ pub struct AppInfo {
 pub struct SettingsPatch {
     pub theme: Option<Theme>,
     pub last_view: Option<View>,
+    pub launch_animation: Option<bool>,
 }
 
 impl AppState {
     pub fn new(launch: LaunchArgs) -> Arc<AppState> {
-        let started = Instant::now();
         let home = paths::home_dir().unwrap_or_else(std::env::temp_dir);
         let cwd = std::env::current_dir().unwrap_or_else(|_| home.clone());
         let env_config = std::env::var_os("CLAUDE_CONFIG_DIR");
@@ -126,11 +164,23 @@ impl AppState {
         let data_dir =
             paths::data_dir(launch.data_dir.as_deref(), atlas_env.as_deref(), &home, &cwd)
                 .unwrap_or_else(|| std::env::temp_dir().join("atlas"));
-
         let local_data_dir =
             paths::local_data_dir(launch.data_dir.as_deref(), atlas_env.as_deref(), &home, &cwd)
                 .unwrap_or_else(|| data_dir.clone());
+        Self::with_parts(launch, home, cwd, env_config, data_dir, local_data_dir, std::env::temp_dir())
+    }
 
+    /// Everything `new` reads from the machine, passed in (tests use scratch folders).
+    fn with_parts(
+        launch: LaunchArgs,
+        home: PathBuf,
+        cwd: PathBuf,
+        env_config: Option<OsString>,
+        data_dir: PathBuf,
+        local_data_dir: PathBuf,
+        sandbox_parent: PathBuf,
+    ) -> Arc<AppState> {
+        let started = Instant::now();
         let loaded = settings::load(&data_dir);
         let settings_note = loaded.recovered_from.as_ref().map(|p| {
             format!("Atlas's settings file was damaged and was set aside as {}.", p.display())
@@ -146,16 +196,35 @@ impl AppState {
             home,
             cwd,
             env_config,
-            sandbox_parent: std::env::temp_dir(),
+            sandbox_parent,
             settings_note,
             inner: Mutex::new(Inner {
                 settings: loaded.settings,
                 sandbox_wanted,
                 slot: if sandbox_wanted { Slot::Preparing } else { Slot::Off },
                 generation: 0,
+                build: None,
                 first_paint_ms: None,
+                save_error: None,
             }),
+            save_lock: Mutex::new(()),
+            seq: AtomicU64::new(0),
+            notify: Mutex::new(None),
+            discards: Mutex::new(Vec::new()),
         })
+    }
+
+    /// Where background changes are announced (see `Notify`).
+    pub fn set_notifier(&self, notify: Notify) {
+        *self.notify.lock().unwrap_or_else(|p| p.into_inner()) = Some(notify);
+    }
+
+    /// Send the current snapshot to the page, if a notifier is set.
+    pub fn announce(&self) {
+        let notify = self.notify.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        if let Some(n) = notify {
+            n(self.info());
+        }
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -187,6 +256,24 @@ impl AppState {
             real: real.source != ConfigSource::Flag && root.projects_dir == real.projects_dir,
             projects_dir: root.projects_dir,
             config_dir: root.dir,
+        })
+    }
+
+    /// What Setup scans: the folder Atlas works on (the real one, or the sandbox
+    /// copy once it is ready). None while a sandbox is still being prepared.
+    pub fn setup_inputs(&self, include_worktrees: bool) -> Option<atlas_core::setup::DiscoveryInputs> {
+        let inner = self.lock();
+        let (root, sandboxed) = match &inner.slot {
+            Slot::Off => (self.real_root(&inner), false),
+            Slot::Ready(sb) => (sb.root.clone(), true),
+            _ => return None,
+        };
+        Some(atlas_core::setup::DiscoveryInputs {
+            root,
+            home: self.home.clone(),
+            managed_dir: atlas_core::setup::default_managed_dir(),
+            include_worktrees,
+            sandboxed,
         })
     }
 
@@ -228,6 +315,8 @@ impl AppState {
             ),
         };
         AppInfo {
+            // Taken while `inner` is held, so a later state always has a larger number.
+            seq: self.seq.fetch_add(1, Ordering::SeqCst) + 1,
             version: env!("CARGO_PKG_VERSION"),
             platform: platform(),
             backdrop: backdrop_supported(),
@@ -238,31 +327,52 @@ impl AppState {
             config_locked_by_flag: self.launch.config_dir.is_some(),
             settings: inner.settings.clone(),
             settings_note: self.settings_note.clone(),
+            settings_save_error: inner.save_error.clone(),
             first_paint_ms: inner.first_paint_ms,
         }
     }
 
-    fn save_locked(&self, inner: &Inner) {
-        if let Err(e) = settings::save(&self.data_dir, &inner.settings) {
-            eprintln!("[atlas] could not save settings: {e}");
+    /// Write the latest settings to disk. Call with `inner` released: the write
+    /// (and its fsync) happens here, outside the guard. Writers queue on
+    /// `save_lock` and each saves the newest copy, so the last change always wins.
+    fn persist(&self) {
+        let _writing = self.save_lock.lock().unwrap_or_else(|p| p.into_inner());
+        let snapshot = self.lock().settings.clone();
+        let result = settings::save(&self.data_dir, &snapshot);
+        let mut inner = self.lock();
+        match result {
+            Ok(()) => inner.save_error = None,
+            Err(e) => {
+                eprintln!("[atlas] could not save settings: {e}");
+                inner.save_error = Some(format!(
+                    "Atlas could not save its settings ({e}). What you changed will be lost when Atlas closes."
+                ));
+            }
         }
     }
 
     pub fn update_settings(&self, patch: SettingsPatch) -> AppInfo {
-        let mut inner = self.lock();
-        let mut changed = false;
-        if let Some(t) = patch.theme {
-            changed |= inner.settings.theme != t;
-            inner.settings.theme = t;
-        }
-        if let Some(v) = patch.last_view {
-            changed |= inner.settings.last_view != v;
-            inner.settings.last_view = v;
-        }
+        let changed = {
+            let mut inner = self.lock();
+            let mut changed = false;
+            if let Some(t) = patch.theme {
+                changed |= inner.settings.theme != t;
+                inner.settings.theme = t;
+            }
+            if let Some(v) = patch.last_view {
+                changed |= inner.settings.last_view != v;
+                inner.settings.last_view = v;
+            }
+            if let Some(a) = patch.launch_animation {
+                changed |= inner.settings.launch_animation != a;
+                inner.settings.launch_animation = a;
+            }
+            changed
+        };
         if changed {
-            self.save_locked(&inner);
+            self.persist();
         }
-        self.info_locked(&inner)
+        self.info()
     }
 
     pub fn mark_first_paint(&self) -> u64 {
@@ -273,58 +383,68 @@ impl AppState {
 
     /// Set (or clear) the folder chosen in Settings. Re-prepares the sandbox if
     /// Sandbox Mode is on.
-    pub fn set_config_override(self: &Arc<Self>, app: &AppHandle, dir: Option<String>) -> AppInfo {
-        {
-            let mut inner = self.lock();
-            inner.settings.config_dir_override = dir.filter(|d| !d.trim().is_empty());
-            self.save_locked(&inner);
-        }
-        self.restart_sandbox_if_wanted(app);
+    pub fn set_config_override(self: &Arc<Self>, dir: Option<String>) -> AppInfo {
+        self.lock().settings.config_dir_override = dir.filter(|d| !d.trim().is_empty());
+        self.persist();
+        self.restart_sandbox_if_wanted();
         self.info()
     }
 
-    pub fn set_sandbox(self: &Arc<Self>, app: &AppHandle, enabled: bool) -> AppInfo {
+    pub fn set_sandbox(self: &Arc<Self>, enabled: bool) -> AppInfo {
         {
             let mut inner = self.lock();
             inner.sandbox_wanted = enabled;
             inner.settings.sandbox = enabled;
-            self.save_locked(&inner);
         }
-        self.restart_sandbox_if_wanted(app);
+        self.persist();
+        self.restart_sandbox_if_wanted();
         self.info()
     }
 
     /// Drop any current sandbox and, if Sandbox Mode is wanted, start copying a
-    /// new one on a background thread. Never blocks the caller.
-    pub fn restart_sandbox_if_wanted(self: &Arc<Self>, app: &AppHandle) {
-        let (gen_id, real, old) = {
+    /// new one on a background thread. Never blocks the caller: the old copy is
+    /// deleted on its own thread, and a copy still running is told to stop.
+    pub fn restart_sandbox_if_wanted(self: &Arc<Self>) {
+        let (gen_id, real, old, wanted) = {
             let mut inner = self.lock();
             inner.generation += 1;
-            let next = if inner.sandbox_wanted { Slot::Preparing } else { Slot::Off };
-            let old = std::mem::replace(&mut inner.slot, next);
-            (inner.generation, self.real_root(&inner), old)
+            if let Some(b) = inner.build.take() {
+                b.cancel.store(true, Ordering::Relaxed); // it cleans up after itself
+            }
+            let wanted = inner.sandbox_wanted;
+            let old = std::mem::replace(&mut inner.slot, if wanted { Slot::Preparing } else { Slot::Off });
+            (inner.generation, self.real_root(&inner), old, wanted)
         };
         if let Slot::Ready(sb) = old {
-            let _ = sb.discard();
+            self.discard_in_background(*sb);
         }
         // The engine stops reading the old folder at once; it starts on the new one
         // when there is one (now, or when the sandbox copy is ready).
-        self.usage.sync_in_background(self, app);
-        if !self.lock().sandbox_wanted {
+        self.usage.sync_in_background(self);
+        if !wanted {
             return;
         }
+
+        let cancel = Arc::new(AtomicBool::new(false));
         let this = Arc::clone(self);
-        let app = app.clone();
-        std::thread::spawn(move || {
-            let started = Instant::now();
-            let result = sandbox::create(&real, &this.sandbox_parent, &SandboxOptions::default());
-            let leftover = {
-                let mut inner = this.lock();
-                if inner.generation != gen_id || !inner.sandbox_wanted {
-                    // Superseded while copying: throw this copy away.
-                    result.ok().map(|sb| sb.discard())
-                } else {
+        let flag = Arc::clone(&cancel);
+        let handle = std::thread::Builder::new()
+            .name("atlas-sandbox".into())
+            .spawn(move || {
+                let started = Instant::now();
+                let result = sandbox::create_cancellable(
+                    &real,
+                    &this.sandbox_parent,
+                    &SandboxOptions::default(),
+                    &flag,
+                );
+                // Decide under the guard, delete after it is dropped.
+                let leftover: Option<Sandbox> = {
+                    let mut inner = this.lock();
+                    let superseded =
+                        inner.generation != gen_id || !inner.sandbox_wanted || flag.load(Ordering::Relaxed);
                     match result {
+                        Ok(sb) if superseded => Some(sb),
                         Ok(sb) => {
                             eprintln!(
                                 "[atlas] sandbox ready in {} ms: {} files",
@@ -332,33 +452,100 @@ impl AppState {
                                 sb.report.files_copied
                             );
                             inner.slot = Slot::Ready(Box::new(sb));
+                            None
                         }
-                        Err(e) => inner.slot = Slot::Failed(e.to_string()),
+                        Err(SandboxError::Cancelled) => None,
+                        Err(_) if superseded => None,
+                        Err(e) => {
+                            inner.slot = Slot::Failed(e.to_string());
+                            None
+                        }
                     }
-                    None
+                };
+                if let Some(sb) = leftover {
+                    let _ = sb.discard();
                 }
-            };
-            drop(leftover);
-            this.usage.sync_in_background(&this, &app);
-            let _ = app.emit(INFO_EVENT, this.info());
-        });
+                this.usage.sync_in_background(&this);
+                this.announce();
+            })
+            .expect("spawn sandbox thread");
+        self.lock().build = Some(Build { cancel, handle });
     }
 
-    /// Remove the live sandbox (app exit) and sweep old ones a crash left behind.
+    fn discard_in_background(&self, sb: Sandbox) {
+        let handle = std::thread::spawn(move || {
+            let _ = sb.discard();
+        });
+        let mut pending = self.discards.lock().unwrap_or_else(|p| p.into_inner());
+        pending.retain(|h| !h.is_finished());
+        pending.push(handle);
+    }
+
+    /// App exit: stop any copy, remove the live sandbox and wait (briefly) for
+    /// deletes already under way, so no `atlas-sandbox-*` folder is left behind.
     pub fn shutdown(&self) {
         self.usage.shutdown();
-        let old = std::mem::replace(&mut self.lock().slot, Slot::Off);
+        let (old, build) = {
+            let mut inner = self.lock();
+            inner.generation += 1; // a copy that finishes now is thrown away
+            (std::mem::replace(&mut inner.slot, Slot::Off), inner.build.take())
+        };
+        if let Some(b) = &build {
+            b.cancel.store(true, Ordering::Relaxed);
+        }
         if let Slot::Ready(sb) = old {
             let _ = sb.discard();
         }
+        let mut handles = std::mem::take(&mut *self.discards.lock().unwrap_or_else(|p| p.into_inner()));
+        handles.extend(build.map(|b| b.handle));
+        join_within(handles, EXIT_WAIT);
     }
 
+    /// Tell other Atlas instances this sandbox is in use (see `sandbox::touch`).
+    pub fn refresh_sandbox_marker(&self) {
+        let dir = match &self.lock().slot {
+            Slot::Ready(sb) => Some(sb.root.dir.clone()),
+            _ => None,
+        };
+        if let Some(dir) = dir {
+            let _ = sandbox::touch(&dir);
+        }
+    }
+
+    /// Keep the live sandbox's marker fresh for as long as the app runs.
+    pub fn start_heartbeat(self: &Arc<Self>) {
+        let weak = Arc::downgrade(self);
+        let _ = std::thread::Builder::new().name("atlas-heartbeat".into()).spawn(move || {
+            loop {
+                std::thread::sleep(HEARTBEAT);
+                let Some(state) = weak.upgrade() else { return };
+                state.refresh_sandbox_marker();
+            }
+        });
+    }
+
+    /// Remove sandboxes a crash left behind. Never one whose owner is still running.
     pub fn sweep_stale_sandboxes(&self) {
-        let n = sandbox::cleanup_stale(&self.sandbox_parent, std::time::Duration::from_secs(24 * 3600));
+        let n = sandbox::cleanup_stale(&self.sandbox_parent, Duration::from_secs(24 * 3600));
         if n > 0 {
             eprintln!("[atlas] removed {n} old sandbox folder(s)");
         }
     }
+}
+
+/// Wait for threads to finish, but never longer than `limit` in total.
+fn join_within(handles: Vec<JoinHandle<()>>, limit: Duration) {
+    if handles.is_empty() {
+        return;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for h in handles {
+            let _ = h.join();
+        }
+        let _ = tx.send(());
+    });
+    let _ = rx.recv_timeout(limit);
 }
 
 pub fn platform() -> &'static str {
@@ -384,5 +571,187 @@ pub fn backdrop_supported() -> bool {
     #[cfg(not(any(windows, target_os = "macos")))]
     {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::atomic::AtomicUsize;
+    use tempfile::{TempDir, tempdir};
+
+    /// A state wired to scratch folders: a small fake Claude folder, its own data
+    /// dir and its own "temp" parent for sandboxes.
+    fn fixture(sandbox: bool) -> (TempDir, Arc<AppState>) {
+        let tmp = tempdir().unwrap();
+        let claude = tmp.path().join("claude");
+        fs::create_dir_all(claude.join("skills/a")).unwrap();
+        fs::write(claude.join("CLAUDE.md"), b"# hi").unwrap();
+        fs::write(claude.join("skills/a/SKILL.md"), b"x").unwrap();
+        fs::write(claude.join("settings.json"), br#"{"model":"x","env":{"K":"LIVE"}}"#).unwrap();
+        let launch = LaunchArgs {
+            config_dir: Some(claude),
+            data_dir: Some(tmp.path().join("data")),
+            sandbox,
+            warnings: vec![],
+        };
+        let state = AppState::with_parts(
+            launch,
+            tmp.path().join("home"),
+            tmp.path().to_path_buf(),
+            None,
+            tmp.path().join("data"),
+            tmp.path().join("data"),
+            tmp.path().join("sbx"),
+        );
+        (tmp, state)
+    }
+
+    fn sandboxes(tmp: &TempDir) -> Vec<PathBuf> {
+        fs::read_dir(tmp.path().join("sbx"))
+            .map(|rd| {
+                rd.filter_map(Result::ok)
+                    .map(|e| e.path())
+                    .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with(sandbox::DIR_PREFIX)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
+        let end = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < end {
+            if ok() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(15));
+        }
+        panic!("timed out waiting for: {what}");
+    }
+
+    fn ready(state: &Arc<AppState>) -> PathBuf {
+        wait_for("sandbox ready", || state.info().sandbox.state == "ready");
+        PathBuf::from(state.info().sandbox.path.unwrap())
+    }
+
+    #[test]
+    fn turning_sandbox_off_removes_the_copy_and_returns_to_the_real_folder() {
+        let (tmp, state) = fixture(false);
+        assert_eq!(state.info().sandbox.state, "off");
+        state.set_sandbox(true);
+        let copy = ready(&state);
+        assert!(copy.join("CLAUDE.md").is_file());
+        assert_eq!(sandboxes(&tmp).len(), 1);
+        // The copy never carries the secret from settings.json.
+        assert!(!fs::read_to_string(copy.join("settings.json")).unwrap().contains("LIVE"));
+
+        let info = state.set_sandbox(false);
+        assert_eq!(info.sandbox.state, "off");
+        assert_eq!(info.config.as_ref().unwrap().source, ConfigSource::Flag, "back on the real folder");
+        wait_for("copy deleted after Sandbox off", || sandboxes(&tmp).is_empty());
+        assert!(tmp.path().join("claude/CLAUDE.md").is_file(), "the real folder is untouched");
+    }
+
+    #[test]
+    fn exit_removes_the_live_sandbox() {
+        let (tmp, state) = fixture(true);
+        state.restart_sandbox_if_wanted();
+        let copy = ready(&state);
+        assert!(copy.is_dir());
+        state.shutdown();
+        assert!(!copy.exists(), "exit must remove the sandbox before it returns");
+        assert!(sandboxes(&tmp).is_empty());
+    }
+
+    #[test]
+    fn exit_or_turning_off_while_the_copy_is_still_running_leaves_nothing() {
+        for exit in [true, false] {
+            let (tmp, state) = fixture(false);
+            state.set_sandbox(true); // copy starts on its thread
+            if exit {
+                state.shutdown(); // waits for the copy to stop and clean up
+                assert!(sandboxes(&tmp).is_empty(), "left behind after exit");
+            } else {
+                state.set_sandbox(false);
+                wait_for("half-built copy removed", || sandboxes(&tmp).is_empty());
+            }
+            // And nothing arrives late.
+            std::thread::sleep(Duration::from_millis(150));
+            assert!(sandboxes(&tmp).is_empty(), "a late copy appeared (exit={exit})");
+            assert_ne!(state.info().sandbox.state, "ready");
+        }
+    }
+
+    #[test]
+    fn switching_the_folder_replaces_the_copy_and_deletes_the_old_one() {
+        let (tmp, state) = fixture(true);
+        state.restart_sandbox_if_wanted();
+        let first = ready(&state);
+        state.set_config_override(None); // re-prepares from the same source
+        wait_for("old copy gone", || !first.exists());
+        let second = ready(&state);
+        assert_ne!(first, second);
+        wait_for("exactly one copy left", || sandboxes(&tmp).len() == 1);
+    }
+
+    #[test]
+    fn the_marker_is_refreshed_for_the_live_sandbox() {
+        let (_tmp, state) = fixture(true);
+        state.restart_sandbox_if_wanted();
+        let copy = ready(&state);
+        let marker = copy.join(sandbox::MARKER);
+        let old = std::time::SystemTime::now() - Duration::from_secs(3 * 24 * 3600);
+        fs::File::options().write(true).open(&marker).unwrap().set_modified(old).unwrap();
+        state.refresh_sandbox_marker();
+        let age = std::time::SystemTime::now().duration_since(fs::metadata(&marker).unwrap().modified().unwrap()).unwrap();
+        assert!(age < Duration::from_secs(60), "marker still {age:?} old");
+        // And so a sweep by another instance keeps it.
+        assert_eq!(sandbox::cleanup_stale(&state.sandbox_parent, Duration::from_secs(24 * 3600)), 0);
+        assert!(copy.exists());
+    }
+
+    #[test]
+    fn a_failed_settings_save_is_reported_and_clears_when_a_save_works() {
+        let (tmp, state) = fixture(false);
+        // A folder where the settings file should go makes the replace fail.
+        let blocker = tmp.path().join("data").join(settings::FILE_NAME);
+        fs::create_dir_all(&blocker).unwrap();
+
+        let info = state.update_settings(SettingsPatch { theme: Some(Theme::Dark), last_view: None, launch_animation: None });
+        assert_eq!(info.settings.theme, Theme::Dark, "the choice still applies for this session");
+        let msg = info.settings_save_error.expect("failure must be surfaced");
+        assert!(msg.contains("could not save"), "{msg}");
+
+        fs::remove_dir_all(&blocker).unwrap();
+        let info = state.update_settings(SettingsPatch { theme: None, last_view: Some(View::Setup), launch_animation: None });
+        assert!(info.settings_save_error.is_none());
+        let on_disk = settings::load(&tmp.path().join("data")).settings;
+        assert_eq!(on_disk.theme, Theme::Dark, "the latest in-memory copy is what gets written");
+        assert_eq!(on_disk.last_view, View::Setup);
+    }
+
+    #[test]
+    fn snapshots_carry_a_rising_sequence_number() {
+        let (_tmp, state) = fixture(false);
+        let a = state.info().seq;
+        let b = state.update_settings(SettingsPatch { theme: Some(Theme::Light), last_view: None, launch_animation: None }).seq;
+        let c = state.info().seq;
+        assert!(a < b && b < c, "{a} {b} {c}");
+    }
+
+    #[test]
+    fn announce_reaches_the_notifier_with_the_sandbox_result() {
+        let (_tmp, state) = fixture(false);
+        let seen = Arc::new(AtomicUsize::new(0));
+        let s2 = Arc::clone(&seen);
+        state.set_notifier(Arc::new(move |info| {
+            if info.sandbox.state == "ready" {
+                s2.fetch_add(1, Ordering::SeqCst);
+            }
+        }));
+        state.set_sandbox(true);
+        wait_for("ready announced", || seen.load(Ordering::SeqCst) >= 1);
+        state.shutdown();
     }
 }

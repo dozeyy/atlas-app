@@ -9,6 +9,13 @@ body,
   height: 100%;
 }
 
+/* Backstop for the runtime minimum window size: if a window manager or a
+   programmatic resize ever goes below it, the layout is clipped, not crushed. */
+#root {
+  min-width: var(--window-min-w);
+  min-height: var(--window-min-h);
+}
+
 html {
   font-family: var(--font-ui);
   font-size: 14px;
@@ -58,6 +65,11 @@ button {
 :focus-visible {
   outline: 2px solid var(--accent-text);
   outline-offset: 2px;
+}
+
+/* The page container is only focused by code (route change, scroll keys), never tabbed to. */
+main[tabindex="-1"]:focus-visible {
+  outline: none;
 }
 
 ::selection {
@@ -114,6 +126,27 @@ button {
   animation: pulse-dot 1.4s ease-in-out infinite;
 }
 
+/* Setup: loading placeholders and the detail sheet sliding in from the right. */
+.skeleton {
+  background: var(--raised);
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--travel) * 3));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.sheet-enter {
+  animation: sheet-in var(--dur-slow) var(--ease-out) both;
+}
+
 .press {
   transition:
     transform var(--dur-fast) var(--ease-out),
@@ -126,11 +159,26 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pulse-dot {
+  .pulse-dot,
+  .skeleton {
     animation: none;
   }
   .page-enter,
+  .sheet-enter,
   .fade-in {
     animation-duration: 1ms;
   }
+}
+
+/* ---- Launch intro ------------------------------------------------------------
+   The window is hidden and #root waits at 0.98 while the splash plays; at the
+   handoff the app lands (transform only, no fade). See src/lib/intro.ts. */
+html[data-intro] #root {
+  transform-origin: 50% 50%;
+}
+html[data-intro="pending"] #root {
+  transform: scale(0.98);
+}
+html[data-intro="play"] #root {
+  transition: transform 480ms var(--ease-launch);
 }

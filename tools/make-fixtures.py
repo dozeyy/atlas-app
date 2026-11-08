@@ -349,6 +349,196 @@ def usage_fx():
     put(u, f"{P}/-fx-sub/{sa}/subagents/agent-fixturesub.jsonl", jl(sub))
 
 
+def md(front, body="[fixture body]\n"):
+    """A markdown file: `front` is a dict (written as simple YAML), a raw string, or None."""
+    if front is None:
+        return body
+    if isinstance(front, str):
+        return f"---\n{front}---\n\n{body}"
+    lines = "".join(f"{k}: {v}\n" for k, v in front.items())
+    return f"---\n{lines}---\n\n{body}"
+
+
+def setup():
+    """fixtures/claude-setup: a whole fake machine for Setup (Phase 3).
+
+    `@ROOT@` stands for the folder the tests copy this tree into; they replace it
+    (JSON-escaped inside .json/.jsonl) before discovery. Every secret-looking
+    value is FIXTURE-PLACEHOLDER. Shapes marked "assumed" are not seen on a real
+    disk yet (keybindings, themes, workflows, agent-memory, managed files).
+    """
+    s = os.path.join(ROOT, "claude-setup")
+    R = "@ROOT@"
+    H = "home/.claude"
+    P = "[fixture]"
+
+    def js(o):
+        return json.dumps(o, indent=2) + "\n"
+
+    # ---- ~/.claude.json (beside the config folder) ------------------------
+    put(s, "home/.claude.json", js({
+        "numStartups": 5,
+        "mcpServers": {
+            "user-srv": {"type": "stdio", "command": "node", "args": ["user-srv.js", "--token=FIXTURE-PLACEHOLDER"],
+                         "env": {"SECRET_TOKEN": "FIXTURE-PLACEHOLDER"}},
+            "shared-srv": {"command": "node", "args": ["user-shared.js"]},
+            "http-srv": {"type": "http", "url": "https://example.test/mcp",
+                         "headers": {"Authorization": "Bearer FIXTURE-PLACEHOLDER"}},
+        },
+        "githubRepoPaths": {"fixture/github-only": [f"{R}/work/github-only"]},
+        "projects": {
+            f"{R}/home": {"mcpServers": {}},
+            f"{R}/work/app": {
+                "mcpServers": {
+                    "shared-srv": {"command": "node", "args": ["local-shared.js"]},
+                    "local-only": {"type": "http", "url": "https://example.test/local",
+                                   "headers": {"X-Api-Key": "FIXTURE-PLACEHOLDER"}},
+                },
+                "disabledMcpServers": ["user-srv"],
+                "enabledMcpjsonServers": ["proj-srv"],
+                "disabledMcpjsonServers": ["rejected-srv"],
+            },
+            # The Windows spelling of the same folder: a second entry with its own server.
+            f"{R}\\WORK\\app": {"mcpServers": {"twin-only": {"command": "node", "args": ["twin.js"]}}},
+            f"{R}/work/empty-proj": {},
+            f"{R}/work/gone": {"mcpServers": {"gone-srv": {"command": "node", "args": ["gone.js"]}}},
+            f"{R}/work/dotclaude-only": {},
+            f"{R}/work/app/.claude/worktrees/agent-x": {},
+        },
+    }))
+    put(s, "home/CLAUDE.md", f"# Home folder notes\n\n{P}\n")
+
+    # ---- user root --------------------------------------------------------
+    put(s, f"{H}/CLAUDE.md", f"# Global instructions\n\n{P}\n")
+    put(s, f"{H}/MEMORY.md", f"# Memory\n{P}\n")
+    put(s, f"{H}/reference/notes.md", f"# Notes\n{P}\n")
+    put(s, f"{H}/policy-limits.json", js({"limit": 1}))
+    put(s, f"{H}/mcp-needs-auth-cache.json", js({"claude.ai Fixture Connector": {"timestamp": 1}}))
+    put(s, f"{H}/.claude.json", js({"mcpServers": {"decoy-srv": {"command": "node", "args": ["decoy.js"]}}}))
+
+    put(s, f"{H}/skills/shared-skill/SKILL.md", md({"name": "shared-skill", "description": "User copy of a shared skill."}))
+    put(s, f"{H}/skills/shared-skill/scripts/run.py", "print('[fixture]')\n")
+    put(s, f"{H}/skills/shared-skill/reference.md", f"{P}\n")
+    put(s, f"{H}/skills/user-only/SKILL.md", md({"name": "user-only", "description": "Only at user scope."}))
+    put(s, f"{H}/skills/no-name-skill/SKILL.md", md({"description": "Takes its folder name."}))
+    put(s, f"{H}/skills/broken-yaml/SKILL.md", "---\nname: [unclosed\ndescription: x: y: z\n---\n\n[fixture body]\n")
+    put(s, f"{H}/skills/same-as-skill/SKILL.md", md({"name": "same-as-skill", "description": "A skill with a command of the same name."}))
+    put(s, f"{H}/skills/crlf-skill/SKILL.md", md({"name": "crlf-skill", "description": "Twin skill."}), newline="\r\n", bom=True)
+    put(s, f"{H}/skills/lf-skill/SKILL.md", md({"name": "lf-skill", "description": "Twin skill."}))
+    put(s, f"{H}/skills/synced/fixture-org_fixture-user/manifest.json", js({
+        "lastUpdated": "2026-11-01T00:00:00Z",
+        "skills": [{"skillId": "skill_fixture", "name": "synced-skill", "description": "A skill synced from the account.",
+                    "source": "anthropic", "backingPluginId": None, "updatedAt": "2026-11-01T00:00:00Z"}],
+    }))
+    put(s, f"{H}/skills/synced/fixture-org_fixture-user/synced-skill/SKILL.md", md({"name": "synced-skill", "description": "Synced."}))
+    put(s, f"{H}/skills/synced/.bucket-fixture/ignored/SKILL.md", md({"name": "ignored", "description": "Never listed."}))
+
+    put(s, f"{H}/agents/shared-agent.md", md({"name": "shared-agent", "description": "User copy.", "model": "sonnet"}), newline="\r\n")
+    put(s, f"{H}/agents/user-agent.md", md({"name": "user-agent", "description": "Only at user scope.", "lane": "implementation"}))
+    put(s, f"{H}/agents/no-name-agent.md", md({"description": "No name key."}))
+    put(s, f"{H}/agents/dup-a.md", md({"name": "dup", "description": "First of two with one name."}))
+    put(s, f"{H}/agents/dup-b.md", md({"name": "dup", "description": "Second of two with one name."}))
+    put(s, f"{H}/agents/user-agent.md.bak-20261001", md({"name": "user-agent", "description": "Old copy."}))
+
+    put(s, f"{H}/commands/shared-cmd.md", md({"description": "User copy of a command."}))
+    put(s, f"{H}/commands/same-as-skill.md", md({"description": "Loses to the skill of the same name."}))
+    put(s, f"{H}/commands/nested/deploy/prod.md", md({"description": "Nested command."}))
+
+    put(s, f"{H}/hooks/fmt.sh", "#!/bin/sh\n# Formats files. [fixture]\n")
+    put(s, f"{H}/hooks/unused.sh", "#!/bin/sh\n# Nothing names this one.\n")
+    put(s, f"{H}/statusline.sh", "#!/bin/sh\necho '[fixture]'\n")
+    put(s, f"{H}/settings.json", js({
+        "outputStyle": "Calm Notes",
+        "env": {"SECRET_TOKEN": "FIXTURE-PLACEHOLDER", "PLAIN": "FIXTURE-PLACEHOLDER"},
+        "skillOverrides": {"user-only": "user-invocable-only"},
+        "enabledPlugins": {"fixture-plugin@fixture-market": True},
+        "permissions": {
+            "allow": ["Bash(git status:*)", "Read(*)"],
+            "deny": ["Bash(rm -rf:*)"],
+            "ask": ["WebFetch"],
+            "defaultMode": "default",
+        },
+        "hooks": {
+            "PreToolUse": [{"matcher": "Bash", "hooks": [
+                {"type": "command", "command": f"\"{R}/home/.claude/hooks/fmt.sh\" --check", "timeout": 10}]}],
+            "Stop": [{"hooks": [{"type": "command", "command": "echo done"}]}],
+        },
+        "statusLine": {"type": "command", "command": f"sh \"{R}/home/.claude/statusline.sh\""},
+    }))
+    put(s, f"{H}/settings.local.json", js({"permissions": {"allow": ["Bash(ls:*)"]}}))
+    put(s, f"{H}/rules/always.md", f"{P} A rule with no frontmatter.\n")
+    put(s, f"{H}/rules/ts-only.md", md({"paths": '["**/*.ts"]'}, f"{P} A rule for TypeScript.\n"))
+    put(s, f"{H}/output-styles/calm.md", md({"name": "Calm Notes", "description": "Quiet and short."}))
+    # Assumed shapes (verify against a real disk):
+    put(s, f"{H}/workflows/nightly.js", f"// Nightly run. {P}\nexport default {{}};\n")
+    put(s, f"{H}/agent-memory/user-agent/notes.md", f"# Notes\n{P}\n")
+    put(s, f"{H}/keybindings.json", js([{"key": "ctrl+k", "command": "fixture.noop"}]))
+    put(s, f"{H}/themes/warm.json", js({"name": "Warm Fixture", "colors": {}}))
+
+    # Plugins.
+    inst = f"{R}/home/.claude/plugins/cache/fixture-market/fixture-plugin/1.0.0"
+    put(s, f"{H}/plugins/installed_plugins.json", js({"version": 2, "plugins": {"fixture-plugin@fixture-market": [
+        {"scope": "user", "installPath": inst, "version": "1.0.0", "installedAt": "2026-10-01T00:00:00Z",
+         "lastUpdated": "2026-10-01T00:00:00Z", "gitCommitSha": "0000000"}]}}))
+    put(s, f"{H}/plugins/known_marketplaces.json", js({"fixture-market": {"source": {"source": "github", "repo": "fixture/market"}}}))
+    pc = f"{H}/plugins/cache/fixture-market/fixture-plugin/1.0.0"
+    put(s, f"{pc}/.claude-plugin/plugin.json", js({
+        "name": "fixture-plugin", "description": "A plugin for tests.", "version": "1.0.0",
+        "author": {"name": "Fixture"}, "mcpServers": {"plug-srv": {"command": "node", "args": ["plug.js"]}}}))
+    put(s, f"{pc}/skills/plug-skill/SKILL.md", md({"name": "plug-skill", "description": "From the plugin."}))
+    put(s, f"{pc}/agents/plug-agent.md", md({"name": "plug-agent", "description": "From the plugin."}))
+    put(s, f"{pc}/commands/plug-cmd.md", md({"description": "From the plugin."}))
+    put(s, f"{pc}/hooks/hooks.json", js({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo plug"}]}]}}))
+
+    # Transcripts: the first line is an api-request with a wrong cwd (must be skipped).
+    sid = "00000000-0000-0000-0000-000000000001"
+    sid2 = "00000000-0000-0000-0000-000000000002"
+    put(s, f"{H}/projects/-encoded-app/{sid}.jsonl", jl(
+        {"type": "api-request", "cwd": "/not/this/one"},
+        {"type": "user", "cwd": f"{R}/work/app", "message": {"role": "user", "content": "[fixture user message]"}}))
+    put(s, f"{H}/projects/-encoded-transcript-only/{sid2}.jsonl", jl(
+        {"type": "user", "cwd": f"{R}/work/transcript-only", "message": {"role": "user", "content": "[fixture user message]"}}))
+    put(s, f"{H}/projects/-encoded-app/memory/MEMORY.md", f"# App memory\n{P}\n")
+
+    # Never shown.
+    put(s, f"{H}/.credentials.json", '{"token": "FIXTURE-PLACEHOLDER"}\n')
+    put(s, f"{H}/sessions/x.key", "FIXTURE-PLACEHOLDER\n")
+    put(s, f"{H}/history.jsonl", jl({"display": "[fixture]"}))
+    put(s, f"{H}/backups/a.json", js({"a": 1}))
+    put(s, f"{H}/cache/c.json", js({"c": 1}))
+    put(s, f"{H}/daemon.lock", "0\n")
+
+    # ---- projects ---------------------------------------------------------
+    A = "work/app"
+    put(s, f"{A}/CLAUDE.md", f"# App instructions\n{P}\n")
+    put(s, f"{A}/CLAUDE.local.md", f"# Private app notes\n{P}\n")
+    put(s, f"{A}/AGENTS.md", f"# Agents file\n{P}\n")
+    put(s, f"{A}/.mcp.json", js({"mcpServers": {
+        "shared-srv": {"command": "node", "args": ["project-shared.js"]},
+        "proj-srv": {"command": "node", "args": ["--url", "${PROJ_URL:-http://localhost:1}"], "env": {"PROJ_TOKEN": "${PROJ_TOKEN}"}},
+        "rejected-srv": {"command": "node", "args": ["rejected.js"]},
+        "pending-srv": {"command": "node", "args": ["pending.js"]},
+    }}))
+    put(s, f"{A}/.claude/CLAUDE.md", f"# App dot-claude instructions\n{P}\n")
+    put(s, f"{A}/.claude/settings.json", js({"outputStyle": "Proj Style", "permissions": {"deny": ["Bash(curl:*)"]}}))
+    put(s, f"{A}/.claude/settings.local.json", js({"permissions": {"allow": ["Bash(npm test)"]}}))
+    put(s, f"{A}/.claude/skills/shared-skill/SKILL.md", md({"name": "shared-skill", "description": "Project copy of a shared skill."}))
+    put(s, f"{A}/.claude/agents/shared-agent.md", md({"name": "shared-agent", "description": "Project copy."}))
+    put(s, f"{A}/.claude/commands/shared-cmd.md", md({"description": "Project copy of a command."}))
+    put(s, f"{A}/.claude/rules/r.md", f"{P} A project rule.\n")
+    put(s, f"{A}/.claude/output-styles/proj-style.md", md({"name": "Proj Style", "description": "Project style."}))
+    put(s, f"{A}/.claude/agent-memory/shared-agent/m.md", f"# Agent memory\n{P}\n")
+    put(s, f"{A}/.claude/launch.json", js({"version": "0.0.1", "configurations": []}))
+    put(s, f"{A}/.claude/worktrees/agent-x/.claude/skills/wt-skill/SKILL.md", md({"name": "wt-skill", "description": "Inside a worktree."}))
+    put(s, "work/dotclaude-only/.claude/CLAUDE.md", f"# Dot-claude only\n{P}\n")
+    put(s, "work/transcript-only/.claude/agents/t.md", md({"name": "t", "description": "Project known only from a transcript."}))
+    put(s, "work/empty-proj/.gitkeep", "")
+
+    # ---- managed ----------------------------------------------------------
+    put(s, "managed/managed-settings.json", js({"disableAllHooks": False, "permissions": {"deny": ["Bash(sudo:*)"]}}))
+    put(s, "managed/managed-mcp.json", js({"mcpServers": {"managed-srv": {"command": "node", "args": ["managed.js"]}}}))
+
+
 def main():
     if os.path.isdir(ROOT):
         # Remove only files we generate, never a recursive delete of unknown content.
@@ -362,6 +552,7 @@ def main():
     basic()
     edge()
     usage_fx()
+    setup()
     n = sum(len(f) for _, _, f in os.walk(ROOT))
     print(f"wrote {n} fixture files under {os.path.normpath(ROOT)}")
 

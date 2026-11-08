@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "managed-srv": {
+      "command": "node",
+      "args": [
+        "managed.js"
+      ]
+    }
+  }
+}

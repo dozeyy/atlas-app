@@ -8,3 +8,6 @@ crates/app/icons/android/
 crates/app/icons/ios/
 # generated test scratch
 crates/app/gen/
+
+# Fixtures need settings.local.json even though the global git ignore drops it.
+!fixtures/**/.claude/settings.local.json

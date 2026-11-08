@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "shared-srv": {
+      "command": "node",
+      "args": [
+        "project-shared.js"
+      ]
+    },
+    "proj-srv": {
+      "command": "node",
+      "args": [
+        "--url",
+        "${PROJ_URL:-http://localhost:1}"
+      ],
+      "env": {
+        "PROJ_TOKEN": "${PROJ_TOKEN}"
+      }
+    },
+    "rejected-srv": {
+      "command": "node",
+      "args": [
+        "rejected.js"
+      ]
+    },
+    "pending-srv": {
+      "command": "node",
+      "args": [
+        "pending.js"
+      ]
+    }
+  }
+}

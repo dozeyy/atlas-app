@@ -235,7 +235,6 @@ fn sandbox_of_the_edge_fixture_keeps_bytes_exactly() {
     let src = root_of(&edge());
     let sb = sandbox::create(&src, tmp.path(), &SandboxOptions::default()).unwrap();
     for rel in [
-        "settings.json",
         "agents/lane-agent.md",
         "agents/lane-agent.md.bak-20261001",
         "skills/crlf-skill/SKILL.md",
@@ -243,13 +242,25 @@ fn sandbox_of_the_edge_fixture_keeps_bytes_exactly() {
         "commands/nested/deploy/prod.md",
         "unknown-dir/notes.txt",
         "caf\u{e9} \u{2603}/readme.txt",
-        ".claude.json",
     ] {
         assert_eq!(
             fs::read(edge().join(rel)).unwrap(),
             fs::read(sb.root.dir.join(rel)).unwrap(),
             "{rel} differs in the sandbox copy"
         );
+    }
+    // The two JSON config files pass through redaction, so their bytes are
+    // rewritten; with nothing secret in the fixture the content is unchanged,
+    // key order included.
+    for rel in ["settings.json", ".claude.json"] {
+        let text = |p: std::path::PathBuf| {
+            String::from_utf8(fs::read(p).unwrap()).unwrap().trim_start_matches('\u{feff}').to_string()
+        };
+        let before: serde_json::Value = serde_json::from_str(&text(edge().join(rel))).unwrap();
+        let after: serde_json::Value = serde_json::from_str(&text(sb.root.dir.join(rel))).unwrap();
+        assert_eq!(before, after, "{rel} content differs in the sandbox copy");
+        let keys = |v: &serde_json::Value| v.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
+        assert_eq!(keys(&before), keys(&after), "{rel} key order changed");
     }
     assert!(sb.root.dir.join("empty-dir").is_dir(), "empty folders are copied too");
 }

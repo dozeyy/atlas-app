@@ -1,0 +1,2 @@
+# Dot-claude only
+[fixture]

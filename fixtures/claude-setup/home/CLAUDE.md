@@ -1,0 +1,3 @@
+# Home folder notes
+
+[fixture]

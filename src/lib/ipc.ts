@@ -24,6 +24,7 @@ import type {
   UsageStatus,
   View,
 } from "./types";
+import type { SetupSnapshot, SourceView } from "./setup-types";
 import { MockBackend } from "./mock";
 
 declare global {
@@ -39,13 +40,20 @@ export const USAGE_PROGRESS_EVENT = "atlas://usage/progress";
 export const USAGE_CHANGED_EVENT = "atlas://usage/changed";
 
 export type Unlisten = () => void;
+export const SETUP_EVENT = "atlas://setup-changed";
 
 export const inTauri = (): boolean =>
   typeof window !== "undefined" && window.__TAURI_INTERNALS__ !== undefined;
 
+export interface SettingsPatch {
+  theme?: Theme;
+  lastView?: View;
+  launchAnimation?: boolean;
+}
+
 export interface Backend {
   boot(): AppInfo;
-  updateSettings(patch: { theme?: Theme; lastView?: View }): Promise<AppInfo>;
+  updateSettings(patch: SettingsPatch): Promise<AppInfo>;
   setSandbox(enabled: boolean): Promise<AppInfo>;
   chooseConfigDir(): Promise<AppInfo>;
   clearConfigDir(): Promise<AppInfo>;
@@ -68,6 +76,13 @@ export interface Backend {
   onUsageStatus(cb: (s: UsageStatus) => void): Promise<Unlisten>;
   onUsageProgress(cb: (p: IndexProgress) => void): Promise<Unlisten>;
   onUsageChanged(cb: (c: UsageChanged) => void): Promise<Unlisten>;
+  /** Setup (read only): the whole setup without file bodies. */
+  setupSnapshot(includeWorktrees?: boolean): Promise<SetupSnapshot>;
+  /** The masked text of one item. */
+  setupReadSource(id: string): Promise<SourceView>;
+  /** One masked value, on request. */
+  setupReveal(id: string, index: number): Promise<string>;
+  onSetupChanged(cb: (version: number) => void): Promise<() => void>;
 }
 
 const tauriBackend: Backend = {
@@ -102,6 +117,13 @@ const tauriBackend: Backend = {
   onUsageStatus: (cb) => listen<UsageStatus>(USAGE_STATUS_EVENT, (e) => cb(e.payload)),
   onUsageProgress: (cb) => listen<IndexProgress>(USAGE_PROGRESS_EVENT, (e) => cb(e.payload)),
   onUsageChanged: (cb) => listen<UsageChanged>(USAGE_CHANGED_EVENT, (e) => cb(e.payload)),
+  setupSnapshot: (includeWorktrees) => invoke<SetupSnapshot>("setup_snapshot", { includeWorktrees }),
+  setupReadSource: (id) => invoke<SourceView>("setup_read_source", { id }),
+  setupReveal: (id, index) => invoke<string>("setup_reveal", { id, index }),
+  onSetupChanged: async (cb) => {
+    const off = await listen<{ version: number }>(SETUP_EVENT, (e) => cb(e.payload.version));
+    return off;
+  },
 };
 
 let backend: Backend | null = null;

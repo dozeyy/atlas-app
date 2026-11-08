@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
+import { WarningCircle } from "@phosphor-icons/react";
 import { NAV, Sidebar } from "./components/Sidebar";
 import { useAtlas } from "./state/AtlasProvider";
 import { Dashboard } from "./pages/Dashboard";
-import { History, Setup, Wrapped } from "./pages/Placeholders";
+import { History, Wrapped } from "./pages/Placeholders";
 import { Sessions } from "./pages/Sessions";
+import { Setup } from "./pages/Setup";
 import { Settings } from "./pages/Settings";
 import type { View } from "./lib/types";
 
@@ -60,7 +62,19 @@ export function App() {
           info.backdrop ? "rounded-tl-[var(--r-sheet)] border-l border-t border-line" : "border-l border-line"
         }`}
       >
-        <div key={view} className="page-enter mx-auto w-full max-w-[var(--content-max)] px-10 py-10">
+        <div
+          key={view}
+          className={`page-enter mx-auto w-full px-10 py-10 ${view === "setup" ? "flex min-h-full max-w-[1180px] flex-col" : "max-w-[var(--content-max)]"}`}
+        >
+          {info.settingsSaveError && (
+            <div
+              role="alert"
+              className="mb-6 flex items-start gap-3 rounded-card border border-danger bg-danger-tint px-4 py-3 text-body text-ink"
+            >
+              <WarningCircle size={20} weight="fill" className="mt-px shrink-0 text-danger" aria-hidden="true" />
+              <p>{info.settingsSaveError}</p>
+            </div>
+          )}
           <Page />
         </div>
       </main>

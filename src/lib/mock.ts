@@ -1,8 +1,10 @@
 // In-memory stand-in for the Rust side: used in a plain browser and in tests.
 // Settings persist in localStorage only so a browser reload keeps your choices.
 
-import type { AppInfo, ConfigView, Platform, Settings, Theme, View } from "./types";
-import type { Backend } from "./ipc";
+import type { Backend, SettingsPatch } from "./ipc";
+import type { AppInfo, ConfigView, Platform, Settings } from "./types";
+import type { SetupSnapshot, SourceView } from "./setup-types";
+import { mockSetupReveal, mockSetupSnapshot, mockSetupSource } from "./setup-mock";
 import { MockUsage } from "./mockUsage";
 
 const KEY = "atlas.mock.settings";
@@ -27,6 +29,7 @@ function loadSettings(): Settings {
     lastView: "dashboard",
     configDirOverride: null,
     sandbox: false,
+    launchAnimation: true,
   };
   try {
     return { ...base, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
@@ -38,6 +41,7 @@ function loadSettings(): Settings {
 export function mockInfo(overrides: Partial<AppInfo> = {}, platform: Platform = "windows"): AppInfo {
   const real = view("C:/Users/you/.claude", "default");
   return {
+    seq: 0,
     version: "0.1.0",
     platform,
     backdrop: false,
@@ -48,6 +52,7 @@ export function mockInfo(overrides: Partial<AppInfo> = {}, platform: Platform = 
     configLockedByFlag: false,
     settings: loadSettings(),
     settingsNote: null,
+    settingsSaveError: null,
     firstPaintMs: null,
     ...overrides,
   };
@@ -61,7 +66,8 @@ export class MockBackend {
     return this.info;
   }
 
-  private commit(next: AppInfo): AppInfo {
+  private commit(change: AppInfo): AppInfo {
+    const next = { ...change, seq: this.info.seq + 1 };
     this.info = next;
     try {
       localStorage.setItem(KEY, JSON.stringify(next.settings));
@@ -72,7 +78,7 @@ export class MockBackend {
     return next;
   }
 
-  async updateSettings(patch: { theme?: Theme; lastView?: View }): Promise<AppInfo> {
+  async updateSettings(patch: SettingsPatch): Promise<AppInfo> {
     return this.commit({ ...this.info, settings: { ...this.info.settings, ...patch } });
   }
 
@@ -152,5 +158,21 @@ export class MockBackend {
   async onInfo(cb: (i: AppInfo) => void): Promise<() => void> {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
+  }
+
+  async setupSnapshot(includeWorktrees = false): Promise<SetupSnapshot> {
+    return mockSetupSnapshot(includeWorktrees);
+  }
+
+  async setupReadSource(id: string): Promise<SourceView> {
+    return mockSetupSource(id);
+  }
+
+  async setupReveal(id: string, index: number): Promise<string> {
+    return mockSetupReveal(id, index);
+  }
+
+  async onSetupChanged(): Promise<() => void> {
+    return () => {};
   }
 }

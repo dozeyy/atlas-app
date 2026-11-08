@@ -1,0 +1,8 @@
+{
+  "disableAllHooks": false,
+  "permissions": {
+    "deny": [
+      "Bash(sudo:*)"
+    ]
+  }
+}

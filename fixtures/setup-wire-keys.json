@@ -1,0 +1,111 @@
+{
+  "conflict": [
+    "definedIn",
+    "label",
+    "status"
+  ],
+  "definedIn": [
+    "id",
+    "isSelf",
+    "scopeLabel",
+    "winner"
+  ],
+  "detailRow": [
+    "label",
+    "value"
+  ],
+  "enabled": [
+    "label",
+    "raw",
+    "state"
+  ],
+  "hidden": [
+    "backups",
+    "emptyProjects",
+    "missingProjects",
+    "worktrees"
+  ],
+  "item": [
+    "attachments",
+    "backup",
+    "chips",
+    "conflict",
+    "description",
+    "detail",
+    "enabled",
+    "hasSecrets",
+    "id",
+    "kind",
+    "linkTarget",
+    "mcp",
+    "modifiedMs",
+    "name",
+    "path",
+    "plugin",
+    "projectId",
+    "realProjectFile",
+    "scope",
+    "scopeLabel",
+    "size",
+    "usedBy",
+    "warnings",
+    "worktree"
+  ],
+  "maskedRange": [
+    "end",
+    "index",
+    "key",
+    "start"
+  ],
+  "mcp": [
+    "envKeys",
+    "headerKeys",
+    "onCount",
+    "perProject",
+    "summary",
+    "totalProjects",
+    "transport"
+  ],
+  "project": [
+    "exists",
+    "id",
+    "isHome",
+    "isWorktree",
+    "itemCount",
+    "lastActivityMs",
+    "localMcpCount",
+    "name",
+    "parentId",
+    "path",
+    "worktreeCount"
+  ],
+  "projectState": [
+    "on",
+    "projectId",
+    "projectName"
+  ],
+  "root": [
+    "claudeJson",
+    "claudeJsonState",
+    "dir",
+    "dirExists"
+  ],
+  "snapshot": [
+    "elapsedMs",
+    "hidden",
+    "items",
+    "projects",
+    "root",
+    "version"
+  ],
+  "source": [
+    "bom",
+    "id",
+    "language",
+    "lineEnding",
+    "maskedRanges",
+    "size",
+    "text",
+    "truncated"
+  ]
+}

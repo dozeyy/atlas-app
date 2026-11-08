@@ -25,7 +25,8 @@ pub fn get_app_info(state: Shared) -> AppInfo {
     state.info()
 }
 
-#[tauri::command]
+// `async` here means "not on the UI thread": these write files.
+#[tauri::command(async)]
 pub fn update_settings(app: AppHandle, state: Shared, patch: SettingsPatch) -> AppInfo {
     let theme = patch.theme;
     let info = state.update_settings(patch);
@@ -35,9 +36,9 @@ pub fn update_settings(app: AppHandle, state: Shared, patch: SettingsPatch) -> A
     info
 }
 
-#[tauri::command]
-pub fn set_sandbox(app: AppHandle, state: Shared, enabled: bool) -> AppInfo {
-    state.set_sandbox(&app, enabled)
+#[tauri::command(async)]
+pub fn set_sandbox(state: Shared, enabled: bool) -> AppInfo {
+    state.set_sandbox(enabled)
 }
 
 /// Opens the folder picker. Returns the new info, or the unchanged info when the
@@ -52,28 +53,32 @@ pub async fn choose_config_dir(app: AppHandle, state: Shared<'_>) -> Result<AppI
     match picked {
         Some(p) => {
             let path = p.into_path().map_err(|e| e.to_string())?;
-            Ok(state.set_config_override(&app, Some(path.to_string_lossy().into_owned())))
+            Ok(state.set_config_override(Some(path.to_string_lossy().into_owned())))
         }
         None => Ok(state.info()),
     }
 }
 
-#[tauri::command]
-pub fn clear_config_dir(app: AppHandle, state: Shared) -> AppInfo {
-    state.set_config_override(&app, None)
+#[tauri::command(async)]
+pub fn clear_config_dir(state: Shared) -> AppInfo {
+    state.set_config_override(None)
 }
 
 /// The page has painted: show the window and record the time.
 #[tauri::command]
 pub fn frontend_ready(app: AppHandle, state: Shared) -> u64 {
     let ms = state.mark_first_paint();
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.set_focus();
-    }
+    // During the launch intro the intro shows the window at the handoff.
+    if !crate::intro::main_ready(&app)
+        && let Some(w) = app.get_webview_window("main") {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
     eprintln!("[atlas] startup: {ms} ms to first paint");
     // The usage engine starts only now, after the first paint (D40), on its own thread.
-    state.usage.sync_in_background(state.inner(), &app);
+    state.usage.sync_in_background(state.inner());
+    // Setup reads Will's Claude folder in the background so its page is full when opened.
+    crate::setup_service::prefetch(&app);
     // The page booted with first_paint_ms unset; tell it the number now.
     let _ = app.emit(crate::state::INFO_EVENT, state.info());
     ms

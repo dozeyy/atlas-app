@@ -9,6 +9,7 @@ interface AtlasContext {
   view: View;
   setView: (v: View) => void;
   setTheme: (t: Theme) => void;
+  setLaunchAnimation: (on: boolean) => void;
   setSandbox: (enabled: boolean) => Promise<void>;
   chooseConfigDir: () => Promise<void>;
   clearConfigDir: () => Promise<void>;
@@ -27,13 +28,21 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   const [info, setInfo] = useState<AppInfo>(() => backend.boot());
   const [view, setViewState] = useState<View>(info.settings.lastView);
   const alive = useRef(true);
+  // Newest snapshot taken so far. An event and a command result can cross on
+  // the way; whichever carries the lower sequence number is stale and dropped.
+  const newest = useRef(info.seq);
+  const accept = useCallback((next: AppInfo) => {
+    if (!alive.current || next.seq < newest.current) return;
+    newest.current = next.seq;
+    setInfo(next);
+  }, []);
 
   // Live updates from Rust (the sandbox copy finishing in the background).
   useEffect(() => {
     alive.current = true;
     let off: (() => void) | undefined;
     backend
-      .onInfo((next) => alive.current && setInfo(next))
+      .onInfo(accept)
       .then((fn) => {
         if (alive.current) off = fn;
         else fn();
@@ -43,16 +52,18 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       alive.current = false;
       off?.();
     };
-  }, [backend]);
+  }, [backend, accept]);
 
-  const run = useCallback(async (p: Promise<AppInfo>) => {
-    try {
-      const next = await p;
-      if (alive.current) setInfo(next);
-    } catch (e) {
-      console.error("[atlas] command failed", e);
-    }
-  }, []);
+  const run = useCallback(
+    async (p: Promise<AppInfo>) => {
+      try {
+        accept(await p);
+      } catch (e) {
+        console.error("[atlas] command failed", e);
+      }
+    },
+    [accept],
+  );
 
   const setView = useCallback(
     (v: View) => {
@@ -70,17 +81,23 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     [backend, run],
   );
 
+  const setLaunchAnimation = useCallback(
+    (on: boolean) => void run(backend.updateSettings({ launchAnimation: on })),
+    [backend, run],
+  );
+
   const value = useMemo<AtlasContext>(
     () => ({
       info,
       view,
       setView,
       setTheme,
+      setLaunchAnimation,
       setSandbox: (enabled) => run(backend.setSandbox(enabled)),
       chooseConfigDir: () => run(backend.chooseConfigDir()),
       clearConfigDir: () => run(backend.clearConfigDir()),
     }),
-    [info, view, setView, setTheme, run, backend],
+    [info, view, setView, setTheme, setLaunchAnimation, run, backend],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
