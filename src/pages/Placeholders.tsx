@@ -1,14 +1,11 @@
 import { ClockCounterClockwise, Sparkle } from "@phosphor-icons/react";
 import { EmptyState } from "../components/EmptyState";
-import { PageHeader } from "../components/controls";
+import { PageTitle } from "../components/controls";
 
 export function History() {
   return (
     <>
-      <PageHeader
-        title="History"
-        subtitle="A record of every change Atlas makes to your Claude setup."
-      />
+      <PageTitle title="History" />
       <EmptyState
         fill
         icon={ClockCounterClockwise}
@@ -24,10 +21,7 @@ export function History() {
 export function Wrapped() {
   return (
     <>
-      <PageHeader
-        title="Wrapped"
-        subtitle="Your Claude Code year, as a page you can keep or share."
-      />
+      <PageTitle title="Wrapped" />
       <EmptyState
         fill
         icon={Sparkle}

@@ -3,5 +3,9 @@
   "identifier": "default",
   "description": "What the main window may do: events and its own window. App commands are our own and listed in main.rs.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize"
+  ]
 }

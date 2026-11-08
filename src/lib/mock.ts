@@ -45,6 +45,7 @@ export function mockInfo(overrides: Partial<AppInfo> = {}, platform: Platform = 
   return {
     seq: 0,
     version: "0.1.0",
+    build: "release",
     platform,
     backdrop: false,
     dataDir: "C:/Users/you/AppData/Roaming/atlas",
@@ -139,7 +140,14 @@ export class MockBackend {
     return this.commit({ ...this.info, settings, config: cfg, realConfig: cfg });
   }
 
+  async openConfigDir(): Promise<void> {}
+  async openDataDir(): Promise<void> {}
+
   async frontendReady(): Promise<void> {}
+  async windowControl(_action: "minimize" | "toggle-maximize" | "close"): Promise<void> {}
+  async windowMaximized(): Promise<boolean> {
+    return false;
+  }
 
   // ---- usage: the stand-in lives in mockUsage.ts so this file stays small ----
   readonly usage = new MockUsage();

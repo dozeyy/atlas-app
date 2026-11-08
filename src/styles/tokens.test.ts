@@ -23,9 +23,10 @@ function vars(block: string): Vars {
   return out;
 }
 
-const light = vars(blockAfter(":root {"));
+const light = vars(blockAfter(":root,\n.theme-preview[data-theme=\"light\"]"));
+const silver = vars(blockAfter(':root[data-theme="silver"]'));
 const dark = vars(blockAfter(':root[data-theme="dark"]'));
-const osDark = vars(blockAfter(':root:not([data-theme="light"])', css.indexOf("@media (prefers-color-scheme: dark)")));
+const osDark = vars(blockAfter(':root:not([data-theme])', css.indexOf("@media (prefers-color-scheme: dark)")));
 
 // ---- color math ----------------------------------------------------------------
 
@@ -78,6 +79,7 @@ const on = (set: Vars, fg: string, bg: string): RGBA => over(get(set, fg), get(s
 
 for (const [name, set] of [
   ["light", light],
+  ["silver", silver],
   ["dark", dark],
 ] as const) {
   describe(`${name} theme`, () => {
@@ -123,6 +125,17 @@ for (const [name, set] of [
       expect(contrast(border, get(set, "raised"))).toBeGreaterThanOrEqual(1.3);
     });
 
+    it.each(["chart-1", "chart-2", "chart-3", "chart-4", "bar-rest"])(
+      "chart color %s reaches 3:1 on the card surface",
+      (c) => {
+        expect(contrast(get(set, c), get(set, "surface"))).toBeGreaterThanOrEqual(3);
+      },
+    );
+
+    it("the tooltip is readable", () => {
+      expect(contrast(get(set, "tip-ink"), get(set, "tip-bg"))).toBeGreaterThanOrEqual(4.5);
+    });
+
     it.each(["keyword", "string", "number", "comment", "name", "heading"])(
       "code color %s is readable on surface and raised",
       (c) => {
@@ -146,8 +159,17 @@ describe("theme blocks", () => {
     expect(osDark).toEqual(dark);
   });
 
-  it("dark overrides every color the light theme defines", () => {
+  it("dark and silver override every color the light theme defines", () => {
     const colorKeys = Object.keys(light).filter((k) => /^(#|rgb)/.test(light[k]));
     for (const k of colorKeys) expect(dark, k).toHaveProperty(k);
+    for (const k of colorKeys) expect(silver, k).toHaveProperty(k);
+  });
+
+  it("silver sits between light and dark", () => {
+    const lum = (set: Vars, k: string) => luminance(get(set, k));
+    for (const k of ["bg", "surface"]) {
+      expect(lum(silver, k)).toBeLessThan(lum(light, k));
+      expect(lum(silver, k)).toBeGreaterThan(lum(dark, k));
+    }
   });
 });

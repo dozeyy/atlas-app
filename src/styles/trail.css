@@ -1,0 +1,1322 @@
+/*
+ * Trail Map: the motion and chart layer (docs/specs/fun-pass/DIRECTION.md).
+ * Colors, radii, durations and easings come from tokens.css; nothing here defines a value
+ * that belongs there. Hover and press are CSS only (transitions, interruptible); the one
+ * JS animation is the count-up. `html.reduced` (set from the OS setting, see lib/motion.ts)
+ * turns every animation into a plain fade and removes lift and travel.
+ */
+
+@layer components {
+/* ---- Display type: Recursive with the Casual axis at 0.4 --------------------------------
+   Numbers and titles only. Never body text, buttons, nav, inputs, tables or code. */
+.d {
+  font-family: var(--font-display);
+  font-variation-settings: var(--display-axes);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.d-hero {
+  font-size: 56px;
+  line-height: 56px;
+  font-weight: 760;
+  letter-spacing: -0.02em;
+}
+.d-title {
+  font-size: 32px;
+  line-height: 38px;
+  font-weight: 720;
+}
+.d-stat {
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 760;
+}
+.d-tile {
+  font-size: 24px;
+  line-height: 26px;
+  font-weight: 760;
+}
+.d-figure {
+  font-size: 20px;
+  line-height: 24px;
+  font-weight: 720;
+}
+.d-small {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 700;
+}
+
+/* ---- Icons: two weights stacked, crossfaded; one-shot motion on hover --------------------- */
+.ico {
+  display: inline-grid;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  transform-origin: 50% 50%;
+}
+.ico > svg {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.ico .w-duo,
+.ico .w-fill {
+  opacity: 0;
+}
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico:not(.ico-still) .w-reg {
+  opacity: 0;
+}
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico:not(.ico-still) .w-duo {
+  opacity: 1;
+}
+[aria-current="page"] .ico .w-reg {
+  opacity: 0;
+}
+[aria-current="page"] .ico .w-fill {
+  opacity: 1;
+}
+
+@keyframes m-wiggle {
+  0% { rotate: 0deg; }
+  25% { rotate: -14deg; }
+  50% { rotate: 10deg; }
+  75% { rotate: -5deg; }
+  100% { rotate: 0deg; }
+}
+@keyframes m-zap {
+  0% { scale: 1; }
+  30% { scale: 1.22; opacity: 0.6; }
+  45% { opacity: 1; }
+  60% { scale: 0.94; }
+  100% { scale: 1; }
+}
+@keyframes m-tilt {
+  0% { rotate: 0deg; }
+  40% { rotate: -12deg; }
+  70% { rotate: 6deg; }
+  100% { rotate: 0deg; }
+}
+@keyframes m-nudge {
+  0% { translate: 0 0; }
+  45% { translate: -3px 0; }
+  100% { translate: 0 0; }
+}
+@keyframes m-pop {
+  0% { scale: 1; }
+  40% { scale: 1.2; }
+  70% { scale: 0.95; }
+  100% { scale: 1; }
+}
+@keyframes m-spin {
+  from { rotate: 0deg; }
+  to { rotate: 180deg; }
+}
+@keyframes m-plug {
+  0% { translate: 0 0; }
+  40% { translate: -2px 2px; }
+  70% { translate: 1px -1px; }
+  100% { translate: 0 0; }
+}
+@keyframes m-swing {
+  0% { rotate: 0deg; }
+  30% { rotate: 16deg; }
+  60% { rotate: -9deg; }
+  85% { rotate: 3deg; }
+  100% { rotate: 0deg; }
+}
+@keyframes m-bob {
+  0% { translate: 0 0; }
+  40% { translate: 0 -3px; }
+  100% { translate: 0 0; }
+}
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="wiggle"] { animation: m-wiggle 420ms var(--ease-out); }
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="zap"] { animation: m-zap 420ms var(--ease-out); }
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="tilt"] { animation: m-tilt 420ms var(--ease-out); }
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="nudge"] { animation: m-nudge 360ms var(--ease-out); }
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="pop"] { animation: m-pop 420ms var(--ease-out); }
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="spin"] { animation: m-spin 480ms var(--ease-spring); }
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="plug"] { animation: m-plug 420ms var(--ease-out); }
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="swing"] { animation: m-swing 520ms var(--ease-out); transform-origin: 50% 10%; }
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="bob"] { animation: m-bob 380ms var(--ease-out); }
+
+/* ---- Cards ------------------------------------------------------------------------------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  position: relative;
+}
+/*
+ * HIT BOX RULE: the element you click never moves. A transform on a button moves its hit
+ * box, so a press that shrinks it (or a hover that lifts it) makes a mouseup near the edge
+ * land outside and the click never fires. Every interactive primitive is therefore two
+ * layers: an outer element (the button, fixed box, owns the click and the focus ring) and
+ * an inner face (background, border, shadow, and ALL the transforms). tokens.test.ts and
+ * hitbox.test.ts fail the build if a hover/active rule moves the interactive element itself.
+ *
+ * A clickable card lifts 2px with a spring and presses to .985; a static card never moves.
+ */
+.card-hit {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: var(--r-card);
+  cursor: pointer;
+  text-align: left;
+}
+.card-face {
+  height: 100%;
+  transition:
+    transform var(--dur-hover) var(--ease-spring),
+    box-shadow var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out);
+}
+.card-hit:hover .card-face {
+  transform: translateY(var(--lift));
+  box-shadow: var(--shadow-lift);
+  border-color: var(--line-strong);
+}
+.card-hit:active .card-face {
+  transform: translateY(0) scale(calc(1 - (1 - var(--press-scale)) / 2));
+  transition-duration: var(--dur-press);
+}
+
+/* ---- Buttons ----------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: var(--r-control);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.btn-face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  transition:
+    transform var(--dur-hover) var(--ease-spring),
+    box-shadow var(--dur-hover) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+.btn:disabled {
+  cursor: not-allowed;
+}
+.btn:disabled .btn-face {
+  opacity: 0.5;
+}
+.btn:active:not(:disabled) .btn-face {
+  transform: translateY(0) scale(var(--btn-press, 0.96));
+  transition-duration: var(--dur-press);
+}
+.btn-primary .btn-face {
+  background: var(--accent-solid);
+  color: var(--on-accent);
+  box-shadow: var(--shadow-accent);
+}
+.btn-primary:hover:not(:disabled) .btn-face {
+  background: var(--accent-solid-hover);
+  box-shadow: var(--shadow-accent-hover);
+  transform: translateY(calc(var(--lift) / 2));
+}
+.btn-secondary .btn-face {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.btn-secondary:hover:not(:disabled) .btn-face {
+  background: var(--raised);
+  transform: translateY(calc(var(--lift) / 2));
+}
+/* Destructive controls never lift or wiggle: they hold still and say what they do. */
+.btn-danger .btn-face {
+  background: var(--surface);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btn-danger:hover:not(:disabled) .btn-face {
+  background: var(--danger-tint);
+}
+.btn .ico {
+  width: 16px;
+  height: 16px;
+}
+.btn-icon {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: var(--r-control);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.btn-icon .btn-face {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.btn-icon:hover:not(:disabled) .btn-face {
+  background: var(--raised);
+  color: var(--ink);
+}
+.btn-icon:active:not(:disabled) .btn-face {
+  transform: scale(0.92);
+}
+.btn-icon:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Segmented control: one thumb that slides (320 ms spring) behind the labels. */
+.seg {
+  position: relative;
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+}
+.seg-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.12),
+    0 0 0 1px var(--line);
+  transition:
+    transform var(--dur-spring) var(--ease-spring),
+    width var(--dur-spring) var(--ease-spring);
+}
+.seg-item {
+  position: relative;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 7px;
+  font-weight: 500;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.seg-face {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.seg-item:hover {
+  color: var(--ink);
+}
+.seg-item:active .seg-face {
+  transform: scale(var(--press-scale));
+}
+.seg-item[data-state="on"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--raised);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.chip .ico {
+  width: 14px;
+  height: 14px;
+}
+.chip-clay {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+
+/* The Atlas spark mark, used on the peak of a chart and on the streak chip. */
+.spark {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  background: var(--accent);
+  -webkit-mask: url("../assets/spark.svg") center / contain no-repeat;
+  mask: url("../assets/spark.svg") center / contain no-repeat;
+}
+
+/* ---- Options menu: one compact button that holds a screen's option controls --------------------- */
+.options-trigger {
+  width: 36px;
+  height: 32px;
+}
+.options-trigger .btn-face {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  justify-content: center;
+}
+.options-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* ---- App menu (title bar) ------------------------------------------------------------------ */
+.app-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-lift);
+  animation: options-in var(--dur-base, 180ms) var(--ease-out) both;
+}
+.app-submenu {
+  left: calc(100% + 4px);
+  top: -5px;
+  min-width: 212px;
+}
+.app-menu-item {
+  display: flex;
+  width: 100%;
+  height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--ink);
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.app-menu-item:hover,
+.app-menu-item[aria-expanded="true"] {
+  background: var(--raised);
+}
+.app-menu-item:focus-visible {
+  background: var(--raised);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+html.reduced .app-menu {
+  animation: none;
+}
+.options-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 30;
+  max-width: calc(100vw - 32px);
+  padding: 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-lift);
+  animation: options-in var(--dur-base, 180ms) var(--ease-out) both;
+}
+@keyframes options-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+html.reduced .options-panel {
+  animation: none;
+}
+
+/* ---- Title bar row -------------------------------------------------------------------------- */
+.app-shell {
+  --side-dur: 230ms;
+  --side-now: var(--sidebar-w); /* where the title bar's hairline starts: at the sidebar's edge */
+}
+.app-shell[data-side="collapsed"] {
+  --side-now: 0px; /* folded: the hairline runs the full width, under the menu and toggle */
+}
+.titlebar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 20;
+  display: flex;
+  height: var(--titlebar-h);
+  align-items: stretch;
+  justify-content: space-between;
+}
+.titlebar::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  left: var(--side-now);
+  height: 1px;
+  background: var(--line);
+  pointer-events: none;
+  transition: left var(--side-dur) var(--ease-out);
+}
+.app-shell[data-side="collapsed"] .titlebar::after {
+  transition-delay: 60ms; /* in step with the sidebar, which waits for the labels to fade */
+}
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  padding-left: 6px;
+}
+.caption-buttons {
+  display: flex;
+}
+.caption-btn {
+  display: flex;
+  width: 46px;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: default;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.caption-btn:hover {
+  background: var(--raised);
+}
+.caption-btn:active {
+  background: color-mix(in srgb, var(--raised) 70%, var(--ink) 8%);
+}
+.caption-close:hover,
+.caption-close:active {
+  background: #c42b1c;
+  color: #fff;
+}
+.caption-close:active {
+  background: #b32619;
+}
+
+/* ---- Session rows in columns (container = the page, so the sidebar's width counts) ---------- */
+.session-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin-bottom: -1px; /* the last row's rule falls outside the card */
+}
+.session-grid > li {
+  border-bottom: 1px solid var(--line);
+}
+@container (min-width: 1100px) {
+  .session-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .session-grid > li:nth-child(2n) {
+    border-left: 1px solid var(--line);
+  }
+}
+@container (min-width: 1700px) {
+  .session-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .session-grid > li:nth-child(2n) {
+    border-left: 0;
+  }
+  .session-grid > li:nth-child(3n + 2),
+  .session-grid > li:nth-child(3n) {
+    border-left: 1px solid var(--line);
+  }
+}
+
+/* ---- Sidebar ----------------------------------------------------------------------------- */
+.side {
+  width: var(--sidebar-w);
+  overflow: hidden; /* labels are clipped, not wrapped, while the width moves */
+  padding-top: calc(var(--titlebar-h) + 8px);
+  border-right: 1px solid var(--line);
+  transition: width var(--side-dur) var(--ease-out);
+}
+/* Folded to icons: labels become tooltips (each button carries a title and an aria-label). The
+   icons never move: they sit at a fixed offset that centres them in the folded width. Folding
+   fades the labels first (0-110 ms), then the width follows; opening is the reverse. */
+.side-collapsed {
+  width: var(--sidebar-w-collapsed);
+  transition-delay: 60ms;
+}
+.nav-label {
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity var(--dur-fast) var(--ease-out) 110ms;
+}
+.side-collapsed .nav-label {
+  opacity: 0;
+  transition-delay: 0ms;
+}
+.side-collapsed .streak-btn {
+  display: none; /* the streak is for the open sidebar only */
+}
+.side-collapsed [role="status"] {
+  justify-content: center;
+  padding-inline: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .side,
+  .nav-label,
+  .titlebar::after {
+    transition: none !important;
+  }
+}
+html.reduced .side,
+html.reduced .nav-label,
+html.reduced .titlebar::after {
+  transition: none !important;
+}
+/* macOS: the traffic lights sit at the left of the row, so the buttons start after them. The row
+   is its own strip across the window and the sidebar starts below it. */
+html[data-platform="macos"] .titlebar-left {
+  padding-left: 84px;
+}
+html[data-platform="macos"] .titlebar {
+  background: var(--bg);
+}
+html[data-platform="macos"] .titlebar::after {
+  left: 0;
+  transition: none;
+}
+html[data-platform="macos"] .side {
+  margin-top: var(--titlebar-h);
+  padding-top: 8px;
+}
+.nav-pill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--accent-tint);
+  transition:
+    transform var(--dur-spring) var(--ease-spring),
+    opacity var(--dur-fast) var(--ease-out);
+}
+.nav-item {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 10px;
+  font-weight: 500;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.nav-face {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  padding: 0 16px; /* 16 = (76 - 1 border - 24 sides - 18 icon) / 2: centred when folded */
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.nav-item:hover:not([aria-current="page"]) {
+  background: color-mix(in srgb, var(--raised) 80%, transparent);
+  color: var(--ink);
+}
+.nav-item:active .nav-face {
+  transform: scale(var(--press-scale));
+}
+.nav-item[aria-current="page"] {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+/* An item with no sliding pill of its own (Settings, at the foot) takes the tint directly. */
+.nav-solo[aria-current="page"] {
+  background: var(--accent-tint);
+}
+
+/* ---- Theme picker (Settings) --------------------------------------------------------------- */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr));
+  gap: 14px;
+}
+.theme-card {
+  border-radius: var(--r-card);
+}
+.theme-card-face {
+  display: block;
+  padding: 10px;
+}
+.theme-card[aria-checked="true"] .theme-card-face {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.theme-card-label {
+  display: grid;
+  gap: 2px;
+  padding: 10px 4px 2px;
+}
+.theme-card-hint {
+  display: block;
+}
+
+/* A mini Atlas window. It sets its own background and ink, so the tokens of ITS theme apply
+   whatever theme the page is in (tokens.css scopes each theme to .theme-preview[data-theme]). */
+.theme-preview {
+  display: flex;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+}
+.tp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 24%;
+  padding: 8px 7px;
+  background: var(--sidebar-solid);
+  border-right: 1px solid var(--line);
+}
+.tp-dot {
+  width: 10px;
+  height: 10px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.tp-pill {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line-strong);
+}
+.tp-pill-on {
+  background: var(--accent);
+}
+.tp-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 10px;
+}
+.tp-title {
+  width: 46%;
+  height: 7px;
+  border-radius: 3px;
+  background: var(--ink);
+}
+.tp-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.tp-line {
+  width: 34%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink-2);
+  opacity: 0.6;
+}
+.tp-bars {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  gap: 4px;
+}
+.tp-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  background: var(--bar-rest);
+}
+.tp-bar-now {
+  background: var(--accent);
+}
+
+/* ---- Tooltip ------------------------------------------------------------------------------ */
+.tip {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  white-space: nowrap;
+  background: var(--tip-bg);
+  color: var(--tip-ink);
+  border-radius: 10px;
+  padding: 8px 12px 9px;
+  box-shadow: var(--shadow-pop);
+  transform: translate(-50%, calc(-100% - 10px));
+  opacity: 0;
+  translate: 0 4px;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    translate var(--dur-fast) var(--ease-out);
+}
+.tip.show {
+  opacity: 1;
+  translate: 0 0;
+}
+.tip::after {
+  content: "";
+  position: absolute;
+  left: var(--caret, 50%);
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  background: var(--tip-bg);
+  border-radius: 2px;
+  rotate: 45deg;
+}
+.tip .t1,
+.tip .t3 {
+  font-size: 12px;
+  line-height: 16px;
+  opacity: 0.72;
+}
+.tip .t2 {
+  font-family: var(--font-display);
+  font-variation-settings: var(--display-axes);
+  font-weight: 720;
+  font-size: 17px;
+  line-height: 22px;
+}
+
+/* ---- Charts ------------------------------------------------------------------------------- */
+svg.chart {
+  display: block;
+  overflow: visible;
+}
+.chart-wrap {
+  position: relative;
+}
+.chart-wrap:focus-visible,
+.chart-focus:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+.bar {
+  fill: var(--bar-rest);
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transition:
+    fill var(--dur-fast) var(--ease-out),
+    scale var(--dur-hover) var(--ease-spring);
+}
+.bar.today {
+  fill: var(--accent);
+}
+.bar.zero {
+  fill: var(--heat-0);
+}
+.bar-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+/* Hover: the bar fills in and its top rises 4px; the bottom never leaves the baseline
+   (scale from the bottom edge; --hs = (h + 4) / h is set per bar). */
+.bar-g:hover .bar,
+.bar-g.on .bar {
+  fill: var(--accent-text);
+  scale: 1 var(--hs, 1);
+}
+.bar-g:hover .bar.zero,
+.bar-g.on .bar.zero {
+  fill: var(--line-strong);
+  scale: 1 1;
+}
+.summit {
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.chart-wrap[data-tip="1"] .summit {
+  opacity: 0;
+}
+.grid-line {
+  stroke: var(--line);
+  stroke-dasharray: 2 4;
+}
+.axis-label {
+  font-size: 11px;
+  fill: var(--ink-2);
+}
+.base-line {
+  stroke: var(--line-strong);
+}
+
+.ridge-stroke {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ridge-dot {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.pole {
+  stroke: var(--accent);
+  stroke-width: 1.25;
+  stroke-dasharray: 2 3;
+}
+.ridge-day {
+  font-size: 11px;
+  fill: var(--ink-2);
+  text-anchor: middle;
+}
+.ridge-day.peak {
+  fill: var(--accent-text);
+  font-weight: 700;
+}
+.ridge-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.ring-track {
+  fill: none;
+  stroke: var(--raised);
+}
+.ring-arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+}
+.ring-arc.lap2 {
+  stroke: var(--accent-text);
+}
+
+.cell {
+  transform-box: fill-box;
+  transform-origin: center;
+  cursor: pointer;
+  transition: scale var(--dur-hover) var(--ease-spring);
+}
+.cell:hover,
+.cell.on {
+  scale: 1.35;
+}
+.streak-ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.streak-ring.today {
+  stroke: var(--accent-text);
+  stroke-width: 2;
+}
+.today-label {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--accent-text);
+}
+
+.stack {
+  display: flex;
+  gap: 3px;
+  height: 22px;
+  align-items: center;
+}
+.seg-bar {
+  height: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 6px;
+  transition:
+    height var(--dur-hover) var(--ease-spring),
+    opacity var(--dur) var(--ease-out);
+}
+.seg-bar:first-child {
+  border-radius: 999px 4px 4px 999px;
+}
+.seg-bar:last-child {
+  border-radius: 4px 999px 999px 4px;
+}
+.seg-bar:only-child {
+  border-radius: 999px;
+}
+.stack:has(.seg-bar:hover) .seg-bar:not(:hover),
+.stack:has(.seg-bar.on) .seg-bar:not(.on) {
+  opacity: 0.35;
+}
+.seg-bar:hover,
+.seg-bar.on {
+  height: 22px;
+}
+
+.legend-row {
+  display: grid;
+  grid-template-columns: 12px 1fr auto 52px;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: 8px;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.legend-row:hover,
+.legend-row.on {
+  background: var(--raised);
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.spark-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.share-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--raised);
+  overflow: hidden;
+}
+.share-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transform-origin: left;
+}
+
+/* A native select: the field is fixed, the chevron dips when the pointer is over it. */
+.select-wrap select {
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.select-wrap:hover select {
+  border-color: var(--ink-2);
+}
+.select-wrap:active select {
+  background: color-mix(in srgb, var(--raised) 85%, var(--ink));
+}
+.select-caret {
+  transition: translate var(--dur-hover) var(--ease-spring);
+}
+.select-wrap:hover .select-caret {
+  translate: 0 2px;
+}
+
+/* A list row you can open: it washes on hover and press, and never moves or scales. */
+.row-btn {
+  display: flex;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  background: none;
+  border: 0;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.row-btn:hover {
+  background: var(--raised);
+}
+.row-btn:active {
+  background: color-mix(in srgb, var(--raised) 85%, var(--ink));
+}
+/* The rounded square behind a Toolkit icon. On hover it relaxes into a soft blob. */
+.kind-tile {
+  border-radius: var(--r-control);
+  transition:
+    border-radius var(--dur-hover) var(--ease-spring),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.hover-host:hover .kind-tile {
+  border-radius: 46% 54% 52% 48% / 54% 46% 54% 46%;
+  background: color-mix(in srgb, var(--accent-tint) 70%, var(--accent) 30%);
+}
+
+/*
+ * The corner X (delete) and lock on a Toolkit card. The 28px button never moves; its face
+ * lifts with the card, tints on hover, turns a quarter on the X, and shrinks on press.
+ */
+.x-del {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: var(--r-control);
+  cursor: pointer;
+}
+.x-del-face {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  color: var(--ink-2);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    translate var(--dur-hover) var(--ease-spring),
+    transform var(--dur-press) var(--ease-out);
+}
+.x-del-face > svg {
+  transition: rotate var(--dur-hover) var(--ease-spring);
+}
+.x-del:hover .x-del-face {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+.x-lock:hover .x-del-face {
+  background: var(--raised);
+  color: var(--ink);
+}
+.x-del:hover .x-del-face > svg {
+  rotate: 90deg;
+}
+.x-lock:hover .x-del-face > svg {
+  rotate: 0deg;
+}
+.x-del:active .x-del-face {
+  transform: scale(var(--press-scale));
+}
+.item-wrap:hover .x-del-face {
+  translate: 0 var(--lift);
+}
+.x-del:focus-visible {
+  outline: 2px solid var(--focus, var(--accent));
+  outline-offset: 1px;
+}
+
+.row-caret {
+  opacity: 0;
+  translate: -4px 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    translate var(--dur-hover) var(--ease-spring);
+}
+.row-btn:hover .row-caret,
+.row-btn:focus-visible .row-caret,
+.card-hit:hover .row-caret,
+.card-hit:focus-visible .row-caret {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* Helpers that were started by another helper hang off a rail, so the nesting reads as a tree. */
+.helper-kids {
+  margin: 12px 0 0 20px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+.helper-kid {
+  position: relative;
+  margin-left: 12px;
+}
+.helper-kid::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  width: 12px;
+  height: 48px;
+  border-left: 1.5px solid var(--line-strong);
+  border-bottom: 1.5px solid var(--line-strong);
+  border-bottom-left-radius: 8px;
+  pointer-events: none;
+}
+.helper-kid:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 36px;
+  bottom: -12px;
+  border-left: 1.5px solid var(--line-strong);
+  pointer-events: none;
+}
+
+/* ---- First paint: empty to full, once per chart per launch (the `.intro` class) ---------- */
+.intro .bar {
+  animation: t-grow 560ms var(--ease-spring) backwards;
+  animation-delay: calc(var(--i, 0) * 14ms);
+}
+@keyframes t-grow {
+  from { scale: 1 0; }
+  to { scale: 1 1; }
+}
+.intro .ridge-stroke {
+  stroke-dasharray: var(--len);
+  stroke-dashoffset: 0;
+  animation: t-draw var(--dur-draw) var(--ease-out) backwards;
+}
+@keyframes t-draw {
+  from { stroke-dashoffset: var(--len); }
+  to { stroke-dashoffset: 0; }
+}
+.intro .ridge-area {
+  animation: t-fade 300ms var(--ease-out) 650ms backwards;
+}
+.intro .summit {
+  animation: t-summit 460ms var(--ease-spring) 760ms backwards;
+}
+@keyframes t-summit {
+  from { opacity: 0; translate: 0 8px; scale: 0.6; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+@keyframes t-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.intro .ring-arc {
+  animation: t-ring 900ms var(--ease-expo) 120ms backwards;
+}
+@keyframes t-ring {
+  from { stroke-dashoffset: var(--circ); }
+}
+.intro .cell {
+  animation: t-cellin 300ms var(--ease-spring) backwards;
+  animation-delay: calc(var(--c, 0) * 18ms + 200ms);
+}
+@keyframes t-cellin {
+  from { opacity: 0; scale: 0.4; }
+  to { opacity: 1; scale: 1; }
+}
+.intro .streak-ring,
+.intro .today-label {
+  animation: t-fade 400ms var(--ease-out) 700ms backwards;
+}
+.intro .seg-bar {
+  animation: t-segin 520ms var(--ease-expo) backwards;
+  animation-delay: calc(var(--i, 0) * 80ms + 200ms);
+  transform-origin: left;
+}
+@keyframes t-segin {
+  from { scale: 0 1; }
+}
+.intro .share-bar > i {
+  animation: t-segin 520ms var(--ease-expo) backwards;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+.intro .spark-line {
+  stroke-dasharray: var(--len);
+  animation: t-draw 600ms var(--ease-out) backwards;
+}
+
+/* Page entry: fade and rise 8px over 260 ms, children staggered 30 ms (cap 8). */
+@keyframes t-rise {
+  from { opacity: 0; translate: 0 var(--travel); }
+}
+.rise {
+  animation: t-rise 260ms var(--ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 8) * var(--stagger));
+}
+/* List rows: first render only, 20 ms apart (cap 12). */
+.row-in {
+  animation: t-rise 220ms var(--ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 12) * 20ms);
+}
+
+/* ---- Reduced motion: plain 120 ms fades, no travel, no lift, no press scale ---------------- */
+html.reduced *,
+html.reduced *::before,
+html.reduced *::after {
+  animation-duration: 120ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 120ms !important;
+}
+html.reduced .intro .bar,
+html.reduced .intro .cell,
+html.reduced .intro .seg-bar,
+html.reduced .intro .share-bar > i,
+html.reduced .intro .summit,
+html.reduced .intro .ring-arc,
+html.reduced .intro .ridge-stroke,
+html.reduced .intro .spark-line,
+html.reduced .rise,
+html.reduced .row-in {
+  animation-name: t-fade !important;
+  stroke-dasharray: none;
+}
+html.reduced .ico {
+  animation: none !important;
+}
+html.reduced .bar-g:hover .bar,
+html.reduced .bar-g.on .bar,
+html.reduced .cell:hover,
+html.reduced .cell.on {
+  scale: 1 1;
+}
+html.reduced .btn:active:not(:disabled) .btn-face,
+html.reduced .btn-icon:active:not(:disabled) .btn-face,
+html.reduced .card-hit:active .card-face,
+html.reduced .x-del:active .x-del-face,
+html.reduced .seg-item:active .seg-face,
+html.reduced .nav-item:active .nav-face {
+  transform: none;
+}
+}

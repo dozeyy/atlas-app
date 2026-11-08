@@ -352,7 +352,7 @@ export class MockUsage {
     };
   }
 
-  async usageTimeline(a: { from: string; to: string; bucket: Bucket }): Promise<Timeline> {
+  async usageTimeline(a: { from: string; to: string; bucket: Bucket; groupBy?: "model" | "project" }): Promise<Timeline> {
     this.guard();
     const points: TimelinePoint[] = [];
     const all = this.data();
@@ -383,7 +383,25 @@ export class MockUsage {
         points.push({ start, tokens: per.tokens, cost: per.cost, sessions: list.length });
       }
     }
-    return { bucket: a.bucket, points, series: null };
+    let series: Timeline["series"] = null;
+    if (a.groupBy && a.bucket !== "hour") {
+      const starts = points.map((p) => p.start);
+      const inRange = all.filter((s) => s.day >= a.from && s.day <= a.to);
+      const keyOf = (s: MockSession): string => (a.groupBy === "model" ? s.model : PROJECTS.find((p) => p.name === s.projectName)!.key);
+      const labelOf = (s: MockSession): string => (a.groupBy === "model" ? s.model : s.projectName);
+      const keys = new Map<string, string>();
+      for (const s of inRange) keys.set(keyOf(s), labelOf(s));
+      series = [...keys.entries()].map(([k, label]) => ({
+        key: k,
+        label,
+        points: starts.map((start) => {
+          const list = inRange.filter((s) => keyOf(s) === k && key(s.day) === start);
+          const per = periodOf(list);
+          return { start, tokens: per.tokens, cost: per.cost, sessions: list.length };
+        }),
+      }));
+    }
+    return { bucket: a.bucket, points, series };
   }
 
   async sessionsList(q: SessionQuery): Promise<SessionPage> {

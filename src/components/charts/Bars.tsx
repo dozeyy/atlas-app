@@ -1,0 +1,163 @@
+import { useMemo, useState } from "react";
+import type { KeyboardEvent } from "react";
+import { barPath } from "../../lib/chartPaths";
+import { useIntro } from "../../lib/motion";
+import { niceMax } from "../../lib/usage";
+import { ChartTooltip } from "./ChartTooltip";
+import type { TipAt } from "./ChartTooltip";
+import { stepIndex, useWidth } from "./shared";
+import type { BarDatum } from "./shared";
+
+export type { BarDatum } from "./shared";
+
+const LEFT = 42;
+const RIGHT = 4;
+const TOP = 28;
+const BOTTOM = 22;
+
+/**
+ * Activity bars. A bar grows from a fixed baseline; hover raises its top 4 px (scale from the
+ * bottom edge) and fills it darker, a three-line tooltip follows, and the spark that sits
+ * over the busiest bar steps aside while a tooltip is open. Keyboard: the group takes focus,
+ * Left/Right (Home/End) read each bar. The pointer target is a separate full-height slot, so
+ * the bar's growth never moves what the mouse is over.
+ */
+export function Bars({
+  id,
+  data,
+  label,
+  formatTick,
+  height: fixedHeight,
+  highlight,
+}: {
+  /** Intro id: the entrance animation plays once per id per launch. */
+  id: string;
+  data: BarDatum[];
+  label: string;
+  formatTick: (v: number) => string;
+  height?: number;
+  /** Which bar wears the accent (default: the last, "now"). -1 for none. */
+  highlight?: number;
+}) {
+  const [wrapRef, width] = useWidth<HTMLDivElement>();
+  // Unless told a height, the chart grows with its room: 184 px at narrow, up to 300 px when wide.
+  const height = fixedHeight ?? Math.round(Math.min(300, Math.max(184, width * 0.2)));
+  const intro = useIntro(id);
+  const [active, setActive] = useState<number | null>(null);
+  const n = data.length;
+  const max = niceMax(Math.max(0, ...data.map((d) => d.value)));
+  const plotW = Math.max(40, width - LEFT - RIGHT);
+  const base = height - BOTTOM;
+  const slot = plotW / Math.max(1, n);
+  const bw = Math.max(2, slot * 0.62);
+  const yOf = (v: number) => base - (v / max) * (base - TOP);
+  const hot = highlight ?? n - 1;
+
+  const busiest = useMemo(() => {
+    let at = -1;
+    data.forEach((d, i) => {
+      if (d.value > 0 && (at < 0 || d.value > data[at].value)) at = i;
+    });
+    return at;
+  }, [data]);
+
+  const labelEvery = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 64))));
+  const cx = (i: number) => LEFT + i * slot + slot / 2;
+
+  const tip: TipAt | null =
+    active !== null && data[active]
+      ? { x: cx(active), y: Math.max(8, yOf(data[active].value) - 6), ...data[active] }
+      : null;
+
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const next = stepIndex(e.key, active, n);
+    if (next === undefined) return;
+    e.preventDefault();
+    setActive(next);
+  };
+
+  const summary =
+    busiest >= 0
+      ? `${label}. ${n} bars, busiest ${data[busiest].title} at ${data[busiest].valueText}. Use the left and right arrow keys to read each bar.`
+      : `${label}. No activity in this range.`;
+
+  return (
+    <div
+      ref={wrapRef}
+      role="group"
+      aria-label={summary}
+      tabIndex={0}
+      onKeyDown={onKey}
+      onBlur={() => setActive(null)}
+      onPointerLeave={() => setActive(null)}
+      data-tip={tip ? 1 : 0}
+      className={`chart-wrap${intro ? " intro" : ""}`}
+    >
+      <svg className="chart" width={width} height={height} aria-hidden="true">
+        {[0.5, 1].map((f) => (
+          <g key={f}>
+            <line className="grid-line" x1={LEFT} x2={width - RIGHT} y1={yOf(max * f)} y2={yOf(max * f)} />
+            <text className="axis-label" x={LEFT - 8} y={yOf(max * f) + 4} textAnchor="end">
+              {formatTick(max * f)}
+            </text>
+          </g>
+        ))}
+        <line className="base-line" x1={LEFT} x2={width - RIGHT} y1={base} y2={base} />
+        <text className="axis-label" x={LEFT - 8} y={base + 4} textAnchor="end">
+          0
+        </text>
+
+        {data.map((d, i) => {
+          const x = LEFT + i * slot + (slot - bw) / 2;
+          const top = yOf(d.value);
+          const h = base - top;
+          const on = active === i;
+          return (
+            <g key={d.key} className={`bar-g${on ? " on" : ""}`}>
+              {d.value > 0 ? (
+                <path
+                  className={`bar${i === hot ? " today" : ""}`}
+                  d={barPath(x, bw, top, base, Math.min(6, bw / 2))}
+                  style={{ ["--hs" as string]: Math.min(1.6, (h + 4) / Math.max(h, 1)), ["--i" as string]: i }}
+                />
+              ) : (
+                <rect className="bar zero" x={x} y={base - 3} width={bw} height={3} rx={1.5} style={{ ["--i" as string]: i }} />
+              )}
+              {/* The pointer target never moves: a full-height slot, not the bar. */}
+              <rect
+                className="bar-hit"
+                x={LEFT + i * slot}
+                y={TOP - 18}
+                width={slot}
+                height={base - TOP + 18}
+                onPointerEnter={() => setActive(i)}
+              />
+              {i % labelEvery === 0 && (
+                <text
+                  className="axis-label"
+                  x={i === 0 ? LEFT : cx(i)}
+                  y={height - 4}
+                  textAnchor={i === 0 ? "start" : "middle"}
+                >
+                  {d.axis}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+
+      {busiest >= 0 && (
+        <span
+          aria-hidden="true"
+          className="spark summit"
+          style={{ position: "absolute", left: cx(busiest) - 9, top: Math.max(0, yOf(data[busiest].value) - 28), pointerEvents: "none" }}
+        />
+      )}
+      <ChartTooltip tip={tip} width={width} />
+      <span className="sr-only" aria-live="polite">
+        {active !== null && data[active] ? `${data[active].title}: ${data[active].valueText} ${data[active].detail}` : ""}
+      </span>
+    </div>
+  );
+}

@@ -1,38 +1,39 @@
-import { Button, Card, PageHeader, Row, SegmentedControl, Toggle } from "../components/controls";
+import { Button, Card, PageTitle, Row, Toggle } from "../components/controls";
+import { ThemePicker } from "../components/ThemePicker";
 import { useAtlas } from "../state/AtlasProvider";
 import { describeSource, formatBytes } from "../lib/labels";
-import type { Theme } from "../lib/types";
-
-const THEMES: { value: Theme; label: string }[] = [
-  { value: "system", label: "System" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-];
 
 function SectionTitle({ children }: { children: string }) {
-  return <h2 className="mb-3 mt-8 text-lead font-semibold text-ink first:mt-0">{children}</h2>;
+  return <h2 className="d d-figure mb-3 mt-8 text-ink first:mt-0">{children}</h2>;
 }
 
+/**
+ * Settings is the calm page: no charts, no count-ups. It is also the ONE place the Claude
+ * folder is shown (path, Open folder, override); Dashboard and Sessions never show it.
+ */
 export function Settings() {
-  const { info, setTheme, setLaunchAnimation, setSandbox, chooseConfigDir, clearConfigDir } = useAtlas();
+  const {
+    info,
+    setTheme,
+    setLaunchAnimation,
+    setSandbox,
+    chooseConfigDir,
+    clearConfigDir,
+    openConfigDir,
+  } = useAtlas();
   const cfg = info.config;
   const sb = info.sandbox;
   const usingChosen = info.settings.configDirOverride !== null;
 
   return (
     <>
-      <PageHeader title="Settings" subtitle="How Atlas looks and which Claude folder it reads." />
+      <PageTitle title="Settings" />
+      <div className="@[1100px]:columns-2 @[1100px]:gap-x-8">
 
+      <section className="mb-8 break-inside-avoid">
       <SectionTitle>Appearance</SectionTitle>
       <Card>
-        <Row label="Theme" hint="System follows your computer's light or dark setting.">
-          <SegmentedControl
-            label="Theme"
-            value={info.settings.theme}
-            options={THEMES}
-            onChange={setTheme}
-          />
-        </Row>
+        <ThemePicker theme={info.settings.theme} platform={info.platform} onChange={setTheme} />
         <Row
           label="Launch animation"
           hint="A short animation when Atlas opens. Click or press any key to skip it. A quick fade instead when your computer asks for reduced motion."
@@ -44,7 +45,9 @@ export function Settings() {
           />
         </Row>
       </Card>
+      </section>
 
+      <section className="mb-8 break-inside-avoid">
       <SectionTitle>Claude folder</SectionTitle>
       <Card>
         <Row
@@ -60,7 +63,10 @@ export function Settings() {
             </>
           }
         >
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button onClick={() => void openConfigDir()} disabled={!cfg}>
+              Open folder
+            </Button>
             <Button
               onClick={() => void chooseConfigDir()}
               disabled={info.configLockedByFlag || sb.enabled}
@@ -90,7 +96,9 @@ export function Settings() {
           </p>
         )}
       </Card>
+      </section>
 
+      <section className="mb-8 break-inside-avoid">
       <SectionTitle>Sandbox mode</SectionTitle>
       <Card>
         <Row
@@ -126,7 +134,9 @@ export function Settings() {
           </div>
         )}
       </Card>
+      </section>
 
+      <section className="mb-8 break-inside-avoid">
       <SectionTitle>About</SectionTitle>
       <Card>
         <Row label="Version">
@@ -139,6 +149,8 @@ export function Settings() {
         </Row>
         <Row label="Atlas data" hint={<code className="selectable break-all">{info.dataDir}</code>} />
       </Card>
+      </section>
+      </div>
     </>
   );
 }

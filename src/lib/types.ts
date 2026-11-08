@@ -1,6 +1,7 @@
 // Mirrors crates/app/src/state.rs (AppInfo) and crates/core (Settings, sandbox).
 
-export type Theme = "system" | "light" | "dark";
+/** "system" follows the OS (Light or Dark); the other three are pinned. */
+export type Theme = "system" | "light" | "silver" | "dark";
 export type View = "dashboard" | "sessions" | "setup" | "history" | "wrapped" | "settings";
 export type Platform = "windows" | "macos" | "linux";
 export type ConfigSource = "flag" | "settings" | "env" | "default" | "sandbox";
@@ -53,6 +54,8 @@ export interface AppInfo {
   /** Rises with every snapshot from Rust; an older one is stale and ignored. */
   seq: number;
   version: string;
+  /** "debug" or "release". */
+  build: string;
   platform: Platform;
   backdrop: boolean;
   dataDir: string;

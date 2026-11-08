@@ -1,5 +1,7 @@
-import { SquaresFour } from "@phosphor-icons/react";
-import { KIND_BY_ID, TILE_KINDS, type TileId } from "../../lib/setup-model";
+import { CaretRight, SquaresFour } from "@phosphor-icons/react";
+import { Card } from "../controls";
+import { KindTile } from "./parts";
+import { KIND_BY_ID, tileBlurb, TILE_KINDS, type TileId } from "../../lib/setup-model";
 import type { ItemKind } from "../../lib/setup-types";
 
 /**
@@ -20,29 +22,26 @@ export function TypeTiles({ counts, moreCount, onOpen }: { counts: Map<ItemKind,
   ];
   return (
     <ul
-      aria-label="Types of things in your setup"
-      className="grid flex-1 auto-rows-[minmax(92px,1fr)] grid-cols-2 gap-3 min-[640px]:grid-cols-3 min-[1100px]:grid-cols-4 min-[1400px]:grid-cols-6"
+      aria-label="Types of things in your toolkit"
+      className="grid auto-rows-[96px] grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3"
     >
-      {tiles.map(({ id, label, count, Icon }) => (
-        <li key={id} className="flex">
-          <button
-            type="button"
+      {tiles.map(({ id, label, count, Icon }, i) => (
+        <li key={id} className="row-in flex" style={{ ["--i" as string]: i }}>
+          <Card
             data-tile={id}
             aria-label={`${label}, ${count}`}
+            title={tileBlurb(id)}
             onClick={() => onOpen(id)}
-            className="press group flex min-h-[92px] w-full cursor-pointer items-center gap-3 rounded-card border border-line bg-surface px-3.5 text-left hover:border-line-strong hover:bg-raised"
+            hitClassName="min-h-[92px]"
+            className="flex min-h-[92px] items-center gap-3 px-3.5"
           >
-            <span
-              aria-hidden="true"
-              className="flex size-10 shrink-0 items-center justify-center rounded-control bg-accent-tint text-accent-text transition-transform duration-[var(--dur)] ease-[var(--ease-out)] group-hover:scale-105"
-            >
-              <Icon size={22} weight="duotone" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-title font-semibold leading-8 tracking-[-0.01em] text-ink">{count.toLocaleString()}</span>
+            <KindTile kind={id === "more" ? "more" : (id as ItemKind)} size={44} icon={Icon} />
+            <span className="min-w-0 flex-1">
+              <span className="d d-tile block text-ink">{count.toLocaleString()}</span>
               <span className="block truncate text-body text-ink-2">{label}</span>
             </span>
-          </button>
+            <CaretRight size={14} weight="bold" aria-hidden="true" className="row-caret shrink-0 text-ink-2" />
+          </Card>
         </li>
       ))}
     </ul>

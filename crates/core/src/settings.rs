@@ -28,6 +28,8 @@ pub enum Theme {
     #[default]
     System,
     Light,
+    /// A calm cool grey between Light and Dark. A light window as far as the OS is concerned.
+    Silver,
     Dark,
 }
 
@@ -208,6 +210,17 @@ mod tests {
         assert_eq!(s.theme, Theme::System);
         assert_eq!(s.last_view, View::Wrapped);
         assert!(!s.sandbox);
+    }
+
+    #[test]
+    fn silver_is_a_theme_and_survives_a_round_trip() {
+        let s = Settings::from_json(r#"{"theme":"silver"}"#).unwrap();
+        assert_eq!(s.theme, Theme::Silver);
+        let d = tempdir().unwrap();
+        save(d.path(), &s).unwrap();
+        let text = fs::read_to_string(path_in(d.path())).unwrap();
+        assert!(text.contains("\"silver\""), "{text}");
+        assert_eq!(load(d.path()).settings.theme, Theme::Silver);
     }
 
     #[test]

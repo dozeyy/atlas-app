@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
@@ -25,7 +25,11 @@ describe("navigation", () => {
     mount();
     const nav = screen.getByRole("navigation", { name: "Main" });
     const labels = Array.from(nav.querySelectorAll("button")).map((b) => b.textContent);
-    expect(labels).toEqual(["Dashboard", "Sessions", "Setup", "History", "Wrapped", "Settings"]);
+    expect(labels).toEqual(["Dashboard", "Sessions", "Toolkit", "History", "Wrapped"]);
+    // Settings sits at the foot of the sidebar, where the version used to be; the version lives in Settings.
+    const foot = screen.getByRole("navigation", { name: "Secondary" });
+    expect(Array.from(foot.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Settings"]);
+    expect(screen.queryByText(/^Version /)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
   });
@@ -55,7 +59,7 @@ describe("navigation", () => {
 
   it("moves focus to the page after navigating", async () => {
     mount();
-    await userEvent.click(screen.getByRole("button", { name: "Setup" }));
+    await userEvent.click(screen.getByRole("button", { name: "Toolkit" }));
     await waitFor(() => expect(screen.getByRole("main")).toHaveFocus());
   });
 });
@@ -73,13 +77,28 @@ describe("theme", () => {
     expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").theme).toBe("dark");
   });
 
-  it("System removes the pin so the OS decides", async () => {
+  it("offers Light, Silver and Dark, and Silver pins its own look", async () => {
+    mount();
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const names = screen.getAllByRole("radio").map((r) => r.getAttribute("aria-label"));
+    expect(names).toEqual(["Light", "Silver", "Dark"]);
+    await userEvent.click(screen.getByRole("radio", { name: "Silver" }));
+    expect(document.documentElement.dataset.theme).toBe("silver");
+  });
+
+  it("Match removes the pin so the OS decides, and picking a card turns it off again", async () => {
     mount();
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
     await userEvent.click(screen.getByRole("radio", { name: "Light" }));
     expect(document.documentElement.dataset.theme).toBe("light");
-    await userEvent.click(screen.getByRole("radio", { name: "System" }));
+    const match = screen.getByRole("switch", { name: /^Match / });
+    expect(match).toHaveAttribute("aria-checked", "false");
+    await userEvent.click(match);
     expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(match).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(match).toHaveAttribute("aria-checked", "false");
   });
 });
 
@@ -92,6 +111,27 @@ describe("sandbox", () => {
     expect(screen.getAllByText("Preparing sandbox").length).toBeGreaterThan(0);
     expect(screen.queryByText("C:/Users/you/.claude")).not.toBeInTheDocument();
     expect(await screen.findByText(/Copied 214 files/, undefined, { timeout: 3000 })).toBeInTheDocument();
-    expect(screen.getByText("Sandbox mode", { selector: "div" })).toBeInTheDocument();
+    expect(screen.getByText("Sandbox mode", { selector: "span" })).toBeInTheDocument();
+  });
+});
+
+describe("Claude folder", () => {
+  it("lives in Settings only, and Open folder asks the backend to open it", async () => {
+    const backend = new MockBackend();
+    const open = vi.spyOn(backend, "openConfigDir");
+    setBackend(backend);
+    render(
+      <AtlasProvider>
+        <App />
+      </AtlasProvider>,
+    );
+    await screen.findByRole("button", { name: "Settings" });
+    expect(screen.queryByText("Folder Atlas reads")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Toolkit" }));
+    expect(screen.queryByText("Folder Atlas reads")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByText("Folder Atlas reads")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Open folder" }));
+    expect(open).toHaveBeenCalledTimes(1);
   });
 });

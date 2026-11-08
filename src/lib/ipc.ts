@@ -72,7 +72,14 @@ export interface Backend {
   setSandbox(enabled: boolean): Promise<AppInfo>;
   chooseConfigDir(): Promise<AppInfo>;
   clearConfigDir(): Promise<AppInfo>;
+  /** Shows the Claude folder Atlas reads in the file manager. */
+  openConfigDir(): Promise<void>;
+  /** Shows Atlas's own data folder in the file manager. */
+  openDataDir(): Promise<void>;
   frontendReady(): Promise<void>;
+  /** The page draws the title bar, so the caption buttons ask Rust to act on the window. */
+  windowControl(action: "minimize" | "toggle-maximize" | "close"): Promise<void>;
+  windowMaximized(): Promise<boolean>;
   onInfo(cb: (info: AppInfo) => void): Promise<() => void>;
 
   // Usage engine. Every call is async; none blocks the page.
@@ -129,9 +136,13 @@ const tauriBackend: Backend = {
   setSandbox: (enabled) => invoke<AppInfo>("set_sandbox", { enabled }),
   chooseConfigDir: () => invoke<AppInfo>("choose_config_dir"),
   clearConfigDir: () => invoke<AppInfo>("clear_config_dir"),
+  openConfigDir: () => invoke<void>("open_config_dir"),
+  openDataDir: () => invoke<void>("open_data_dir"),
   frontendReady: async () => {
     await invoke("frontend_ready");
   },
+  windowControl: (action) => invoke<void>("window_control", { action }),
+  windowMaximized: () => invoke<boolean>("window_maximized"),
   onInfo: async (cb) => {
     const off = await listen<AppInfo>(INFO_EVENT, (e) => cb(e.payload));
     return off;

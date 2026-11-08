@@ -68,7 +68,7 @@ describe("stale snapshots", () => {
     b.updateSettings = () => new Promise<AppInfo>((r) => (finish = r));
     mount(b);
 
-    await userEvent.click(screen.getByRole("button", { name: "Setup" })); // starts a save
+    await userEvent.click(screen.getByRole("button", { name: "Toolkit" })); // starts a save
     act(() => b.push(withError(b, 20, "newer")));
     await act(async () => finish(withError(b, 3, null))); // the save's answer, taken earlier
     expect(screen.getByRole("alert")).toHaveTextContent("newer");

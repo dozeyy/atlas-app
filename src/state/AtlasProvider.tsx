@@ -13,6 +13,8 @@ interface AtlasContext {
   setSandbox: (enabled: boolean) => Promise<void>;
   chooseConfigDir: () => Promise<void>;
   clearConfigDir: () => Promise<void>;
+  openConfigDir: () => Promise<void>;
+  openDataDir: () => Promise<void>;
 }
 
 const Ctx = createContext<AtlasContext | null>(null);
@@ -96,6 +98,8 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       setSandbox: (enabled) => run(backend.setSandbox(enabled)),
       chooseConfigDir: () => run(backend.chooseConfigDir()),
       clearConfigDir: () => run(backend.clearConfigDir()),
+      openConfigDir: () => backend.openConfigDir().catch(() => {}),
+      openDataDir: () => backend.openDataDir().catch(() => {}),
     }),
     [info, view, setView, setTheme, setLaunchAnimation, run, backend],
   );

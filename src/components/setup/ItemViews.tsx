@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { Lock, X } from "@phosphor-icons/react";
+import { Card } from "../controls";
 import { pushToast } from "../../state/toastStore";
 import type { KeyboardEvent } from "react";
 import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
@@ -33,9 +34,11 @@ function CornerControl({ item, onDelete }: { item: SetupItem; onDelete?: (item: 
         aria-label={`${item.name} is locked. ${item.locked}`}
         title={item.locked}
         onClick={() => pushToast({ message: item.locked ?? "Atlas will not change this." })}
-        className="press absolute right-2 top-2 flex size-7 cursor-pointer items-center justify-center rounded-control text-ink-2 hover:bg-raised hover:text-ink"
+        className="x-del x-lock"
       >
-        <Lock size={14} aria-hidden="true" />
+        <span className="x-del-face">
+          <Lock size={14} aria-hidden="true" />
+        </span>
       </button>
     );
   }
@@ -46,9 +49,11 @@ function CornerControl({ item, onDelete }: { item: SetupItem; onDelete?: (item: 
         aria-label={`Delete ${item.name}`}
         title="Delete"
         onClick={() => onDelete(item)}
-        className="press absolute right-2 top-2 flex size-7 cursor-pointer items-center justify-center rounded-control text-ink-2 opacity-0 hover:bg-danger-tint hover:text-danger focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+        className="x-del opacity-0 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
       >
-        <X size={14} weight="bold" aria-hidden="true" />
+        <span className="x-del-face">
+          <X size={14} weight="bold" aria-hidden="true" />
+        </span>
       </button>
     );
   }
@@ -61,15 +66,15 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
   const more = item.chips.length - shown.length;
   const showState = item.enabled.state !== "on" && item.enabled.state !== "none" && item.enabled.label;
   return (
-    <div className="group relative h-full [contain-intrinsic-size:auto_112px] [content-visibility:auto]">
-      <button
-        type="button"
+    <div className="item-wrap group relative h-full">
+      <Card
         data-item-card
         data-id={item.id}
         onClick={() => onOpen(item.id)}
         onKeyDown={(e) => onCopyKey(e, item)}
         aria-label={`${KIND_BY_ID[item.kind].singular} ${item.name}, ${item.scopeLabel}${item.enabled.label ? `, ${item.enabled.label}` : ""}`}
-        className="press flex h-full min-h-[104px] w-full cursor-pointer gap-3 rounded-card border border-line bg-surface p-3.5 text-left hover:border-line-strong hover:bg-raised"
+        hitClassName="h-full min-h-[104px]"
+        className="flex min-h-[104px] gap-3 p-3.5"
       >
         <KindTile kind={item.kind} />
         <span className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -94,15 +99,16 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
             {item.modifiedMs ? <span className="ml-auto text-caption text-ink-2">{relativeTime(item.modifiedMs)}</span> : null}
           </span>
         </span>
-      </button>
+      </Card>
       <CornerControl item={item} onDelete={onDelete} />
     </div>
   );
 });
 
 /**
- * A one-line row for long, simple lists (permissions, memory, hook scripts). No press-scale: content-visibility
- * (kept so long lists stay cheap) clips to the element's own box, which would shrink the hit area when scaled.
+ * A one-line row for long, simple lists (permissions, memory, hook scripts). A wash on hover, never a move:
+ * content-visibility (kept so long lists stay cheap) clips to the element's own box. The cards above do not
+ * use it, because they lift.
  */
 export const ItemRow = memo(function ItemRow({ item, onOpen, mono }: ItemProps & { mono?: boolean }) {
   return (

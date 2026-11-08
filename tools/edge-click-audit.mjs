@@ -1,5 +1,6 @@
 // Edge-click audit for the real app. Usage (app started with WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=PORT):
 //   node tools/edge-click-audit.mjs PORT [label]
+// Optional env: EDGE_VIEW=900x600 (default 1280x800); EDGE_SCOPE=shell audits the sidebar and title bar instead of <main>; EDGE_SCOPE=menu audits the open app menu.
 // For every pressable on the current page (or the open dialog) it presses the mouse 2 px inside each edge, waits for the
 // press transition, releases in place and reports any press where no click reached the element. Clicks are swallowed at
 // the document, so nothing actually runs. Exit code 1 when any press is missed. vitest cannot do this: jsdom has no layout.
@@ -71,7 +72,8 @@ async function connect(port, tries = 120) {
 const port = Number(process.argv[2]);
 const label = process.argv[3] ?? "page";
 const c = await connect(port);
-await c.view(1280, 800);
+const [vw, vh] = (process.env.EDGE_VIEW ?? "1280x800").split("x").map(Number);
+await c.view(vw, vh);
 await c.sleep(600);
 
 await c.ev(`(()=>{
@@ -83,8 +85,15 @@ await c.ev(`(()=>{
 })()`);
 
 const count = await c.ev(`(()=>{
-  const root = document.querySelector('[role=alertdialog],[role=dialog]') || document.querySelector('main');
-  const els = [...root.querySelectorAll('button, [role=button], [role=switch], [role=tab], a[href]')].filter(e => {
+  const scope = ${JSON.stringify(process.env.EDGE_SCOPE ?? "")};
+  const shell = scope === "shell";
+  const sel = 'button, [role=button], [role=switch], [role=tab], a[href]';
+  const found = scope === "menu"
+    ? [...document.querySelectorAll('[role=menu] [role=menuitem]')]
+    : shell
+    ? [...document.querySelectorAll('aside, header.titlebar')].flatMap(r => [...r.querySelectorAll(sel)])
+    : [...(document.querySelector('[role=alertdialog],[role=dialog]') || document.querySelector('main')).querySelectorAll(sel)];
+  const els = found.filter(e => {
     const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
     return r.width > 4 && r.height > 4 && cs.visibility !== 'hidden' && cs.display !== 'none' && !e.disabled;
   });

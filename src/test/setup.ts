@@ -18,3 +18,6 @@ if (!window.matchMedia) {
       dispatchEvent: () => false,
     }) as MediaQueryList;
 }
+
+// Tests read final numbers, not frames: run with the same single class the app sets for reduced motion.
+document.documentElement.classList.add("reduced");

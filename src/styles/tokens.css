@@ -8,12 +8,15 @@
  * apart in OKLCH hue, in both themes. Change a value here and that test tells you
  * whether it still passes.
  *
- * Theme: follows the OS unless <html data-theme="light|dark"> pins it. The dark
- * set appears twice (pinned, and OS-dark when not pinned light); the test also
- * checks the two copies are identical.
+ * Themes: Light, Silver (a calm cool grey between the two) and Dark. With no
+ * <html data-theme> the OS decides between Light and Dark; the attribute pins one
+ * of the three. The dark set appears twice (pinned, and OS-dark when not pinned);
+ * the test also checks the two copies are identical. `.theme-preview[data-theme]`
+ * re-applies a set inside a Settings preview card, whatever theme the page is in.
  */
 
-:root {
+:root,
+.theme-preview[data-theme="light"] {
   color-scheme: light dark;
 
   /* ---- Light ---------------------------------------------------------- */
@@ -51,14 +54,92 @@
   --sidebar-glass: rgb(250 248 245 / 0.4); /* warm wash over Mica / vibrancy */
   --shadow-pop: 0 8px 24px rgb(31 29 26 / 0.12), 0 1px 3px rgb(31 29 26 / 0.1);
   --scrim: rgb(31 29 26 / 0.45);
+
+  /* Trail Map: heat ramp (cells only, exempt from contrast), chart hues, bars, lift. */
+  --heat-0: #f0ebe4;
+  --heat-1: #f2d9c6;
+  --heat-2: #e9b394;
+  --heat-3: #dc8a63;
+  --heat-4: #c96442;
+  --heat-5: #9c4524;
+  --chart-1: #c96442;
+  --chart-2: #5b7083;
+  --chart-3: #a8875f;
+  --chart-4: #8e877d;
+  --bar-rest: #d07a55; /* bars at rest: a step softer than the accent, so today pops */
+  --accent-solid-hover: #bf5c37;
+  --tip-bg: #1f1d1a;
+  --tip-ink: #faf8f5;
+  --shadow-lift: 0 6px 18px rgb(31 29 26 / 0.1), 0 1px 3px rgb(31 29 26 / 0.08);
+  --shadow-accent: 0 1px 2px rgb(180 83 47 / 0.35), 0 4px 10px rgb(180 83 47 / 0.22);
+  --shadow-accent-hover: 0 2px 4px rgb(180 83 47 / 0.4), 0 8px 18px rgb(180 83 47 / 0.3);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
 }
 
+/* ---- Silver, pinned: soft cool greys, graphite text, the same clay accent ----------- */
+:root[data-theme="silver"],
+.theme-preview[data-theme="silver"] {
+  color-scheme: light;
+
+  --bg: #e3e6ea;
+  --surface: #f2f3f5;
+  --raised: #d9dde2;
+  --ink: #1f2329;
+  --ink-2: #4f5660;
+  --line: rgb(31 35 41 / 0.12);
+  --line-strong: rgb(31 35 41 / 0.26);
+
+  --accent: #c96442;
+  --accent-solid: #b4532f;
+  --accent-text: #833819;
+  --on-accent: #ffffff;
+  --accent-tint: rgb(201 100 66 / 0.12);
+
+  --danger: #a80e44;
+  --danger-tint: rgb(168 14 68 / 0.1);
+  --success: #2f6647;
+  --success-tint: rgb(47 102 71 / 0.13);
+  --warning: #7a4f0d;
+  --warning-tint: rgb(122 79 13 / 0.14);
+  --slate: #566b7e;
+
+  --syntax-keyword: #833819;
+  --syntax-string: #2f6647;
+  --syntax-number: #7a4f0d;
+  --syntax-comment: #4f5660;
+  --syntax-name: #3d4f60;
+  --syntax-heading: #1f2329;
+
+  --sidebar-solid: #d5d9de;
+  --sidebar-glass: rgb(227 230 234 / 0.45);
+  --shadow-pop: 0 8px 24px rgb(31 35 41 / 0.16), 0 1px 3px rgb(31 35 41 / 0.12);
+  --scrim: rgb(31 35 41 / 0.45);
+
+  --heat-0: #dde0e4;
+  --heat-1: #f0d6c5;
+  --heat-2: #e9b394;
+  --heat-3: #dc8a63;
+  --heat-4: #c96442;
+  --heat-5: #833819;
+  --chart-1: #c96442;
+  --chart-2: #566b7e;
+  --chart-3: #9a7a52;
+  --chart-4: #80796f;
+  --bar-rest: #c46c47;
+  --accent-solid-hover: #bf5c37;
+  --tip-bg: #1f2329;
+  --tip-ink: #f2f3f5;
+  --shadow-lift: 0 6px 18px rgb(31 35 41 / 0.14), 0 1px 3px rgb(31 35 41 / 0.1);
+  --shadow-accent: 0 1px 2px rgb(150 66 36 / 0.35), 0 4px 10px rgb(150 66 36 / 0.2);
+  --shadow-accent-hover: 0 2px 4px rgb(150 66 36 / 0.4), 0 8px 18px rgb(150 66 36 / 0.28);
+}
+
 /* ---- Dark, pinned ------------------------------------------------------ */
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+.theme-preview[data-theme="dark"] {
   color-scheme: dark;
 
   --bg: #1c1a17;
@@ -94,11 +175,29 @@
   --sidebar-glass: rgb(28 26 23 / 0.4);
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
   --scrim: rgb(0 0 0 / 0.55);
+
+  --heat-0: #2b2724;
+  --heat-1: #4a3226;
+  --heat-2: #7a4630;
+  --heat-3: #b35e3d;
+  --heat-4: #e07a55;
+  --heat-5: #f4ad8a;
+  --chart-1: #e07a55;
+  --chart-2: #8fa3b5;
+  --chart-3: #c9a678;
+  --chart-4: #7d766d;
+  --bar-rest: #a35b3d;
+  --accent-solid-hover: #e8896a;
+  --tip-bg: #ede8e1;
+  --tip-ink: #1c1a17;
+  --shadow-lift: 0 6px 18px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.3);
+  --shadow-accent: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 10px rgb(224 122 85 / 0.18);
+  --shadow-accent-hover: 0 2px 4px rgb(0 0 0 / 0.45), 0 8px 18px rgb(224 122 85 / 0.28);
 }
 
 /* ---- Dark, from the OS (unless pinned light) --------------------------- */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme]) {
     --bg: #1c1a17;
     --surface: #252220;
     --raised: #2e2a27;
@@ -132,6 +231,24 @@
     --sidebar-glass: rgb(28 26 23 / 0.4);
     --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
     --scrim: rgb(0 0 0 / 0.55);
+
+    --heat-0: #2b2724;
+    --heat-1: #4a3226;
+    --heat-2: #7a4630;
+    --heat-3: #b35e3d;
+    --heat-4: #e07a55;
+    --heat-5: #f4ad8a;
+    --chart-1: #e07a55;
+    --chart-2: #8fa3b5;
+    --chart-3: #c9a678;
+    --chart-4: #7d766d;
+    --bar-rest: #a35b3d;
+    --accent-solid-hover: #e8896a;
+    --tip-bg: #ede8e1;
+    --tip-ink: #1c1a17;
+    --shadow-lift: 0 6px 18px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.3);
+    --shadow-accent: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 10px rgb(224 122 85 / 0.18);
+    --shadow-accent-hover: 0 2px 4px rgb(0 0 0 / 0.45), 0 8px 18px rgb(224 122 85 / 0.28);
   }
 }
 
@@ -143,10 +260,15 @@
   --font-code: ui-monospace, "SF Mono", "Cascadia Code", "Cascadia Mono", Consolas, Menlo,
     monospace;
 
-  /* Radii: controls 6, cards 10, sheets and popovers 14. */
-  --r-control: 6px;
-  --r-card: 10px;
-  --r-sheet: 14px;
+  /* Display face: numbers and titles only (Recursive, CASL 0.4). Never body, buttons, tables, code. */
+  --font-display: "Recursive Variable", var(--font-ui);
+  --display-axes: "CASL" 0.4;
+
+  /* Radii: controls 8, cards 14, sheets and popovers 18, pills round. */
+  --r-control: 8px;
+  --r-card: 14px;
+  --r-sheet: 18px;
+  --r-pill: 999px;
 
   /* Motion: 150-250 ms ease-out; reduced motion removes travel, keeps fades. */
   --dur-fast: 120ms;
@@ -155,6 +277,15 @@
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
   --travel: 8px;
   --press-scale: 0.97;
+  --dur-press: 90ms;
+  --dur-hover: 220ms;
+  --dur-spring: 320ms;
+  --dur-count: 700ms;
+  --dur-draw: 800ms;
+  --stagger: 30ms;
+  --lift: -2px;
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Brand: the icon's own colors (not theme colors). The launch splash is drawn in these. */
   --brand-mark: #dc784d;
@@ -166,9 +297,12 @@
   --ease-launch: cubic-bezier(0.16, 1, 0.3, 1); /* the app landing after the launch splash */
 
   /* Layout */
-  --sidebar-w: 232px;
-  --content-max: 960px;
-  --titlebar-inset: 0px; /* macOS overlay title bar sets this to 28px */
+  --sidebar-w: 188px; /* fits the longest label and the streak; was 232 */
+  /* The page fills the window; only its gutters scale (no fixed content width). */
+  --gutter: clamp(20px, 3.2vw, 64px);
+  --gutter-y: clamp(20px, 2.4vw, 44px);
+  --sidebar-w-collapsed: 76px; /* the menu and sidebar buttons (6 + 32 + 32) fit above the icons */
+  --titlebar-h: 40px; /* the row across the top: menu, sidebar toggle, caption buttons */
   /* Same numbers as MIN_WIDTH / MIN_HEIGHT in crates/app/src/main.rs. */
   --window-min-w: 900px;
   --window-min-h: 600px;
@@ -177,8 +311,16 @@
 @media (prefers-reduced-motion: reduce) {
   :root {
     --travel: 0px;
+    --lift: 0px;
     --press-scale: 1;
   }
+}
+
+/* The in-app switch (Settings) sets html.reduced: same effect as the OS setting. */
+:root.reduced {
+  --travel: 0px;
+  --lift: 0px;
+  --press-scale: 1;
 }
 
 /* ---- Tailwind names ----------------------------------------------------- */
@@ -202,6 +344,19 @@
   --color-warning: var(--warning);
   --color-warning-tint: var(--warning-tint);
   --color-slate: var(--slate);
+  --color-heat-0: var(--heat-0);
+  --color-heat-1: var(--heat-1);
+  --color-heat-2: var(--heat-2);
+  --color-heat-3: var(--heat-3);
+  --color-heat-4: var(--heat-4);
+  --color-heat-5: var(--heat-5);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-bar-rest: var(--bar-rest);
+  --color-tip: var(--tip-bg);
+  --color-tip-ink: var(--tip-ink);
   --color-syntax-keyword: var(--syntax-keyword);
   --color-syntax-string: var(--syntax-string);
   --color-syntax-number: var(--syntax-number);
@@ -211,12 +366,16 @@
 
   --font-sans: var(--font-ui);
   --font-mono: var(--font-code);
+  --font-display: var(--font-display);
 
   --radius-control: var(--r-control);
   --radius-card: var(--r-card);
   --radius-sheet: var(--r-sheet);
+  --radius-pill: var(--r-pill);
 
   --shadow-float: var(--shadow-pop);
+  --shadow-lift: var(--shadow-lift);
+  --shadow-accent: var(--shadow-accent);
 
   /* Ramp: 12 caption, 14 body, 16 body-large, 20 subtitle, 28 title, 40 display. */
   --text-caption: 12px;

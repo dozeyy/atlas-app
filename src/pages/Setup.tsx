@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CaretDown, CaretRight, FolderDashed, Info } from "@phosphor-icons/react";
-import { PageHeader } from "../components/controls";
+import { PageTitle } from "../components/controls";
 import { CollectionView } from "../components/setup/CollectionView";
 import { ConfirmDelete } from "../components/setup/ConfirmDelete";
 import { CreateFlow } from "../components/setup/CreateFlow";
@@ -36,19 +36,19 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
         aria-expanded={open}
         aria-controls="missing-body"
         onClick={() => setOpen((v) => !v)}
-        className="press group flex w-full cursor-pointer items-center gap-3 rounded-card text-left"
+        title="Claude remembers these folders, but they are gone from this computer."
+        className="row-btn group items-center gap-3 rounded-card p-1 text-left"
       >
         <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-control bg-raised text-ink-2">
           <FolderDashed size={18} weight="duotone" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-baseline gap-2">
-            <h2 id="missing-title" className="text-lead font-semibold text-ink">
+          <span className="flex items-center gap-2">
+            <h2 id="missing-title" className="d d-figure text-ink">
               Projects no longer on disk
             </h2>
-            <span className="rounded-full bg-raised px-2 text-caption font-medium text-ink-2">{projects.length}</span>
+            <span className="chip">{projects.length}</span>
           </span>
-          <span className="block truncate text-body text-ink-2">Claude remembers these folders, but they are gone from this computer.</span>
         </span>
         <Caret size={16} aria-hidden="true" className="shrink-0 text-ink-2 group-hover:text-ink" />
       </button>
@@ -190,10 +190,7 @@ export function Setup() {
 
   return (
     <>
-      <PageHeader
-        title="Setup"
-        subtitle="Everything Claude has to hand: your skills, agents, tools and notes. Open anything to read it or change it. Atlas makes a backup before every change."
-      />
+      <PageTitle title="Toolkit" />
       {st.snapshot ? (
         <Loaded snap={st.snapshot} includeWorktrees={st.includeWorktrees} loads={st.loads} error={st.status === "ready" ? st.error : null} />
       ) : st.status === "error" ? (

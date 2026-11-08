@@ -12,7 +12,7 @@
         "center": true,
         "visible": false,
         "resizable": true,
-        "decorations": true,
+        "decorations": false,
         "transparent": true,
         "windowEffects": { "effects": ["mica"] }
       }

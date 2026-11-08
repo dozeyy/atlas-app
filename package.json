@@ -23,6 +23,7 @@
     "@codemirror/legacy-modes": "^6.5.5",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.15",
+    "@fontsource-variable/recursive": "^5.3.0",
     "@lezer/highlight": "^1.2.5",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-switch": "^1.4.1",

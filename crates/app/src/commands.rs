@@ -10,11 +10,12 @@ use crate::state::{AppInfo, AppState, SettingsPatch};
 
 type Shared<'a> = State<'a, Arc<AppState>>;
 
-/// System follows the OS; Light / Dark pin the window (and so Mica / vibrancy).
+/// System follows the OS; Light / Silver / Dark pin the window (and so Mica / vibrancy and the
+/// title bar). Silver is a light grey, so its window is a light one.
 pub fn apply_window_theme(window: &WebviewWindow, theme: Theme) {
     let t = match theme {
         Theme::System => None,
-        Theme::Light => Some(tauri::Theme::Light),
+        Theme::Light | Theme::Silver => Some(tauri::Theme::Light),
         Theme::Dark => Some(tauri::Theme::Dark),
     };
     let _ = window.set_theme(t);
@@ -62,6 +63,68 @@ pub async fn choose_config_dir(app: AppHandle, state: Shared<'_>) -> Result<AppI
 #[tauri::command(async)]
 pub fn clear_config_dir(state: Shared) -> AppInfo {
     state.set_config_override(None)
+}
+
+/// Shows the Claude folder Atlas reads in the file manager. Takes no path from the page:
+/// it opens the folder Atlas itself resolved, and nothing else.
+#[tauri::command(async)]
+pub fn open_config_dir(state: Shared) -> Result<(), String> {
+    let info = state.info();
+    let cfg = info.config.ok_or_else(|| "The folder is not ready yet.".to_string())?;
+    if !cfg.dir_exists {
+        return Err("That folder does not exist.".to_string());
+    }
+    open_in_file_manager(std::path::Path::new(&cfg.dir))
+}
+
+/// Shows Atlas's own data folder (settings, caches, backups of what the Toolkit changed) in the
+/// file manager, for Help > Report a problem. Like the one above it takes no path from the page.
+#[tauri::command(async)]
+pub fn open_data_dir(state: Shared) -> Result<(), String> {
+    let dir = state.data_dir.clone();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not open the folder: {e}"))?;
+    open_in_file_manager(&dir)
+}
+
+fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let mut cmd = std::process::Command::new("explorer");
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let mut cmd = std::process::Command::new("xdg-open");
+    // explorer reports exit code 1 even when it opened the folder, so only a failure to
+    // start it counts as an error.
+    cmd.arg(dir).spawn().map(|_| ()).map_err(|e| format!("Could not open the folder: {e}"))
+}
+
+/// The title bar is drawn by the page (it runs under the content, like the Claude app), so the
+/// three caption buttons call here. `action` is "minimize", "toggle-maximize" or "close".
+#[tauri::command]
+pub fn window_control(app: AppHandle, action: String) {
+    let Some(w) = app.get_webview_window("main") else { return };
+    match action.as_str() {
+        "minimize" => {
+            let _ = w.minimize();
+        }
+        "toggle-maximize" => {
+            if w.is_maximized().unwrap_or(false) {
+                let _ = w.unmaximize();
+            } else {
+                let _ = w.maximize();
+            }
+        }
+        "close" => {
+            let _ = w.close();
+        }
+        _ => {}
+    }
+}
+
+/// Whether the window is maximized, so the middle caption button can show Restore.
+#[tauri::command]
+pub fn window_maximized(app: AppHandle) -> bool {
+    app.get_webview_window("main").and_then(|w| w.is_maximized().ok()).unwrap_or(false)
 }
 
 /// The page has painted: show the window and record the time.
