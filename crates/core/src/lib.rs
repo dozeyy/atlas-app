@@ -5,8 +5,10 @@
 //! (`sandbox`), Atlas's own settings (`settings`) and the atomic write helper
 //! with its dev/test guard against touching the real config (`fsutil`).
 
+pub mod cache;
 pub mod fsutil;
 pub mod launch;
 pub mod paths;
 pub mod sandbox;
 pub mod settings;
+pub mod usage;
