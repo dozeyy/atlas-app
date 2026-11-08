@@ -260,3 +260,279 @@ pricing page (fetched 2026-11-08), and read-only measurements of Will's
   webFetchPerThousand, geoMultipliers, serviceTiers, models`.
 
 ---
+## Cache schema v1 (`m0001`)
+- `meta(key TEXT PK, value TEXT)`: `parser_version`, `projects_dir`, `tz_fingerprint`,
+  `created_at`, `last_full_index_at`, `cross_file_dupes`, `last_backup_at`.
+- `files(file_id INTEGER PK, path TEXT, fs_id TEXT, head_hash BLOB, size INTEGER,
+  mtime_ns INTEGER, offset INTEGER, session_id TEXT, agent_id TEXT, is_subagent INTEGER,
+  missing INTEGER, malformed_lines INTEGER, long_lines INTEGER, last_seen_at INTEGER,
+  UNIQUE(path, fs_id))`.
+- `sessions(session_id TEXT PK, project_key TEXT, project_path TEXT, title TEXT,
+  title_source TEXT, first_ts INTEGER, last_ts INTEGER, messages INTEGER,
+  subagent_messages INTEGER, entrypoint TEXT, cc_version TEXT, cc_cost_usd REAL,
+  is_atlas_assistant INTEGER DEFAULT 0, missing INTEGER)`.
+- `messages(msg_key TEXT PK, session_id TEXT, file_id INTEGER, line_offset INTEGER,
+  agent_id TEXT, is_sidechain INTEGER, model TEXT, ts_utc_ms INTEGER, hour_local TEXT,
+  input INTEGER, output INTEGER, cw5m INTEGER, cw1h INTEGER, cr INTEGER,
+  cw_assumed INTEGER, web_search INTEGER, web_fetch INTEGER, thinking INTEGER,
+  speed TEXT, geo TEXT, service_tier TEXT, price_tier INTEGER, skill TEXT,
+  mcp_server TEXT, mcp_tool TEXT) WITHOUT ROWID`; indexes `(session_id, ts_utc_ms)`,
+  `(hour_local)`, `(ts_utc_ms)`.
+- `usage_hour(hour_local, project_key, model, speed, geo, service_tier, price_tier,
+  input, output, cw5m, cw1h, cr, web_search, web_fetch, messages; PK = first 7 cols)`.
+- `session_model(session_id, model, speed, geo, service_tier, price_tier, <same token
+  cols>, messages; PK = first 6 cols)` so sort-by-cost runs in SQL.
+- Read connections load prices into `TEMP TABLE prices`, refreshed on `pricing/changed`.
+
+---
+
+## Tauri commands (all `async`; camelCase JSON; types mirrored in `src/lib/types.ts`)
+| Command | Args | Returns |
+|---|---|---|
+| `usage_status` | - | `UsageStatus` |
+| `usage_dashboard` | - | `Dashboard` |
+| `usage_timeline` | `{from: "YYYY-MM-DD", to, bucket: hour/day/week/month, groupBy?: model/project}` | `Timeline` |
+| `sessions_list` | `SessionQuery` | `SessionPage` |
+| `session_detail` | `{sessionId}` | `SessionDetail` |
+| `session_transcript` | `{sessionId, cursor?, limit? (<= 100)}` | `TranscriptPage` |
+| `usage_filter_options` | - | `{projects: ProjectRef[], models: ModelRef[]}` |
+| `usage_reindex` | `{scope: changed/full}` | `UsageStatus` |
+| `pricing_get` | - | `{table, path, error: string or null, newerSeedAvailable: bool}` |
+| `pricing_reveal` | - | opens `pricing.json` in the OS file manager |
+
+## Events
+- `atlas://usage/status` -> `UsageStatus` on every state change.
+- `atlas://usage/progress` -> `{phase: scanning/indexing/aggregating, filesDone,
+  filesTotal, bytesDone, bytesTotal, startedAt}` (<= 10 per second).
+- `atlas://usage/changed` -> `{sessionIds, fromDay, toDay, reason:
+  append/index/reprice/tz}` (<= 1 per second).
+- `atlas://pricing/changed` -> same payload as `pricing_get`.
+
+## Query shapes
+- `Tokens = {input, output, cacheWrite5m, cacheWrite1h, cacheRead, total, webSearch,
+  webFetch}`; `Cost = {usd: number or null, complete: bool, unpricedTokens: number}`.
+- `UsageStatus = {state: idle/indexing/error/readOnly/recovering, firstIndexDone,
+  lastIndexedAt, filesTracked, filesMissing, malformedLines, longLines, unknownModels:
+  string[], cwAssumedRows, crossFileDupes, cachePath, cacheBytes, error, note}`.
+- `Dashboard = {today, week, month: {tokens: Tokens, cost: Cost, sessions},
+  byModel: [{model, known, tokens, cost}] (30 days), topProjects: [{projectKey, name,
+  path, tokens, cost, sessions}] (30 days, top 8 + "other"), recent: SessionRow[8],
+  warnings: {unknownModels, unpricedTokens}}`.
+- `Timeline = {bucket, points: [{start, tokens, cost, sessions}] (zero-filled),
+  series?: [{key, label, points}]}`; serves the usage chart, the year heatmap (365 x day)
+  and hour-of-day stats.
+- `SessionQuery = {from?, to?, projects?, models?, text? (title or project contains,
+  case-insensitive), minCostUsd?, includeMissing?, sort: start/cost/tokens/duration,
+  dir: asc/desc, cursor?, limit (<= 200)}`.
+- `SessionRow = {sessionId, title, projectName, projectPath, startedAt, endedAt,
+  durationMs, models, messages, subagentMessages, tokens, cost, missing}`;
+  `SessionPage = {rows, nextCursor, total}` (keyset cursor).
+- `SessionDetail = {row, byModel: [{model, tokens, cost}], byAgent: [{agentId or null,
+  messages, tokens, cost}], timeline: [{ts, model, agentId, tokens, cost, skill}],
+  files: [{path, isSubagent, missing}], claudeCodeCostUsd}`.
+- `TranscriptPage = {items: [{ts, role, agentId, text, truncated}], nextCursor,
+  sourceMissing}`.
+
+---
+
+## Files
+| Path | Purpose |
+|---|---|
+| `crates/core/Cargo.toml` | add the D44 dependencies |
+| `crates/core/src/lib.rs` | `pub mod usage; pub mod cache;` |
+| `crates/core/src/cache/mod.rs` | open (D27, D28), read pool, quick_check, corrupt recovery (D32), backup (D33) |
+| `crates/core/src/cache/migrate.rs` | `user_version`, `m0001`, newer-version read-only (D29) |
+| `crates/core/src/usage/mod.rs` | `UsageEngine`: start/stop/cancel, status, event-sink trait (no Tauri types) |
+| `crates/core/src/usage/scan.rs` | walk `projects_dir`, classify main/subagent, stat, fs id, head hash, diff vs `files` (D1, D3, D4) |
+| `crates/core/src/usage/reader.rs` | `open_read_only`, offset reads, partial-line hold-back, 64 MiB cap, BOM/CRLF (D2, D5, D6, D9) |
+| `crates/core/src/usage/line.rs` | prefilter + borrowed serde structs -> `LineEvent` (D7, D8, D10, D17) |
+| `crates/core/src/usage/ingest.rs` | worker pool, dedup (D12), batch writer, aggregate refresh (D34, D35, D39) |
+| `crates/core/src/usage/pricing.rs` | load / validate / seed-upgrade / watch pricing JSON, cost math, unknown flags (D20-D26) |
+| `crates/core/src/usage/time.rs` | local hour buckets, ranges, tz fingerprint (D36) |
+| `crates/core/src/usage/query.rs` | dashboard, timeline, sessions list/detail, filter options |
+| `crates/core/src/usage/transcript.rs` | paged text reader for Session Detail (D43) |
+| `crates/core/src/usage/watch.rs` | notify + debounce + sweeps (D41) |
+| `crates/core/pricing/pricing.default.json` | seed price table with sources |
+| `crates/core/tests/usage_fixtures.rs` | fixture acceptance tests |
+| `crates/core/tests/usage_huge.rs` | generated huge-file and long-line tests |
+| `crates/core/tests/usage_cache.rs` | migration, corruption, newer-schema, crash-resume tests |
+| `crates/core/examples/usage_bench.rs` | bench harness (`--projects --data --gen-huge --runs --append-test --json`) |
+| `tools/make-fixtures.py` | add `usage()` -> `fixtures/claude-usage/` |
+| `fixtures/claude-usage/**` | generated usage edge cases (below) |
+| `crates/app/src/usage.rs` | Tauri commands + event bridge (implements the core event sink) |
+| `crates/app/src/state.rs` | owns `Arc<UsageEngine>`; start after `frontend_ready`; restart on root change |
+| `crates/app/src/main.rs` | register the usage commands |
+| `src/lib/types.ts` | usage types above |
+| `src/lib/ipc.ts` | `Backend` usage methods + listeners |
+| `src/lib/mock.ts` | MockBackend usage data matching the claude-basic numbers below |
+| `src/components/IndexProgress.tsx` | first-run progress strip (Dashboard + Sessions empty states) |
+| `src/lib/usage.test.ts`, `src/components/IndexProgress.test.tsx` | front-end contract + progress tests |
+| `docs/bench/usage-YYYY-MM-DD.md` | bench output kept with the commit that met the budgets |
+
+## New fixture `fixtures/claude-usage/` (from `make-fixtures.py`; no real text)
+- An unknown model `claude-nova-9` (made-up id) and a date-suffixed id with no alias.
+- Fast-mode `claude-opus-5-5`; `inference_geo: "us"`; `service_tier: "priority"`;
+  3 web searches + 2 web fetches; a 1h cache write; a cache write with no
+  `cache_creation` breakdown; a breakdown that does not sum.
+- `claude-haiku-5-5` requests above and exactly at 100,000 prompt tokens.
+- The same key in two files with different `output_tokens`.
+- A `relocated` line; `custom-title` and `agent-name` both present; `cost-state`.
+- A CRLF file, a BOM file, a subagent file whose lines lack `sessionId`.
+- An `isApiErrorMessage` line with zero usage; timestamps either side of local midnight.
+- Generated **at test time, never committed**: shrunk/rotated files, deleted files, a
+  same-size replacement, live appends, a 64 MiB + 1 line, the huge files.
+
+---
+## Acceptance criteria
+Commands run from the repo root; test names are the ones to create.
+1. `cargo test -p atlas-core --test usage_fixtures` exits 0.
+2. `basic_totals_match`: indexing `fixtures/claude-basic` yields exactly 6 messages,
+   3 sessions, 2 projects (`/fixture/app`, `/fixture/other`); totals input 697,
+   output 538, cache write 2,000 (all 5m), cache read 6,000.
+3. `dedup_keeps_last_line`: `msg_A` output = 120 (not 5), `msg_SA1` output = 77 (not 3);
+   total output 538 (first-seen dedup would give 349).
+4. `subagents_roll_up`: session `11111111-...-000000000001` has 4 messages (A, B, C,
+   SA1), input 680, output 509, cache write 2,000, cache read 6,000,
+   `subagentMessages` 1, and `byAgent` lists `fixture1`.
+5. `basic_cost_matches_price_table` (tolerance 1e-9): total $0.0166325; session 1
+   $0.0152725; `msg_A` (sonnet-5-5) $0.0064; `msg_C` (opus-5-5) $0.0088; `msg_D`
+   (fable-5) $0.0011; `msg_E` (opus-4-8) $0.00026.
+6. `synthetic_and_half_line_skipped`: `msg_S` (`<synthetic>`) and `msg_HALF` are absent;
+   session 1 file offset = the byte after its last `\n`.
+7. `half_line_completed_later`: completing the `msg_HALF` line in a temp copy and
+   rescanning adds exactly that message; no other row changes.
+8. `garbage_never_crashes`: `fixtures/claude-edge` indexes with 0 messages,
+   `malformedLines` >= 4, `empty.jsonl` tracked at offset 0, no panic.
+9. `unknown_model_flagged`: `claude-nova-9` tokens are in every total, its cost is
+   `null`, its day and session costs have `complete: false` with the right
+   `unpricedTokens`, and `unknownModels` lists it and the date-suffixed id.
+10. `modifiers_priced`: fast opus-5-5 (in 1,000 / out 1,000) = $0.048; geo `us`
+    opus-5-5 (in 1,000 / out 1,000) = $0.0264; 3 web searches add $0.03; web fetches add
+    $0; the `service_tier: "priority"` row is unpriced.
+11. `haiku_long_context_tier`: haiku-5-5 with input 90,000 + cache read 20,000 + output
+    1,000 = $0.0485 (long tier); the request at exactly 100,000 uses base rates.
+12. `cache_write_split`: 1h writes priced at the 1h rate; the missing breakdown is booked
+    as 5m with `cwAssumedRows` = 1; the non-summing breakdown uses the breakdown.
+13. `cross_file_dupe_order_independent`: indexing the two-file duplicate in both orders
+    gives the same row (higher output) and `crossFileDupes` = 1.
+14. `project_from_cwd_and_relocated`: project comes from `cwd`, `relocated` overrides it,
+    the folder name is never used; on Windows `C:\X\Proj` and `c:\x\proj` group together.
+15. `titles`: custom-title beats agent-name; neither -> `title: null`.
+16. `rotation_and_deletion`: (a) a shrunk file is re-read from 0 with no duplicate rows;
+    (b) a same-size replacement with different bytes (head hash change) is re-read;
+    (c) a deleted file keeps its rows and sets `missing`; (d) deleting a file while it is
+    being read ends that file's pass without error (Windows).
+17. `incremental_reads_only_new_bytes`: after a full index, appending N bytes and
+    rescanning reads exactly N bytes (reader byte counter) from that one file only.
+18. `local_day_buckets`: with an injected test time zone, lines either side of local
+    midnight land on the right days; today / 7 days / 30 days follow D36.
+19. `read_only_guarantee`: a snapshot (bytes + mtimes + file list) of a temp copy of each
+    fixture root is identical before and after full index, rescans and transcript reads.
+20. `no_write_calls_in_usage`: a test greps `crates/core/src/usage/` and finds no
+    `write(true)`, `create(`, `File::create`, `remove_file`, `remove_dir`, `rename(`,
+    and no `OpenOptions` outside `reader::open_read_only`.
+21. `cache_outside_config_root`: a data dir inside the config root -> engine state
+    `error`, nothing written anywhere.
+22. `cargo test -p atlas-core --test usage_cache` exits 0, covering: (a) a fresh DB gets
+    `user_version` 1; (b) an empty DB migrates; (c) `user_version` 99 opens read-only,
+    state `readOnly`, file bytes unchanged; (d) a DB of random bytes is renamed to
+    `*.corrupt-*`, a valid `.bak` is restored, indexing completes; (e) with no `.bak`, an
+    empty DB is created and indexing completes; (f) stopping the writer between batches
+    (test hook) and restarting resumes from the committed offset with identical totals.
+23. `pricing_file`: first run copies the seed to `<data>/pricing.json`; editing a price
+    there changes `usage_dashboard` cost with zero transcript bytes read and emits
+    `pricing/changed`; invalid JSON keeps the last good table and sets `error`; both D21
+    branches tested; every seed model has `source`, and the file has `updated`.
+24. `cargo test -p atlas-core --test usage_huge` exits 0: a generated 16 MiB file with
+    2 MiB and 8 MiB lines parses correctly; a 64 MiB + 1 byte line is skipped and counted;
+    the line buffer never exceeds the cap (instrumented).
+25. `cargo test -p atlas-core --test usage_huge -- --ignored` generates a 300 MB file in a
+    temp dir, indexes it, asserts the message count, deletes it; `git status` is clean
+    afterwards.
+26. `cargo run --release -p atlas-core --example usage_bench -- --projects <real
+    projects dir> --data <temp dir> --runs 3 --append-test` prints, and
+    `docs/bench/usage-<date>.md` records, every budget row with PASS/FAIL; all PASS (the
+    cold row may read "not measured" with the reason). The bench checks its own
+    before/after size + mtime listing of `--projects` and fails if anything changed.
+27. The bench prints Atlas's estimate vs `cost-state.totalCostUSD` for sessions that
+    have one (count, median and max deviation). Report only; no threshold (Q5).
+28. App: `npm run tauri dev -- -- --config-dir fixtures/claude-basic` (or the Phase 1
+    equivalent) logs `usage: index done 6 messages`, and the `[atlas] startup` line
+    prints before any `usage:` line.
+29. App in Sandbox Mode (real logs linked read-only): the first run shows the progress
+    strip advancing (screenshots at 1600x900 mid-index and after), then the Dashboard
+    empty state gives way to data. `[Will]` judges that the strip reads calm.
+30. Live update in Sandbox Mode: during a real Claude Code session, within 1 s of each
+    assistant reply the app logs `usage: changed` and that session's tokens in
+    `sessions_list` grow.
+31. `npm test` exits 0 with `usage.test.ts` (the mock returns the claude-basic numbers
+    through the same types) and `IndexProgress.test.tsx` (0 %, mid, done and error
+    states; reduced motion = no animation).
+32. `[Will]`: while the real data indexes, window drag/resize and sidebar clicks feel
+    instant. Code review confirms D38 (no sync usage command).
+33. `cargo clippy -p atlas-core -p atlas -- -D warnings` and `npm run build` are clean.
+
+## Done when
+- Criteria 1-33 pass with evidence (test output, the bench file, log lines, screenshots).
+- Every budget row is PASS in `docs/bench/usage-<date>.md` on Will's PC.
+- code-reviewer and verifier both pass; `MEMORY.md` has the entry with measured numbers;
+  committed.
+
+## Risk-floor flags
+- Not on the risk floor (no money movement, credentials, live instance, production
+  deploy, installer) and not on the gate list.
+- Big and multi-area -> code-reviewer + verifier required.
+- Closest risk: the read-only invariant on the real `~/.claude/projects` (the bench and
+  Sandbox linked mode read real logs). The reviewer checks D1, D2 and criteria 19-21, 26.
+- Privacy: no message text in the cache (D15, D43); bench output prints counts and model
+  ids only, never text.
+
+## Suggested agent chain (after Phase 1 is committed)
+1. `desktop-app-dev`, unit A: `crates/core` cache + usage engine + pricing + fixture +
+   tests + bench (criteria 1-27, 33 core part).
+2. `perf-profiler`, only if a budget row fails.
+3. `desktop-app-dev`, unit B: `crates/app` commands/events/watcher wiring, `src/lib`
+   types/ipc/mock, `IndexProgress` (criteria 28-33). Sequential after A (same repo).
+4. `verify-auditor`: prove the tests can fail (plant first-seen dedup, a whole-file read,
+   a prefix model match, a sync command).
+5. `code-reviewer` (the D-list as its checklist) in parallel with `verifier`
+   (criteria 1-33).
+
+---
+
+## Conflicts found (spec vs recon vs this brief)
+- Dedup: the spec says "by message ID + request ID" without saying which line; the recon
+  says keep the **last**. This spec follows the recon (D12).
+- Pricing: the spec has one "cache write" price; the recon and the pricing page need 5m
+  and 1h writes, web search, fast mode, the geo multiplier and the Haiku 5.5
+  long-context tier (D23-D25).
+- File key: the spec says path + size + mtime; the recon adds the file id; this spec adds
+  a head hash for same-size replacement (D3).
+- History page: the brief says the engine feeds a History timeline; `BUILD-PROMPT`
+  section 8, `CLAUDE.md` and the Phase 1 History placeholder define History as the
+  change/backup timeline (Phase 4). This spec delivers `usage_timeline` without picking
+  its page (Q1).
+- Cache path: `CLAUDE.md` names one `<appdata>/atlas/cache.sqlite`; this spec keeps that
+  path for the real logs and adds per-root caches for fixtures and other roots (D27).
+- `claude-api` skill vs the live pricing page: Sonnet 5.5 cache read $0.20 vs $0.10; the
+  page wins.
+
+## Open questions
+- Q1. Where does the usage timeline live: the Dashboard (usage chart + heatmap) only, or
+  a usage tab on the History page, which the spec reserves for change history?
+- Q2. Is the hero "tokens" number the billed total (cache reads can be most of it) or
+  input + output only? D37 defaults to the billed total; Will decides what dad sees.
+- Q3. `usage.iterations[]`: do the top-level counts already include the iterations? D19
+  assumes yes; unit A checks one real multi-iteration line (read-only) before release.
+- Q4. Does Claude Code ever write 1h cache tokens without the `cache_creation`
+  breakdown? D18 books those as 5m.
+- Q5. What deviation between Atlas's estimate and Claude Code's `cost-state` figure is
+  acceptable (criterion 27 reports it; no threshold set)?
+- Q6. Full-text search: its own Phase 2 spec (as the roadmap says), or move it to a
+  later phase?
+- Q7. On Windows `<appdata>` resolves to Roaming (`dirs::data_dir`, Phase 1). A cache of
+  hundreds of MB would sync with a roaming profile: move the cache to Local
+  (`dirs::data_local_dir`) and keep settings in Roaming?
+- Q8. Retention: offering to raise `cleanupPeriodDays` (recon item 11) writes Claude
+  Code's settings. Which phase, and is it in v1?
+- Q9. Week start: ISO Monday (D36) or the OS locale's first day on dad's Mac?
