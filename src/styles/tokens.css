@@ -84,54 +84,54 @@
 .theme-preview[data-theme="silver"] {
   color-scheme: light;
 
-  --bg: #e3e6ea;
-  --surface: #f2f3f5;
-  --raised: #d9dde2;
-  --ink: #1f2329;
-  --ink-2: #4f5660;
+  --bg: #d2d8e0;
+  --surface: #e8ecf1;
+  --raised: #cdd3dc;
+  --ink: #1a1f27;
+  --ink-2: #434b57;
   --line: rgb(31 35 41 / 0.12);
   --line-strong: rgb(31 35 41 / 0.26);
 
-  --accent: #c96442;
+  --accent: #b5573a;
   --accent-solid: #b4532f;
-  --accent-text: #833819;
+  --accent-text: #7a3416;
   --on-accent: #ffffff;
   --accent-tint: rgb(201 100 66 / 0.12);
 
-  --danger: #a80e44;
+  --danger: #960c3d;
   --danger-tint: rgb(168 14 68 / 0.1);
-  --success: #2f6647;
+  --success: #265a3d;
   --success-tint: rgb(47 102 71 / 0.13);
-  --warning: #7a4f0d;
+  --warning: #6a4409;
   --warning-tint: rgb(122 79 13 / 0.14);
-  --slate: #566b7e;
+  --slate: #4f6377;
 
-  --syntax-keyword: #833819;
-  --syntax-string: #2f6647;
-  --syntax-number: #7a4f0d;
-  --syntax-comment: #4f5660;
+  --syntax-keyword: #7a3416;
+  --syntax-string: #265a3d;
+  --syntax-number: #6a4409;
+  --syntax-comment: #434b57;
   --syntax-name: #3d4f60;
   --syntax-heading: #1f2329;
 
-  --sidebar-solid: #d5d9de;
-  --sidebar-glass: rgb(227 230 234 / 0.45);
+  --sidebar-solid: #c2c9d3;
+  --sidebar-glass: rgb(210 216 224 / 0.55);
   --shadow-pop: 0 8px 24px rgb(31 35 41 / 0.16), 0 1px 3px rgb(31 35 41 / 0.12);
   --scrim: rgb(31 35 41 / 0.45);
 
-  --heat-0: #dde0e4;
+  --heat-0: #c9d0da;
   --heat-1: #f0d6c5;
   --heat-2: #e9b394;
   --heat-3: #dc8a63;
   --heat-4: #c96442;
-  --heat-5: #833819;
-  --chart-1: #c96442;
-  --chart-2: #566b7e;
+  --heat-5: #7a3416;
+  --chart-1: #b5573a;
+  --chart-2: #4f6377;
   --chart-3: #9a7a52;
   --chart-4: #80796f;
-  --bar-rest: #c46c47;
+  --bar-rest: #b6603e;
   --accent-solid-hover: #bf5c37;
-  --tip-bg: #1f2329;
-  --tip-ink: #f2f3f5;
+  --tip-bg: #1a1f27;
+  --tip-ink: #e8ecf1;
   --shadow-lift: 0 6px 18px rgb(31 35 41 / 0.14), 0 1px 3px rgb(31 35 41 / 0.1);
   --shadow-accent: 0 1px 2px rgb(150 66 36 / 0.35), 0 4px 10px rgb(150 66 36 / 0.2);
   --shadow-accent-hover: 0 2px 4px rgb(150 66 36 / 0.4), 0 8px 18px rgb(150 66 36 / 0.28);
@@ -142,18 +142,18 @@
 .theme-preview[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #1c1a17;
-  --surface: #252220;
-  --raised: #2e2a27;
-  --ink: #ede8e1;
-  --ink-2: #a39b90;
-  --line: rgb(237 232 225 / 0.1);
-  --line-strong: rgb(237 232 225 / 0.24);
+  --bg: #1f1f1e;
+  --surface: #292928;
+  --raised: #333331;
+  --ink: #ececea;
+  --ink-2: #a5a4a0;
+  --line: rgb(236 236 234 / 0.1);
+  --line-strong: rgb(236 236 234 / 0.24);
 
   --accent: #e07a55;
   --accent-solid: #e07a55;
   --accent-text: #e8896a;
-  --on-accent: #1c1a17;
+  --on-accent: #1f1f1e;
   --accent-tint: rgb(224 122 85 / 0.16);
 
   --danger: #ff6b8b;
@@ -167,16 +167,16 @@
   --syntax-keyword: #e8896a;
   --syntax-string: #6fbf8e;
   --syntax-number: #e3b341;
-  --syntax-comment: #a39b90;
+  --syntax-comment: #a5a4a0;
   --syntax-name: #8fa3b5;
-  --syntax-heading: #ede8e1;
+  --syntax-heading: #ececea;
 
-  --sidebar-solid: #211f1c;
-  --sidebar-glass: rgb(28 26 23 / 0.4);
+  --sidebar-solid: #1a1a19;
+  --sidebar-glass: rgb(26 26 25 / 0.4);
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
   --scrim: rgb(0 0 0 / 0.55);
 
-  --heat-0: #2b2724;
+  --heat-0: #2e2e2d;
   --heat-1: #4a3226;
   --heat-2: #7a4630;
   --heat-3: #b35e3d;
@@ -185,11 +185,11 @@
   --chart-1: #e07a55;
   --chart-2: #8fa3b5;
   --chart-3: #c9a678;
-  --chart-4: #7d766d;
-  --bar-rest: #a35b3d;
+  --chart-4: #7b7a76;
+  --bar-rest: #b4653f;
   --accent-solid-hover: #e8896a;
-  --tip-bg: #ede8e1;
-  --tip-ink: #1c1a17;
+  --tip-bg: #ececea;
+  --tip-ink: #1f1f1e;
   --shadow-lift: 0 6px 18px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.3);
   --shadow-accent: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 10px rgb(224 122 85 / 0.18);
   --shadow-accent-hover: 0 2px 4px rgb(0 0 0 / 0.45), 0 8px 18px rgb(224 122 85 / 0.28);
@@ -198,18 +198,18 @@
 /* ---- Dark, from the OS (unless pinned light) --------------------------- */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --bg: #1c1a17;
-    --surface: #252220;
-    --raised: #2e2a27;
-    --ink: #ede8e1;
-    --ink-2: #a39b90;
-    --line: rgb(237 232 225 / 0.1);
-    --line-strong: rgb(237 232 225 / 0.24);
+    --bg: #1f1f1e;
+    --surface: #292928;
+    --raised: #333331;
+    --ink: #ececea;
+    --ink-2: #a5a4a0;
+    --line: rgb(236 236 234 / 0.1);
+    --line-strong: rgb(236 236 234 / 0.24);
 
     --accent: #e07a55;
     --accent-solid: #e07a55;
     --accent-text: #e8896a;
-    --on-accent: #1c1a17;
+    --on-accent: #1f1f1e;
     --accent-tint: rgb(224 122 85 / 0.16);
 
     --danger: #ff6b8b;
@@ -223,16 +223,16 @@
     --syntax-keyword: #e8896a;
     --syntax-string: #6fbf8e;
     --syntax-number: #e3b341;
-    --syntax-comment: #a39b90;
+    --syntax-comment: #a5a4a0;
     --syntax-name: #8fa3b5;
-    --syntax-heading: #ede8e1;
+    --syntax-heading: #ececea;
 
-    --sidebar-solid: #211f1c;
-    --sidebar-glass: rgb(28 26 23 / 0.4);
+    --sidebar-solid: #1a1a19;
+    --sidebar-glass: rgb(26 26 25 / 0.4);
     --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
     --scrim: rgb(0 0 0 / 0.55);
 
-    --heat-0: #2b2724;
+    --heat-0: #2e2e2d;
     --heat-1: #4a3226;
     --heat-2: #7a4630;
     --heat-3: #b35e3d;
@@ -241,11 +241,11 @@
     --chart-1: #e07a55;
     --chart-2: #8fa3b5;
     --chart-3: #c9a678;
-    --chart-4: #7d766d;
-    --bar-rest: #a35b3d;
+    --chart-4: #7b7a76;
+    --bar-rest: #b4653f;
     --accent-solid-hover: #e8896a;
-    --tip-bg: #ede8e1;
-    --tip-ink: #1c1a17;
+    --tip-bg: #ececea;
+    --tip-ink: #1f1f1e;
     --shadow-lift: 0 6px 18px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.3);
     --shadow-accent: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 10px rgb(224 122 85 / 0.18);
     --shadow-accent-hover: 0 2px 4px rgb(0 0 0 / 0.45), 0 8px 18px rgb(224 122 85 / 0.28);
