@@ -9,7 +9,8 @@ import { Preview } from "./Preview";
 import { getBackend } from "../../lib/ipc";
 import { splitFrontmatter } from "../../lib/markdown";
 import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
-import type { MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
+import { approx, hasDollars, rowFor, windowLabel } from "../../lib/setup-cost";
+import type { CostReport, CostRow, MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
 import { Chip, ConflictChip, copyText, formatDate, formatSize, KindTile, ScopeChip, StateChip, TagChip } from "./parts";
 
 const REVEAL_MS = 10_000;
@@ -60,6 +61,38 @@ function Facts({ rows }: { rows: { label: string; value: ReactNode; copy?: strin
         </div>
       ))}
     </dl>
+  );
+}
+
+/** What this one thing costs: its size on every turn it loads in, and its price when it runs. */
+function CostSection({ row, report }: { row: CostRow; report: CostReport }) {
+  const rows: { label: string; value: ReactNode }[] = [];
+  if (row.tokens > 0) {
+    rows.push({ label: "Adds", value: `${row.tokens.toLocaleString()} tokens to every turn` });
+    rows.push({ label: "Loads in", value: row.turns > 0 ? `${row.loadsIn} (${row.turns.toLocaleString()} turns)` : row.loadsIn });
+  }
+  if (row.bodyTokens > 0) {
+    const ran =
+      row.uses === null
+        ? row.kind === "rule"
+          ? "Loads when a file it covers is touched"
+          : "Loads when you use it"
+        : row.uses === 0
+          ? "Did not run"
+          : `Ran ${row.uses.toLocaleString()} ${row.uses === 1 ? "time" : "times"}`;
+    rows.push({ label: "When it runs", value: `${row.bodyTokens.toLocaleString()} tokens. ${ran}` });
+  }
+  if (hasDollars(row)) {
+    const parts =
+      row.usdLoaded > 0 && row.usdUsed > 0 ? ` (${approx(row.usdLoaded)} listed, ${approx(row.usdUsed)} when run)` : "";
+    rows.push({ label: "Costs", value: <span className="font-medium">{`${approx(row.usdWeek)} a week${parts}`}</span> });
+  }
+  if (rows.length === 0) return null;
+  return (
+    <Section title="What it costs">
+      <Facts rows={rows} />
+      <p className="mt-3 text-caption text-ink-2">Estimate, {windowLabel(report)}.</p>
+    </Section>
   );
 }
 
@@ -253,6 +286,7 @@ export function DetailSheet({
   item,
   all,
   loads,
+  cost = null,
   onClose,
   onOpen,
   onDelete,
@@ -260,6 +294,8 @@ export function DetailSheet({
   item: SetupItem;
   all: Map<string, SetupItem>;
   loads: number;
+  /** What the setup costs; the item's own figures show when it has a row. */
+  cost?: CostReport | null;
   onClose: () => void;
   onOpen: (id: string) => void;
   onDelete: (item: SetupItem) => void;
@@ -315,6 +351,7 @@ export function DetailSheet({
   };
 
   const { mcp, conflict } = item;
+  const costRow = useMemo(() => rowFor(cost, item.id), [cost, item.id]);
   const rows: { label: string; value: ReactNode; copy?: string }[] = [
     { label: "Where", value: item.scopeLabel },
     ...(item.plugin ? [{ label: "Plugin", value: item.plugin }] : []),
@@ -413,6 +450,8 @@ export function DetailSheet({
             </div>
           )}
         </Section>
+
+        {costRow && cost && <CostSection row={costRow} report={cost} />}
 
         {conflict && (
           <Section title="Also defined elsewhere">

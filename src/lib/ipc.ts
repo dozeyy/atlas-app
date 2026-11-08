@@ -27,6 +27,7 @@ import type {
   View,
 } from "./types";
 import type {
+  CostReport,
   CreateKind,
   DeleteOutcome,
   Draft,
@@ -125,6 +126,8 @@ export interface Backend {
 
   /** Setup: the whole setup without file bodies. */
   setupSnapshot(includeWorktrees?: boolean): Promise<SetupSnapshot>;
+  /** What each part of the setup costs over the last week (estimates, read only). */
+  setupCost(): Promise<CostReport>;
   /** The masked text of one item. */
   setupReadSource(id: string): Promise<SourceView>;
   /** One masked value, on request. */
@@ -205,6 +208,7 @@ const tauriBackend: Backend = {
   nowSnapshot: () => invoke<NowSnapshot>("now_snapshot"),
   onNowUpdate: (cb) => listen<NowSnapshot>(NOW_UPDATE_EVENT, (e) => cb(e.payload)),
   setupSnapshot: (includeWorktrees) => invoke<SetupSnapshot>("setup_snapshot", { includeWorktrees }),
+  setupCost: () => invoke<CostReport>("setup_cost"),
   setupReadSource: (id) => invoke<SourceView>("setup_read_source", { id }),
   setupReveal: (id, index) => invoke<string>("setup_reveal", { id, index }),
   setupItemRaw: (id, reveal) => invoke<RawEdit>("setup_item_raw", { id, reveal }),

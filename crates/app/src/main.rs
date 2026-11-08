@@ -111,6 +111,7 @@ fn main() {
             intro::intro_main_painted,
             intro::splash_done,
             setup_service::setup_snapshot,
+            setup_service::setup_cost,
             setup_service::setup_read_source,
             setup_service::setup_reveal,
             setup_service::setup_item_raw,

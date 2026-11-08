@@ -7,6 +7,7 @@
 
 pub mod capability;
 pub mod claude_json;
+pub mod cost;
 pub mod files;
 pub mod frontmatter;
 pub mod mcp;

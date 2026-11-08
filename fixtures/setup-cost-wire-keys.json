@@ -1,0 +1,28 @@
+{
+  "costReport": [
+    "charsPerToken",
+    "globalTokens",
+    "incomplete",
+    "rows",
+    "turns",
+    "usdWeek",
+    "windowDays"
+  ],
+  "costRow": [
+    "bodyTokens",
+    "global",
+    "id",
+    "kind",
+    "loadsIn",
+    "measured",
+    "name",
+    "path",
+    "scopeLabel",
+    "tokens",
+    "turns",
+    "usdLoaded",
+    "usdUsed",
+    "usdWeek",
+    "uses"
+  ]
+}

@@ -10,9 +10,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use atlas_core::setup::cost::{self, CostReport};
 use atlas_core::setup::source::SourceView;
 use atlas_core::setup::watch::LiveSetup;
 use atlas_core::setup::{Discovery, DiscoveryInputs};
+use atlas_core::usage::costmix::CostMix;
 use serde::{Serialize, Serializer};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -120,6 +122,24 @@ pub async fn setup_snapshot(app: AppHandle, state: Info<'_>, hub: Hub<'_>, inclu
         hub.worktrees.store(w, Ordering::Relaxed);
     }
     blocking(move || hub.current(&app, &st).map(SnapshotOut)).await
+}
+
+/// What each piece of the setup costs over the last week (read only). Without a usage cache
+/// the report still has token sizes, just no dollars.
+#[tauri::command]
+pub async fn setup_cost(app: AppHandle, state: Info<'_>, hub: Hub<'_>) -> Result<CostReport, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || {
+        let d = hub.current(&app, &st)?;
+        let mix = st
+            .usage
+            .engine()
+            .and_then(|e| e.cost_mix(cost::WINDOW_DAYS))
+            .unwrap_or_else(|_| CostMix { days: cost::WINDOW_DAYS, ..Default::default() });
+        let mcp = cost::sample_mcp(&mix.samples);
+        Ok(cost::estimate(&d, &mix, &mcp))
+    })
+    .await
 }
 
 /// The masked text of one item, by an id the last scan produced.
