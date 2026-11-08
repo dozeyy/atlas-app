@@ -16,7 +16,7 @@ export function SetupSkeleton() {
         <Bar w="60%" className="mt-4" />
         <Bar w="52%" className="mt-2" />
       </div>
-      <div className="grid grid-cols-2 gap-3 min-[640px]:grid-cols-3 min-[1100px]:grid-cols-4 min-[1400px]:grid-cols-6">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3">
         {Array.from({ length: 12 }, (_, i) => (
           <div key={i} className="flex h-[92px] items-center gap-3 rounded-card border border-line bg-surface px-3.5">
             <span className="skeleton size-9 rounded-control" />
@@ -29,7 +29,7 @@ export function SetupSkeleton() {
       </div>
       <div className="mt-8">
         <Bar w="180px" h={16} />
-        <div className="mt-3 grid grid-cols-1 gap-3 min-[1000px]:grid-cols-2">
+        <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))] gap-3">
           {Array.from({ length: 4 }, (_, i) => (
             <div key={i} className="flex min-h-[104px] gap-3 rounded-card border border-line bg-surface p-3.5">
               <span className="skeleton size-9 rounded-control" />

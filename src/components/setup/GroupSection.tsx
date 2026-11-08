@@ -24,7 +24,7 @@ function Cards({ items, onOpen, onDelete }: { items: SetupItem[]; onOpen: (id: s
   const list = all ? items : items.slice(0, CARD_CAP);
   return (
     <>
-      <div className="grid grid-cols-1 gap-3 min-[1000px]:grid-cols-2 min-[1000px]:[&>:last-child:nth-child(odd)]:col-span-2">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))] gap-3">
         {list.map((i) => (
           <ItemCard key={i.id} item={i} onOpen={onOpen} onDelete={onDelete} />
         ))}

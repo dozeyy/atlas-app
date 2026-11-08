@@ -27,7 +27,7 @@ export function Bars({
   data,
   label,
   formatTick,
-  height = 184,
+  height: fixedHeight,
   highlight,
 }: {
   /** Intro id: the entrance animation plays once per id per launch. */
@@ -40,6 +40,8 @@ export function Bars({
   highlight?: number;
 }) {
   const [wrapRef, width] = useWidth<HTMLDivElement>();
+  // Unless told a height, the chart grows with its room: 184 px at narrow, up to 300 px when wide.
+  const height = fixedHeight ?? Math.round(Math.min(300, Math.max(184, width * 0.2)));
   const intro = useIntro(id);
   const [active, setActive] = useState<number | null>(null);
   const n = data.length;

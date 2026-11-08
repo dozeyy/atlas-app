@@ -225,6 +225,8 @@ describe("Setup page: a collection", () => {
   it("narrows by where things live: All, Global, then one project", async () => {
     await open(backend);
     await openTile("Skills");
+    // The scope, project and show/hide options live behind one Filters button.
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
     const scope = screen.getByLabelText("Show items from");
     const project = "Project copy of a shared skill.";
     expect(screen.getByText(project)).toBeInTheDocument();
@@ -237,6 +239,11 @@ describe("Setup page: a collection", () => {
     await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Project" }), "p-atlas");
     expect(await screen.findByText(project)).toBeInTheDocument();
     expect(screen.queryByText("commit-helper")).not.toBeInTheDocument();
+    // The button says how many options are changed, and Reset puts them back.
+    expect(screen.getByRole("button", { name: "Filters, 2 changed" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(await screen.findByText("commit-helper")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Filters" })).toBeInTheDocument();
   });
 
   it("walks the cards with the arrow keys and stops at both ends", async () => {

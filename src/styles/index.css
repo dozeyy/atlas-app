@@ -42,10 +42,6 @@ html.backdrop body {
   background: transparent;
 }
 
-html[data-platform="macos"] {
-  --titlebar-inset: 28px;
-}
-
 .selectable,
 code,
 .mono {

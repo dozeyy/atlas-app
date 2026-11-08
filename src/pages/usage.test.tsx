@@ -53,9 +53,12 @@ describe("Dashboard", () => {
   it("switches the chart between tokens and cost and to a table", async () => {
     mount();
     await screen.findByRole("group", { name: /Tokens, last 30 days/ });
+    // Time range stays in the open; the measure and the table live behind the chart options button.
+    expect(screen.getByRole("radio", { name: "30 days" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Chart options" }));
     await userEvent.click(screen.getByRole("radio", { name: "Cost" }));
     expect(screen.getByRole("group", { name: /Estimated cost, last 30 days/ })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Table" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Table" }));
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getAllByRole("row").length).toBeGreaterThan(20);
   });

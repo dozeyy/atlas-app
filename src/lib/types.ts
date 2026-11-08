@@ -52,6 +52,8 @@ export interface AppInfo {
   /** Rises with every snapshot from Rust; an older one is stale and ignored. */
   seq: number;
   version: string;
+  /** "debug" or "release". */
+  build: string;
   platform: Platform;
   backdrop: boolean;
   dataDir: string;

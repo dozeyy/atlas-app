@@ -27,6 +27,31 @@ export function modelTone(model: string): number {
   return 4;
 }
 
+/** "Sonnet + Haiku": the families a session used, each with its colour dot, on one quiet inline run. */
+export function ModelDots({ models }: { models: string[] }) {
+  const seen = new Map<string, string>();
+  for (const m of models) {
+    const family = modelLabel(m).split(" ")[0] ?? m;
+    if (!seen.has(family)) seen.set(family, m);
+  }
+  const list = [...seen];
+  return (
+    <span title={models.map(modelLabel).join(" + ")} className="whitespace-nowrap">
+      {list.map(([family, id], i) => (
+        <span key={family}>
+          {i > 0 && " + "}
+          <span
+            aria-hidden="true"
+            className="mr-1 inline-block size-1.5 rounded-full align-middle"
+            style={{ background: `var(--chart-${modelTone(id)})` }}
+          />
+          {family}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function ModelChip({ model, className = "" }: { model: string; className?: string }) {
   return (
     <span

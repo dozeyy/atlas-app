@@ -13,7 +13,7 @@ import { StackBar } from "../components/charts/StackBar";
 import type { StackItem } from "../components/charts/StackBar";
 import { ActivityCard } from "../components/usage/ActivityCard";
 import { CostText } from "../components/usage/CostText";
-import { SessionLine } from "../components/usage/SessionList";
+import { SessionGrid, SessionLine } from "../components/usage/SessionList";
 import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
 import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
@@ -121,7 +121,7 @@ function PriceFootnote() {
 function DashboardSkeleton({ firstIndex }: { firstIndex: boolean }) {
   return (
     <div role="status" aria-label="Loading your usage">
-      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-4 @[740px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Card className="px-6 py-5">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="mt-4 h-14 w-56" />
@@ -204,7 +204,7 @@ export function Dashboard() {
 
   const heat = useMemo(() => {
     if (!daily) return null;
-    const n = 84;
+    const n = 364;
     const values = daily.tokens.slice(-n);
     const pts = daily.points.slice(-n);
     const readouts = pts.map((p, i) => ({
@@ -230,7 +230,7 @@ export function Dashboard() {
   }, [data, projectSeries.data]);
 
   const weekTokens = data ? headline(data.week.tokens) : 0;
-  const updated = updatedText(status?.lastIndexedAt ?? null, now);
+  const updated = updatedText(dash.at, now);
 
   return (
     <div className="@container">
@@ -257,9 +257,9 @@ export function Dashboard() {
         />
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            <section aria-label="Last 7 days" className="rise" style={{ ["--i" as string]: 1 }}>
-              <Card className="flex h-full flex-col gap-4 px-6 pb-4 pt-5 @xl:flex-row @xl:justify-between">
+          <div className="grid grid-cols-1 gap-4 @[740px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <section aria-label="Last 7 days" className="rise @container" style={{ ["--i" as string]: 1 }}>
+              <Card className="flex h-full flex-col gap-4 px-6 pb-4 pt-5 @[660px]:flex-row @[660px]:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="d d-figure text-ink">Last 7 days</h2>
@@ -284,7 +284,7 @@ export function Dashboard() {
                   {updated && <div className="mt-1 text-caption text-ink-2">{updated}</div>}
                 </div>
                 {week && (
-                  <div className="w-full self-end @xl:w-[220px] @xl:shrink-0">
+                  <div className="w-full self-end @[660px]:w-[clamp(220px,32%,600px)] @[660px]:shrink-0">
                     <Ridge id="dash:ridge" data={week.readouts} label="Tokens per day, last 7 days" height={132} />
                   </div>
                 )}
@@ -335,7 +335,7 @@ export function Dashboard() {
             </section>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 gap-4 @[740px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
             <section aria-label="Activity" className="rise" style={{ ["--i" as string]: 3 }}>
               <ActivityCard today={today} />
             </section>
@@ -356,25 +356,32 @@ export function Dashboard() {
                   <span className="font-semibold text-ink-2">{daily && daily.streak === 1 ? "day in a row" : "days in a row"}</span>
                 </div>
                 {heat ? (
-                  <HeatGrid id="dash:heat" values={heat.values} readouts={heat.readouts} label="Daily activity, last 12 weeks" />
+                  <HeatGrid
+                    id="dash:heat"
+                    values={heat.values}
+                    readouts={heat.readouts}
+                    label="Daily activity"
+                    footer={(weeks) => (
+                      <div className="mt-3 flex items-center justify-between">
+                        <span className="text-caption text-ink-2">{`Last ${weeks} weeks`}</span>
+                        <span aria-hidden="true" className="flex items-center gap-1 text-caption text-ink-2">
+                          Less
+                          {[0, 1, 2, 3, 4, 5].map((b) => (
+                            <i key={b} className="inline-block size-2.5 rounded-[3px]" style={{ background: `var(--heat-${b})` }} />
+                          ))}
+                          More
+                        </span>
+                      </div>
+                    )}
+                  />
                 ) : (
                   <Skeleton className="h-[120px] w-full" />
                 )}
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="text-caption text-ink-2">Last 12 weeks</span>
-                  <span aria-hidden="true" className="flex items-center gap-1 text-caption text-ink-2">
-                    Less
-                    {[0, 1, 2, 3, 4, 5].map((b) => (
-                      <i key={b} className="inline-block size-2.5 rounded-[3px]" style={{ background: `var(--heat-${b})` }} />
-                    ))}
-                    More
-                  </span>
-                </div>
               </Card>
             </section>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 @[740px]:grid-cols-2">
             <section aria-label="Models" className="rise" style={{ ["--i" as string]: 5 }}>
               <Card className="h-full px-5 py-4">
                 <div className="flex items-baseline justify-between">
@@ -438,11 +445,11 @@ export function Dashboard() {
               Recent sessions
             </SectionTitle>
             <Card>
-              <ul className="divide-y divide-line">
+              <SessionGrid>
                 {data.recent.map((r) => (
                   <SessionLine key={r.sessionId} row={r} onOpen={open} />
                 ))}
-              </ul>
+              </SessionGrid>
             </Card>
           </section>
         </div>

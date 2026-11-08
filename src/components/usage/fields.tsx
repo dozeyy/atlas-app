@@ -6,19 +6,22 @@ export function SelectField({
   value,
   onChange,
   options,
+  wide = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
+  /** Fill the row (inside an options panel) instead of sizing to the text. */
+  wide?: boolean;
 }) {
   return (
-    <label className="select-wrap relative inline-flex">
+    <label className={`select-wrap relative inline-flex ${wide ? "w-full" : ""}`}>
       <span className="sr-only">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 max-w-[220px] cursor-pointer appearance-none rounded-control border border-line-strong bg-surface py-0 pl-3 pr-8 text-body text-ink hover:bg-raised"
+        className={`h-8 cursor-pointer ${wide ? "w-full" : "max-w-[220px]"}  appearance-none rounded-control border border-line-strong bg-surface py-0 pl-3 pr-8 text-body text-ink hover:bg-raised`}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>

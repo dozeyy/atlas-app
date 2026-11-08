@@ -23,7 +23,7 @@ export function TypeTiles({ counts, moreCount, onOpen }: { counts: Map<ItemKind,
   return (
     <ul
       aria-label="Types of things in your toolkit"
-      className="grid flex-1 auto-rows-[minmax(92px,1fr)] grid-cols-2 gap-3 min-[640px]:grid-cols-3 min-[1100px]:grid-cols-4 min-[1400px]:grid-cols-6"
+      className="grid auto-rows-[96px] grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3"
     >
       {tiles.map(({ id, label, count, Icon }, i) => (
         <li key={id} className="row-in flex" style={{ ["--i" as string]: i }}>

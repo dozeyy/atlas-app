@@ -3,7 +3,8 @@ import { ChatsCircle } from "@phosphor-icons/react";
 import { Button, Card, PageTitle } from "../components/controls";
 import { EmptyState } from "../components/EmptyState";
 import { IndexProgress } from "../components/IndexProgress";
-import { SessionLine } from "../components/usage/SessionList";
+import { OptionField, OptionsMenu } from "../components/OptionsMenu";
+import { SessionGrid, SessionLine } from "../components/usage/SessionList";
 import { SearchField, SelectField } from "../components/usage/fields";
 import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
 import { SessionDetailView } from "./SessionDetail";
@@ -106,11 +107,17 @@ export function Sessions() {
   const rows = [...(first.data?.rows ?? []), ...more];
   const total = first.data?.total ?? 0;
   const filtered = Boolean(debounced || project || model || span !== "all");
-  const clear = () => {
-    setText("");
+  // What differs from the defaults: shown as the badge on the options button.
+  const changed = [project, model, span !== "all", sortKey !== "newest"].filter(Boolean).length;
+  const resetOptions = () => {
     setProject("");
     setModel("");
     setSpan("all");
+    setSortKey("newest");
+  };
+  const clear = () => {
+    setText("");
+    resetOptions();
   };
   const firstIndex = status?.state === "indexing" && !status.firstIndexDone;
 
@@ -122,33 +129,46 @@ export function Sessions() {
       {selected && <SessionDetailView id={selected} onBack={() => setSelected(null)} />}
 
       <div hidden={selected !== null}>
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="mb-4 flex items-center gap-2">
           <SearchField value={text} onChange={setText} label="Search sessions" placeholder="Search by title or project" />
-          <SelectField
-            label="Project"
-            value={project}
-            onChange={setProject}
-            options={[
-              { value: "", label: "All projects" },
-              ...(options.data?.projects ?? []).map((p) => ({ value: p.projectKey, label: p.name })),
-            ]}
-          />
-          <SelectField
-            label="Model"
-            value={model}
-            onChange={setModel}
-            options={[
-              { value: "", label: "All models" },
-              ...(options.data?.models ?? []).map((m) => ({ value: m.model, label: modelLabel(m.model) })),
-            ]}
-          />
-          <SelectField label="Time span" value={span} onChange={setSpan} options={SPANS.map((s) => ({ value: s.value, label: s.label }))} />
-          <SelectField
-            label="Sort"
-            value={sortKey}
-            onChange={(v) => setSortKey(v as SortKey)}
-            options={Object.entries(SORTS).map(([value, s]) => ({ value, label: s.label }))}
-          />
+          <OptionsMenu label="Filters" count={changed} onReset={resetOptions}>
+            <OptionField label="Project">
+              <SelectField
+                wide
+                label="Project"
+                value={project}
+                onChange={setProject}
+                options={[
+                  { value: "", label: "All projects" },
+                  ...(options.data?.projects ?? []).map((p) => ({ value: p.projectKey, label: p.name })),
+                ]}
+              />
+            </OptionField>
+            <OptionField label="Model">
+              <SelectField
+                wide
+                label="Model"
+                value={model}
+                onChange={setModel}
+                options={[
+                  { value: "", label: "All models" },
+                  ...(options.data?.models ?? []).map((m) => ({ value: m.model, label: modelLabel(m.model) })),
+                ]}
+              />
+            </OptionField>
+            <OptionField label="Time">
+              <SelectField wide label="Time span" value={span} onChange={setSpan} options={SPANS.map((s) => ({ value: s.value, label: s.label }))} />
+            </OptionField>
+            <OptionField label="Sort by">
+              <SelectField
+                wide
+                label="Sort"
+                value={sortKey}
+                onChange={(v) => setSortKey(v as SortKey)}
+                options={Object.entries(SORTS).map(([value, s]) => ({ value, label: s.label }))}
+              />
+            </OptionField>
+          </OptionsMenu>
         </div>
 
         {info.config === null ? (
@@ -197,11 +217,11 @@ export function Sessions() {
               {filtered ? " match" : ""}
             </div>
             <Card>
-              <ul className="divide-y divide-line">
+              <SessionGrid>
                 {rows.map((r, i) => (
                   <SessionLine key={r.sessionId} row={r} onOpen={setSelected} index={i < PAGE ? i : 0} />
                 ))}
-              </ul>
+              </SessionGrid>
               {(cursor || moreError) && (
                 <div className="flex items-center gap-3 border-t border-line px-5 py-3">
                   <Button onClick={loadMore} disabled={busy}>

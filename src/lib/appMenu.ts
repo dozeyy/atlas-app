@@ -1,0 +1,65 @@
+import type { Platform } from "./types";
+
+/** The sheets the menu can open. Each is a small modal; see HelpSheets. */
+export type SheetId = "about" | "guide" | "shortcuts" | "privacy" | "terms" | "report";
+
+export interface MenuEntry {
+  id: string;
+  label: string;
+  /** Opens this sheet. */
+  sheet?: SheetId;
+  /** A submenu. An entry has either `sheet` or `items`. */
+  items?: MenuEntry[];
+}
+
+/**
+ * The app menu (the three lines at the top left, like the Claude app). Help is all there is for
+ * now; a new menu or entry is one more line here.
+ */
+export const APP_MENU: MenuEntry[] = [
+  {
+    id: "help",
+    label: "Help",
+    items: [
+      { id: "about", label: "About Atlas", sheet: "about" },
+      { id: "guide", label: "How to use Atlas", sheet: "guide" },
+      { id: "shortcuts", label: "Keyboard shortcuts", sheet: "shortcuts" },
+      { id: "privacy", label: "Privacy", sheet: "privacy" },
+      { id: "terms", label: "Terms of service", sheet: "terms" },
+      { id: "report", label: "Report a problem", sheet: "report" },
+    ],
+  },
+];
+
+export const modName = (platform: Platform) => (platform === "macos" ? "Cmd" : "Ctrl");
+
+/** Every keyboard shortcut Atlas has, for the Keyboard shortcuts sheet and the tests. */
+export function shortcutGroups(platform: Platform): { title: string; rows: { keys: string; does: string }[] }[] {
+  const mod = modName(platform);
+  return [
+    {
+      title: "Anywhere",
+      rows: [
+        { keys: `${mod}+1 to ${mod}+6`, does: "Go to Dashboard, Sessions, Toolkit, History, Wrapped, Settings" },
+        { keys: `${mod}+B`, does: "Show or hide the sidebar" },
+        { keys: platform === "macos" ? "F10" : "Alt or F10", does: "Open the menu; arrow keys move, Enter picks, Escape closes" },
+      ],
+    },
+    {
+      title: "Toolkit",
+      rows: [
+        { keys: `${mod}+F`, does: "Search the open list" },
+        { keys: "Up / Down", does: "Move between cards" },
+        { keys: "Escape", does: "Clear the search, then go back to the tiles" },
+        { keys: `${mod}+C`, does: "Copy the path of the selected item" },
+      ],
+    },
+    {
+      title: "Charts",
+      rows: [
+        { keys: "Left / Right", does: "Move between bars; the readout follows" },
+        { keys: "Escape", does: "Clear the readout" },
+      ],
+    },
+  ];
+}

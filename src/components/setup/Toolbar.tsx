@@ -1,7 +1,9 @@
 import type { RefObject } from "react";
 import { MagnifyingGlass, X } from "@phosphor-icons/react";
 import { SegmentedControl, Toggle } from "../controls";
+import { OptionField, OptionsMenu } from "../OptionsMenu";
 import { SelectField } from "../usage/fields";
+import { DEFAULT_FILTERS } from "../../lib/setup-model";
 import type { Filters, ScopeFilter } from "../../lib/setup-model";
 import type { HiddenCounts, SetupProject } from "../../lib/setup-types";
 
@@ -38,6 +40,12 @@ export function Toolbar({
   total: number;
   placeholder?: string;
 }) {
+  const changed = [
+    filters.scope !== DEFAULT_FILTERS.scope,
+    filters.scope === "project" && filters.projectId !== null,
+    filters.showWorktrees !== DEFAULT_FILTERS.showWorktrees,
+    filters.showBackups !== DEFAULT_FILTERS.showBackups,
+  ].filter(Boolean).length;
   const choices = projects.filter((p) => p.exists && p.itemCount > 0 && !p.isWorktree).sort((a, b) => a.name.localeCompare(b.name));
   return (
     <div className="sticky top-0 z-10 -mx-10 mb-6 border-b border-line bg-bg px-10 py-3">
@@ -79,36 +87,50 @@ export function Toolbar({
           )}
         </div>
 
-        <SegmentedControl<ScopeFilter>
-          label="Show items from"
-          value={filters.scope}
-          options={[
-            { value: "all", label: "All" },
-            { value: "global", label: "Global" },
-            { value: "project", label: "Projects" },
-          ]}
-          onChange={(scope) => onChange({ scope, projectId: scope === "project" ? filters.projectId : null })}
-        />
-
+        <OptionsMenu
+          label="Filters"
+          count={changed}
+          onReset={() =>
+            onChange({
+              scope: DEFAULT_FILTERS.scope,
+              projectId: null,
+              showWorktrees: DEFAULT_FILTERS.showWorktrees,
+              showBackups: DEFAULT_FILTERS.showBackups,
+            })
+          }
+        >
+          <OptionField label="Show items from">
+            <SegmentedControl<ScopeFilter>
+              label="Show items from"
+              value={filters.scope}
+              options={[
+                { value: "all", label: "All" },
+                { value: "global", label: "Global" },
+                { value: "project", label: "Projects" },
+              ]}
+              onChange={(scope) => onChange({ scope, projectId: scope === "project" ? filters.projectId : null })}
+            />
+          </OptionField>
+          {filters.scope === "project" && (
+            <OptionField label="Project">
+              <SelectField
+                wide
+                label="Project"
+                value={filters.projectId ?? ""}
+                onChange={(v) => onChange({ projectId: v || null })}
+                options={[{ value: "", label: "All projects" }, ...choices.map((p) => ({ value: p.id, label: p.name }))]}
+              />
+            </OptionField>
+          )}
+          <Labeled label="Worktrees" checked={filters.showWorktrees} onChange={(v) => onChange({ showWorktrees: v })} count={hidden.worktrees} />
+          <Labeled label="Backups" checked={filters.showBackups} onChange={(v) => onChange({ showBackups: v })} count={hidden.backups} />
+        </OptionsMenu>
       </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
-        {filters.scope === "project" && (
-          <SelectField
-            label="Project"
-            value={filters.projectId ?? ""}
-            onChange={(v) => onChange({ projectId: v || null })}
-            options={[{ value: "", label: "All projects" }, ...choices.map((p) => ({ value: p.id, label: p.name }))]}
-          />
-        )}
-
-        <Labeled label="Worktrees" checked={filters.showWorktrees} onChange={(v) => onChange({ showWorktrees: v })} count={hidden.worktrees} />
-        <Labeled label="Backups" checked={filters.showBackups} onChange={(v) => onChange({ showBackups: v })} count={hidden.backups} />
-        <p role="status" className="ml-auto text-caption text-ink-2">
-          {shown === total
-            ? `${total.toLocaleString()} ${total === 1 ? "item" : "items"}`
-            : `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} items`}
-        </p>
-      </div>
+      <p role="status" className="mt-2 text-caption text-ink-2">
+        {shown === total
+          ? `${total.toLocaleString()} ${total === 1 ? "item" : "items"}`
+          : `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} items`}
+      </p>
     </div>
   );
 }

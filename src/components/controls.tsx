@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 import * as Switch from "@radix-ui/react-switch";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 
@@ -18,7 +18,7 @@ export function Button({
   className = "",
   children,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; ref?: Ref<HTMLButtonElement> }) {
   return (
     <button type="button" {...rest} className={`btn btn-${variant} ${className}`}>
       <span className="btn-face">{children}</span>
@@ -31,7 +31,7 @@ export function IconButton({
   className = "",
   children,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { "aria-label": string }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { "aria-label": string; ref?: Ref<HTMLButtonElement> }) {
   return (
     <button type="button" {...rest} className={`btn-icon ${className}`}>
       <span className="btn-face">{children}</span>

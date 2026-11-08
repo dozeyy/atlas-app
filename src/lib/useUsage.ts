@@ -75,6 +75,8 @@ export interface Fetched<T> {
   error: string | null;
   /** True until the first answer (or error) arrives. */
   loading: boolean;
+  /** When the numbers on screen arrived (ms since epoch), null before the first answer. */
+  at: number | null;
   reload: (silent?: boolean) => void;
 }
 
@@ -84,10 +86,11 @@ export interface Fetched<T> {
  * them if it fails.
  */
 export function useFetched<T>(fn: () => Promise<T>, deps: unknown[]): Fetched<T> {
-  const [state, setState] = useState<{ data: T | null; error: string | null; loading: boolean }>({
+  const [state, setState] = useState<{ data: T | null; error: string | null; loading: boolean; at: number | null }>({
     data: null,
     error: null,
     loading: true,
+    at: null,
   });
   const seq = useRef(0);
   const fnRef = useRef(fn);
@@ -98,10 +101,10 @@ export function useFetched<T>(fn: () => Promise<T>, deps: unknown[]): Fetched<T>
     if (!silent) setState((s) => ({ ...s, loading: true, error: null }));
     fnRef
       .current()
-      .then((data) => id === seq.current && setState({ data, error: null, loading: false }))
+      .then((data) => id === seq.current && setState({ data, error: null, loading: false, at: Date.now() }))
       .catch((e) => {
         if (id !== seq.current) return;
-        setState((s) => (silent && s.data ? s : { data: null, error: message(e), loading: false }));
+        setState((s) => (silent && s.data ? s : { data: null, error: message(e), loading: false, at: null }));
       });
   }, []);
 

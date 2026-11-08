@@ -28,7 +28,9 @@ export function Settings() {
   return (
     <>
       <PageTitle title="Settings" />
+      <div className="@[1100px]:columns-2 @[1100px]:gap-x-8">
 
+      <section className="mb-8 break-inside-avoid">
       <SectionTitle>Appearance</SectionTitle>
       <Card>
         <ThemePicker theme={info.settings.theme} platform={info.platform} onChange={setTheme} />
@@ -43,7 +45,9 @@ export function Settings() {
           />
         </Row>
       </Card>
+      </section>
 
+      <section className="mb-8 break-inside-avoid">
       <SectionTitle>Claude folder</SectionTitle>
       <Card>
         <Row
@@ -92,7 +96,9 @@ export function Settings() {
           </p>
         )}
       </Card>
+      </section>
 
+      <section className="mb-8 break-inside-avoid">
       <SectionTitle>Sandbox mode</SectionTitle>
       <Card>
         <Row
@@ -128,7 +134,9 @@ export function Settings() {
           </div>
         )}
       </Card>
+      </section>
 
+      <section className="mb-8 break-inside-avoid">
       <SectionTitle>About</SectionTitle>
       <Card>
         <Row label="Version">
@@ -141,6 +149,8 @@ export function Settings() {
         </Row>
         <Row label="Atlas data" hint={<code className="selectable break-all">{info.dataDir}</code>} />
       </Card>
+      </section>
+      </div>
     </>
   );
 }

@@ -128,6 +128,8 @@ pub struct AppInfo {
     /// Rises with every snapshot; the page ignores one older than what it has.
     pub seq: u64,
     pub version: &'static str,
+    /// "debug" or "release": shown in About.
+    pub build: &'static str,
     pub platform: &'static str,
     /// Mica / vibrancy is active, so the page background must stay transparent.
     pub backdrop: bool,
@@ -318,6 +320,7 @@ impl AppState {
             // Taken while `inner` is held, so a later state always has a larger number.
             seq: self.seq.fetch_add(1, Ordering::SeqCst) + 1,
             version: env!("CARGO_PKG_VERSION"),
+            build: if cfg!(debug_assertions) { "debug" } else { "release" },
             platform: platform(),
             backdrop: backdrop_supported(),
             data_dir: self.data_dir.to_string_lossy().into_owned(),
@@ -560,6 +563,10 @@ pub fn platform() -> &'static str {
 
 /// Mica needs Windows 11 (build 22000+); macOS vibrancy is always there.
 pub fn backdrop_supported() -> bool {
+    // A way to see the Windows 10 look on a Windows 11 machine (ATLAS_NO_BACKDROP=1).
+    if std::env::var_os("ATLAS_NO_BACKDROP").is_some() {
+        return false;
+    }
     #[cfg(windows)]
     {
         windows_version::OsVersion::current().build >= 22000

@@ -11,6 +11,7 @@ import { AgentAvatar, CostFigure, ModelChip, sessionName } from "../components/u
 import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
 import { hasClearPeak, spendRidge, timelineBars } from "../components/usage/timelineBars";
 import { getBackend } from "../lib/ipc";
+import { helperTree, type HelperNode } from "../lib/helperTree";
 import { useIntro } from "../lib/motion";
 import { useFetched, useLiveReload } from "../lib/useUsage";
 import { compact, exact, formatDuration, formatUsd, formatWhen, headline, percent, plural, share } from "../lib/usage";
@@ -78,43 +79,6 @@ function HelperCard({
       </div>
     </Card>
   );
-}
-
-interface HelperNode {
-  agent: AgentSummary;
-  kids: HelperNode[];
-  /** Position in reading order, for the stagger on first paint. */
-  index: number;
-}
-
-/** Helpers as a forest: one that another helper started hangs under its starter. */
-function helperTree(agents: AgentSummary[]): HelperNode[] {
-  const nodes = new Map(agents.map((a) => [a.agentId, { agent: a, kids: [] as HelperNode[], index: 0 }]));
-  const parentOf = new Map(agents.map((a) => [a.agentId, a.parentAgentId]));
-  // A starter that leads back to the helper itself would hide both from the tree: treat it as a root.
-  const loops = (id: string): boolean => {
-    let at: string | null | undefined = parentOf.get(id);
-    for (let hops = 0; at && hops <= agents.length; hops++) {
-      if (at === id) return true;
-      at = parentOf.get(at);
-    }
-    return false;
-  };
-  const roots: HelperNode[] = [];
-  for (const a of agents) {
-    const node = nodes.get(a.agentId)!;
-    const parent = a.parentAgentId ? nodes.get(a.parentAgentId) : undefined;
-    if (parent && !loops(a.agentId)) parent.kids.push(node);
-    else roots.push(node);
-  }
-  let n = 0;
-  const walk = (list: HelperNode[]) =>
-    list.forEach((node) => {
-      node.index = n++;
-      walk(node.kids);
-    });
-  walk(roots);
-  return roots;
 }
 
 function HelperBranch({
@@ -474,9 +438,6 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
           >
             {`${plural(agents.length, "helper")} ran in this session`}
           </SectionTitle>
-          <p className="-mt-1 mb-3 text-body text-ink-2">
-            Open one to see what it was asked and what it spent. Their usage is counted in the session total, once.
-          </p>
           <HelperList agents={agents} order={order} sessionId={id} sessionUsd={sessionUsd} names={names} onOpen={setAgentId} />
         </section>
       ) : (

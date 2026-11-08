@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
@@ -25,7 +25,11 @@ describe("navigation", () => {
     mount();
     const nav = screen.getByRole("navigation", { name: "Main" });
     const labels = Array.from(nav.querySelectorAll("button")).map((b) => b.textContent);
-    expect(labels).toEqual(["Dashboard", "Sessions", "Toolkit", "History", "Wrapped", "Settings"]);
+    expect(labels).toEqual(["Dashboard", "Sessions", "Toolkit", "History", "Wrapped"]);
+    // Settings sits at the foot of the sidebar, where the version used to be; the version lives in Settings.
+    const foot = screen.getByRole("navigation", { name: "Secondary" });
+    expect(Array.from(foot.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Settings"]);
+    expect(screen.queryByText(/^Version /)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
   });
@@ -107,6 +111,27 @@ describe("sandbox", () => {
     expect(screen.getAllByText("Preparing sandbox").length).toBeGreaterThan(0);
     expect(screen.queryByText("C:/Users/you/.claude")).not.toBeInTheDocument();
     expect(await screen.findByText(/Copied 214 files/, undefined, { timeout: 3000 })).toBeInTheDocument();
-    expect(screen.getByText("Sandbox mode", { selector: "div" })).toBeInTheDocument();
+    expect(screen.getByText("Sandbox mode", { selector: "span" })).toBeInTheDocument();
+  });
+});
+
+describe("Claude folder", () => {
+  it("lives in Settings only, and Open folder asks the backend to open it", async () => {
+    const backend = new MockBackend();
+    const open = vi.spyOn(backend, "openConfigDir");
+    setBackend(backend);
+    render(
+      <AtlasProvider>
+        <App />
+      </AtlasProvider>,
+    );
+    await screen.findByRole("button", { name: "Settings" });
+    expect(screen.queryByText("Folder Atlas reads")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Toolkit" }));
+    expect(screen.queryByText("Folder Atlas reads")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByText("Folder Atlas reads")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Open folder" }));
+    expect(open).toHaveBeenCalledTimes(1);
   });
 });

@@ -77,6 +77,15 @@ pub fn open_config_dir(state: Shared) -> Result<(), String> {
     open_in_file_manager(std::path::Path::new(&cfg.dir))
 }
 
+/// Shows Atlas's own data folder (settings, caches, backups of what the Toolkit changed) in the
+/// file manager, for Help > Report a problem. Like the one above it takes no path from the page.
+#[tauri::command(async)]
+pub fn open_data_dir(state: Shared) -> Result<(), String> {
+    let dir = state.data_dir.clone();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not open the folder: {e}"))?;
+    open_in_file_manager(&dir)
+}
+
 fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let mut cmd = std::process::Command::new("explorer");
@@ -87,6 +96,35 @@ fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
     // explorer reports exit code 1 even when it opened the folder, so only a failure to
     // start it counts as an error.
     cmd.arg(dir).spawn().map(|_| ()).map_err(|e| format!("Could not open the folder: {e}"))
+}
+
+/// The title bar is drawn by the page (it runs under the content, like the Claude app), so the
+/// three caption buttons call here. `action` is "minimize", "toggle-maximize" or "close".
+#[tauri::command]
+pub fn window_control(app: AppHandle, action: String) {
+    let Some(w) = app.get_webview_window("main") else { return };
+    match action.as_str() {
+        "minimize" => {
+            let _ = w.minimize();
+        }
+        "toggle-maximize" => {
+            if w.is_maximized().unwrap_or(false) {
+                let _ = w.unmaximize();
+            } else {
+                let _ = w.maximize();
+            }
+        }
+        "close" => {
+            let _ = w.close();
+        }
+        _ => {}
+    }
+}
+
+/// Whether the window is maximized, so the middle caption button can show Restore.
+#[tauri::command]
+pub fn window_maximized(app: AppHandle) -> bool {
+    app.get_webview_window("main").and_then(|w| w.is_maximized().ok()).unwrap_or(false)
 }
 
 /// The page has painted: show the window and record the time.

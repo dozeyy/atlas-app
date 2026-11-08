@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { Table } from "@phosphor-icons/react";
-import { Button, Card, SegmentedControl } from "../controls";
+import { Card, SegmentedControl } from "../controls";
+import { OptionField, OptionsMenu } from "../OptionsMenu";
 import { Bars } from "../charts/Bars";
 import type { BarDatum } from "../charts/Bars";
 import { getBackend } from "../../lib/ipc";
@@ -75,25 +75,41 @@ export function ActivityCard({ today }: { today: string }) {
             {RANGE_NAME[range]}: {metric === "tokens" ? `${compact(totals.tokens)} tokens` : `${formatUsd(totals.usd)} estimated`}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SegmentedControl
-            label="Measure"
-            value={metric}
-            options={[
-              { value: "tokens", label: "Tokens" },
-              { value: "cost", label: "Cost" },
-            ]}
-            onChange={setMetric}
-          />
+        <div className="flex items-center gap-2">
+          {/* The range is this card's main control and stays out in the open; the rest hides in one button. */}
           <SegmentedControl label="Time range" value={range} options={RANGES} onChange={setRange} />
-          <Button
-            aria-pressed={asTable}
-            onClick={() => setAsTable((v) => !v)}
-            title={asTable ? "Show the chart" : "Show the numbers as a table"}
+          <OptionsMenu
+            label="Chart options"
+            count={(metric !== "tokens" ? 1 : 0) + (asTable ? 1 : 0)}
+            onReset={() => {
+              setMetric("tokens");
+              setAsTable(false);
+            }}
+            width={260}
           >
-            <Table size={14} aria-hidden="true" />
-            {asTable ? "Chart" : "Table"}
-          </Button>
+            <OptionField label="Show">
+              <SegmentedControl
+                label="Measure"
+                value={metric}
+                options={[
+                  { value: "tokens", label: "Tokens" },
+                  { value: "cost", label: "Cost" },
+                ]}
+                onChange={setMetric}
+              />
+            </OptionField>
+            <OptionField label="As">
+              <SegmentedControl
+                label="Chart or table"
+                value={asTable ? "table" : "chart"}
+                options={[
+                  { value: "chart", label: "Chart" },
+                  { value: "table", label: "Table" },
+                ]}
+                onChange={(v) => setAsTable(v === "table")}
+              />
+            </OptionField>
+          </OptionsMenu>
         </div>
       </div>
 

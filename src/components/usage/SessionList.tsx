@@ -1,19 +1,20 @@
-import { CaretRight, Clock, FileX, Robot } from "@phosphor-icons/react";
+import type { ReactNode } from "react";
+import { CaretRight, FileX, Robot } from "@phosphor-icons/react";
 import { IconMotion } from "../IconMotion";
 import { formatDuration, formatWhen, compact, exact, plural } from "../../lib/usage";
 import type { SessionRow } from "../../lib/types";
 import { CostText } from "./CostText";
-import { ModelChip, sessionName } from "./helperKit";
+import { ModelDots, sessionName } from "./helperKit";
 
-/** The first letter of the project on a warm tile: a face for the row, not a column. */
-function ProjectTile({ name }: { name: string }) {
+/**
+ * A list of session rows. One column in a narrow page, two from 56rem, three from 100rem, so a
+ * wide window reads as a table of rows and not one row stretched across the screen.
+ */
+export function SessionGrid({ children }: { children: ReactNode }) {
   return (
-    <span
-      aria-hidden="true"
-      className="flex size-10 shrink-0 items-center justify-center rounded-card bg-accent-tint text-lead font-semibold uppercase text-accent-text"
-    >
-      {name.trim().charAt(0) || "?"}
-    </span>
+    <div className="overflow-hidden">
+      <ul className="session-grid">{children}</ul>
+    </div>
   );
 }
 
@@ -26,8 +27,7 @@ export function SessionLine({ row, onOpen, index = 0 }: { row: SessionRow; onOpe
   const name = sessionName(row);
   return (
     <li className="row-in" style={{ ["--i" as string]: index }}>
-      <button type="button" onClick={() => onOpen(row.sessionId)} className="row-btn items-center gap-4 px-5 py-3.5">
-        <ProjectTile name={row.projectName} />
+      <button type="button" onClick={() => onOpen(row.sessionId)} className="row-btn items-center gap-4 px-5 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className={`truncate text-body font-semibold ${row.name ? "text-ink" : "text-ink-2"}`}>{name}</span>
@@ -52,16 +52,19 @@ export function SessionLine({ row, onOpen, index = 0 }: { row: SessionRow; onOpe
               </span>
             )}
           </div>
-          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-caption text-ink-2">
-            <span className="truncate">{row.projectName}</span>
-            <span>{formatWhen(row.startedAt)}</span>
-            <span className="inline-flex items-center gap-1">
-              <Clock size={12} aria-hidden="true" />
-              {formatDuration(row.durationMs)}
-            </span>
-            {row.models.map((m) => (
-              <ModelChip key={m} model={m} />
-            ))}
+          {/* One quiet line that never wraps: it is cut with an ellipsis instead. */}
+          <div className="mt-0.5 truncate text-caption text-ink-2">
+            {row.projectName}
+            <span aria-hidden="true"> &middot; </span>
+            {formatWhen(row.startedAt)}
+            <span aria-hidden="true"> &middot; </span>
+            {formatDuration(row.durationMs)}
+            {row.models.length > 0 && (
+              <>
+                <span aria-hidden="true"> &middot; </span>
+                <ModelDots models={row.models} />
+              </>
+            )}
           </div>
         </div>
         <div className="shrink-0 text-right">
