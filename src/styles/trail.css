@@ -167,6 +167,24 @@
   border-radius: var(--r-card);
   cursor: pointer;
   text-align: left;
+  position: relative;
+  isolation: isolate; /* so the slop below can sit under the face without leaving the button */
+}
+/*
+ * HIT SLOP (Will, 2026-11-08: ~1-3% of presses at a card's or row's edge do nothing).
+ * Root cause, traced with CDP: a click fires on the nearest common ancestor of the pointerdown
+ * and pointerup targets, so a press that drifts even 1 px past the box before release never
+ * reaches the button. The hover lift (-2px) and the press (scale .9925) also pull the visible
+ * face away from the box edge, so the pointer leaves the face while the mouse is still down.
+ * The slop is an invisible ring that belongs to the button (same target, same hover and
+ * :active), sits UNDER the face (z-index -1) so nothing inside the card loses its hover or
+ * tooltip, and never moves, so the hit-box rule still holds.
+ */
+.card-hit::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
 }
 .card-face {
   height: 100%;
@@ -547,6 +565,10 @@ html.reduced .options-panel {
   grid-template-columns: minmax(0, 1fr);
   margin-bottom: -1px; /* the last row's rule falls outside the card */
 }
+/* Clips the last rule (top and bottom) but lets the rows' hit slop reach over the card's 1 px side border. */
+.session-clip {
+  clip-path: inset(0 -6px);
+}
 .session-grid > li {
   border-bottom: 1px solid var(--line);
 }
@@ -556,6 +578,15 @@ html.reduced .options-panel {
   }
   .session-grid > li:nth-child(2n) {
     border-left: 1px solid var(--line);
+  }
+  /* Slop reaches 3 px past the list's outer sides only; between columns it stops at the rule (1 px). */
+  .session-grid > li:nth-child(2n + 1) > .row-btn {
+    --slop-l: 3px;
+    --slop-r: 1px;
+  }
+  .session-grid > li:nth-child(2n) > .row-btn {
+    --slop-l: 1px;
+    --slop-r: 3px;
   }
 }
 @container (min-width: 1700px) {
@@ -568,6 +599,18 @@ html.reduced .options-panel {
   .session-grid > li:nth-child(3n + 2),
   .session-grid > li:nth-child(3n) {
     border-left: 1px solid var(--line);
+  }
+  .session-grid > li:nth-child(3n + 1) > .row-btn {
+    --slop-l: 3px;
+    --slop-r: 1px;
+  }
+  .session-grid > li:nth-child(3n + 2) > .row-btn {
+    --slop-l: 1px;
+    --slop-r: 1px;
+  }
+  .session-grid > li:nth-child(3n) > .row-btn {
+    --slop-l: 1px;
+    --slop-r: 3px;
   }
 }
 
@@ -1072,7 +1115,23 @@ svg.chart {
   text-align: left;
   background: none;
   border: 0;
+  position: relative;
+  isolation: isolate;
   transition: background-color var(--dur-fast) var(--ease-out);
+}
+/*
+ * Hit slop, same reason as .card-hit::before. A row sits in a <li> that draws its rule (1 px
+ * border-bottom, and border-left on the right-hand column) and in a card with a 1 px border;
+ * those pixels belong to non-pressable elements, so a press landing on them did nothing, and a
+ * press that drifted out before release lost its click. The ring reaches over the li's rule and
+ * 3 px past each side, under the row's own content. Rows below paint later, so a press on the
+ * shared rule goes to the row beneath, never to a dead pixel.
+ */
+.row-btn::before {
+  content: "";
+  position: absolute;
+  inset: -1px calc(-1 * var(--slop-r, 3px)) -1px calc(-1 * var(--slop-l, 3px));
+  z-index: -1;
 }
 .row-btn:hover {
   background: var(--raised);

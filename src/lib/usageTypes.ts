@@ -132,6 +132,8 @@ export interface SessionQuery {
   projects?: string[];
   models?: string[];
   text?: string | null;
+  /** Also list these sessions (the chats a message search found), whatever `text` matched. */
+  alsoIds?: string[];
   minCostUsd?: number | null;
   includeMissing?: boolean;
   sort?: SessionSort;

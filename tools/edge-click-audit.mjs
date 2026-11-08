@@ -132,6 +132,38 @@ for (let i = 0; i < count; i++) {
     checked++;
     if (!hit) failures.push(`${info.name || "(unnamed)"} [${Math.round(r.w)}x${Math.round(r.h)}${info.cls ? ", press" : ""}] edge=${edge}`);
   }
+
+  // Drift pass, on the list primitives only (.row-btn, .card-hit): press 1 px inside an edge, let the pointer slip
+  // `slip` px past it while still down, release. A click fires on the nearest common ancestor of the down and up
+  // targets, so without hit slop the click never reaches the button (the root cause of the "dead edge" reports).
+  // Rows drift sideways only (above/below is the neighbouring row, which legitimately takes the release).
+  const kind = await c.ev(`(()=>{const e = window.__els[${i}]; return e.classList.contains('row-btn') ? 'row' : e.classList.contains('card-hit') ? 'card' : ''})()`);
+  if (kind) {
+    const slip = 2;
+    const drifts =
+      kind === "row"
+        ? { left: [r.x + 1, r.y + r.h / 2, r.x - slip, r.y + r.h / 2], right: [r.x + r.w - 1, r.y + r.h / 2, r.x + r.w + slip, r.y + r.h / 2] }
+        : {
+            left: [r.x + 1, r.y + r.h / 2, r.x - slip, r.y + r.h / 2],
+            right: [r.x + r.w - 1, r.y + r.h / 2, r.x + r.w + slip, r.y + r.h / 2],
+            top: [r.x + r.w / 2, r.y + 1, r.x + r.w / 2, r.y - slip],
+            bottom: [r.x + r.w / 2, r.y + r.h - 1, r.x + r.w / 2, r.y + r.h + slip],
+          };
+    for (const [edge, [x, y, ux, uy]] of Object.entries(drifts)) {
+      const owner = await c.ev(`(()=>{const e = window.__els[${i}]; const t = document.elementFromPoint(${x}, ${y}); return !!t && (t === e || e.contains(t));})()`);
+      if (!owner) continue;
+      await c.ev(`window.__clicks.length = 0`);
+      await c.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
+      await c.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 });
+      await c.sleep(320);
+      await c.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: ux, y: uy, button: "left", buttons: 1 });
+      await c.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: ux, y: uy, button: "left", buttons: 0, clickCount: 1 });
+      await c.sleep(40);
+      const hit = await c.ev(`(()=>{const e = window.__els[${i}]; return window.__clicks.some(t => t === e || e.contains(t));})()`);
+      checked++;
+      if (!hit) failures.push(`${info.name || "(unnamed)"} [${Math.round(r.w)}x${Math.round(r.h)}] drift ${slip}px past ${edge}`);
+    }
+  }
 }
 console.log(`${label}: ${count} pressables, ${checked} edge presses, ${failures.length} missed`);
 for (const f of failures) console.log("  MISS " + f);
