@@ -1405,4 +1405,254 @@ html.reduced .seg-item:active .seg-face,
 html.reduced .nav-item:active .nav-face {
   transform: none;
 }
+
+/* ---- Session detail: one screen, tabs instead of a long page ------------------------------- */
+/* The page fills the window under the title bar; a pane scrolls only when it truly cannot fit. */
+.session-fit {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--titlebar-h) - 2 * var(--gutter-y));
+  min-height: 30rem;
+}
+.session-pane {
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 16px -8px 0;
+  padding: 0 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* The receipt: plain lines, a hairline and a total, nothing boxed. */
+.rcpt-head {
+  margin-bottom: 6px;
+  font-size: var(--text-caption);
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.rcpt-line {
+  display: block;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 5px 8px 6px;
+  border-radius: var(--radius-control);
+  text-align: left;
+}
+.rcpt-line-btn {
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.rcpt-line-btn:hover {
+  background: var(--raised);
+}
+.rcpt-line-btn:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: -2px;
+}
+.rcpt-bar > i {
+  background: var(--bar, var(--accent));
+}
+.rcpt-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-body);
+  line-height: 20px;
+  color: var(--ink-2);
+}
+.rcpt-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-control);
+}
+.rcpt-flag {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  background: var(--warning-tint);
+}
+
+/* The helper map and the slice of whatever is selected. */
+.map-grid {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(12rem, 1fr) auto;
+  gap: 16px;
+}
+@container (min-width: 48rem) {
+  .map-grid {
+    grid-template-columns: minmax(0, 1fr) 17rem;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 24px;
+  }
+}
+.slice {
+  min-height: 0;
+  max-height: 14rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+@container (min-width: 48rem) {
+  .slice {
+    max-height: none;
+    padding: 0 0 0 20px;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+}
+.slice-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  margin-top: 7px;
+  border-radius: 50%;
+}
+.slice-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 10px;
+}
+.details-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@container (min-width: 48rem) {
+  .details-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.map > svg.chart {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.map-link {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  transition:
+    stroke var(--dur-fast) var(--ease-out),
+    stroke-width var(--dur-fast) var(--ease-out);
+}
+.map-link.on {
+  stroke: var(--accent-text);
+  stroke-width: 2;
+}
+.map-node {
+  cursor: pointer;
+  outline: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.map.has-focus .map-node:not(.on) {
+  opacity: 0.4;
+}
+.map-hit {
+  fill: transparent;
+}
+.map-dot {
+  stroke: var(--bg);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: scale 180ms var(--ease-spring);
+}
+.map-node:hover .map-dot,
+.map-node:focus-visible .map-dot {
+  scale: 1.14;
+}
+.map-node:focus-visible .map-dot {
+  stroke: var(--accent-text);
+}
+.map-node.more .map-dot {
+  stroke: var(--line-strong);
+  stroke-dasharray: 3 3;
+}
+.map-ring {
+  fill: none;
+  stroke: var(--accent-text);
+  stroke-width: 2;
+}
+.map-name {
+  font-size: 12px;
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.map-node.sel .map-name,
+.map-node:hover .map-name {
+  fill: var(--ink);
+  font-weight: 600;
+}
+.map-legend {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: flex;
+  gap: 14px;
+  font-size: var(--text-caption);
+  line-height: 16px;
+  color: var(--ink-2);
+  pointer-events: none;
+}
+.map-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.map-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+/* Enter: the lines draw out from the middle, then the dots pop in ring by ring. */
+.intro .map-link {
+  stroke-dasharray: 1;
+  animation: map-draw 520ms var(--ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 30) * 18ms + 60ms);
+}
+@keyframes map-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+.intro .map-node {
+  transform-origin: 0 0;
+  animation: map-pop 380ms var(--ease-spring) backwards;
+  animation-delay: calc(min(var(--i, 0), 30) * 18ms + 120ms);
+}
+@keyframes map-pop {
+  from { opacity: 0; scale: 0.3; }
+  to { opacity: 1; scale: 1; }
+}
+html.reduced .intro .map-link,
+html.reduced .intro .map-node {
+  animation-name: t-fade !important;
+  stroke-dasharray: none;
+}
+html.reduced .map-node:hover .map-dot,
+html.reduced .map-node:focus-visible .map-dot {
+  scale: 1;
+}
 }

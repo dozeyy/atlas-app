@@ -138,7 +138,8 @@ describe("Dashboard", () => {
     await userEvent.click(first);
     expect(await screen.findByRole("heading", { level: 1, name: "Sessions" })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "All sessions" })).toBeInTheDocument();
-    expect(await screen.findByText("Token breakdown")).toBeInTheDocument();
+    // A session opens on its receipt.
+    expect(await screen.findByRole("region", { name: "Who spent it" })).toBeInTheDocument();
   });
 });
 
@@ -170,9 +171,12 @@ describe("Sessions", () => {
     mount("data", "sessions");
     const rows = await screen.findAllByRole("button", { name: /tokens/ });
     await userEvent.click(rows[0]);
+    expect(await screen.findByRole("region", { name: "Who spent it" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "Details" }));
     expect(await screen.findByText("Token breakdown")).toBeInTheDocument();
     expect(screen.getByText("Cache reads")).toBeInTheDocument();
     expect(screen.queryByText(/Mock request number 1\./)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "Messages" }));
     await userEvent.click(screen.getByRole("button", { name: /Show conversation/ }));
     expect(await screen.findByText(/Mock request number 1\./)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "All sessions" }));
@@ -268,16 +272,23 @@ describe("Helpers (subagents) inside a session", () => {
     expect(count.className).not.toMatch(/chip|rounded|border|bg-/);
   });
 
-  it("opens a session with its main-versus-total split and one card per helper", async () => {
+  /** The helper cards live behind the Helpers tab's List view. */
+  async function openHelperList() {
+    await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
+    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+  }
+
+  it("opens a session on its receipt: the main chat and its helpers, and a card per helper in the list", async () => {
     const backend = sessionsBackend();
     const { row, detail } = await withHelpers(backend);
     mountDetail(backend, row.sessionId);
-    const helpers = await screen.findByRole("region", { name: "Helpers" });
-    expect(within(helpers).getByRole("heading", { name: `${row.agentCount} helpers ran in this session` })).toBeInTheDocument();
-    expect(screen.getByText("You and Claude")).toBeInTheDocument();
+    const who = await screen.findByRole("region", { name: "Who spent it" });
+    expect(within(who).getByText("Main chat")).toBeInTheDocument();
+    await openHelperList();
     for (const a of detail.agents) {
-      expect(within(helpers).getAllByRole("button", { name: new RegExp(esc(a.name)) }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) }).length).toBeGreaterThan(0);
     }
+    expect(row.agentCount).toBe(detail.agents.length);
   });
 
   it("opens one helper to show what it was asked and what it spent, and goes back", async () => {
@@ -286,8 +297,8 @@ describe("Helpers (subagents) inside a session", () => {
     const a = detail.agents[0];
     const full = (await backend.agentDetail(row.sessionId, a.agentId))!;
     mountDetail(backend, row.sessionId);
-    const helpers = await screen.findByRole("region", { name: "Helpers" });
-    await userEvent.click(within(helpers).getAllByRole("button", { name: new RegExp(esc(a.name)) })[0]);
+    await openHelperList();
+    await userEvent.click(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) })[0]);
     expect(await screen.findByRole("heading", { level: 2, name: a.name })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "What it was asked" })).toHaveTextContent(full.prompt!);
     expect(screen.getByText("Tool calls")).toBeInTheDocument();
@@ -296,16 +307,19 @@ describe("Helpers (subagents) inside a session", () => {
     expect(within(breakdown).getByText("Cache reads")).toBeInTheDocument();
     expect(within(breakdown).getByText(a.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^Back to / }));
-    expect(await screen.findByRole("region", { name: "Helpers" })).toBeInTheDocument();
+    // Back lands on the same tab and view it left.
+    expect(await screen.findByRole("radio", { name: "Started" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) }).length).toBeGreaterThan(0);
   });
 
   it("switches the token breakdown between the main conversation and everything", async () => {
     const backend = sessionsBackend();
     const { row, detail } = await withHelpers(backend);
     mountDetail(backend, row.sessionId);
+    await userEvent.click(await screen.findByRole("radio", { name: "Details" }));
     const section = await screen.findByRole("region", { name: "Token breakdown" });
     expect(within(section).getByText(row.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
-    await userEvent.click(within(section).getByRole("radio", { name: "Main only" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Main only" }));
     expect(within(section).getByText(detail.main.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
   });
 });

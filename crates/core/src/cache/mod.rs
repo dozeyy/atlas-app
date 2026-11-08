@@ -6,6 +6,7 @@
 
 pub mod migrate;
 pub mod pricing_file;
+pub mod receipts;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};

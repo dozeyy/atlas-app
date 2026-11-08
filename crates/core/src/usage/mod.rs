@@ -12,6 +12,8 @@ pub mod naming;
 pub mod pricing;
 pub mod query;
 pub mod reader;
+pub mod receipt;
+pub mod receipt_scan;
 pub mod scan;
 pub mod time;
 pub mod transcript;
@@ -186,6 +188,8 @@ enum Msg {
     Reindex { full: bool },
     Reprice,
     Visible(bool),
+    /// A finished receipt scan to keep (written by the coordinator, the only writer).
+    StoreScan { session_id: String, sig: String, body: String },
     Stop,
 }
 
@@ -398,6 +402,42 @@ impl UsageEngine {
 
     pub fn filter_options(&self) -> Result<query::FilterOptions, String> {
         self.read(query::filter_options)
+    }
+
+    /// "Where the money went" for one chat. The numbers come from the ledger; the big-item and
+    /// outcome parts come from one pass over the chat's transcripts, kept in the cache until a
+    /// file changes. Runs on the caller's thread (the app calls it off the UI thread).
+    pub fn receipt(&self, id: &str) -> Result<Option<receipt::Receipt>, String> {
+        use receipt_scan::{Scan, ScanFile, SCAN_VERSION};
+        let (files, sig, cached) = self.read(|c, _| {
+            let sig = cache::receipts::signature(c, id, SCAN_VERSION)?;
+            let cached = cache::receipts::load(c, id, &sig)?.and_then(|b| serde_json::from_str::<Scan>(&b).ok());
+            let mut files = Vec::new();
+            if cached.is_none() {
+                let mut st = c.prepare_cached(
+                    "SELECT f.path, a.agent_id FROM files f LEFT JOIN agents a ON a.file_id = f.file_id AND a.session_id = ?1 \
+                     WHERE f.session_id = ?1 AND f.missing = 0 AND (f.is_subagent = 0 OR a.agent_id IS NOT NULL) \
+                     ORDER BY f.is_subagent, f.path",
+                )?;
+                for r in st.query_map([id], |r| Ok(ScanFile { path: PathBuf::from(r.get::<_, String>(0)?), agent_id: r.get(1)? }))? {
+                    files.push(r?);
+                }
+            }
+            Ok((files, sig, cached))
+        })?;
+        let scan = match cached {
+            Some(s) => s,
+            None => {
+                let s = receipt_scan::scan_files(&files, &self.stats);
+                if s.readable
+                    && let Ok(body) = serde_json::to_string(&s)
+                {
+                    let _ = self.tx.send(Msg::StoreScan { session_id: id.to_string(), sig, body });
+                }
+                s
+            }
+        };
+        self.read(|c, x| receipt::build(c, x, id, Some(&scan)))
     }
 
     pub fn session_transcript(
@@ -728,6 +768,13 @@ impl Core {
                 self.pass(Mode::All { force_reparse: full }, "index");
             }
             Msg::Visible(v) => self.visible = v,
+            Msg::StoreScan { session_id, sig, body } => {
+                if self.kind == OpenKind::Ready
+                    && let Some(conn) = &self.conn
+                {
+                    let _ = cache::receipts::store(conn, &session_id, &sig, &body, now_ms());
+                }
+            }
         }
         true
     }

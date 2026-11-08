@@ -1,22 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowBendDownRight, ArrowLeft, CaretRight, ChatsCircle, Clock, Hash, UsersThree, Wrench } from "@phosphor-icons/react";
 import { Button, Card, SegmentedControl } from "../components/controls";
 import { Bars } from "../components/charts/Bars";
 import { Ridge } from "../components/charts/Ridge";
-import { StackBar } from "../components/charts/StackBar";
 import { IconMotion } from "../components/IconMotion";
 import { CostText } from "../components/usage/CostText";
 import { Breakdown, ModelSplit, Stat } from "../components/usage/detailParts";
-import { AgentAvatar, CostFigure, ModelChip, sessionName } from "../components/usage/helperKit";
-import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
+import { HelperMap } from "../components/usage/HelperMap";
+import { HelperSlice } from "../components/usage/HelperSlice";
+import { AgentAvatar, CostFigure, ModelChip, ModelDots, sessionName } from "../components/usage/helperKit";
+import { ReceiptPane } from "../components/usage/ReceiptPane";
+import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
 import { hasClearPeak, spendRidge, timelineBars } from "../components/usage/timelineBars";
 import { getBackend } from "../lib/ipc";
 import { helperTree, type HelperNode } from "../lib/helperTree";
+import { MAIN_ID } from "../lib/helperMap";
 import { useIntro } from "../lib/motion";
 import { useFetched, useLiveReload } from "../lib/useUsage";
 import { compact, exact, formatDuration, formatUsd, formatWhen, headline, percent, plural, share } from "../lib/usage";
 import { AgentDetailView, typeLabel } from "./AgentDetail";
 import type { AgentSummary, TranscriptItem } from "../lib/types";
+
+type Tab = "receipt" | "helpers" | "messages" | "details";
 
 /** One helper as a card: who it was, what it spent, how much of the session that is. */
 function HelperCard({
@@ -199,13 +204,10 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
   }, [sessionId]);
 
   return (
-    <section aria-label="Conversation" className="mt-8">
-      <SectionTitle>Conversation</SectionTitle>
+    <section aria-label="Conversation" className="flex h-full min-h-0 flex-col">
       {!open ? (
         <Card className="flex items-center justify-between gap-4 px-5 py-4">
-          <p className="text-body text-ink-2">
-            Read the messages in this session. They are read from your files when you ask and are never copied anywhere.
-          </p>
+          <p className="text-body text-ink-2">Read from your files only when you ask. Nothing is copied anywhere.</p>
           <Button
             variant="primary"
             onClick={() => {
@@ -218,7 +220,7 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
           </Button>
         </Card>
       ) : (
-        <Card>
+        <Card className="flex min-h-0 flex-1 flex-col">
           {missing ? (
             <p className="px-5 py-4 text-body text-ink-2">The file for this session is no longer on disk, so its messages cannot be shown.</p>
           ) : error ? (
@@ -229,7 +231,7 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
           ) : items.length === 0 && !busy ? (
             <p className="px-5 py-4 text-body text-ink-2">There are no readable messages in this session.</p>
           ) : (
-            <ol className="divide-y divide-line">
+            <ol className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
               {items.map((m, i) => (
                 <li key={i} className="px-5 py-3">
                   <div className="flex items-baseline gap-3 text-caption text-ink-2">
@@ -263,23 +265,43 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
   const backend = getBackend();
   const d = useFetched(() => backend.sessionDetail(id), [id]);
   useLiveReload(d.reload);
+  // The receipt reads the chat's files once and is then kept, so it is not reloaded with every
+  // tick: only when the chat's cost itself moved.
+  const receipt = useFetched(() => backend.sessionReceipt(id), [id]);
   const [agentId, setAgentId] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("receipt");
+  const [view, setView] = useState<"map" | "list">("map");
   const [order, setOrder] = useState<"started" | "spend">("started");
   const [scope, setScope] = useState<"all" | "main">("all");
+  const [picked, setPicked] = useState<string>(MAIN_ID);
+  const [visitedMessages, setVisitedMessages] = useState(false);
+  const costSeen = useRef<number | null>(null);
 
   useEffect(() => {
     setAgentId(null);
     setScope("all");
+    setTab("receipt");
+    setView("map");
+    setPicked(MAIN_ID);
+    setVisitedMessages(false);
+    costSeen.current = null;
   }, [id]);
   useEffect(() => {
     document.querySelector("main")?.scrollTo?.({ top: 0 });
   }, [agentId]);
 
+  const costNow = d.data?.row.cost.usd ?? null;
+  const reloadReceipt = receipt.reload;
+  useEffect(() => {
+    if (costNow !== null && costSeen.current !== null && Math.abs(costNow - costSeen.current) > 0.005) reloadReceipt(true);
+    costSeen.current = costNow;
+  }, [costNow, reloadReceipt]);
+
   const bins = useMemo(() => timelineBars(d.data?.timeline ?? [], d.data?.row.durationMs ?? 0), [d.data]);
   const spend = useMemo(() => spendRidge(d.data?.timeline ?? [], d.data?.row.durationMs ?? 0), [d.data]);
 
   const back = (
-    <Button onClick={onBack} className="mb-4">
+    <Button onClick={onBack} className="shrink-0">
       <IconMotion motion="nudge">
         <ArrowLeft />
       </IconMotion>
@@ -301,7 +323,7 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
   if (d.loading && !d.data) {
     return (
       <div role="status" aria-label="Loading the session">
-        {back}
+        <div className="mb-4">{back}</div>
         <Skeleton className="h-8 w-80" />
         <Skeleton className="mt-6 h-36" />
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
@@ -315,7 +337,7 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
   if (d.error) {
     return (
       <>
-        {back}
+        <div className="mb-4">{back}</div>
         <ErrorBlock title="Could not load this session" message={d.error} onRetry={() => d.reload(false)} />
       </>
     );
@@ -323,7 +345,7 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
   if (!d.data) {
     return (
       <>
-        {back}
+        <div className="mb-4">{back}</div>
         <ErrorBlock title="This session is not here any more" message="It is no longer in the usage cache. Go back to the list to see what is left." />
       </>
     );
@@ -333,98 +355,56 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
   const total = row.tokens;
   const name = sessionName(row);
   const sessionUsd = row.cost.usd ?? 0;
-  const mainUsd = main.cost.usd ?? 0;
-  const helperUsd = agents.reduce((s, a) => s + (a.cost.usd ?? 0), 0);
   const toolCalls = main.toolCalls + agents.reduce((s, a) => s + a.toolCalls, 0);
   const names = new Map(agents.map((a) => [a.agentId, a.name]));
+  const hasHelpers = agents.length > 0;
+  const shownTab: Tab = tab === "helpers" && !hasHelpers ? "receipt" : tab;
+
+  const choose = (next: Tab) => {
+    setTab(next);
+    if (next === "messages") setVisitedMessages(true);
+  };
+  /** A line on the receipt was clicked: show that helper on the map. */
+  const showOnMap = (helperId: string | null) => {
+    setPicked(helperId ?? MAIN_ID);
+    setView("map");
+    setTab("helpers");
+  };
+
+  const tabs: { value: Tab; label: string }[] = [
+    { value: "receipt", label: "Receipt" },
+    ...(hasHelpers ? [{ value: "helpers" as const, label: "Helpers" }] : []),
+    { value: "messages", label: "Messages" },
+    { value: "details", label: "Details" },
+  ];
 
   return (
-    <div className="@container">
-      {back}
-      <h2 className="d d-figure break-words text-ink">{name}</h2>
-      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-body text-ink-2">
-        <span className="font-medium text-ink">{row.projectName}</span>
-        <code className="selectable break-all">{row.projectPath}</code>
-        <span>{formatWhen(row.startedAt)}</span>
-        <span>{formatDuration(row.durationMs)}</span>
-        {row.models.map((m) => (
-          <ModelChip key={m} model={m} />
-        ))}
-      </div>
-
-      <Card className="mt-6 grid grid-cols-1 gap-x-8 gap-y-5 px-6 py-5 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
-        <div className="min-w-0">
-          <div className="text-caption font-medium text-ink-2">This session cost about</div>
-          <div className="mt-2">
-            <CostFigure cost={row.cost} id={`session:${id}:cost`} className="d d-hero text-ink" />
+    <div className="@container session-fit">
+      <div className="flex shrink-0 items-start gap-3">
+        {back}
+        <div className="min-w-0 flex-1">
+          <h2 className="d d-figure truncate text-ink" title={name}>
+            {name}
+          </h2>
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 text-body text-ink-2">
+            <span className="font-medium text-ink">{row.projectName}</span>
+            <span>{formatWhen(row.startedAt)}</span>
+            <span>{formatDuration(row.durationMs)}</span>
+            <ModelDots models={row.models} />
+            {hasHelpers && <span>{plural(agents.length, "helper")}</span>}
           </div>
-          <p className="mt-2 text-body text-ink-2">
-            {claudeCodeCostUsd !== null ? `Claude Code showed ${formatUsd(claudeCodeCostUsd)} for this session.` : "An estimate from the price list."}
-          </p>
-          {agents.length > 0 && (
-            <div className="mt-4 max-w-[34rem]">
-              <StackBar
-                id={`session:${id}:split`}
-                label="Who spent it: the main conversation and its helpers"
-                items={[
-                  {
-                    key: "main",
-                    label: "You and Claude",
-                    value: mainUsd,
-                    tone: 2,
-                    right: formatUsd(mainUsd),
-                    share: percent(share(mainUsd, sessionUsd)),
-                  },
-                  {
-                    key: "helpers",
-                    label: plural(agents.length, "helper"),
-                    value: helperUsd,
-                    tone: 1,
-                    right: formatUsd(helperUsd),
-                    share: percent(share(helperUsd, sessionUsd)),
-                  },
-                ]}
-              />
-            </div>
-          )}
         </div>
-        {spend.length > 1 && (
-          <div className="flex min-w-0 flex-col justify-end">
-            <div className="mb-1 text-caption font-medium text-ink-2">Spend as it ran</div>
-            <Ridge
-              id={`session:${id}:spend`}
-              data={spend}
-              label="Spend as it ran"
-              height={132}
-              summit={hasClearPeak(spend.map((s) => s.value))}
-            />
-          </div>
-        )}
-      </Card>
-
-      <div className="mt-4 grid grid-cols-2 gap-4 @3xl:grid-cols-4">
-        <Stat label="Tokens" sub={total.cacheRead > 0 ? `plus ${compact(total.cacheRead)} cache reads` : undefined}>
-          <span title={exact(headline(total))}>{compact(headline(total))}</span>
-        </Stat>
-        <Stat
-          label="Messages"
-          icon={<Hash size={14} aria-hidden="true" />}
-          sub={row.subagentMessages > 0 ? `${exact(row.subagentMessages)} from helpers` : undefined}
-        >
-          {exact(row.messages)}
-        </Stat>
-        <Stat label="Tool calls" icon={<Wrench size={14} aria-hidden="true" />}>
-          {exact(toolCalls)}
-        </Stat>
-        <Stat label="Helpers" icon={<UsersThree size={14} aria-hidden="true" />} sub={agents.length === 0 ? "Just you and Claude" : undefined}>
-          {exact(agents.length)}
-        </Stat>
+        <div className="shrink-0 text-right">
+          <CostFigure cost={row.cost} id={`session:${id}:cost`} className="d d-stat text-ink" />
+          {claudeCodeCostUsd !== null && <div className="text-caption text-ink-2">{`Claude Code showed ${formatUsd(claudeCodeCostUsd)}`}</div>}
+        </div>
       </div>
 
-      {agents.length > 0 ? (
-        <section aria-label="Helpers" className="mt-8">
-          <SectionTitle
-            aside={
+      <div className="mt-4 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <SegmentedControl label="Session view" value={shownTab} onChange={choose} options={tabs} />
+        {shownTab === "helpers" && (
+          <div className="flex items-center gap-2">
+            {view === "list" && (
               <SegmentedControl
                 label="Order helpers by"
                 value={order}
@@ -434,70 +414,128 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
                   { value: "spend", label: "Spend" },
                 ]}
               />
-            }
-          >
-            {`${plural(agents.length, "helper")} ran in this session`}
-          </SectionTitle>
-          <HelperList agents={agents} order={order} sessionId={id} sessionUsd={sessionUsd} names={names} onOpen={setAgentId} />
-        </section>
-      ) : (
-        <p className="mt-6 text-body text-ink-2">No helpers were started in this session. It was all the main conversation.</p>
-      )}
-
-      {bins.length > 0 && (
-        <section aria-label="Tokens through the session" className="mt-8">
-          <SectionTitle>Through the session</SectionTitle>
-          <Card className="px-5 py-4">
-            <Bars id={`session:${id}:bars`} data={bins} label="Tokens through the session" formatTick={compact} />
-          </Card>
-        </section>
-      )}
-
-      <div className="mt-8 grid grid-cols-1 gap-8 @3xl:grid-cols-2">
-        <section aria-label="Token breakdown">
-          <SectionTitle
-            aside={
-              agents.length > 0 ? (
-                <SegmentedControl
-                  label="Count tokens for"
-                  value={scope}
-                  onChange={setScope}
-                  options={[
-                    { value: "all", label: "With helpers" },
-                    { value: "main", label: "Main only" },
-                  ]}
-                />
-              ) : undefined
-            }
-          >
-            Token breakdown
-          </SectionTitle>
-          <Breakdown t={scope === "main" ? main.tokens : total} />
-        </section>
-        {byModel.length > 1 && (
-          <section aria-label="By model">
-            <SectionTitle>By model</SectionTitle>
-            <ModelSplit rows={byModel} />
-          </section>
+            )}
+            <SegmentedControl
+              label="Show helpers as"
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "map", label: "Map" },
+                { value: "list", label: "List" },
+              ]}
+            />
+          </div>
+        )}
+        {shownTab === "details" && hasHelpers && (
+          <SegmentedControl
+            label="Count tokens for"
+            value={scope}
+            onChange={setScope}
+            options={[
+              { value: "all", label: "With helpers" },
+              { value: "main", label: "Main only" },
+            ]}
+          />
         )}
       </div>
 
-      <Conversation sessionId={id} names={names} />
+      <div className="session-pane @container">
+        {shownTab === "receipt" && <ReceiptPane state={receipt} sessionId={id} onOpenHelper={showOnMap} />}
 
-      <section aria-label="Files" className="mt-8">
-        <SectionTitle>Files</SectionTitle>
-        <Card>
-          <ul className="divide-y divide-line">
-            {files.map((f) => (
-              <li key={f.path} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5">
-                <code className="selectable min-w-0 flex-1 break-all text-ink">{f.path}</code>
-                {f.isSubagent && <span className="rounded-full border border-line px-2 text-caption text-ink-2">helper</span>}
-                {f.missing && <span className="rounded-full border border-line px-2 text-caption text-ink-2">removed from disk</span>}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      </section>
+        {shownTab === "helpers" &&
+          (view === "list" ? (
+            <HelperList agents={agents} order={order} sessionId={id} sessionUsd={sessionUsd} names={names} onOpen={setAgentId} />
+          ) : receipt.data ? (
+            <div className="map-grid">
+              <HelperMap receipt={receipt.data} sessionId={id} selected={picked} onSelect={setPicked} />
+              <HelperSlice receipt={receipt.data} nodeId={picked} onOpenHelper={setAgentId} />
+            </div>
+          ) : receipt.error ? (
+            <div role="alert" className="flex items-center gap-3 text-body text-ink-2">
+              <span className="text-danger">{receipt.error}</span>
+              <Button onClick={() => receipt.reload(false)}>Try again</Button>
+            </div>
+          ) : (
+            <div role="status" aria-label="Drawing the helper map">
+              <Skeleton className="h-64" />
+            </div>
+          ))}
+
+        {(shownTab === "messages" || visitedMessages) && (
+          <div hidden={shownTab !== "messages"} className="h-full min-h-0">
+            <Conversation sessionId={id} names={names} />
+          </div>
+        )}
+
+        {shownTab === "details" && (
+          <div className="details-grid">
+            <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-4 @3xl:col-span-2">
+              <Stat label="Tokens" sub={total.cacheRead > 0 ? `plus ${compact(total.cacheRead)} cache reads` : undefined}>
+                <span title={exact(headline(total))}>{compact(headline(total))}</span>
+              </Stat>
+              <Stat
+                label="Messages"
+                icon={<Hash size={14} aria-hidden="true" />}
+                sub={row.subagentMessages > 0 ? `${exact(row.subagentMessages)} from helpers` : undefined}
+              >
+                {exact(row.messages)}
+              </Stat>
+              <Stat label="Tool calls" icon={<Wrench size={14} aria-hidden="true" />}>
+                {exact(toolCalls)}
+              </Stat>
+              <Stat label="Helpers" icon={<UsersThree size={14} aria-hidden="true" />} sub={agents.length === 0 ? "Just you and Claude" : undefined}>
+                {exact(agents.length)}
+              </Stat>
+            </div>
+
+            <section aria-label="Token breakdown" className="min-w-0">
+              <h3 className="rcpt-head">Token breakdown</h3>
+              <Breakdown t={scope === "main" ? main.tokens : total} />
+            </section>
+
+            {spend.length > 1 && (
+              <section aria-label="Spend as it ran" className="min-w-0">
+                <h3 className="rcpt-head">Spend as it ran</h3>
+                <Card className="px-4 py-3">
+                  <Ridge id={`session:${id}:spend`} data={spend} label="Spend as it ran" height={120} summit={hasClearPeak(spend.map((s) => s.value))} />
+                </Card>
+              </section>
+            )}
+
+            {bins.length > 0 && (
+              <section aria-label="Tokens through the session" className="min-w-0">
+                <h3 className="rcpt-head">Tokens through the session</h3>
+                <Card className="px-4 py-3">
+                  <Bars id={`session:${id}:bars`} data={bins} label="Tokens through the session" formatTick={compact} />
+                </Card>
+              </section>
+            )}
+
+            {byModel.length > 1 && (
+              <section aria-label="By model" className="min-w-0">
+                <h3 className="rcpt-head">By model</h3>
+                <ModelSplit rows={byModel} />
+              </section>
+            )}
+
+            <section aria-label="Files" className="min-w-0">
+              <h3 className="rcpt-head">{`Files (${files.length})`}</h3>
+              <Card>
+                <ul className="max-h-40 divide-y divide-line overflow-y-auto">
+                  {files.map((f) => (
+                    <li key={f.path} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
+                      <code className="selectable min-w-0 flex-1 break-all text-caption text-ink">{f.path}</code>
+                      {f.isSubagent && <span className="text-caption text-ink-2">helper</span>}
+                      {f.missing && <span className="text-caption text-warning">removed from disk</span>}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+              <code className="selectable mt-2 block break-all text-caption text-ink-2">{row.projectPath}</code>
+            </section>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

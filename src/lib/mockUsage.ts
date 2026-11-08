@@ -17,6 +17,7 @@ import type {
   Period,
   PricingInfo,
   ProjectUse,
+  Receipt,
   SessionDetail,
   SessionPage,
   SessionQuery,
@@ -29,6 +30,7 @@ import type {
   UsageStatus,
 } from "./types";
 import { addDays, localDay } from "./usage";
+import { buildMockReceipt, type MockThread } from "./mockReceipt";
 
 export type Scenario = "data" | "empty" | "indexing" | "error";
 
@@ -486,6 +488,35 @@ export class MockUsage {
       ],
       claudeCodeCostUsd: s.cost.usd === null ? null : s.cost.usd * 1.02,
     };
+  }
+
+  async sessionReceipt(id: string): Promise<Receipt | null> {
+    this.guard();
+    const s = this.sessions.find((x) => x.sessionId === id);
+    if (!s) return null;
+    const main: MockThread = {
+      agentId: null,
+      name: "Main chat",
+      parentAgentId: null,
+      spawnDepth: 0,
+      model: s.model,
+      tokens: s.main.tokens,
+      messages: s.main.messages,
+      toolCalls: s.main.toolCalls,
+      durationMs: s.durationMs,
+    };
+    const helpers: MockThread[] = s.agents.map((a) => ({
+      agentId: a.agentId,
+      name: a.name,
+      parentAgentId: a.parentAgentId,
+      spawnDepth: a.spawnDepth,
+      model: a.model,
+      tokens: a.tokens,
+      messages: a.messages,
+      toolCalls: a.toolCalls,
+      durationMs: a.durationMs,
+    }));
+    return buildMockReceipt(id, s.cost.usd ?? 0, main, helpers, RATES);
   }
 
   async agentDetail(sessionId: string, agentId: string): Promise<AgentDetail | null> {

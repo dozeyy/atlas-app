@@ -5,7 +5,7 @@
 use rusqlite::Connection;
 
 /// The newest schema this build knows.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 /// `PRAGMA user_version` of an open database.
 pub fn user_version(conn: &Connection) -> rusqlite::Result<i64> {
@@ -21,6 +21,7 @@ pub fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
             0 => m0001(&tx)?,
             1 => m0002(&tx)?,
             2 => m0003(&tx)?,
+            3 => m0004(&tx)?,
             _ => unreachable!("no migration from version {v}"),
         }
         v += 1;
@@ -74,6 +75,22 @@ CREATE TABLE IF NOT EXISTS item_use (
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS item_use_kind ON item_use(kind, hour_local);
 CREATE INDEX IF NOT EXISTS item_use_session ON item_use(session_id);
+"#,
+    )
+}
+
+/// What a chat's transcripts said about where the money went (the receipt scan): one small JSON
+/// body per session, valid while `sig` (the session's file sizes and times) is unchanged. Holds
+/// only tool names, file paths and counts, never message text. It is a cache: safe to drop.
+fn m0004(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
+    tx.execute_batch(
+        r#"
+CREATE TABLE IF NOT EXISTS receipt_scan (
+  session_id TEXT PRIMARY KEY,
+  sig TEXT NOT NULL,
+  stored_at INTEGER NOT NULL,
+  body TEXT NOT NULL
+) WITHOUT ROWID;
 "#,
     )
 }
