@@ -22,6 +22,7 @@ use atlas_core::sandbox::{self, Sandbox, SandboxError, SandboxOptions, SandboxRe
 use atlas_core::settings::{self, Settings, Theme, View};
 use serde::Serialize;
 
+use crate::search::SearchHost;
 use crate::usage::{Roots, UsageHost};
 
 pub const INFO_EVENT: &str = "atlas://info";
@@ -68,6 +69,8 @@ pub struct AppState {
     /// Where the usage cache lives: machine-local app data, or `--data-dir` (Q7).
     pub local_data_dir: PathBuf,
     pub usage: Arc<UsageHost>,
+    /// The chat-search index; follows the same folder as `usage`.
+    pub search: Arc<SearchHost>,
     home: PathBuf,
     cwd: PathBuf,
     env_config: Option<OsString>,
@@ -153,6 +156,7 @@ pub struct SettingsPatch {
     pub theme: Option<Theme>,
     pub last_view: Option<View>,
     pub launch_animation: Option<bool>,
+    pub close_to_tray: Option<bool>,
 }
 
 impl AppState {
@@ -193,6 +197,7 @@ impl AppState {
             data_dir,
             local_data_dir,
             usage: Arc::new(UsageHost::default()),
+            search: Arc::new(SearchHost::default()),
             home,
             cwd,
             env_config,
@@ -367,12 +372,21 @@ impl AppState {
                 changed |= inner.settings.launch_animation != a;
                 inner.settings.launch_animation = a;
             }
+            if let Some(c) = patch.close_to_tray {
+                changed |= inner.settings.close_to_tray != c;
+                inner.settings.close_to_tray = c;
+            }
             changed
         };
         if changed {
             self.persist();
         }
         self.info()
+    }
+
+    /// Closing the window hides Atlas to the tray (opt-in, default off).
+    pub fn close_to_tray(&self) -> bool {
+        self.lock().settings.close_to_tray
     }
 
     pub fn mark_first_paint(&self) -> u64 {
@@ -484,6 +498,9 @@ impl AppState {
     /// App exit: stop any copy, remove the live sandbox and wait (briefly) for
     /// deletes already under way, so no `atlas-sandbox-*` folder is left behind.
     pub fn shutdown(&self) {
+        // The chat index first: it is the longer pass to cancel, and both stop at the
+        // next line or batch.
+        self.search.shutdown();
         self.usage.shutdown();
         let (old, build) = {
             let mut inner = self.lock();
@@ -718,13 +735,13 @@ mod tests {
         let blocker = tmp.path().join("data").join(settings::FILE_NAME);
         fs::create_dir_all(&blocker).unwrap();
 
-        let info = state.update_settings(SettingsPatch { theme: Some(Theme::Dark), last_view: None, launch_animation: None });
+        let info = state.update_settings(SettingsPatch { theme: Some(Theme::Dark), last_view: None, launch_animation: None, ..Default::default() });
         assert_eq!(info.settings.theme, Theme::Dark, "the choice still applies for this session");
         let msg = info.settings_save_error.expect("failure must be surfaced");
         assert!(msg.contains("could not save"), "{msg}");
 
         fs::remove_dir_all(&blocker).unwrap();
-        let info = state.update_settings(SettingsPatch { theme: None, last_view: Some(View::Setup), launch_animation: None });
+        let info = state.update_settings(SettingsPatch { theme: None, last_view: Some(View::Setup), launch_animation: None, ..Default::default() });
         assert!(info.settings_save_error.is_none());
         let on_disk = settings::load(&tmp.path().join("data")).settings;
         assert_eq!(on_disk.theme, Theme::Dark, "the latest in-memory copy is what gets written");
@@ -732,10 +749,25 @@ mod tests {
     }
 
     #[test]
+    fn close_to_tray_is_off_until_asked_and_survives_a_restart() {
+        let (tmp, state) = fixture(false);
+        assert!(!state.close_to_tray());
+        assert!(!state.info().settings.close_to_tray);
+        // A patch that does not mention it leaves it alone.
+        state.update_settings(SettingsPatch { theme: Some(Theme::Dark), ..Default::default() });
+        assert!(!state.close_to_tray());
+        let info = state.update_settings(SettingsPatch { close_to_tray: Some(true), ..Default::default() });
+        assert!(info.settings.close_to_tray && state.close_to_tray());
+        assert!(settings::load(&tmp.path().join("data")).settings.close_to_tray, "persisted");
+        state.update_settings(SettingsPatch { close_to_tray: Some(false), ..Default::default() });
+        assert!(!settings::load(&tmp.path().join("data")).settings.close_to_tray);
+    }
+
+    #[test]
     fn snapshots_carry_a_rising_sequence_number() {
         let (_tmp, state) = fixture(false);
         let a = state.info().seq;
-        let b = state.update_settings(SettingsPatch { theme: Some(Theme::Light), last_view: None, launch_animation: None }).seq;
+        let b = state.update_settings(SettingsPatch { theme: Some(Theme::Light), last_view: None, launch_animation: None, ..Default::default() }).seq;
         let c = state.info().seq;
         assert!(a < b && b < c, "{a} {b} {c}");
     }

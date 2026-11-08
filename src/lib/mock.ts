@@ -6,6 +6,7 @@ import type { AppInfo, ConfigView, Platform, Settings } from "./types";
 import type { CreateKind, DeleteOutcome, Draft, Problem, RawEdit, SaveReply, SetupSnapshot, SourceView, UndoOutcome } from "./setup-types";
 import { MockSetupWorld, mockSetupReveal, mockSetupSource } from "./setup-mock";
 import { MockUsage } from "./mockUsage";
+import { MockSearch } from "./mockSearch";
 
 const KEY = "atlas.mock.settings";
 
@@ -30,6 +31,7 @@ function loadSettings(): Settings {
     configDirOverride: null,
     sandbox: false,
     launchAnimation: true,
+    closeToTray: false,
   };
   try {
     return { ...base, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
@@ -156,6 +158,12 @@ export class MockBackend {
   onUsageStatus: Backend["onUsageStatus"] = (cb) => this.usage.onUsageStatus(cb);
   onUsageProgress: Backend["onUsageProgress"] = (cb) => this.usage.onUsageProgress(cb);
   onUsageChanged: Backend["onUsageChanged"] = (cb) => this.usage.onUsageChanged(cb);
+
+  // ---- chat search: the stand-in lives in mockSearch.ts ----
+  readonly search = new MockSearch();
+  searchChats: Backend["searchChats"] = (q, limit, offset) => this.search.searchChats(q, limit, offset);
+  searchStatus: Backend["searchStatus"] = () => this.search.searchStatus();
+  onSearchStatus: Backend["onSearchStatus"] = (cb) => this.search.onSearchStatus(cb);
 
   async onInfo(cb: (i: AppInfo) => void): Promise<() => void> {
     this.listeners.add(cb);

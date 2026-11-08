@@ -361,6 +361,11 @@ impl UsageEngine {
         self.read(query::dashboard)
     }
 
+    /// Today's totals only (the tray readout).
+    pub fn today(&self) -> Result<query::Period, String> {
+        self.read(query::today)
+    }
+
     pub fn timeline(&self, a: &query::TimelineArgs) -> Result<query::Timeline, String> {
         self.read(|c, x| query::timeline(c, x, a))
     }

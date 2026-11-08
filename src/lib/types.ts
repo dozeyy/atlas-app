@@ -12,6 +12,8 @@ export interface Settings {
   configDirOverride: string | null;
   sandbox: boolean;
   launchAnimation: boolean;
+  /** Closing the window hides Atlas to the tray instead of quitting (default off). */
+  closeToTray: boolean;
 }
 
 export interface ConfigView {
@@ -69,3 +71,4 @@ export interface AppInfo {
 export const VIEWS: View[] = ["dashboard", "sessions", "setup", "history", "wrapped", "settings"];
 
 export * from "./usageTypes";
+export * from "./searchTypes";

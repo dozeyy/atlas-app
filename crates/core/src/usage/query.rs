@@ -455,6 +455,14 @@ pub fn today_of(ctx: &QueryCtx) -> String {
     ctx.tz.day(ctx.now_ms)
 }
 
+/// Today only: the same numbers as `Dashboard.today`, without the 30-day work (the
+/// tray asks this every time the cache changes).
+pub fn today(conn: &Connection, ctx: &QueryCtx) -> rusqlite::Result<Period> {
+    let day = today_of(ctx);
+    let rows = fetch_hours(conn, "substr(hour_local,1,10)", "''", &day, &day)?;
+    Ok(period(&rows, &day, &day, sessions_active(conn, ctx.tz, &day, &day)?))
+}
+
 fn project_index(conn: &Connection) -> rusqlite::Result<HashMap<String, (String, String)>> {
     let mut st = conn.prepare_cached(
         "SELECT project_key, MIN(project_path) FROM sessions WHERE project_key IS NOT NULL GROUP BY project_key",

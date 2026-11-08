@@ -15,6 +15,8 @@ import type {
   AgentDetail,
   ItemQuery,
   ItemUse,
+  SearchPage,
+  SearchStatus,
   SessionPage,
   SessionQuery,
   Theme,
@@ -48,6 +50,7 @@ export const INFO_EVENT = "atlas://info";
 export const USAGE_STATUS_EVENT = "atlas://usage/status";
 export const USAGE_PROGRESS_EVENT = "atlas://usage/progress";
 export const USAGE_CHANGED_EVENT = "atlas://usage/changed";
+export const SEARCH_STATUS_EVENT = "atlas://search/status";
 
 export type Unlisten = () => void;
 export const SETUP_EVENT = "atlas://setup-changed";
@@ -59,6 +62,8 @@ export interface SettingsPatch {
   theme?: Theme;
   lastView?: View;
   launchAnimation?: boolean;
+  /** Closing the window hides Atlas to the tray instead of quitting. */
+  closeToTray?: boolean;
 }
 
 export interface Backend {
@@ -86,6 +91,13 @@ export interface Backend {
   onUsageStatus(cb: (s: UsageStatus) => void): Promise<Unlisten>;
   onUsageProgress(cb: (p: IndexProgress) => void): Promise<Unlisten>;
   onUsageChanged(cb: (c: UsageChanged) => void): Promise<Unlisten>;
+
+  // Chat search: full text over every past chat (user and assistant text). Ranked, with a
+  // short masked snippet per hit; a helper's messages belong to the parent session.
+  searchChats(query: string, limit?: number, offset?: number): Promise<SearchPage>;
+  searchStatus(): Promise<SearchStatus>;
+  onSearchStatus(cb: (s: SearchStatus) => void): Promise<Unlisten>;
+
   /** Setup: the whole setup without file bodies. */
   setupSnapshot(includeWorktrees?: boolean): Promise<SetupSnapshot>;
   /** The masked text of one item. */
@@ -143,6 +155,9 @@ const tauriBackend: Backend = {
   onUsageStatus: (cb) => listen<UsageStatus>(USAGE_STATUS_EVENT, (e) => cb(e.payload)),
   onUsageProgress: (cb) => listen<IndexProgress>(USAGE_PROGRESS_EVENT, (e) => cb(e.payload)),
   onUsageChanged: (cb) => listen<UsageChanged>(USAGE_CHANGED_EVENT, (e) => cb(e.payload)),
+  searchChats: (query, limit = 20, offset = 0) => invoke<SearchPage>("search_chats", { query, limit, offset }),
+  searchStatus: () => invoke<SearchStatus>("search_status"),
+  onSearchStatus: (cb) => listen<SearchStatus>(SEARCH_STATUS_EVENT, (e) => cb(e.payload)),
   setupSnapshot: (includeWorktrees) => invoke<SetupSnapshot>("setup_snapshot", { includeWorktrees }),
   setupReadSource: (id) => invoke<SourceView>("setup_read_source", { id }),
   setupReveal: (id, index) => invoke<string>("setup_reveal", { id, index }),

@@ -56,6 +56,8 @@ pub struct Settings {
     pub sandbox: bool,
     /// Play the launch animation on a cold start (default on).
     pub launch_animation: bool,
+    /// Closing the window hides Atlas to the tray instead of quitting (default off).
+    pub close_to_tray: bool,
     /// Keys this version does not know, kept as they were.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -70,13 +72,21 @@ impl Default for Settings {
             config_dir_override: None,
             sandbox: false,
             launch_animation: true,
+            close_to_tray: false,
             extra: Map::new(),
         }
     }
 }
 
-const KNOWN: [&str; 6] =
-    ["schemaVersion", "theme", "lastView", "configDirOverride", "sandbox", "launchAnimation"];
+const KNOWN: [&str; 7] = [
+    "schemaVersion",
+    "theme",
+    "lastView",
+    "configDirOverride",
+    "sandbox",
+    "launchAnimation",
+    "closeToTray",
+];
 
 impl Settings {
     /// Read settings from JSON text. `None` when the text is not a JSON object.
@@ -100,6 +110,7 @@ impl Settings {
         let sandbox = take("sandbox").and_then(|v| v.as_bool()).unwrap_or(false);
         let launch_animation =
             take("launchAnimation").and_then(|v| v.as_bool()).unwrap_or(d.launch_animation);
+        let close_to_tray = take("closeToTray").and_then(|v| v.as_bool()).unwrap_or(d.close_to_tray);
         for k in KNOWN {
             map.remove(k);
         }
@@ -110,6 +121,7 @@ impl Settings {
             config_dir_override,
             sandbox,
             launch_animation,
+            close_to_tray,
             extra: map,
         })
     }
@@ -209,6 +221,19 @@ mod tests {
         let text = fs::read_to_string(path_in(d.path())).unwrap();
         assert!(text.contains("\"launchAnimation\": false"), "{text}");
         assert!(!load(d.path()).settings.launch_animation);
+    }
+
+    #[test]
+    fn close_to_tray_defaults_off_and_persists() {
+        assert!(!Settings::default().close_to_tray);
+        assert!(!Settings::from_json("{}").unwrap().close_to_tray);
+        assert!(!Settings::from_json(r#"{"closeToTray":"yes"}"#).unwrap().close_to_tray);
+        let d = tempdir().unwrap();
+        save(d.path(), &Settings { close_to_tray: true, ..Settings::default() }).unwrap();
+        let text = fs::read_to_string(path_in(d.path())).unwrap();
+        assert!(text.contains("\"closeToTray\": true"), "{text}");
+        assert!(load(d.path()).settings.close_to_tray);
+        assert!(!load(d.path()).settings.extra.contains_key("closeToTray"));
     }
 
     #[test]
