@@ -97,10 +97,6 @@ fn all<'a>(d: &'a Discovery, kind: ItemKind, name: &str) -> Vec<&'a SetupItem> {
     d.snapshot.items.iter().filter(|i| i.kind == kind && i.name == name).collect()
 }
 
-fn text_of(d: &Discovery, it: &SetupItem) -> String {
-    d.read_source(&it.id).unwrap_or_else(|e| panic!("read_source {}: {e}", it.name)).text
-}
-
 // ---- criteria 1-26: what is found --------------------------------------------
 
 #[test]
@@ -264,7 +260,7 @@ fn mcp_servers_at_every_scope_with_winners_and_approval() {
     assert_eq!(three.len(), 3);
     let local = three.iter().find(|i| i.scope == ScopeKind::Local).unwrap();
     let conflict = local.conflict.as_ref().unwrap();
-    assert!(conflict.defined_in.iter().next().unwrap().winner);
+    assert!(conflict.defined_in.first().unwrap().winner);
     assert_eq!(conflict.defined_in.len(), 3);
     assert_eq!(three.iter().find(|i| i.scope == ScopeKind::User).unwrap().enabled.state, EnabledKind::Shadowed);
     // The user server's per-project matrix: switched off in one of the projects.
@@ -606,7 +602,7 @@ fn claude_json_churn_that_setup_does_not_read_emits_nothing() {
     fs::write(&p, t).unwrap();
     assert!(wait(&rx, 1200).is_none(), "numStartups alone must not refresh the page");
     // A real change (a new server) does.
-    let t = fs::read_to_string(&p).unwrap().replace("\"shared-srv\": {\"command\"", "\"shared-srv\": {\"command\"");
+    let t = fs::read_to_string(&p).unwrap();
     let t = t.replacen("\"mcpServers\": {", "\"mcpServers\": {\n    \"late-srv\": {\"command\": \"node\"},", 1);
     fs::write(&p, t).unwrap();
     wait(&rx, 3000).expect("a new server must refresh the page");
@@ -703,6 +699,22 @@ fn the_wire_format_matches_the_front_end_key_list() {
         }
     }
     assert!(masked);
+
+    // The replies of the write path (the front end names the same keys).
+    {
+        use atlas_core::setup_write as sw;
+        let it = find(&d, ItemKind::Skill, ScopeKind::User, "lf-skill");
+        keys(&mut got, "rawEdit", &serde_json::to_value(d.read_raw(&it.id, true).unwrap()).unwrap());
+        let bad = sw::validate(ItemKind::Settings, "json", None, false, "{");
+        keys(&mut got, "problem", &serde_json::to_value(&bad[0]).unwrap());
+        let backups = tempfile::tempdir().unwrap();
+        let out = sw::apply_delete(&d.delete_plan(&it.id).unwrap(), backups.path()).unwrap();
+        keys(&mut got, "deleteOutcome", &serde_json::to_value(&out).unwrap());
+        keys(&mut got, "undoOutcome", &serde_json::to_value(sw::restore(backups.path(), &out.backup_id).unwrap()).unwrap());
+        let (root, cj) = (fx.home.join(".claude"), fx.inputs().root.claude_json);
+        let draft = sw::create_draft("skill", "wire-check", None, &sw::CreateCtx { root: &root, claude_json: &cj }).unwrap();
+        keys(&mut got, "draft", &serde_json::to_value(&draft).unwrap());
+    }
 
     let out: BTreeMap<&str, Vec<String>> = got.iter().map(|(k, v)| (*k, v.iter().cloned().collect())).collect();
     let path = fixtures().join("setup-wire-keys.json");

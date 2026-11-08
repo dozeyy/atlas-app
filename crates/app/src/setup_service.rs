@@ -1,4 +1,4 @@
-//! Setup (read only): the live scan the Setup page reads.
+//! Setup: the live scan the Setup page reads, and the commands that change it.
 //!
 //! One `LiveSetup` per (config root, sandbox, worktrees) combination. It is
 //! started on a background thread right after the first paint, so the page
@@ -134,4 +134,127 @@ pub async fn setup_read_source(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id
 pub async fn setup_reveal(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, index: usize) -> Result<String, String> {
     let (st, hub) = (state.inner().clone(), hub.inner().clone());
     blocking(move || hub.current(&app, &st)?.reveal(&id, index)).await
+}
+
+// ---------------------------------------------------------------------------
+// Changes. Every command below acts on an id the last scan produced, backs up
+// first, and returns once a fresh scan shows the change. In debug builds the
+// write guard in `atlas_core::fsutil` refuses the real Claude folder.
+// ---------------------------------------------------------------------------
+
+use atlas_core::setup_write::{self as sw, CreateCtx, Draft, Problem, RawEdit, WriteError};
+
+fn backups_dir(state: &AppState) -> std::path::PathBuf {
+    state.data_dir.join("setup-backups")
+}
+
+impl SetupHub {
+    /// Rescan now so the next snapshot already shows what just changed.
+    fn refresh(&self, app: &AppHandle, state: &AppState) {
+        if let Ok(live) = self.ensure(app, state) {
+            live.rescan_wait(std::time::Duration::from_secs(3));
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveReply {
+    /// saved | conflict
+    status: &'static str,
+    stamp: Option<String>,
+    backup_id: Option<String>,
+}
+
+/// The editable text of one item. Text holding secrets is left out until `reveal`.
+#[tauri::command]
+pub async fn setup_item_raw(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, reveal: Option<bool>) -> Result<RawEdit, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || hub.current(&app, &st)?.read_raw(&id, reveal.unwrap_or(false)).map_err(|e| e.message())).await
+}
+
+/// What is wrong with `text` as the new content of this item (empty = fine).
+#[tauri::command]
+pub async fn setup_validate(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, text: String) -> Result<Vec<Problem>, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || hub.current(&app, &st)?.validate_text(&id, &text).map_err(|e| e.message())).await
+}
+
+/// Save: backup, atomic write, read back. `force` overwrites a file that changed on disk.
+#[tauri::command]
+pub async fn setup_save(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, text: String, stamp: String, force: Option<bool>) -> Result<SaveReply, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || {
+        let d = hub.current(&app, &st)?;
+        let plan = d.save_plan(&id).map_err(|e| e.message())?;
+        match sw::apply_save(&plan, &text, &stamp, force.unwrap_or(false), &backups_dir(&st)) {
+            Ok(o) => {
+                hub.refresh(&app, &st);
+                Ok(SaveReply { status: "saved", stamp: Some(o.stamp), backup_id: o.backup_id })
+            }
+            Err(WriteError::Conflict) => Ok(SaveReply { status: "conflict", stamp: None, backup_id: None }),
+            Err(e) => Err(e.message()),
+        }
+    })
+    .await
+}
+
+/// Delete one item after backing it up whole. Returns the backup id for Undo.
+#[tauri::command]
+pub async fn setup_delete(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String) -> Result<sw::DeleteOutcome, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || {
+        let plan = hub.current(&app, &st)?.delete_plan(&id).map_err(|e| e.message())?;
+        let out = sw::apply_delete(&plan, &backups_dir(&st)).map_err(|e| e.message())?;
+        hub.refresh(&app, &st);
+        Ok(out)
+    })
+    .await
+}
+
+/// Put a deleted item back exactly as it was.
+#[tauri::command]
+pub async fn setup_undo(app: AppHandle, state: Info<'_>, hub: Hub<'_>, backup_id: String) -> Result<sw::UndoOutcome, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || {
+        let out = sw::restore(&backups_dir(&st), &backup_id).map_err(|e| e.message())?;
+        hub.refresh(&app, &st);
+        Ok(out)
+    })
+    .await
+}
+
+/// A starting text for something new (nothing is written yet).
+#[tauri::command]
+pub async fn setup_create_draft(state: Info<'_>, kind: String, name: String, event: Option<String>) -> Result<Draft, String> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let i = st.setup_inputs(false).ok_or_else(|| "Your Claude folder is not ready yet.".to_string())?;
+        sw::create_draft(&kind, &name, event.as_deref(), &CreateCtx { root: &i.root.dir, claude_json: &i.root.claude_json }).map_err(|e| e.message())
+    })
+    .await
+}
+
+/// Write the new item (never over an existing one).
+#[tauri::command]
+pub async fn setup_create(app: AppHandle, state: Info<'_>, hub: Hub<'_>, kind: String, name: String, event: Option<String>, text: String) -> Result<sw::DeleteOutcome, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || {
+        let i = st.setup_inputs(false).ok_or_else(|| "Your Claude folder is not ready yet.".to_string())?;
+        let out = sw::create_apply(&kind, &name, event.as_deref(), &text, &CreateCtx { root: &i.root.dir, claude_json: &i.root.claude_json }, &backups_dir(&st)).map_err(|e| e.message())?;
+        hub.refresh(&app, &st);
+        Ok(out)
+    })
+    .await
+}
+
+/// What is wrong with `text` as the content of a new item (nothing is written).
+#[tauri::command]
+pub async fn setup_validate_draft(state: Info<'_>, kind: String, name: String, event: Option<String>, text: String) -> Result<Vec<Problem>, String> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let i = st.setup_inputs(false).ok_or_else(|| "Your Claude folder is not ready yet.".to_string())?;
+        sw::validate_draft(&kind, &name, event.as_deref(), &text, &CreateCtx { root: &i.root.dir, claude_json: &i.root.claude_json }).map_err(|e| e.message())
+    })
+    .await
 }

@@ -10,9 +10,25 @@
     "scopeLabel",
     "winner"
   ],
+  "deleteOutcome": [
+    "backupId",
+    "kind",
+    "name",
+    "note"
+  ],
   "detailRow": [
     "label",
     "value"
+  ],
+  "draft": [
+    "folderName",
+    "kind",
+    "language",
+    "name",
+    "path",
+    "text",
+    "title",
+    "whereNote"
   ],
   "enabled": [
     "label",
@@ -30,13 +46,16 @@
     "backup",
     "chips",
     "conflict",
+    "deletable",
     "description",
     "detail",
+    "editable",
     "enabled",
     "hasSecrets",
     "id",
     "kind",
     "linkTarget",
+    "locked",
     "mcp",
     "modifiedMs",
     "name",
@@ -66,6 +85,10 @@
     "totalProjects",
     "transport"
   ],
+  "problem": [
+    "line",
+    "message"
+  ],
   "project": [
     "exists",
     "id",
@@ -83,6 +106,18 @@
     "on",
     "projectId",
     "projectName"
+  ],
+  "rawEdit": [
+    "bom",
+    "folderName",
+    "hasSecrets",
+    "id",
+    "language",
+    "lineEnding",
+    "needsReveal",
+    "path",
+    "stamp",
+    "text"
   ],
   "root": [
     "claudeJson",
@@ -107,5 +142,9 @@
     "size",
     "text",
     "truncated"
+  ],
+  "undoOutcome": [
+    "kind",
+    "name"
   ]
 }

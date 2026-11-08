@@ -3,8 +3,8 @@
 
 import type { Backend, SettingsPatch } from "./ipc";
 import type { AppInfo, ConfigView, Platform, Settings } from "./types";
-import type { SetupSnapshot, SourceView } from "./setup-types";
-import { mockSetupReveal, mockSetupSnapshot, mockSetupSource } from "./setup-mock";
+import type { CreateKind, DeleteOutcome, Draft, Problem, RawEdit, SaveReply, SetupSnapshot, SourceView, UndoOutcome } from "./setup-types";
+import { MockSetupWorld, mockSetupReveal, mockSetupSource } from "./setup-mock";
 import { MockUsage } from "./mockUsage";
 
 const KEY = "atlas.mock.settings";
@@ -61,6 +61,8 @@ export function mockInfo(overrides: Partial<AppInfo> = {}, platform: Platform = 
 export class MockBackend {
   private info: AppInfo = mockInfo();
   private listeners = new Set<(i: AppInfo) => void>();
+  /** The made-up setup and its edits; tests reach in to simulate outside changes. */
+  readonly world = new MockSetupWorld();
 
   boot(): AppInfo {
     return this.info;
@@ -163,18 +165,55 @@ export class MockBackend {
   }
 
   async setupSnapshot(includeWorktrees = false): Promise<SetupSnapshot> {
-    return mockSetupSnapshot(includeWorktrees);
+    return this.world.snapshot(includeWorktrees);
   }
 
   async setupReadSource(id: string): Promise<SourceView> {
-    return mockSetupSource(id);
+    try {
+      return this.world.source(id);
+    } catch {
+      return mockSetupSource(id);
+    }
   }
 
   async setupReveal(id: string, index: number): Promise<string> {
     return mockSetupReveal(id, index);
   }
 
-  async onSetupChanged(): Promise<() => void> {
-    return () => {};
+  async onSetupChanged(cb: (version: number) => void): Promise<() => void> {
+    let v = 1;
+    return this.world.onChange(() => cb(++v));
+  }
+
+  async setupItemRaw(id: string, reveal = false): Promise<RawEdit> {
+    return this.world.raw(id, reveal);
+  }
+
+  async setupValidate(id: string, text: string): Promise<Problem[]> {
+    return this.world.validate(id, text);
+  }
+
+  async setupSave(id: string, text: string, stamp: string, force = false): Promise<SaveReply> {
+    return this.world.save(id, text, stamp, force);
+  }
+
+  async setupDelete(id: string): Promise<DeleteOutcome> {
+    return this.world.delete(id);
+  }
+
+  async setupUndo(backupId: string): Promise<UndoOutcome> {
+    return this.world.undo(backupId);
+  }
+
+  async setupCreateDraft(kind: CreateKind, name: string, event?: string): Promise<Draft> {
+    return this.world.draft(kind, name, event);
+  }
+
+  async setupValidateDraft(kind: CreateKind, name: string, event: string | undefined, text: string): Promise<Problem[]> {
+    return this.world.validateDraft(kind, name, event, text);
+  }
+
+  async setupCreate(kind: CreateKind, name: string, event: string | undefined, text: string): Promise<DeleteOutcome> {
+    return this.world.create(kind, name, event, text);
   }
 }

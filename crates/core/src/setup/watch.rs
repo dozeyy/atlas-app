@@ -22,6 +22,8 @@ use crate::layout;
 enum Msg {
     Fs(DebounceEventResult),
     Rescan,
+    /// Rescan, then tell the sender (used right after Atlas changes a file).
+    RescanAck(Sender<()>),
     Stop,
 }
 
@@ -134,9 +136,14 @@ impl LiveSetup {
                 sync(&mut deb, &mut watched, &d);
             }
             while let Ok(msg) = rx.recv() {
+                let mut ack: Option<Sender<()>> = None;
                 let rescan = match msg {
                     Msg::Stop => break,
                     Msg::Rescan => true,
+                    Msg::RescanAck(a) => {
+                        ack = Some(a);
+                        true
+                    }
                     Msg::Fs(Err(_)) => true,
                     Msg::Fs(Ok(events)) => events.iter().any(|e| {
                         if norm_key(&e.path.to_string_lossy()) == cj_key {
@@ -163,6 +170,9 @@ impl LiveSetup {
                 let d = sh.cur.lock().unwrap().1.clone();
                 sync(&mut deb, &mut watched, &d);
                 on_change(version);
+                if let Some(a) = ack {
+                    let _ = a.send(());
+                }
             }
         });
         let _ = spawn;
@@ -177,6 +187,16 @@ impl LiveSetup {
     /// Ask for a full rescan now (asynchronous; `on_change` fires when done).
     pub fn rescan(&self) {
         let _ = self.tx.send(Msg::Rescan);
+    }
+
+    /// Rescan and wait for it (at most `max`), so a caller that just changed a
+    /// file can hand back a snapshot that already shows the change.
+    pub fn rescan_wait(&self, max: Duration) -> bool {
+        let (tx, rx) = channel::<()>();
+        if self.tx.send(Msg::RescanAck(tx)).is_err() {
+            return false;
+        }
+        rx.recv_timeout(max).is_ok()
     }
 }
 

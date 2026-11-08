@@ -10,42 +10,38 @@ function Bar({ w, h = 12, className = "" }: { w: string; h?: number; className?:
 export function SetupSkeleton() {
   return (
     <div role="status" aria-label="Reading your Claude setup" aria-busy="true">
-      <div className="mb-4 rounded-card border border-line bg-surface px-5 py-4">
-        <Bar w="38%" />
-        <Bar w="120px" h={26} className="mt-5" />
+      <div className="mb-6 rounded-card border border-line bg-surface px-5 py-4">
+        <Bar w="34%" h={16} />
         <Bar w="100%" h={8} className="mt-4" />
+        <Bar w="60%" className="mt-4" />
+        <Bar w="52%" className="mt-2" />
       </div>
-      <div className="mb-6 flex flex-wrap gap-2.5">
-        {Array.from({ length: 10 }, (_, i) => (
-          <div key={i} className="flex min-w-[148px] flex-[1_1_148px] items-center gap-3 rounded-card border border-line bg-surface p-3">
-            <span className="skeleton size-8 rounded-control" />
+      <div className="grid grid-cols-2 gap-3 min-[640px]:grid-cols-3 min-[1100px]:grid-cols-4 min-[1400px]:grid-cols-6">
+        {Array.from({ length: 12 }, (_, i) => (
+          <div key={i} className="flex h-[92px] items-center gap-3 rounded-card border border-line bg-surface px-3.5">
+            <span className="skeleton size-9 rounded-control" />
             <span className="flex-1">
-              <Bar w="40%" h={16} />
-              <Bar w="70%" className="mt-2" />
+              <Bar w="60%" h={14} />
+              <Bar w="30%" className="mt-2" />
             </span>
           </div>
         ))}
       </div>
-      {[0, 1].map((g) => (
-        <div key={g} className="mb-8">
-          <div className="mb-3 flex items-center gap-3">
-            <span className="skeleton size-8 rounded-control" />
-            <Bar w="160px" h={16} />
-          </div>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {Array.from({ length: 4 }, (_, i) => (
-              <div key={i} className="flex min-h-[104px] gap-3 rounded-card border border-line bg-surface p-3.5">
-                <span className="skeleton size-9 rounded-control" />
-                <span className="flex-1">
-                  <Bar w="50%" h={14} />
-                  <Bar w="92%" className="mt-3" />
-                  <Bar w="64%" className="mt-2" />
-                </span>
-              </div>
-            ))}
-          </div>
+      <div className="mt-8">
+        <Bar w="180px" h={16} />
+        <div className="mt-3 grid grid-cols-1 gap-3 min-[1000px]:grid-cols-2">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="flex min-h-[104px] gap-3 rounded-card border border-line bg-surface p-3.5">
+              <span className="skeleton size-9 rounded-control" />
+              <span className="flex-1">
+                <Bar w="50%" h={14} />
+                <Bar w="92%" className="mt-3" />
+                <Bar w="64%" className="mt-2" />
+              </span>
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
     </div>
   );
 }
@@ -60,14 +56,14 @@ export function SetupError({ message, onRetry }: { message: string; onRetry: () 
   );
 }
 
-export function NoSetup({ dir }: { dir: string }) {
+export function NoSetup() {
   return (
     <EmptyState
       fill
       icon={FolderDashed}
       seed={67}
       title="No Claude setup found here"
-      body={`Atlas looked in ${dir} and found no skills, agents, commands or settings. If your Claude folder lives somewhere else, choose it in Settings.`}
+      body="Atlas found no skills, agents, commands or settings. If your Claude folder lives somewhere else, choose it in Settings."
     />
   );
 }

@@ -198,6 +198,12 @@ pub struct SetupItem {
     pub has_secrets: bool,
     /// Belongs to an agent worktree: hidden unless the page asks.
     pub worktree: bool,
+    /// Atlas can open this in the editor and save it.
+    pub editable: bool,
+    /// Atlas can delete it (with a backup and an Undo).
+    pub deletable: bool,
+    /// Why Atlas will not change it (shown instead of the delete control).
+    pub locked: Option<String>,
     /// What it shadows by: same-name key (never serialised).
     #[serde(skip)]
     pub shadow_key: Option<String>,
@@ -230,6 +236,9 @@ impl SetupItem {
             real_project_file: false,
             has_secrets: false,
             worktree: false,
+            editable: false,
+            deletable: false,
+            locked: None,
             shadow_key: None,
         }
     }
