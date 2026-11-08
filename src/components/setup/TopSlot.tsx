@@ -81,10 +81,11 @@ export function TopSlot({
   const rows = useUsageRows(items, loads);
   const phase = useChecklistPhase(progress(items).complete);
   return (
-    <div className="mb-6 flex flex-col gap-4 empty:hidden">
+    <div className="mb-4 flex flex-col gap-4 empty:hidden">
       {phase !== "hidden" && <Checklist items={items} onCreate={onCreate} />}
-      {/* Side by side when the window is wide enough for both; alone, each takes the full width. */}
-      <div className="grid items-start gap-4 empty:hidden min-[1180px]:[&:has(>:nth-child(2))]:grid-cols-2">
+      {/* Side by side when the window is wide enough for both (usage wide, cost narrow, so the
+          usage lists keep their two columns); alone, each takes the full width. */}
+      <div className="grid gap-4 empty:hidden min-[1240px]:[&:has(>:nth-child(2))]:grid-cols-[minmax(0,1fr)_24rem]">
         <UsagePanel rows={rows} items={items} onOpen={onOpen} />
         <CostPanel report={cost} items={items} onOpen={onOpen} />
       </div>

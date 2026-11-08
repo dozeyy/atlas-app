@@ -157,3 +157,8 @@ the end (the known-fix-lookup hook reads the tail; later entries win).
 - Not counted: @imports inside CLAUDE.md, slash-command uses, path-scoped rule loads (size only), cache TTL re-writes, long-context price tier. MCP comes from the newest transcript per project; plugin MCP names may not match transcript names. Uses use a 7-day window, "never used" uses 30 days.
 - Dead ends: the Bash tool wrapper fails with a syntax error on every command in this setup, use PowerShell. 
 pm ci is needed in a fresh worktree before tsc.
+
+## 2026-11-08 - Toolkit fits one screen (branch setup-cost, follow-up)
+- Will's rule: no tab needs scrolling at 1280x800 if it can be avoided. Toolkit now fits: usage panel is a glance (4 used, 5 never used, 3 new on one line), cost ranking is 4 rows in a 24rem column beside it (the usage panel takes the rest, so its two lists stay side by side), tile rows 84px, tighter gaps. At 900x600 the panels stack and the page scrolls, nothing clipped (checked).
+- Detail sheet: "What it costs" now sits above "About", visible without scrolling the sheet.
+- Verified with real screen captures (docs/shots/setup-cost): no scrollbar at 1280x800 dark and light, ~70 px spare under the Projects row; the checklist card (only while steps are open) would push it past that.

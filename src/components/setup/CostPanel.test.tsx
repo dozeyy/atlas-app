@@ -77,10 +77,10 @@ describe("CostPanel", () => {
     expect(screen.queryByRole("button", { name: "agent-routing" })).not.toBeInTheDocument(); // i2 is not in `items`
   });
 
-  it("shows only the five biggest", () => {
+  it("shows only the four biggest", () => {
     const many = Array.from({ length: 9 }, (_, i) => row({ name: `n${i}`, usdWeek: 9 - i }));
     render(<CostPanel report={report(many)} items={items} />);
-    expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(5);
+    expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(4);
   });
 
   it("shows sizes instead of dollars when nothing could be priced", () => {

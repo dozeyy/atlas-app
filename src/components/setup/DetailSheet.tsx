@@ -440,6 +440,8 @@ export function DetailSheet({
           </div>
         )}
 
+        {costRow && cost && <CostSection row={costRow} report={cost} />}
+
         <Section title="About">
           <Facts rows={rows} />
           {item.chips.length > 0 && (
@@ -450,8 +452,6 @@ export function DetailSheet({
             </div>
           )}
         </Section>
-
-        {costRow && cost && <CostSection row={costRow} report={cost} />}
 
         {conflict && (
           <Section title="Also defined elsewhere">

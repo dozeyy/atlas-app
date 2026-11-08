@@ -83,8 +83,11 @@ describe("Toolkit: what the setup costs", () => {
     expect(rowBtn).toBeDefined();
     await userEvent.click(rowBtn!);
     const sheet = await screen.findByRole("dialog");
-    expect(within(sheet).getByRole("heading", { name: "What it costs" })).toBeInTheDocument();
+    const costHeading = within(sheet).getByRole("heading", { name: "What it costs" });
     expect(sheet).toHaveTextContent(/tokens to every turn/);
+    // The cost comes first, so it is on screen without scrolling the sheet.
+    const about = within(sheet).getByRole("heading", { name: "About" });
+    expect(costHeading.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("draws no figures at all when Atlas cannot give a cost", async () => {

@@ -7,8 +7,8 @@ import type { ItemKind } from "../../lib/setup-types";
 
 /**
  * Twelve tiles, all the same size. 12 divides into 2, 3, 4 and 6 columns, so every
- * row is full at every width: no ragged last row. The grid takes the rest of the page,
- * so the rows grow to fill the window (never below 92px).
+ * row is full at every width: no ragged last row. Rows are 84px: three rows of tiles plus
+ * the panels above them fit a 1280x800 window without scrolling the page.
  */
 export function TypeTiles({
   counts,
@@ -35,7 +35,7 @@ export function TypeTiles({
   return (
     <ul
       aria-label="Types of things in your toolkit"
-      className="grid auto-rows-[96px] grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3"
+      className="grid auto-rows-[84px] grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3"
     >
       {tiles.map(({ id, label, count, Icon }, i) => {
         const usd = id === "more" ? 0 : (cost?.get(id as ItemKind) ?? 0);
@@ -47,8 +47,8 @@ export function TypeTiles({
             aria-describedby={usd > 0 ? `cost-${id}` : undefined}
             title={tileBlurb(id)}
             onClick={() => onOpen(id)}
-            hitClassName="min-h-[92px]"
-            className="flex min-h-[92px] items-center gap-3 px-3.5"
+            hitClassName="min-h-[84px]"
+            className="flex min-h-[84px] items-center gap-3 px-3.5"
           >
             <KindTile kind={id === "more" ? "more" : (id as ItemKind)} size={44} icon={Icon} />
             <span className="min-w-0 flex-1">

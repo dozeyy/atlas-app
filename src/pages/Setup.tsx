@@ -32,7 +32,7 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
   if (!projects.length) return null;
   const Caret = open ? CaretDown : CaretRight;
   return (
-    <section aria-labelledby="missing-title" className="mb-8">
+    <section aria-labelledby="missing-title">
       <button
         type="button"
         aria-expanded={open}
@@ -158,7 +158,7 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
           )}
           <TopSlot items={counted} loads={loads} cost={cost} onCreate={setCreating} onOpen={setSelectedId} />
           <TypeTiles counts={counts} moreCount={moreCount} cost={costKinds} onOpen={openTile} />
-          <div className="mt-8">
+          <div className="mt-4">
             <MissingProjects projects={missingProjects} items={gone} onOpen={setSelectedId} />
           </div>
         </>
