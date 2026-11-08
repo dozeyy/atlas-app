@@ -134,3 +134,16 @@ button {
     animation-duration: 1ms;
   }
 }
+
+/* ---- Launch intro ------------------------------------------------------------
+   The window is hidden and #root waits at 0.96 while the splash plays; at the
+   handoff the app lands (transform only, no fade). See src/lib/intro.ts. */
+html[data-intro] #root {
+  transform-origin: 50% 50%;
+}
+html[data-intro="pending"] #root {
+  transform: scale(0.96);
+}
+html[data-intro="play"] #root {
+  transition: transform 560ms var(--ease-launch);
+}

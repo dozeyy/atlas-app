@@ -14,7 +14,7 @@ function SectionTitle({ children }: { children: string }) {
 }
 
 export function Settings() {
-  const { info, setTheme, setSandbox, chooseConfigDir, clearConfigDir } = useAtlas();
+  const { info, setTheme, setLaunchAnimation, setSandbox, chooseConfigDir, clearConfigDir } = useAtlas();
   const cfg = info.config;
   const sb = info.sandbox;
   const usingChosen = info.settings.configDirOverride !== null;
@@ -31,6 +31,16 @@ export function Settings() {
             value={info.settings.theme}
             options={THEMES}
             onChange={setTheme}
+          />
+        </Row>
+        <Row
+          label="Launch animation"
+          hint="A short animation when Atlas opens. Click or press any key to skip it. A quick fade instead when your computer asks for reduced motion."
+        >
+          <Toggle
+            label="Launch animation"
+            checked={info.settings.launchAnimation}
+            onChange={setLaunchAnimation}
           />
         </Row>
       </Card>

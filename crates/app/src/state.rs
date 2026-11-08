@@ -109,6 +109,7 @@ pub struct AppInfo {
 pub struct SettingsPatch {
     pub theme: Option<Theme>,
     pub last_view: Option<View>,
+    pub launch_animation: Option<bool>,
 }
 
 impl AppState {
@@ -230,6 +231,10 @@ impl AppState {
         if let Some(v) = patch.last_view {
             changed |= inner.settings.last_view != v;
             inner.settings.last_view = v;
+        }
+        if let Some(a) = patch.launch_animation {
+            changed |= inner.settings.launch_animation != a;
+            inner.settings.launch_animation = a;
         }
         if changed {
             self.save_locked(&inner);

@@ -11,6 +11,7 @@ export interface Settings {
   lastView: View;
   configDirOverride: string | null;
   sandbox: boolean;
+  launchAnimation: boolean;
 }
 
 export interface ConfigView {

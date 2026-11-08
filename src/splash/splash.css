@@ -1,0 +1,76 @@
+/* Launch splash. Colors come from tokens.css (--brand-mark); nothing here is a theme color:
+   the splash sits over the user's desktop, so it has no theme and no backdrop. */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--stage-radius, 0px);
+  contain: strict;
+}
+
+.layer {
+  position: absolute;
+  will-change: transform, opacity;
+}
+
+.layer svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.clay {
+  fill: var(--brand-mark);
+}
+
+.ink {
+  fill: var(--brand-mark);
+  fill-opacity: 0.14;
+  stroke: var(--brand-mark);
+  stroke-width: 7;
+  stroke-linejoin: round;
+}
+
+.defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+#disc {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--brand-mark);
+  opacity: 0;
+  will-change: transform;
+}
+
+.half {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(50% + 1px);
+  background: var(--brand-mark);
+  visibility: hidden;
+  will-change: transform;
+}
+
+.half.left {
+  left: 0;
+}
+
+.half.right {
+  right: 0;
+}
