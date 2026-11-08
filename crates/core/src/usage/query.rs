@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use chrono::{Datelike, NaiveDate};
 use rusqlite::types::Value;
-use rusqlite::{params_from_iter, Connection};
+use rusqlite::{params_from_iter, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use super::pricing::PriceTable;
@@ -226,6 +226,13 @@ impl Default for SessionQuery {
 pub struct SessionRow {
     pub session_id: String,
     pub title: Option<String>,
+    /// What the UI calls the session: the title, else a summary of the first prompt, else None
+    /// (the UI then says "Session in <project>"). Never an id.
+    pub name: Option<String>,
+    /// "title", "agent", "prompt" or "none".
+    pub name_source: String,
+    /// Subagent transcripts that belong to this session (they are never rows of their own).
+    pub agent_count: u64,
     pub project_name: String,
     pub project_path: String,
     pub started_at: i64,
@@ -283,12 +290,75 @@ pub struct FileRef {
     pub missing: bool,
 }
 
+/// One subagent of a session, with what it spent. Counted once, under its session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSummary {
+    pub agent_id: String,
+    /// From the Agent/Task description, else the agent type, else the first prompt, else "Helper".
+    pub name: String,
+    /// "description", "type", "prompt" or "fallback".
+    pub name_source: String,
+    pub agent_type: Option<String>,
+    pub description: Option<String>,
+    pub tool_use_id: Option<String>,
+    /// The agent that spawned this one (nested subagents).
+    pub parent_agent_id: Option<String>,
+    pub spawn_depth: i64,
+    /// The model that did most of the work ("" when it made no priced call).
+    pub model: String,
+    pub models: Vec<String>,
+    pub messages: u64,
+    pub tokens: Tokens,
+    pub cost: Cost,
+    pub started_at: i64,
+    pub ended_at: i64,
+    pub duration_ms: i64,
+    pub tool_calls: u64,
+    /// Its transcript file is gone; the numbers are what was read before.
+    pub missing: bool,
+}
+
+/// The main conversation alone (without any subagent).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MainThread {
+    pub messages: u64,
+    pub tokens: Tokens,
+    pub cost: Cost,
+    pub tool_calls: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDetail {
+    pub session_id: String,
+    pub session_name: Option<String>,
+    pub project_name: String,
+    pub agent: AgentSummary,
+    pub parent_name: Option<String>,
+    pub by_model: Vec<ByModel>,
+    pub timeline: Vec<MessagePoint>,
+    /// The transcript file, for reading the prompt on demand.
+    pub file: Option<FileRef>,
+    /// What the agent was asked, read from its transcript on demand (never cached).
+    pub prompt: Option<String>,
+    pub prompt_truncated: bool,
+    /// The session's total, so the page can say "x % of this session".
+    pub session_tokens: Tokens,
+    pub session_cost: Cost,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDetail {
     pub row: SessionRow,
     pub by_model: Vec<ByModel>,
     pub by_agent: Vec<ByAgent>,
+    /// The subagents, in the order they started.
+    pub agents: Vec<AgentSummary>,
+    /// The main conversation alone; `row.tokens` / `row.cost` are main plus every subagent.
+    pub main: MainThread,
     pub timeline: Vec<MessagePoint>,
     pub files: Vec<FileRef>,
     pub claude_code_cost_usd: Option<f64>,
@@ -742,9 +812,18 @@ fn session_rows_for(conn: &Connection, ctx: &QueryCtx, ids: &[String]) -> rusqli
             *e.models.entry(model).or_default() += g.t.total;
         }
     }
+    let mut agent_counts: HashMap<String, u64> = HashMap::new();
+    {
+        let sql = format!("SELECT session_id, COUNT(*) FROM agents WHERE session_id IN ({ph}) GROUP BY session_id");
+        let mut st = conn.prepare(&sql)?;
+        for r in st.query_map(params_from_iter(vals.iter()), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
+            let (sid, n) = r?;
+            agent_counts.insert(sid, u(n));
+        }
+    }
     let sql = format!(
         "SELECT session_id, title, COALESCE(project_path,''), COALESCE(first_ts,0), COALESCE(last_ts,0), \
-         messages, subagent_messages, missing FROM sessions WHERE session_id IN ({ph})"
+         messages, subagent_messages, missing, prompt_summary, title_source FROM sessions WHERE session_id IN ({ph})"
     );
     let mut st = conn.prepare(&sql)?;
     let mut by_id: HashMap<String, SessionRow> = HashMap::new();
@@ -758,10 +837,20 @@ fn session_rows_for(conn: &Connection, ctx: &QueryCtx, ids: &[String]) -> rusqli
             r.get::<_, i64>(5)?,
             r.get::<_, i64>(6)?,
             r.get::<_, i64>(7)?,
+            r.get::<_, Option<String>>(8)?,
+            r.get::<_, Option<String>>(9)?,
         ))
     })?;
     for r in rows {
-        let (sid, title, path, first, last, msgs, sub, missing) = r?;
+        let (sid, title, path, first, last, msgs, sub, missing, prompt, title_source) = r?;
+        let title = title.filter(|t| !t.trim().is_empty());
+        let prompt = prompt.filter(|t| !t.trim().is_empty());
+        let (name, name_source) = match (&title, &prompt) {
+            (Some(t), _) => (Some(t.clone()), if title_source.as_deref() == Some("custom") { "title" } else { "agent" }),
+            (None, Some(p)) => (Some(p.clone()), "prompt"),
+            (None, None) => (None, "none"),
+        };
+        let agent_count = agent_counts.get(&sid).copied().unwrap_or(0);
         let agg = aggs.remove(&sid).unwrap_or_default();
         let mut models: Vec<(String, u64)> = agg.models.into_iter().collect();
         models.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
@@ -770,7 +859,10 @@ fn session_rows_for(conn: &Connection, ctx: &QueryCtx, ids: &[String]) -> rusqli
             sid.clone(),
             SessionRow {
                 session_id: sid,
-                title: title.filter(|t| !t.is_empty()),
+                title,
+                name,
+                name_source: name_source.to_string(),
+                agent_count,
                 project_name: base_name(&path),
                 project_path: path,
                 started_at: first,
@@ -828,7 +920,7 @@ pub fn sessions_list(conn: &Connection, ctx: &QueryCtx, q: &SessionQuery) -> rus
     if let Some(t) = q.text.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
         let n = vals.len() + 1;
         wh.push(format!(
-            "(lower(COALESCE(s.title,'')) LIKE ?{n} ESCAPE '\\' OR lower(COALESCE(s.project_path,'')) LIKE ?{n} ESCAPE '\\')"
+            "(lower(COALESCE(s.title,'')) LIKE ?{n} ESCAPE '\\' OR lower(COALESCE(s.prompt_summary,'')) LIKE ?{n} ESCAPE '\\' OR lower(COALESCE(s.project_path,'')) LIKE ?{n} ESCAPE '\\')"
         ));
         vals.push(Value::Text(format!("%{}%", like_escape(&t.to_lowercase()))));
     }
@@ -903,6 +995,243 @@ pub fn sessions_list(conn: &Connection, ctx: &QueryCtx, q: &SessionQuery) -> rus
 
 // ---------------------------------------------------------------- detail
 
+/// Every subagent of a session with its spend, in start order. Agents with a registry row but
+/// no priced messages are listed with zeros; messages from an agent with no row (a transcript
+/// without a sidecar read through some other path) get a synthesized one.
+fn agent_summaries(conn: &Connection, id: &str) -> rusqlite::Result<Vec<AgentSummary>> {
+    struct Reg {
+        agent_type: Option<String>,
+        description: Option<String>,
+        tool_use_id: Option<String>,
+        parent: Option<String>,
+        depth: i64,
+        prompt: Option<String>,
+        tool_calls: u64,
+        missing: bool,
+    }
+    let mut reg: BTreeMap<String, Reg> = BTreeMap::new();
+    {
+        let mut st = conn.prepare_cached(
+            "SELECT a.agent_id, a.agent_type, a.description, a.tool_use_id, a.parent_agent_id, a.spawn_depth, \
+                    a.prompt_summary, COALESCE(f.tool_calls,0), COALESCE(f.missing,0) \
+             FROM agents a LEFT JOIN files f ON f.file_id = a.file_id WHERE a.session_id=?1",
+        )?;
+        for r in st.query_map([id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                Reg {
+                    agent_type: r.get(1)?,
+                    description: r.get(2)?,
+                    tool_use_id: r.get(3)?,
+                    parent: r.get(4)?,
+                    depth: r.get(5)?,
+                    prompt: r.get(6)?,
+                    tool_calls: u(r.get::<_, i64>(7)?),
+                    missing: r.get::<_, i64>(8)? != 0,
+                },
+            ))
+        })? {
+            let (a, g) = r?;
+            reg.insert(a, g);
+        }
+    }
+    #[derive(Default)]
+    struct Spend {
+        acc: Acc,
+        messages: u64,
+        first: i64,
+        last: i64,
+        models: BTreeMap<String, u64>,
+    }
+    let mut spend: BTreeMap<String, Spend> = BTreeMap::new();
+    {
+        let mut st = conn.prepare_cached(&format!(
+            "SELECT agent_id, model, COUNT(*), MIN(ts_utc_ms), MAX(ts_utc_ms), {SUMS} FROM messages \
+             WHERE session_id=?1 AND agent_id IS NOT NULL \
+             GROUP BY agent_id, model, speed, geo, service_tier, price_tier"
+        ))?;
+        for r in st.query_map([id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                u(r.get::<_, i64>(2)?),
+                r.get::<_, i64>(3)?,
+                r.get::<_, i64>(4)?,
+                group_from(r, 5)?,
+            ))
+        })? {
+            let (a, model, n, lo, hi, g) = r?;
+            let e = spend.entry(a).or_default();
+            e.acc.add(&g);
+            e.messages += n;
+            e.first = if e.first == 0 { lo } else { e.first.min(lo) };
+            e.last = e.last.max(hi);
+            *e.models.entry(model).or_default() += g.t.total;
+        }
+    }
+    let mut ids: Vec<String> = reg.keys().cloned().collect();
+    for k in spend.keys() {
+        if !reg.contains_key(k) {
+            ids.push(k.clone());
+        }
+    }
+    let mut out: Vec<AgentSummary> = ids
+        .into_iter()
+        .map(|aid| {
+            let g = reg.remove(&aid);
+            let s = spend.remove(&aid).unwrap_or_default();
+            let (name, src) = super::naming::agent_name(
+                g.as_ref().and_then(|g| g.description.as_deref()),
+                g.as_ref().and_then(|g| g.agent_type.as_deref()),
+                g.as_ref().and_then(|g| g.prompt.as_deref()),
+            );
+            let mut models: Vec<(String, u64)> = s.models.into_iter().collect();
+            models.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            AgentSummary {
+                agent_id: aid,
+                name,
+                name_source: src.as_str().to_string(),
+                agent_type: g.as_ref().and_then(|g| g.agent_type.clone()),
+                description: g.as_ref().and_then(|g| g.description.clone()),
+                tool_use_id: g.as_ref().and_then(|g| g.tool_use_id.clone()),
+                parent_agent_id: g.as_ref().and_then(|g| g.parent.clone()),
+                spawn_depth: g.as_ref().map_or(1, |g| g.depth),
+                model: models.first().map(|m| m.0.clone()).unwrap_or_default(),
+                models: models.into_iter().map(|m| m.0).collect(),
+                messages: s.messages,
+                tokens: s.acc.t,
+                cost: s.acc.cost(),
+                started_at: s.first,
+                ended_at: s.last,
+                duration_ms: (s.last - s.first).max(0),
+                tool_calls: g.as_ref().map_or(0, |g| g.tool_calls),
+                missing: g.as_ref().is_some_and(|g| g.missing),
+            }
+        })
+        .collect();
+    // Spawn order; agents that never made a call go last.
+    out.sort_by(|a, b| {
+        let ka = if a.started_at == 0 { i64::MAX } else { a.started_at };
+        let kb = if b.started_at == 0 { i64::MAX } else { b.started_at };
+        ka.cmp(&kb).then_with(|| a.agent_id.cmp(&b.agent_id))
+    });
+    Ok(out)
+}
+
+/// The main conversation alone: messages with no agent id, and the main files' tool calls.
+fn main_thread(conn: &Connection, id: &str) -> rusqlite::Result<MainThread> {
+    let mut acc = Acc::default();
+    let mut messages = 0u64;
+    {
+        let mut st = conn.prepare_cached(&format!(
+            "SELECT COUNT(*), {SUMS} FROM messages WHERE session_id=?1 AND agent_id IS NULL \
+             GROUP BY model, speed, geo, service_tier, price_tier"
+        ))?;
+        for r in st.query_map([id], |r| Ok((u(r.get::<_, i64>(0)?), group_from(r, 1)?)))? {
+            let (n, g) = r?;
+            messages += n;
+            acc.add(&g);
+        }
+    }
+    let tool_calls: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(tool_calls),0) FROM files WHERE session_id=?1 AND is_subagent=0",
+        [id],
+        |r| r.get(0),
+    )?;
+    Ok(MainThread { messages, tokens: acc.t, cost: acc.cost(), tool_calls: u(tool_calls) })
+}
+
+/// One subagent, for its own page. `prompt` is filled in by the caller from the transcript.
+pub fn agent_detail(conn: &Connection, ctx: &QueryCtx, session_id: &str, agent_id: &str) -> rusqlite::Result<Option<AgentDetail>> {
+    let ids = [session_id.to_string()];
+    let Some(row) = session_rows_for(conn, ctx, &ids)?.pop() else { return Ok(None) };
+    let all = agent_summaries(conn, session_id)?;
+    let Some(agent) = all.iter().find(|a| a.agent_id == agent_id).cloned() else { return Ok(None) };
+    let parent_name = agent
+        .parent_agent_id
+        .as_ref()
+        .and_then(|p| all.iter().find(|a| &a.agent_id == p))
+        .map(|p| p.name.clone());
+
+    let mut by_model: BTreeMap<String, Acc> = BTreeMap::new();
+    {
+        let mut st = conn.prepare_cached(&format!(
+            "SELECT model, {SUMS} FROM messages WHERE session_id=?1 AND agent_id=?2 \
+             GROUP BY model, speed, geo, service_tier, price_tier"
+        ))?;
+        for r in st.query_map([session_id, agent_id], |r| Ok((r.get::<_, String>(0)?, group_from(r, 1)?)))? {
+            let (m, g) = r?;
+            by_model.entry(m).or_default().add(&g);
+        }
+    }
+    let mut by_model: Vec<ByModel> =
+        by_model.into_iter().map(|(model, a)| ByModel { model, tokens: a.t, cost: a.cost() }).collect();
+    by_model.sort_by(|a, b| b.tokens.total.cmp(&a.tokens.total).then_with(|| a.model.cmp(&b.model)));
+
+    let mut timeline = Vec::new();
+    {
+        let mut st = conn.prepare_cached(
+            "SELECT ts_utc_ms, model, agent_id, input, output, cw5m, cw1h, cr, web_search, web_fetch, \
+             cost_usd(model, speed, geo, service_tier, price_tier, input, output, cw5m, cw1h, cr, web_search), skill \
+             FROM messages WHERE session_id=?1 AND agent_id=?2 ORDER BY ts_utc_ms, line_offset LIMIT 5000",
+        )?;
+        for r in st.query_map([session_id, agent_id], message_point)? {
+            timeline.push(r?);
+        }
+    }
+    let file = conn
+        .query_row(
+            "SELECT f.path, f.is_subagent, f.missing FROM agents a JOIN files f ON f.file_id = a.file_id \
+             WHERE a.session_id=?1 AND a.agent_id=?2",
+            [session_id, agent_id],
+            |r| Ok(FileRef { path: r.get(0)?, is_subagent: r.get::<_, i64>(1)? != 0, missing: r.get::<_, i64>(2)? != 0 }),
+        )
+        .optional()?;
+    Ok(Some(AgentDetail {
+        session_id: session_id.to_string(),
+        session_name: row.name.clone(),
+        project_name: row.project_name.clone(),
+        agent,
+        parent_name,
+        by_model,
+        timeline,
+        file,
+        prompt: None,
+        prompt_truncated: false,
+        session_tokens: row.tokens,
+        session_cost: row.cost,
+    }))
+}
+
+fn message_point(r: &rusqlite::Row) -> rusqlite::Result<MessagePoint> {
+    let g = Group {
+        t: {
+            let (i, o, w5, w1, cr) = (u(r.get(3)?), u(r.get(4)?), u(r.get(5)?), u(r.get(6)?), u(r.get(7)?));
+            Tokens {
+                input: i,
+                output: o,
+                cache_write5m: w5,
+                cache_write1h: w1,
+                cache_read: cr,
+                total: i + o + w5 + w1,
+                web_search: u(r.get(8)?),
+                web_fetch: u(r.get(9)?),
+            }
+        },
+        cost: r.get::<_, Option<f64>>(10)?,
+    };
+    let mut a = Acc::default();
+    a.add(&g);
+    Ok(MessagePoint {
+        ts: r.get(0)?,
+        model: r.get(1)?,
+        agent_id: r.get(2)?,
+        tokens: g.t,
+        cost: a.cost(),
+        skill: r.get(11)?,
+    })
+}
+
 pub fn session_detail(conn: &Connection, ctx: &QueryCtx, id: &str) -> rusqlite::Result<Option<SessionDetail>> {
     let ids = [id.to_string()];
     let Some(row) = session_rows_for(conn, ctx, &ids)?.pop() else { return Ok(None) };
@@ -948,34 +1277,7 @@ pub fn session_detail(conn: &Connection, ctx: &QueryCtx, id: &str) -> rusqlite::
              cost_usd(model, speed, geo, service_tier, price_tier, input, output, cw5m, cw1h, cr, web_search), skill \
              FROM messages WHERE session_id=?1 ORDER BY ts_utc_ms, line_offset LIMIT 20000",
         )?;
-        let rows = st.query_map([id], |r| {
-            let g = Group {
-                t: {
-                    let (i, o, w5, w1, cr) = (u(r.get(3)?), u(r.get(4)?), u(r.get(5)?), u(r.get(6)?), u(r.get(7)?));
-                    Tokens {
-                        input: i,
-                        output: o,
-                        cache_write5m: w5,
-                        cache_write1h: w1,
-                        cache_read: cr,
-                        total: i + o + w5 + w1,
-                        web_search: u(r.get(8)?),
-                        web_fetch: u(r.get(9)?),
-                    }
-                },
-                cost: r.get::<_, Option<f64>>(10)?,
-            };
-            let mut a = Acc::default();
-            a.add(&g);
-            Ok(MessagePoint {
-                ts: r.get(0)?,
-                model: r.get(1)?,
-                agent_id: r.get(2)?,
-                tokens: g.t,
-                cost: a.cost(),
-                skill: r.get(11)?,
-            })
-        })?;
+        let rows = st.query_map([id], message_point)?;
         for r in rows {
             timeline.push(r?);
         }
@@ -994,7 +1296,9 @@ pub fn session_detail(conn: &Connection, ctx: &QueryCtx, id: &str) -> rusqlite::
         }
     }
     let cc: Option<f64> = conn.query_row("SELECT cc_cost_usd FROM sessions WHERE session_id=?1", [id], |r| r.get(0))?;
-    Ok(Some(SessionDetail { row, by_model, by_agent, timeline, files, claude_code_cost_usd: cc }))
+    let agents = agent_summaries(conn, id)?;
+    let main = main_thread(conn, id)?;
+    Ok(Some(SessionDetail { row, by_model, by_agent, agents, main, timeline, files, claude_code_cost_usd: cc }))
 }
 
 // ---------------------------------------------------------------- filters

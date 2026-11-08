@@ -27,9 +27,9 @@ fn sibling(db: &std::path::Path, suffix: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn a_fresh_db_gets_user_version_1() {
+fn a_fresh_db_gets_the_current_user_version() {
     let fx = start(&fixture("claude-basic"), Tz::Fixed(0));
-    assert_eq!(user_version(&fx.cache), 1);
+    assert_eq!(user_version(&fx.cache), cache::SCHEMA_VERSION);
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn an_empty_db_migrates() {
     let engine = engine_on(&fixture("claude-basic"), data.path());
     assert!(engine.wait_pass(0, WAIT));
     assert_eq!(engine.status().state, State::Idle, "{:?}", engine.status());
-    assert_eq!(user_version(&db), 1);
+    assert_eq!(user_version(&db), cache::SCHEMA_VERSION);
     let n: i64 = Connection::open(&db).unwrap().query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0)).unwrap();
     assert_eq!(n, 6);
 }

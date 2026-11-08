@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::line::{LineEvent, MsgEvent, Prefilter, Skip};
+use super::naming::{self, AgentMeta};
 use super::pricing::Counts;
 use super::reader::{open_read_only, read_lines, Item, ReadStats, LINE_CAP};
 use super::scan::FileTask;
@@ -79,6 +80,38 @@ struct Batch {
     /// The file was read to its end: record the size/mtime it was planned at.
     done: bool,
     bytes: u64,
+    /// The first batch of this run over the file: carries the sidecar and registers the agent.
+    first: bool,
+    /// `tool_use` blocks in the assistant lines of this batch.
+    tool_calls: u64,
+    /// One-line summary of the first real user prompt, found while reading from byte 0.
+    prompt: Option<String>,
+    /// The subagent's `.meta.json`, when there is one.
+    meta: Option<AgentMeta>,
+}
+
+/// The sidecar of `agent-<id>.jsonl` is `agent-<id>.meta.json`. Tiny; a missing or odd one is None.
+fn read_meta(jsonl: &std::path::Path) -> Option<AgentMeta> {
+    use std::io::Read;
+    let p = jsonl.with_extension("meta.json");
+    let mut buf = Vec::new();
+    open_read_only(&p).ok()?.take(64 * 1024).read_to_end(&mut buf).ok()?;
+    AgentMeta::parse(&buf)
+}
+
+/// The summary of a line when it is a real (non-meta, non-tool-result) user prompt.
+fn prompt_of(line: &[u8]) -> Option<String> {
+    memchr::memmem::find(line, br#""type":"user""#)?;
+    let it = super::transcript::item_from_line(line)?;
+    if it.role != "user" {
+        return None;
+    }
+    naming::summarize_prompt(&it.text)
+}
+
+/// The id of the agent a subagent file belongs to.
+fn file_agent_id(path: &std::path::Path) -> Option<String> {
+    path.file_stem().and_then(|s| s.to_str()).map(naming::agent_id_of_stem)
 }
 
 fn worker(
@@ -107,6 +140,10 @@ fn worker(
             replace_counts: first && task.start == 0,
             done: false,
             bytes: 0,
+            first,
+            tool_calls: 0,
+            prompt: None,
+            meta: None,
         };
         let Ok(file) = open_read_only(&task.path) else {
             // Gone or locked: nothing to read now; the next sweep decides.
@@ -116,6 +153,9 @@ fn worker(
             continue;
         };
         let mut batch = new_batch(true, task.start);
+        batch.meta = if task.is_subagent { read_meta(&task.path) } else { None };
+        let mut want_prompt = task.start == 0;
+        let mut line_no = 0usize;
         let mut first = true;
         let mut prev_end = task.start;
         let mut batch_first_off = task.start;
@@ -123,7 +163,18 @@ fn worker(
         let mut alive = true;
         let result = read_lines(file, task.start, opts.line_cap, stats, |item, end| {
             match item {
-                Item::Line(l) => match pf.parse(l) {
+                Item::Line(l) => {
+                    line_no += 1;
+                    if want_prompt {
+                        if line_no > 80 {
+                            want_prompt = false;
+                        } else if let Some(p) = prompt_of(l) {
+                            batch.prompt = Some(p);
+                            want_prompt = false;
+                        }
+                    }
+                    batch.tool_calls += pf.tool_calls(l);
+                    match pf.parse(l) {
                     Ok(ev) => {
                         batch.events.push((ev, prev_end));
                         lines += 1;
@@ -135,7 +186,8 @@ fn worker(
                     Err(Skip::Synthetic) => batch.synthetic += 1,
                     Err(Skip::ZeroUsage) => batch.zero += 1,
                     Err(Skip::Ignored) => {}
-                },
+                    }
+                }
                 Item::LongLine => {
                     batch.long_lines += 1;
                     lines += 1;
@@ -340,6 +392,7 @@ fn apply_batch(
     }
 
     let mut deltas: HashMap<String, SessionDelta> = HashMap::new();
+    let file_agent = if task.is_subagent { file_agent_id(&task.path) } else { None };
     let fallback_sid = task.folder_session.clone();
     let sid_of = |s: &Option<String>| s.clone().unwrap_or_else(|| fallback_sid.clone());
     {
@@ -402,7 +455,7 @@ fn apply_batch(
                         sid,
                         task.file_id,
                         *off as i64,
-                        m.agent_id,
+                        m.agent_id.as_ref().or(file_agent.as_ref()),
                         m.is_sidechain as i64,
                         m.model,
                         m.ts_ms,
@@ -509,16 +562,56 @@ fn apply_batch(
         }
     }
 
+    // Subagent registry and prompt summaries.
+    if task.is_subagent
+        && let Some(aid) = &file_agent
+    {
+        if b.first {
+            let m = b.meta.clone().unwrap_or_default();
+            tx.execute("INSERT OR IGNORE INTO sessions(session_id) VALUES(?1)", [&task.folder_session])?;
+            tx.execute(
+                "INSERT INTO agents(session_id, agent_id, file_id, agent_type, description, tool_use_id, parent_agent_id, spawn_depth)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+                 ON CONFLICT(session_id, agent_id) DO UPDATE SET
+                   file_id=excluded.file_id,
+                   agent_type=COALESCE(excluded.agent_type, agent_type),
+                   description=COALESCE(excluded.description, description),
+                   tool_use_id=COALESCE(excluded.tool_use_id, tool_use_id),
+                   parent_agent_id=COALESCE(excluded.parent_agent_id, parent_agent_id),
+                   spawn_depth=excluded.spawn_depth",
+                params![
+                    task.folder_session,
+                    aid,
+                    task.file_id,
+                    m.agent_type,
+                    m.description,
+                    m.tool_use_id,
+                    m.parent_agent_id,
+                    m.spawn_depth.unwrap_or(1),
+                ],
+            )?;
+        }
+        if let Some(p) = &b.prompt {
+            tx.execute(
+                "UPDATE agents SET prompt_summary=?3 WHERE session_id=?1 AND agent_id=?2",
+                params![task.folder_session, aid, p],
+            )?;
+        }
+    } else if let Some(p) = &b.prompt {
+        tx.execute("INSERT OR IGNORE INTO sessions(session_id) VALUES(?1)", [&task.folder_session])?;
+        tx.execute("UPDATE sessions SET prompt_summary=?2 WHERE session_id=?1", params![task.folder_session, p])?;
+    }
+
     // The file: committed offset and diagnostics in the same transaction (D5).
     if b.replace_counts {
         tx.execute(
-            "UPDATE files SET offset=?2, malformed_lines=?3, long_lines=?4 WHERE file_id=?1",
-            params![task.file_id, b.end_offset as i64, b.malformed as i64, b.long_lines as i64],
+            "UPDATE files SET offset=?2, malformed_lines=?3, long_lines=?4, tool_calls=?5 WHERE file_id=?1",
+            params![task.file_id, b.end_offset as i64, b.malformed as i64, b.long_lines as i64, b.tool_calls as i64],
         )?;
     } else {
         tx.execute(
-            "UPDATE files SET offset=?2, malformed_lines=malformed_lines+?3, long_lines=long_lines+?4 WHERE file_id=?1",
-            params![task.file_id, b.end_offset as i64, b.malformed as i64, b.long_lines as i64],
+            "UPDATE files SET offset=?2, malformed_lines=malformed_lines+?3, long_lines=long_lines+?4, tool_calls=tool_calls+?5 WHERE file_id=?1",
+            params![task.file_id, b.end_offset as i64, b.malformed as i64, b.long_lines as i64, b.tool_calls as i64],
         )?;
     }
     if b.done {

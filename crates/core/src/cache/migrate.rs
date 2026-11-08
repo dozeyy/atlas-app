@@ -5,7 +5,7 @@
 use rusqlite::Connection;
 
 /// The newest schema this build knows.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 /// `PRAGMA user_version` of an open database.
 pub fn user_version(conn: &Connection) -> rusqlite::Result<i64> {
@@ -19,6 +19,7 @@ pub fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
         let tx = conn.transaction()?;
         match v {
             0 => m0001(&tx)?,
+            1 => m0002(&tx)?,
             _ => unreachable!("no migration from version {v}"),
         }
         v += 1;
@@ -26,6 +27,31 @@ pub fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
         tx.commit()?;
     }
     Ok(())
+}
+
+/// Subagent registry: one row per `agent-<id>.jsonl` (its meta sidecar and a one-line prompt
+/// summary), the per-file tool-call count and the session's prompt summary. Existing caches are
+/// re-read once (PARSER_VERSION bump) so these fill in.
+fn m0002(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
+    tx.execute_batch(
+        r#"
+ALTER TABLE files ADD COLUMN tool_calls INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN prompt_summary TEXT;
+CREATE TABLE IF NOT EXISTS agents (
+  session_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  file_id INTEGER NOT NULL,
+  agent_type TEXT,
+  description TEXT,
+  tool_use_id TEXT,
+  parent_agent_id TEXT,
+  spawn_depth INTEGER NOT NULL DEFAULT 1,
+  prompt_summary TEXT,
+  PRIMARY KEY (session_id, agent_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS agents_file ON agents(file_id);
+"#,
+    )
 }
 
 fn m0001(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {

@@ -103,6 +103,35 @@ pub fn item_from_line(line: &[u8]) -> Option<TranscriptItem> {
     })
 }
 
+/// The most of an agent's prompt the detail page shows.
+pub const PROMPT_CAP: usize = 4_000;
+
+/// What a transcript's first real user line says (the prompt an agent was given), read from the
+/// file on demand: at most the first 80 lines, never cached. Returns the text and whether it was cut.
+pub fn first_prompt(path: &std::path::Path, stats: &ReadStats) -> Option<(String, bool)> {
+    let file = open_read_only(path).ok()?;
+    let mut found: Option<String> = None;
+    let mut lines = 0usize;
+    let _ = read_lines(file, 0, LINE_CAP, stats, |item, _| {
+        if let Item::Line(l) = item {
+            lines += 1;
+            if let Some(it) = item_from_line(l)
+                && it.role == "user"
+            {
+                found = Some(it.text);
+                return false;
+            }
+        }
+        lines < 80
+    });
+    let text = found?;
+    if text.chars().count() <= PROMPT_CAP {
+        return Some((text, false));
+    }
+    let end = text.char_indices().nth(PROMPT_CAP).map(|(i, _)| i).unwrap_or(text.len());
+    Some((text[..end].to_string(), true))
+}
+
 /// A page of the conversation. Cursor = `<file index>:<byte offset>`.
 pub fn page(
     conn: &rusqlite::Connection,

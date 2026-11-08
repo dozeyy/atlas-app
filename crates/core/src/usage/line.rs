@@ -69,6 +69,7 @@ pub enum Skip {
 
 pub struct Prefilter {
     assistant: Finder<'static>,
+    tool_use: Finder<'static>,
     others: [Finder<'static>; 4],
 }
 
@@ -83,6 +84,7 @@ impl Prefilter {
         let f = |s: &'static str| Finder::new(s.as_bytes()).into_owned();
         Prefilter {
             assistant: f(r#""type":"assistant""#),
+            tool_use: f(r#""type":"tool_use""#),
             others: [
                 f(r#""type":"custom-title""#),
                 f(r#""type":"agent-name""#),
@@ -90,6 +92,12 @@ impl Prefilter {
                 f(r#""type":"cost-state""#),
             ],
         }
+    }
+
+    /// How many tool calls an assistant line makes (0 for every other line type).
+    pub fn tool_calls(&self, line: &[u8]) -> u64 {
+        let n = self.tool_use.find_iter(line).count() as u64;
+        if n > 0 && self.assistant.find(line).is_some() { n } else { 0 }
     }
 
     fn wanted(&self, line: &[u8]) -> bool {

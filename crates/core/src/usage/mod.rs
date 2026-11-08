@@ -8,6 +8,7 @@
 
 pub mod ingest;
 pub mod line;
+pub mod naming;
 pub mod pricing;
 pub mod query;
 pub mod reader;
@@ -35,7 +36,7 @@ use scan::Mode;
 use time::{now_ms, Tz};
 
 /// Bump to make every install re-read its transcripts once (D30).
-pub const PARSER_VERSION: &str = "1";
+pub const PARSER_VERSION: &str = "2";
 
 // ---------------------------------------------------------------- config
 
@@ -370,6 +371,19 @@ impl UsageEngine {
 
     pub fn session_detail(&self, id: &str) -> Result<Option<query::SessionDetail>, String> {
         self.read(|c, x| query::session_detail(c, x, id))
+    }
+
+    /// One subagent with its spend; the prompt it was given is read from its transcript now.
+    pub fn agent_detail(&self, session_id: &str, agent_id: &str) -> Result<Option<query::AgentDetail>, String> {
+        let mut d = self.read(|c, x| query::agent_detail(c, x, session_id, agent_id))?;
+        if let Some(d) = d.as_mut()
+            && let Some(f) = d.file.as_ref().filter(|f| !f.missing)
+            && let Some((text, cut)) = transcript::first_prompt(Path::new(&f.path), &self.stats)
+        {
+            d.prompt = Some(text);
+            d.prompt_truncated = cut;
+        }
+        Ok(d)
     }
 
     pub fn filter_options(&self) -> Result<query::FilterOptions, String> {
