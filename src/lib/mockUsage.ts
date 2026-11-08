@@ -2,11 +2,17 @@
 // numbers every run, spread over the 60 days before "now". Nothing here is real.
 
 import type {
+  AgentDetail,
+  AgentSummary,
   Bucket,
   Cost,
   Dashboard,
   FilterOptions,
   IndexProgress,
+  ItemQuery,
+  ItemUse,
+  MainThread,
+  MessagePoint,
   ModelUse,
   Period,
   PricingInfo,
@@ -77,6 +83,12 @@ function sumCost(list: Cost[]): Cost {
 interface MockSession extends SessionRow {
   day: string;
   model: string;
+  agents: MockAgent[];
+  main: MainThread;
+}
+
+interface MockAgent extends AgentSummary {
+  prompt: string;
 }
 
 function rng(seed: number) {
@@ -85,6 +97,79 @@ function rng(seed: number) {
     s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
     return s / 2 ** 32;
   };
+}
+
+const TITLES = [
+  "Fix the sidebar focus ring",
+  "Add the export button",
+  "Tidy the build script",
+  "Why is startup slow",
+  "Write the release notes",
+  "Rename the settings keys",
+];
+const FIRST_PROMPTS = ["Look into why the build takes so long", "Add a dark mode toggle to the settings page", "Clean up the unused imports"];
+
+// What a helper might be asked: [description or null, agent type or null, prompt].
+const HELPERS: [string | null, string | null, string][] = [
+  ["Find usages of the export button", "Explore", "Search the repo for every place the export button is built or styled and report the files and line numbers."],
+  ["Review the sidebar changes", "code-reviewer", "Read the diff of the sidebar work and list anything that could break keyboard focus. Do not change files."],
+  ["Plan the settings migration", "Plan", "Write a short step by step plan for renaming the settings keys without losing anyone's saved values."],
+  ["Run the test suite and report failures", "general-purpose", "Run the whole test suite once and tell me which tests fail and the first error of each."],
+  [null, "Explore", "Check how the release notes were written last time and what they covered."],
+  [null, null, "Count how many places read the old settings key and say whether it is safe to remove."],
+];
+
+/** The spawn order of helpers inside one session, with the nested ones marked. */
+function helpersFor(rand: () => number, start: number, endCap: number, mainModel: string): MockAgent[] {
+  const n = 1 + Math.floor(rand() * 6);
+  const out: MockAgent[] = [];
+  for (let i = 0; i < n; i++) {
+    const [description, agentType, prompt] = HELPERS[(i + Math.floor(rand() * HELPERS.length)) % HELPERS.length];
+    const model = rand() < 0.6 ? MODELS[2] : rand() < 0.5 ? MODELS[0] : mainModel;
+    const messages = 2 + Math.floor(rand() * 14);
+    const per = (x: number) => Math.round(x * messages);
+    const t = zero();
+    t.input = per(80 + rand() * 300);
+    t.output = per(60 + rand() * 260);
+    t.cacheWrite5m = per(300 + rand() * 1200);
+    t.cacheRead = per(4000 + rand() * 20000);
+    t.total = t.input + t.output + t.cacheWrite5m + t.cacheWrite1h;
+    const startedAt = start + Math.round(((endCap - start) * i) / (n + 1)) + 30_000;
+    const durationMs = (1 + Math.floor(rand() * 12)) * 60_000;
+    const nested = i > 0 && i % 3 === 2;
+    const name = description ?? (agentType ? humanType(agentType) : summarize(prompt));
+    out.push({
+      agentId: `a${i}${Math.floor(rand() * 0xfffff).toString(16).padStart(5, "0")}`,
+      name,
+      nameSource: description ? "description" : agentType ? "type" : "prompt",
+      agentType,
+      description,
+      toolUseId: `toolu_${i}`,
+      parentAgentId: nested ? out[i - 1].agentId : null,
+      spawnDepth: nested ? 2 : 1,
+      model,
+      models: [model],
+      messages,
+      tokens: t,
+      cost: costOf(model, t),
+      startedAt,
+      endedAt: startedAt + durationMs,
+      durationMs,
+      toolCalls: per(0.6 + rand() * 2),
+      missing: false,
+      prompt,
+    });
+  }
+  return out;
+}
+
+function humanType(t: string): string {
+  const spaced = t.replace(/[-_]+/g, " ").trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function summarize(prompt: string): string {
+  return prompt.length <= 60 ? prompt : `${prompt.slice(0, 57).trimEnd()}...`;
 }
 
 function build(now: Date): MockSession[] {
@@ -109,23 +194,37 @@ function build(now: Date): MockSession[] {
       const [y, m, d] = day.split("-").map(Number);
       const start = new Date(y, m - 1, d, 8 + Math.floor(rand() * 11), Math.floor(rand() * 60)).getTime();
       const dur = (10 + Math.floor(rand() * 170)) * 60_000;
+      const titlePick = rand();
+      const titleIdx = Math.floor(rand() * TITLES.length);
+      const hasHelpers = rand() < 0.3;
+      const agents = hasHelpers ? helpersFor(rand, start, start + dur, model) : [];
       if (start > now.getTime()) continue;
+      const main: MainThread = { messages, tokens: t, cost: costOf(model, t), toolCalls: Math.round(messages * 0.8) };
+      const all = agents.reduce((acc, a) => add(acc, a.tokens), t);
+      const models = [...new Set([model, ...agents.map((a) => a.model)])];
+      const title = titlePick < 0.2 ? null : TITLES[titleIdx];
+      const none = !title && titleIdx === 5;
       out.push({
         sessionId: `${(back * 10 + k + 1).toString(16).padStart(8, "0")}-0000-4000-8000-000000000000`,
-        title: rand() < 0.2 ? null : ["Fix the sidebar focus ring", "Add the export button", "Tidy the build script", "Why is startup slow", "Write the release notes", "Rename the settings keys"][Math.floor(rand() * 6)],
+        title,
+        name: title ?? (none ? null : FIRST_PROMPTS[titleIdx % FIRST_PROMPTS.length]),
+        nameSource: title ? "title" : none ? "none" : "prompt",
+        agentCount: agents.length,
         projectName: p.name,
         projectPath: p.path,
         startedAt: start,
         endedAt: Math.min(start + dur, now.getTime()),
         durationMs: Math.min(dur, now.getTime() - start),
-        models: [model],
-        messages,
-        subagentMessages: rand() < 0.3 ? Math.floor(messages / 4) : 0,
-        tokens: t,
-        cost: costOf(model, t),
+        models,
+        messages: messages + agents.reduce((s, a) => s + a.messages, 0),
+        subagentMessages: agents.reduce((s, a) => s + a.messages, 0),
+        tokens: all,
+        cost: sumCost([main.cost, ...agents.map((a) => a.cost)]),
         missing: false,
         day,
         model,
+        agents,
+        main,
       });
     }
   }
@@ -141,9 +240,11 @@ function periodOf(list: MockSession[]): Period {
 }
 
 function publicRow(s: MockSession): SessionRow {
-  const { day: _d, model: _m, ...row } = s;
+  const { day: _d, model: _m, agents: _a, main: _n, ...row } = s;
   void _d;
   void _m;
+  void _a;
+  void _n;
   return row;
 }
 
@@ -290,7 +391,7 @@ export class MockUsage {
     let rows = this.data().slice();
     if (q.text) {
       const t = q.text.toLowerCase();
-      rows = rows.filter((s) => (s.title ?? "").toLowerCase().includes(t) || s.projectName.toLowerCase().includes(t));
+      rows = rows.filter((s) => (s.name ?? "").toLowerCase().includes(t) || s.projectName.toLowerCase().includes(t));
     }
     if (q.projects?.length) rows = rows.filter((s) => q.projects!.includes(PROJECTS.find((p) => p.name === s.projectName)!.key));
     if (q.models?.length) rows = rows.filter((s) => q.models!.includes(s.model));
@@ -310,42 +411,117 @@ export class MockUsage {
     };
   }
 
+  private points(t: Tokens, model: string, messages: number, startedAt: number, durationMs: number, agentId: string | null): MessagePoint[] {
+    const n = Math.max(1, Math.min(messages, 40));
+    return Array.from({ length: n }, (_, i) => {
+      const part: Tokens = {
+        ...zero(),
+        input: Math.round(t.input / n),
+        output: Math.round(t.output / n),
+        cacheWrite5m: Math.round(t.cacheWrite5m / n),
+        cacheRead: Math.round(t.cacheRead / n),
+      };
+      part.total = part.input + part.output + part.cacheWrite5m;
+      return { ts: startedAt + Math.round((durationMs * i) / n), model, agentId, tokens: part, cost: costOf(model, part), skill: null };
+    });
+  }
+
+  private summary(a: MockAgent): AgentSummary {
+    const { prompt: _p, ...rest } = a;
+    void _p;
+    return rest;
+  }
+
   async sessionDetail(id: string): Promise<SessionDetail | null> {
     this.guard();
     const s = this.sessions.find((x) => x.sessionId === id);
     if (!s) return null;
-    const n = Math.min(s.messages, 40);
-    const timeline = Array.from({ length: n }, (_, i) => {
-      const t: Tokens = {
-        ...zero(),
-        input: Math.round(s.tokens.input / n),
-        output: Math.round(s.tokens.output / n),
-        cacheWrite5m: Math.round(s.tokens.cacheWrite5m / n),
-        cacheRead: Math.round(s.tokens.cacheRead / n),
-      };
-      t.total = t.input + t.output + t.cacheWrite5m;
-      return {
-        ts: s.startedAt + Math.round((s.durationMs * i) / n),
-        model: s.model,
-        agentId: null,
-        tokens: t,
-        cost: costOf(s.model, t),
-        skill: null,
-      };
-    });
+    const timeline = [
+      ...this.points(s.main.tokens, s.model, s.main.messages, s.startedAt, s.durationMs, null),
+      ...s.agents.flatMap((a) => this.points(a.tokens, a.model, a.messages, a.startedAt, a.durationMs, a.agentId)),
+    ].sort((x, y) => x.ts - y.ts);
+    const byModel = new Map<string, { tokens: Tokens; costs: Cost[] }>();
+    for (const part of [{ model: s.model, tokens: s.main.tokens, cost: s.main.cost }, ...s.agents.map((a) => ({ model: a.model, tokens: a.tokens, cost: a.cost }))]) {
+      const cur = byModel.get(part.model) ?? { tokens: zero(), costs: [] };
+      byModel.set(part.model, { tokens: add(cur.tokens, part.tokens), costs: [...cur.costs, part.cost] });
+    }
+    const dir = PROJECTS.find((p) => p.name === s.projectName)!.key;
     return {
       row: publicRow(s),
-      byModel: [{ model: s.model, tokens: s.tokens, cost: s.cost }],
+      byModel: [...byModel.entries()].map(([model, v]) => ({ model, tokens: v.tokens, cost: sumCost(v.costs) })),
       byAgent: [
-        { agentId: null, messages: s.messages, tokens: s.tokens, cost: s.cost },
-        ...(s.subagentMessages > 0
-          ? [{ agentId: "agent-a1", messages: s.subagentMessages, tokens: { ...zero(), input: 1200, output: 800, total: 2000 }, cost: { usd: 0.01, complete: true, unpricedTokens: 0 } }]
-          : []),
+        { agentId: null, messages: s.main.messages, tokens: s.main.tokens, cost: s.main.cost },
+        ...s.agents.map((a) => ({ agentId: a.agentId, messages: a.messages, tokens: a.tokens, cost: a.cost })),
       ],
+      agents: s.agents.map((a) => this.summary(a)),
+      main: s.main,
       timeline,
-      files: [{ path: `projects/${PROJECTS.find((p) => p.name === s.projectName)!.key}/${s.sessionId}.jsonl`, isSubagent: false, missing: false }],
+      files: [
+        { path: `projects/${dir}/${s.sessionId}.jsonl`, isSubagent: false, missing: false },
+        ...s.agents.map((a) => ({ path: `projects/${dir}/${s.sessionId}/subagents/agent-${a.agentId}.jsonl`, isSubagent: true, missing: false })),
+      ],
       claudeCodeCostUsd: s.cost.usd === null ? null : s.cost.usd * 1.02,
     };
+  }
+
+  async agentDetail(sessionId: string, agentId: string): Promise<AgentDetail | null> {
+    this.guard();
+    const s = this.sessions.find((x) => x.sessionId === sessionId);
+    const a = s?.agents.find((x) => x.agentId === agentId);
+    if (!s || !a) return null;
+    const dir = PROJECTS.find((p) => p.name === s.projectName)!.key;
+    return {
+      sessionId,
+      sessionName: s.name,
+      projectName: s.projectName,
+      agent: this.summary(a),
+      parentName: a.parentAgentId ? (s.agents.find((x) => x.agentId === a.parentAgentId)?.name ?? null) : null,
+      byModel: [{ model: a.model, tokens: a.tokens, cost: a.cost }],
+      timeline: this.points(a.tokens, a.model, a.messages, a.startedAt, a.durationMs, a.agentId),
+      file: { path: `projects/${dir}/${sessionId}/subagents/agent-${a.agentId}.jsonl`, isSubagent: true, missing: false },
+      prompt: a.prompt,
+      promptTruncated: false,
+      sessionTokens: s.tokens,
+      sessionCost: s.cost,
+    };
+  }
+
+  /**
+   * Skills, helper types and tools by use. The helper types and tool-call totals come from the
+   * mock sessions; the skills are a fixed few spread over them so the Setup page has a mix of
+   * used and idle ones.
+   */
+  async usageByItem(q: ItemQuery): Promise<ItemUse[]> {
+    this.guard();
+    const inRange = (day: string) => (!q.from || day >= q.from) && (!q.to || day <= q.to);
+    const sessions = this.data().filter((s) => !q.sessionId || s.sessionId === q.sessionId);
+    const acc = new Map<string, { uses: number; sessions: Set<string>; last: number }>();
+    const bump = (id: string, s: MockSession, n: number, ts: number) => {
+      const cur = acc.get(id) ?? { uses: 0, sessions: new Set<string>(), last: 0 };
+      if (inRange(s.day)) {
+        cur.uses += n;
+        cur.sessions.add(s.sessionId);
+      }
+      cur.last = Math.max(cur.last, ts);
+      acc.set(id, cur);
+    };
+    const SKILLS = ["ui-ux-pro-max", "orchestrate", "code-review", "build-and-verify"];
+    sessions.forEach((s, i) => {
+      if (q.kind === "agent") s.agents.forEach((a) => bump(a.agentType ?? "general-purpose", s, 1, a.startedAt));
+      else if (q.kind === "skill") {
+        if (i % 3 === 0) bump(SKILLS[i % SKILLS.length], s, 1 + (i % 2), s.startedAt);
+      } else {
+        const calls = s.main.toolCalls + s.agents.reduce((n, a) => n + a.toolCalls, 0);
+        bump("Bash", s, Math.round(calls * 0.5), s.startedAt);
+        bump("Read", s, Math.round(calls * 0.3), s.startedAt);
+        bump("Edit", s, Math.round(calls * 0.2), s.startedAt);
+        if (s.agents.length > 0) bump("Agent", s, s.agents.length, s.startedAt);
+      }
+    });
+    return [...acc.entries()]
+      .map(([id, v]) => ({ id, kind: q.kind, uses: v.uses, sessions: v.sessions.size, lastUsed: v.last || null }))
+      .sort((a, b) => b.uses - a.uses || (b.lastUsed ?? 0) - (a.lastUsed ?? 0) || a.id.localeCompare(b.id))
+      .slice(0, q.limit ?? 500);
   }
 
   async sessionTranscript(id: string, cursor?: string | null, limit = 50): Promise<TranscriptPage> {

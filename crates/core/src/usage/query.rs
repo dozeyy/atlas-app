@@ -1142,6 +1142,86 @@ fn main_thread(conn: &Connection, id: &str) -> rusqlite::Result<MainThread> {
 }
 
 /// One subagent, for its own page. `prompt` is filled in by the caller from the transcript.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ItemKind {
+    Skill,
+    Agent,
+    Tool,
+}
+
+impl ItemKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            ItemKind::Skill => "skill",
+            ItemKind::Agent => "agent",
+            ItemKind::Tool => "tool",
+        }
+    }
+}
+
+/// Which items to count, in which local days (inclusive, `YYYY-MM-DD`), optionally in one session.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemQuery {
+    pub kind: ItemKind,
+    #[serde(default)]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub to: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// One skill, helper type or tool. `uses` and `sessions` count only the period asked for;
+/// `lastUsed` (epoch ms) is the last time ever (or in the one session asked for), so an item
+/// that was not used in the period still says when it last ran. Never-used items are not here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemUse {
+    pub id: String,
+    pub kind: ItemKind,
+    pub uses: u64,
+    pub sessions: u64,
+    pub last_used: Option<i64>,
+}
+
+pub fn usage_by_item(conn: &Connection, q: &ItemQuery) -> rusqlite::Result<Vec<ItemUse>> {
+    let lo = q.from.as_deref().map_or_else(|| "0000".to_string(), |d| format!("{d}T00"));
+    let hi = q.to.as_deref().map_or_else(|| "9999".to_string(), |d| format!("{d}T24"));
+    let mut st = conn.prepare_cached(
+        "SELECT item,
+                SUM(CASE WHEN hour_local >= ?2 AND hour_local < ?3 THEN uses ELSE 0 END) AS u,
+                COUNT(DISTINCT CASE WHEN hour_local >= ?2 AND hour_local < ?3 THEN session_id END),
+                MAX(last_ts) AS last
+         FROM item_use
+         WHERE kind=?1 AND (?4 IS NULL OR session_id=?4)
+         GROUP BY item
+         ORDER BY u DESC, last DESC, item
+         LIMIT ?5",
+    )?;
+    let limit = i64::from(q.limit.unwrap_or(500).min(5000));
+    let kind = q.kind;
+    let rows = st.query_map(params_from_iter([
+        Value::Text(kind.as_str().to_string()),
+        Value::Text(lo),
+        Value::Text(hi),
+        q.session_id.clone().map_or(Value::Null, Value::Text),
+        Value::Integer(limit),
+    ]), |r| {
+        Ok(ItemUse {
+            id: r.get(0)?,
+            kind,
+            uses: u(r.get::<_, i64>(1)?),
+            sessions: u(r.get::<_, i64>(2)?),
+            last_used: r.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
 pub fn agent_detail(conn: &Connection, ctx: &QueryCtx, session_id: &str, agent_id: &str) -> rusqlite::Result<Option<AgentDetail>> {
     let ids = [session_id.to_string()];
     let Some(row) = session_rows_for(conn, ctx, &ids)?.pop() else { return Ok(None) };

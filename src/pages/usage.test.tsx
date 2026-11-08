@@ -4,8 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
+import { openSessionNext } from "../lib/nav";
 import { MockBackend } from "../lib/mock";
-import { compact, headline } from "../lib/usage";
+import { addDays, compact, headline, localDay } from "../lib/usage";
 import type { Scenario } from "../lib/mockUsage";
 
 function mount(scenario: Scenario = "data", view: "dashboard" | "sessions" = "dashboard") {
@@ -177,5 +178,139 @@ describe("Sessions", () => {
     backend.usage.setScenario("data");
     await userEvent.click(screen.getAllByRole("button", { name: "Try again" }).at(-1)!);
     await screen.findAllByRole("button", { name: /tokens/ });
+  });
+});
+
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The mock backend reads the saved settings when it is made, so the view is chosen first. */
+function sessionsBackend(): MockBackend {
+  localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "sessions" }));
+  return new MockBackend();
+}
+
+function mountDetail(backend: MockBackend, sessionId: string) {
+  openSessionNext(sessionId);
+  setBackend(backend);
+  render(
+    <AtlasProvider>
+      <App />
+    </AtlasProvider>,
+  );
+}
+
+describe("Helpers (subagents) inside a session", () => {
+  async function withHelpers(backend: MockBackend) {
+    const page = await backend.sessionsList({ limit: 200 });
+    const row = page.rows.find((r) => r.agentCount > 1)!;
+    expect(row).toBeDefined();
+    const detail = (await backend.sessionDetail(row.sessionId))!;
+    return { row, detail };
+  }
+
+  it("never makes a helper a row of its own, and counts it once under its session", async () => {
+    const backend = new MockBackend();
+    const page = await backend.sessionsList({ limit: 200 });
+    const helperNames = new Set<string>();
+    for (const r of page.rows.filter((x) => x.agentCount > 0)) {
+      const d = (await backend.sessionDetail(r.sessionId))!;
+      expect(d.agents).toHaveLength(r.agentCount);
+      d.agents.forEach((a) => helperNames.add(a.name));
+      // Main plus helpers is the session: tokens, messages and dollars, with no double count.
+      const helperTokens = d.agents.reduce((s, a) => s + a.tokens.total, 0);
+      expect(d.main.tokens.total + helperTokens).toBe(r.tokens.total);
+      expect(d.main.messages + d.agents.reduce((s, a) => s + a.messages, 0)).toBe(r.messages);
+      const usd = d.main.cost.usd! + d.agents.reduce((s, a) => s + a.cost.usd!, 0);
+      expect(usd).toBeCloseTo(r.cost.usd!, 9);
+    }
+    expect(helperNames.size).toBeGreaterThan(2);
+    const rowNames = page.rows.map((r) => r.name);
+    for (const h of helperNames) expect(rowNames).not.toContain(h);
+  });
+
+  it("names every helper and session by what it did, never by an id", async () => {
+    const backend = new MockBackend();
+    const page = await backend.sessionsList({ limit: 200 });
+    const hex = /^[0-9a-f]{8}(-[0-9a-f]{4}){0,4}/i;
+    for (const r of page.rows) {
+      if (r.name !== null) expect(r.name).not.toMatch(hex);
+      const d = (await backend.sessionDetail(r.sessionId))!;
+      for (const a of d.agents) {
+        expect(a.name.trim().length).toBeGreaterThan(0);
+        expect(a.name).not.toMatch(hex);
+        // The fallback order: description, then type, then the prompt.
+        if (a.description) expect(a.name).toBe(a.description);
+        else if (a.agentType) expect(a.nameSource).toBe("type");
+        else expect(a.nameSource).toBe("prompt");
+      }
+    }
+  });
+
+  it("shows a session by its name with a helpers chip in the list", async () => {
+    const backend = mount("data", "sessions");
+    const page = await backend.sessionsList({ limit: 50 });
+    const row = page.rows.find((r) => r.agentCount > 0)!;
+    const list = await screen.findAllByRole("button", { name: /tokens/ });
+    const chip = `${row.agentCount} ${row.agentCount === 1 ? "helper" : "helpers"}`;
+    const line = list.find((b) => within(b).queryByText(chip) !== null)!;
+    expect(line).toBeDefined();
+    expect(within(line).getByText(row.name ?? `Session in ${row.projectName}`)).toBeInTheDocument();
+  });
+
+  it("opens a session with its main-versus-total split and one card per helper", async () => {
+    const backend = sessionsBackend();
+    const { row, detail } = await withHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    const helpers = await screen.findByRole("region", { name: "Helpers" });
+    expect(within(helpers).getByRole("heading", { name: `${row.agentCount} helpers ran in this session` })).toBeInTheDocument();
+    expect(screen.getByText("You and Claude")).toBeInTheDocument();
+    for (const a of detail.agents) {
+      expect(within(helpers).getAllByRole("button", { name: new RegExp(esc(a.name)) }).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("opens one helper to show what it was asked and what it spent, and goes back", async () => {
+    const backend = sessionsBackend();
+    const { row, detail } = await withHelpers(backend);
+    const a = detail.agents[0];
+    const full = (await backend.agentDetail(row.sessionId, a.agentId))!;
+    mountDetail(backend, row.sessionId);
+    const helpers = await screen.findByRole("region", { name: "Helpers" });
+    await userEvent.click(within(helpers).getAllByRole("button", { name: new RegExp(esc(a.name)) })[0]);
+    expect(await screen.findByRole("heading", { level: 2, name: a.name })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "What it was asked" })).toHaveTextContent(full.prompt!);
+    expect(screen.getByText("Tool calls")).toBeInTheDocument();
+    expect(screen.getByText("Ran for")).toBeInTheDocument();
+    const breakdown = screen.getByRole("region", { name: "Token breakdown" });
+    expect(within(breakdown).getByText("Cache reads")).toBeInTheDocument();
+    expect(within(breakdown).getByText(a.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^Back to / }));
+    expect(await screen.findByRole("region", { name: "Helpers" })).toBeInTheDocument();
+  });
+
+  it("switches the token breakdown between the main conversation and everything", async () => {
+    const backend = sessionsBackend();
+    const { row, detail } = await withHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    const section = await screen.findByRole("region", { name: "Token breakdown" });
+    expect(within(section).getByText(row.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
+    await userEvent.click(within(section).getByRole("radio", { name: "Main only" }));
+    expect(within(section).getByText(detail.main.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
+  });
+});
+
+describe("Usage by skill, helper type and tool", () => {
+  it("counts a period and keeps the last time ever", async () => {
+    const backend = new MockBackend();
+    const all = await backend.usageByItem({ kind: "agent" });
+    const week = await backend.usageByItem({ kind: "agent", from: addDays(localDay(new Date()), -6) });
+    expect(all.length).toBeGreaterThan(0);
+    expect(all.every((i) => i.kind === "agent" && i.id.length > 0)).toBe(true);
+    const total = (v: typeof all) => v.reduce((s, i) => s + i.uses, 0);
+    expect(total(week)).toBeLessThanOrEqual(total(all));
+    for (const i of all) expect(i.lastUsed).not.toBeNull();
+    const tools = await backend.usageByItem({ kind: "tool" });
+    expect(tools.map((t) => t.id)).toEqual(expect.arrayContaining(["Bash", "Read", "Edit"]));
+    expect(tools[0].uses).toBeGreaterThanOrEqual(tools[tools.length - 1].uses);
   });
 });

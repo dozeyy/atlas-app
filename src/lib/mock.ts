@@ -138,6 +138,8 @@ export class MockBackend {
   usageTimeline: Backend["usageTimeline"] = (a) => this.usage.usageTimeline(a);
   sessionsList: Backend["sessionsList"] = (q) => this.usage.sessionsList(q);
   sessionDetail: Backend["sessionDetail"] = (id) => this.usage.sessionDetail(id);
+  agentDetail: Backend["agentDetail"] = (s, a) => this.usage.agentDetail(s, a);
+  usageByItem: Backend["usageByItem"] = (q) => this.usage.usageByItem(q);
   sessionTranscript: Backend["sessionTranscript"] = (id, c, l) => this.usage.sessionTranscript(id, c, l);
   usageFilterOptions = () => this.usage.usageFilterOptions();
   usageReindex: Backend["usageReindex"] = () => this.usage.usageReindex();

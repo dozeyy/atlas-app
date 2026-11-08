@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+use super::line::ToolLine;
 use super::line::{LineEvent, MsgEvent, Prefilter, Skip};
 use super::naming::{self, AgentMeta};
 use super::pricing::Counts;
@@ -84,6 +85,8 @@ struct Batch {
     first: bool,
     /// `tool_use` blocks in the assistant lines of this batch.
     tool_calls: u64,
+    /// What those calls were (name, skill, helper type), with when and in which session.
+    items: Vec<ToolLine>,
     /// One-line summary of the first real user prompt, found while reading from byte 0.
     prompt: Option<String>,
     /// The subagent's `.meta.json`, when there is one.
@@ -142,6 +145,7 @@ fn worker(
             bytes: 0,
             first,
             tool_calls: 0,
+            items: Vec::new(),
             prompt: None,
             meta: None,
         };
@@ -173,7 +177,13 @@ fn worker(
                             want_prompt = false;
                         }
                     }
-                    batch.tool_calls += pf.tool_calls(l);
+                    let calls = pf.tool_calls(l);
+                    if calls > 0 {
+                        batch.tool_calls += calls;
+                        if let Some(t) = pf.tool_uses(l) {
+                            batch.items.push(t);
+                        }
+                    }
                     match pf.parse(l) {
                     Ok(ev) => {
                         batch.events.push((ev, prev_end));
@@ -600,6 +610,52 @@ fn apply_batch(
     } else if let Some(p) = &b.prompt {
         tx.execute("INSERT OR IGNORE INTO sessions(session_id) VALUES(?1)", [&task.folder_session])?;
         tx.execute("UPDATE sessions SET prompt_summary=?2 WHERE session_id=?1", params![task.folder_session, p])?;
+    }
+
+    // What the tool calls were, per session and hour. A file read again from 0 starts its rows over.
+    if b.replace_counts {
+        tx.execute("DELETE FROM item_use WHERE file_id=?1", [task.file_id])?;
+    }
+    if !b.items.is_empty() {
+        let mut acc: HashMap<(String, i64, &'static str, String), (u64, i64)> = HashMap::new();
+        let mut bump = |sid: &str, hour: i64, kind: &'static str, item: &str, ts: i64| {
+            let e = acc.entry((sid.to_string(), hour, kind, item.to_string())).or_insert((0, ts));
+            e.0 += 1;
+            e.1 = e.1.max(ts);
+        };
+        for t in &b.items {
+            let sid = sid_of(&t.session_id);
+            let hour = t.ts_ms.div_euclid(3_600_000);
+            for u in &t.uses {
+                bump(&sid, hour, "tool", &u.name, t.ts_ms);
+                match u.name.as_str() {
+                    "Skill" => {
+                        if let Some(s) = u.skill.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                            bump(&sid, hour, "skill", s, t.ts_ms);
+                        }
+                    }
+                    // Claude Code runs an Agent call with no type as the general-purpose helper.
+                    "Agent" | "Task" => {
+                        let ty = u.agent_type.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or("general-purpose");
+                        bump(&sid, hour, "agent", ty, t.ts_ms);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut up = tx.prepare_cached(
+            "INSERT INTO item_use(file_id, session_id, hour_utc, hour_local, kind, item, uses, last_ts)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+             ON CONFLICT(file_id, session_id, hour_utc, kind, item)
+             DO UPDATE SET uses=uses+excluded.uses, last_ts=MAX(last_ts, excluded.last_ts)",
+        )?;
+        for ((sid, hour, kind, item), (uses, last)) in acc {
+            let local = hour_cache
+                .entry((hour * 3_600_000).div_euclid(900_000))
+                .or_insert_with(|| tz.hour_bucket(hour * 3_600_000))
+                .clone();
+            up.execute(params![task.file_id, sid, hour, local, kind, item, uses as i64, last])?;
+        }
     }
 
     // The file: committed offset and diagnostics in the same transaction (D5).

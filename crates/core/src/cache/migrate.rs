@@ -5,7 +5,7 @@
 use rusqlite::Connection;
 
 /// The newest schema this build knows.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// `PRAGMA user_version` of an open database.
 pub fn user_version(conn: &Connection) -> rusqlite::Result<i64> {
@@ -20,6 +20,7 @@ pub fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
         match v {
             0 => m0001(&tx)?,
             1 => m0002(&tx)?,
+            2 => m0003(&tx)?,
             _ => unreachable!("no migration from version {v}"),
         }
         v += 1;
@@ -50,6 +51,29 @@ CREATE TABLE IF NOT EXISTS agents (
   PRIMARY KEY (session_id, agent_id)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS agents_file ON agents(file_id);
+"#,
+    )
+}
+
+/// What the tool calls were: one row per file, session, UTC hour, kind (`tool`, `skill`, `agent`)
+/// and item name, with how many times and the last time. `hour_local` follows the time zone
+/// (rewritten when it changes). Existing caches are re-read once (PARSER_VERSION bump) to fill it.
+fn m0003(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
+    tx.execute_batch(
+        r#"
+CREATE TABLE IF NOT EXISTS item_use (
+  file_id INTEGER NOT NULL,
+  session_id TEXT NOT NULL,
+  hour_utc INTEGER NOT NULL,
+  hour_local TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  item TEXT NOT NULL,
+  uses INTEGER NOT NULL,
+  last_ts INTEGER NOT NULL,
+  PRIMARY KEY (file_id, session_id, hour_utc, kind, item)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS item_use_kind ON item_use(kind, hour_local);
+CREATE INDEX IF NOT EXISTS item_use_session ON item_use(session_id);
 "#,
     )
 }

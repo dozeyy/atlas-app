@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use atlas_core::cache;
 use atlas_core::cache::pricing_file;
 use atlas_core::usage::query::{
-    Dashboard, FilterOptions, SessionDetail, SessionPage, SessionQuery, Timeline, TimelineArgs,
+    AgentDetail, Dashboard, FilterOptions, ItemQuery, ItemUse, SessionDetail, SessionPage, SessionQuery, Timeline, TimelineArgs,
 };
 use atlas_core::usage::transcript::TranscriptPage;
 use atlas_core::usage::{Event, EventSink, PricingInfo, UsageConfig, UsageEngine, UsageStatus};
@@ -203,6 +203,16 @@ pub async fn sessions_list(state: Shared<'_>, query: SessionQuery) -> Result<Ses
 #[tauri::command]
 pub async fn session_detail(state: Shared<'_>, session_id: String) -> Result<Option<SessionDetail>, String> {
     blocking(state.usage.engine(), move |e| e.session_detail(&session_id)).await
+}
+
+#[tauri::command]
+pub async fn usage_by_item(state: Shared<'_>, query: ItemQuery) -> Result<Vec<ItemUse>, String> {
+    blocking(state.usage.engine(), move |e| e.usage_by_item(&query)).await
+}
+
+#[tauri::command]
+pub async fn usage_agent_detail(state: Shared<'_>, session_id: String, agent_id: String) -> Result<Option<AgentDetail>, String> {
+    blocking(state.usage.engine(), move |e| e.agent_detail(&session_id, &agent_id)).await
 }
 
 #[tauri::command]

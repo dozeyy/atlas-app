@@ -36,7 +36,7 @@ use scan::Mode;
 use time::{now_ms, Tz};
 
 /// Bump to make every install re-read its transcripts once (D30).
-pub const PARSER_VERSION: &str = "2";
+pub const PARSER_VERSION: &str = "3";
 
 // ---------------------------------------------------------------- config
 
@@ -386,6 +386,11 @@ impl UsageEngine {
         Ok(d)
     }
 
+    /// How often each skill, helper type or tool was used in a period (see `query::usage_by_item`).
+    pub fn usage_by_item(&self, q: &query::ItemQuery) -> Result<Vec<query::ItemUse>, String> {
+        self.read(|c, _| query::usage_by_item(c, q))
+    }
+
     pub fn filter_options(&self) -> Result<query::FilterOptions, String> {
         self.read(query::filter_options)
     }
@@ -598,6 +603,7 @@ impl Core {
             Some(_) => {
                 let ok = conn
                     .execute("UPDATE messages SET hour_local = hour_of(ts_utc_ms)", [])
+                    .and_then(|_| conn.execute("UPDATE item_use SET hour_local = hour_of(hour_utc * 3600000)", []))
                     .and_then(|_| ingest::rebuild_all_aggregates(conn).map(|_| 0));
                 if let Err(e) = ok {
                     self.log(&format!("usage: time zone rebuild failed: {e}"));
@@ -795,12 +801,12 @@ impl Core {
         self.sink.emit(Event::Pricing(info));
         if changed {
             self.log("usage: prices changed");
-            if current.tier_signature() != loaded_sig {
-                if let Some(conn) = self.conn.as_mut().filter(|_| self.kind == OpenKind::Ready) {
-                    match ingest::retier_all(conn) {
-                        Ok(n) => self.sink.log(&format!("usage: long-context threshold changed, {n} messages re-tiered")),
-                        Err(e) => self.sink.log(&format!("usage: re-tier failed: {e}")),
-                    }
+            if current.tier_signature() != loaded_sig
+                && let Some(conn) = self.conn.as_mut().filter(|_| self.kind == OpenKind::Ready)
+            {
+                match ingest::retier_all(conn) {
+                    Ok(n) => self.sink.log(&format!("usage: long-context threshold changed, {n} messages re-tiered")),
+                    Err(e) => self.sink.log(&format!("usage: re-tier failed: {e}")),
                 }
             }
             self.queue_changed("reprice", &[], None, None);

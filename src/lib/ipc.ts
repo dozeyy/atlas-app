@@ -12,6 +12,9 @@ import type {
   IndexProgress,
   PricingInfo,
   SessionDetail,
+  AgentDetail,
+  ItemQuery,
+  ItemUse,
   SessionPage,
   SessionQuery,
   Theme,
@@ -55,6 +58,8 @@ export interface Backend {
   usageTimeline(args: { from: string; to: string; bucket: Bucket; groupBy?: "model" | "project" }): Promise<Timeline>;
   sessionsList(query: SessionQuery): Promise<SessionPage>;
   sessionDetail(sessionId: string): Promise<SessionDetail | null>;
+  agentDetail(sessionId: string, agentId: string): Promise<AgentDetail | null>;
+  usageByItem(query: ItemQuery): Promise<ItemUse[]>;
   sessionTranscript(sessionId: string, cursor?: string | null, limit?: number): Promise<TranscriptPage>;
   usageFilterOptions(): Promise<FilterOptions>;
   usageReindex(scope: "changed" | "full"): Promise<UsageStatus>;
@@ -84,6 +89,8 @@ const tauriBackend: Backend = {
   usageTimeline: (a) => invoke<Timeline>("usage_timeline", a),
   sessionsList: (query) => invoke<SessionPage>("sessions_list", { query }),
   sessionDetail: (sessionId) => invoke<SessionDetail | null>("session_detail", { sessionId }),
+  agentDetail: (sessionId, agentId) => invoke<AgentDetail | null>("usage_agent_detail", { sessionId, agentId }),
+  usageByItem: (query) => invoke<ItemUse[]>("usage_by_item", { query }),
   sessionTranscript: (sessionId, cursor = null, limit = 50) =>
     invoke<TranscriptPage>("session_transcript", { sessionId, cursor, limit }),
   usageFilterOptions: () => invoke<FilterOptions>("usage_filter_options"),

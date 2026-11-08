@@ -1,100 +1,86 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ChatsCircle } from "@phosphor-icons/react";
-import { Button, Card } from "../components/controls";
+import { ArrowBendDownRight, ArrowLeft, CaretRight, ChatsCircle, Clock, Hash, UsersThree, Wrench } from "@phosphor-icons/react";
+import { Button, Card, SegmentedControl } from "../components/controls";
 import { BarChart } from "../components/usage/BarChart";
-import type { BarDatum } from "../components/usage/BarChart";
 import { CostText } from "../components/usage/CostText";
+import { Breakdown, ModelSplit, Stat } from "../components/usage/detailParts";
+import { AgentAvatar, CostTicker, ModelChip, Sparkline, SplitBar, sessionName } from "../components/usage/helperKit";
 import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
+import { cumulativeSpend, timelineBars } from "../components/usage/timelineBars";
 import { getBackend } from "../lib/ipc";
 import { useFetched, useLiveReload } from "../lib/useUsage";
-import {
-  binEvenly,
-  compact,
-  exact,
-  formatDuration,
-  formatUsd,
-  formatWhen,
-  headline,
-  modelLabel,
-  plural,
-} from "../lib/usage";
-import type { Cost, TranscriptItem, Tokens } from "../lib/types";
+import { compact, exact, formatDuration, formatUsd, formatWhen, headline, percent, plural, share } from "../lib/usage";
+import { AgentDetailView, typeLabel } from "./AgentDetail";
+import type { AgentSummary, TranscriptItem } from "../lib/types";
 
-const agentName = (id: string | null) => (id === null ? "Main conversation" : `Subagent ${id.slice(0, 8)}`);
-
-function Stat({ label, children, sub }: { label: string; children: React.ReactNode; sub?: React.ReactNode }) {
-  return (
-    <Card className="px-5 py-4">
-      <div className="text-caption font-medium text-ink-2">{label}</div>
-      <div className="mt-1 text-subtitle font-semibold tabular-nums text-ink">{children}</div>
-      {sub && <div className="mt-1 text-caption text-ink-2">{sub}</div>}
-    </Card>
-  );
-}
-
-function Breakdown({ t }: { t: Tokens }) {
-  const rows: [string, number, string?][] = [
-    ["Input", t.input],
-    ["Output", t.output],
-    ["Cache writes, 5-minute", t.cacheWrite5m],
-    ["Cache writes, 1-hour", t.cacheWrite1h],
-    ["Cache reads", t.cacheRead, "Counted apart, not in the total above"],
-  ];
-  return (
-    <Card>
-      <dl className="divide-y divide-line">
-        {rows.map(([name, value, note]) => (
-          <div key={name} className="flex items-baseline justify-between gap-4 px-5 py-2.5">
-            <dt className="text-body text-ink">
-              {name}
-              {note && <span className="ml-2 text-caption text-ink-2">{note}</span>}
-            </dt>
-            <dd className="text-body tabular-nums text-ink">{exact(value)}</dd>
-          </div>
-        ))}
-      </dl>
-    </Card>
-  );
-}
-
-function SplitTable({
-  caption,
-  head,
-  rows,
+/** One helper as a card: who it was, what it spent, how much of the session that is. */
+function HelperCard({
+  agent,
+  parentName,
+  sessionUsd,
+  onOpen,
 }: {
-  caption: string;
-  head: string;
-  rows: { key: string; name: string; messages?: number; tokens: Tokens; cost: Cost }[];
+  agent: AgentSummary;
+  parentName: string | null;
+  sessionUsd: number;
+  onOpen: (id: string) => void;
 }) {
+  const frac = share(agent.cost.usd ?? 0, sessionUsd);
   return (
-    <Card className="overflow-hidden">
-      <table className="w-full text-body">
-        <caption className="sr-only">{caption}</caption>
-        <thead className="text-left text-caption text-ink-2">
-          <tr className="border-b border-line">
-            <th scope="col" className="px-5 py-2 font-medium">{head}</th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">Tokens</th>
-            <th scope="col" className="px-5 py-2 text-right font-medium">Est. cost</th>
-          </tr>
-        </thead>
-        <tbody className="tabular-nums">
-          {rows.map((r) => (
-            <tr key={r.key} className="border-b border-line last:border-b-0">
-              <th scope="row" className="px-5 py-2 text-left font-normal text-ink">
-                {r.name}
-                {r.messages !== undefined && <span className="ml-2 text-caption text-ink-2">{plural(r.messages, "message")}</span>}
-              </th>
-              <td className="px-3 py-2 text-right" title={exact(headline(r.tokens))}>{compact(headline(r.tokens))}</td>
-              <td className="px-5 py-2 text-right"><CostText cost={r.cost} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
+    <li>
+      <button
+        type="button"
+        onClick={() => onOpen(agent.agentId)}
+        className="press group flex h-full w-full cursor-pointer flex-col gap-3 rounded-card border border-line bg-surface p-4 text-left hover:border-line-strong hover:bg-raised"
+      >
+        <div className="flex items-start gap-3">
+          <AgentAvatar type={agent.agentType} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-body font-medium text-ink">{agent.name}</div>
+            <div className="flex min-w-0 items-center gap-1 truncate text-caption text-ink-2">
+              {parentName ? (
+                <>
+                  <ArrowBendDownRight size={12} aria-hidden="true" className="shrink-0" />
+                  <span className="truncate">{`Started by ${parentName}`}</span>
+                </>
+              ) : (
+                <span>{typeLabel(agent.agentType)}</span>
+              )}
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="text-lead font-semibold tabular-nums text-ink">
+              <CostText cost={agent.cost} />
+            </div>
+            <div className="text-caption tabular-nums text-ink-2" title={`${exact(headline(agent.tokens))} tokens`}>
+              {compact(headline(agent.tokens))} tokens
+            </div>
+          </div>
+        </div>
+        <div>
+          <div role="img" aria-label={`${percent(frac)} of the session's spend`} className="h-1.5 overflow-hidden rounded-full bg-raised group-hover:bg-bg">
+            <div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(frac > 0 ? 2 : 0, frac * 100)}%` }} />
+          </div>
+          <div className="mt-1 text-caption text-ink-2">{`${percent(frac)} of the session`}</div>
+        </div>
+        <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-ink-2">
+          <ModelChip model={agent.model} />
+          <span className="inline-flex items-center gap-1">
+            <Clock size={12} aria-hidden="true" />
+            {formatDuration(agent.durationMs)}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Wrench size={12} aria-hidden="true" />
+            {plural(agent.toolCalls, "tool call")}
+          </span>
+          <CaretRight size={12} aria-hidden="true" className="ml-auto opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+        </div>
+      </button>
+    </li>
   );
 }
 
-function Conversation({ sessionId }: { sessionId: string }) {
+function Conversation({ sessionId, names }: { sessionId: string; names: Map<string, string> }) {
   const backend = getBackend();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<TranscriptItem[]>([]);
@@ -161,7 +147,7 @@ function Conversation({ sessionId }: { sessionId: string }) {
                 <li key={i} className="px-5 py-3">
                   <div className="flex items-baseline gap-3 text-caption text-ink-2">
                     <span className="font-medium text-ink">{m.role === "user" ? "You" : "Claude"}</span>
-                    {m.agentId && <span>{agentName(m.agentId)}</span>}
+                    {m.agentId && <span>{names.get(m.agentId) ?? "A helper"}</span>}
                     {m.ts !== null && <span>{formatWhen(m.ts)}</span>}
                   </div>
                   <p className="selectable mt-1 whitespace-pre-wrap break-words text-body text-ink">{m.text}</p>
@@ -190,31 +176,20 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
   const backend = getBackend();
   const d = useFetched(() => backend.sessionDetail(id), [id]);
   useLiveReload(d.reload);
+  const [agentId, setAgentId] = useState<string | null>(null);
+  const [order, setOrder] = useState<"started" | "spend">("started");
+  const [scope, setScope] = useState<"all" | "main">("all");
 
-  const bins: BarDatum[] = useMemo(() => {
-    const tl = d.data?.timeline ?? [];
-    if (tl.length === 0) return [];
-    const dur = d.data?.row.durationMs ?? 0;
-    const longRun = dur > 24 * 3_600_000;
-    const withSeconds = dur < 10 * 60_000; // a short run needs seconds or neighbouring bars share a label
-    return binEvenly(tl, 48).map((group, i) => {
-      const tokens = group.reduce((s, m) => s + headline(m.tokens), 0);
-      const usd = group.reduce((s, m) => s + (m.cost.usd ?? 0), 0);
-      const first = group[0].ts;
-      const hhmm = new Date(first).toLocaleTimeString(
-        "en-US",
-        withSeconds ? { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false } : { hour: "2-digit", minute: "2-digit", hour12: false },
-      );
-      return {
-        key: String(i),
-        value: tokens,
-        axis: longRun ? new Date(first).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : hhmm,
-        title: `${formatWhen(first)}, ${plural(group.length, "message")}`,
-        valueText: compact(tokens),
-        detail: `tokens, ${formatUsd(usd)} estimated`,
-      };
-    });
-  }, [d.data]);
+  useEffect(() => {
+    setAgentId(null);
+    setScope("all");
+  }, [id]);
+  useEffect(() => {
+    document.querySelector("main")?.scrollTo?.({ top: 0 });
+  }, [agentId]);
+
+  const bins = useMemo(() => timelineBars(d.data?.timeline ?? [], d.data?.row.durationMs ?? 0), [d.data]);
+  const spend = useMemo(() => cumulativeSpend(d.data?.timeline ?? []), [d.data]);
 
   const back = (
     <Button onClick={onBack} className="mb-4">
@@ -223,12 +198,24 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
     </Button>
   );
 
+  if (agentId && d.data) {
+    return (
+      <AgentDetailView
+        sessionId={id}
+        agentId={agentId}
+        sessionLabel={sessionName(d.data.row)}
+        onBack={() => setAgentId(null)}
+      />
+    );
+  }
+
   if (d.loading && !d.data) {
     return (
       <div role="status" aria-label="Loading the session">
         {back}
         <Skeleton className="h-8 w-80" />
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <Skeleton className="mt-6 h-36" />
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-24" />
           ))}
@@ -253,43 +240,111 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
     );
   }
 
-  const { row, byModel, byAgent, files, claudeCodeCostUsd } = d.data;
+  const { row, byModel, agents, main, files, claudeCodeCostUsd } = d.data;
   const total = row.tokens;
+  const name = sessionName(row);
+  const sessionUsd = row.cost.usd ?? 0;
+  const mainUsd = main.cost.usd ?? 0;
+  const helperUsd = agents.reduce((s, a) => s + (a.cost.usd ?? 0), 0);
+  const toolCalls = main.toolCalls + agents.reduce((s, a) => s + a.toolCalls, 0);
+  const names = new Map(agents.map((a) => [a.agentId, a.name]));
+  const shown = order === "spend" ? [...agents].sort((a, b) => (b.cost.usd ?? 0) - (a.cost.usd ?? 0)) : agents;
 
   return (
     <div>
       {back}
-      <h2 className="text-subtitle font-semibold text-ink">{row.title?.trim() || "Untitled session"}</h2>
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-body text-ink-2">
+      <h2 className="text-subtitle font-semibold text-ink">{name}</h2>
+      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-body text-ink-2">
         <span className="font-medium text-ink">{row.projectName}</span>
         <code className="selectable break-all">{row.projectPath}</code>
         <span>{formatWhen(row.startedAt)}</span>
         <span>{formatDuration(row.durationMs)}</span>
+        {row.models.map((m) => (
+          <ModelChip key={m} model={m} />
+        ))}
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
-          label="Tokens"
-          sub={total.cacheRead > 0 ? `plus ${compact(total.cacheRead)} cache reads` : undefined}
-        >
+      <Card className="mt-6 grid grid-cols-1 gap-x-8 gap-y-5 px-6 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,18rem)]">
+        <div>
+          <div className="text-caption font-medium text-ink-2">This session cost about</div>
+          <div className="mt-1 text-display font-semibold tracking-[-0.01em] text-ink">
+            <CostTicker cost={row.cost} />
+          </div>
+          <p className="mt-1 text-body text-ink-2">
+            {claudeCodeCostUsd !== null ? `Claude Code showed ${formatUsd(claudeCodeCostUsd)} for this session.` : "An estimate from the price list."}
+          </p>
+          {agents.length > 0 && (
+            <div className="mt-4 max-w-[32rem]">
+              <SplitBar
+                label="Who spent it: the main conversation and its helpers"
+                parts={[
+                  { key: "main", label: "You and Claude", value: mainUsd, tone: "bg-slate", text: `${formatUsd(mainUsd)} (${percent(share(mainUsd, sessionUsd))})` },
+                  { key: "helpers", label: `${plural(agents.length, "helper")}`, value: helperUsd, tone: "bg-accent", text: `${formatUsd(helperUsd)} (${percent(share(helperUsd, sessionUsd))})` },
+                ]}
+              />
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col justify-end">
+          <div className="mb-1 text-caption font-medium text-ink-2">Spend as it ran</div>
+          <Sparkline values={spend} className="h-14" />
+        </div>
+      </Card>
+
+      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat label="Tokens" sub={total.cacheRead > 0 ? `plus ${compact(total.cacheRead)} cache reads` : undefined}>
           <span title={exact(headline(total))}>{compact(headline(total))}</span>
         </Stat>
         <Stat
-          label="Estimated cost"
-          sub={claudeCodeCostUsd !== null ? `Claude Code showed ${formatUsd(claudeCodeCostUsd)} for this session` : "An estimate from the price list"}
-        >
-          <CostText cost={row.cost} />
-        </Stat>
-        <Stat
           label="Messages"
-          sub={row.subagentMessages > 0 ? `${exact(row.subagentMessages)} from subagents` : undefined}
+          icon={<Hash size={14} aria-hidden="true" />}
+          sub={row.subagentMessages > 0 ? `${exact(row.subagentMessages)} from helpers` : undefined}
         >
           {exact(row.messages)}
         </Stat>
-        <Stat label={row.models.length === 1 ? "Model" : "Models"}>
-          <span className="text-lead">{row.models.map(modelLabel).join(", ") || "None"}</span>
+        <Stat label="Tool calls" icon={<Wrench size={14} aria-hidden="true" />}>
+          {exact(toolCalls)}
+        </Stat>
+        <Stat label="Helpers" icon={<UsersThree size={14} aria-hidden="true" />} sub={agents.length === 0 ? "Just you and Claude" : undefined}>
+          {exact(agents.length)}
         </Stat>
       </div>
+
+      {agents.length > 0 ? (
+        <section aria-label="Helpers" className="mt-8">
+          <SectionTitle
+            aside={
+              <SegmentedControl
+                label="Order helpers by"
+                value={order}
+                onChange={setOrder}
+                options={[
+                  { value: "started", label: "Started" },
+                  { value: "spend", label: "Spend" },
+                ]}
+              />
+            }
+          >
+            {`${plural(agents.length, "helper")} ran in this session`}
+          </SectionTitle>
+          <p className="-mt-1 mb-3 text-body text-ink-2">
+            Open one to see what it was asked and what it spent. Their usage is counted in the session total, once.
+          </p>
+          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {shown.map((a) => (
+              <HelperCard
+                key={a.agentId}
+                agent={a}
+                parentName={a.parentAgentId ? (names.get(a.parentAgentId) ?? null) : null}
+                sessionUsd={sessionUsd}
+                onOpen={setAgentId}
+              />
+            ))}
+          </ul>
+        </section>
+      ) : (
+        <p className="mt-6 text-body text-ink-2">No helpers were started in this session. It was all the main conversation.</p>
+      )}
 
       {bins.length > 0 && (
         <section aria-label="Tokens through the session" className="mt-8">
@@ -305,34 +360,36 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
         </section>
       )}
 
-      <section aria-label="Token breakdown" className="mt-8">
-        <SectionTitle>Token breakdown</SectionTitle>
-        <Breakdown t={total} />
-      </section>
-
-      {byModel.length > 1 && (
-        <section aria-label="By model" className="mt-8">
-          <SectionTitle>By model</SectionTitle>
-          <SplitTable
-            caption="Usage by model"
-            head="Model"
-            rows={byModel.map((m) => ({ key: m.model, name: modelLabel(m.model), tokens: m.tokens, cost: m.cost }))}
-          />
+      <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <section aria-label="Token breakdown">
+          <SectionTitle
+            aside={
+              agents.length > 0 ? (
+                <SegmentedControl
+                  label="Count tokens for"
+                  value={scope}
+                  onChange={setScope}
+                  options={[
+                    { value: "all", label: "With helpers" },
+                    { value: "main", label: "Main only" },
+                  ]}
+                />
+              ) : undefined
+            }
+          >
+            Token breakdown
+          </SectionTitle>
+          <Breakdown t={scope === "main" ? main.tokens : total} />
         </section>
-      )}
+        {byModel.length > 1 && (
+          <section aria-label="By model">
+            <SectionTitle>By model</SectionTitle>
+            <ModelSplit rows={byModel} />
+          </section>
+        )}
+      </div>
 
-      {byAgent.length > 1 && (
-        <section aria-label="By agent" className="mt-8">
-          <SectionTitle>Main conversation and subagents</SectionTitle>
-          <SplitTable
-            caption="Usage by agent"
-            head="Agent"
-            rows={byAgent.map((a) => ({ key: a.agentId ?? "main", name: agentName(a.agentId), messages: a.messages, tokens: a.tokens, cost: a.cost }))}
-          />
-        </section>
-      )}
-
-      <Conversation sessionId={id} />
+      <Conversation sessionId={id} names={names} />
 
       <section aria-label="Files" className="mt-8">
         <SectionTitle>Files</SectionTitle>
@@ -341,7 +398,7 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
             {files.map((f) => (
               <li key={f.path} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5">
                 <code className="selectable min-w-0 flex-1 break-all text-ink">{f.path}</code>
-                {f.isSubagent && <span className="rounded-full border border-line px-2 text-caption text-ink-2">subagent</span>}
+                {f.isSubagent && <span className="rounded-full border border-line px-2 text-caption text-ink-2">helper</span>}
                 {f.missing && <span className="rounded-full border border-line px-2 text-caption text-ink-2">removed from disk</span>}
               </li>
             ))}

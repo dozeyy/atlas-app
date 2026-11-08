@@ -44,6 +44,8 @@ fn main() {
             usage::usage_timeline,
             usage::sessions_list,
             usage::session_detail,
+            usage::usage_agent_detail,
+            usage::usage_by_item,
             usage::session_transcript,
             usage::usage_filter_options,
             usage::usage_reindex,

@@ -67,6 +67,62 @@ pub enum Skip {
     ZeroUsage,
 }
 
+/// One tool call named on an assistant line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolUse {
+    /// `Read`, `Bash`, `Skill`, `Agent`, `mcp__server__tool`, ...
+    pub name: String,
+    /// For `Skill`: the skill that was loaded.
+    pub skill: Option<String>,
+    /// For `Agent`/`Task`: the helper type that was started.
+    pub agent_type: Option<String>,
+}
+
+/// The tool calls of one assistant line, with when and in which session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolLine {
+    pub session_id: Option<String>,
+    pub ts_ms: i64,
+    pub uses: Vec<ToolUse>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawToolLine<'a> {
+    #[serde(rename = "type", borrow)]
+    ty: Cow<'a, str>,
+    #[serde(borrow, default)]
+    session_id: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    timestamp: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    message: Option<RawToolMsg<'a>>,
+}
+
+#[derive(Deserialize)]
+struct RawToolMsg<'a> {
+    #[serde(borrow, default)]
+    content: Option<Vec<RawBlock<'a>>>,
+}
+
+#[derive(Deserialize)]
+struct RawBlock<'a> {
+    #[serde(rename = "type", borrow, default)]
+    ty: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    name: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    input: Option<RawToolInput<'a>>,
+}
+
+#[derive(Deserialize)]
+struct RawToolInput<'a> {
+    #[serde(borrow, default)]
+    skill: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    subagent_type: Option<Cow<'a, str>>,
+}
+
 pub struct Prefilter {
     assistant: Finder<'static>,
     tool_use: Finder<'static>,
@@ -98,6 +154,34 @@ impl Prefilter {
     pub fn tool_calls(&self, line: &[u8]) -> u64 {
         let n = self.tool_use.find_iter(line).count() as u64;
         if n > 0 && self.assistant.find(line).is_some() { n } else { 0 }
+    }
+
+    /// The tool calls an assistant line makes: each name, plus the skill a `Skill` call loads
+    /// (`input.skill`) and the kind of helper an `Agent`/`Task` call starts (`input.subagent_type`).
+    /// Call it only for lines `tool_calls` counted; anything unreadable yields None.
+    pub fn tool_uses(&self, line: &[u8]) -> Option<ToolLine> {
+        let raw: RawToolLine = serde_json::from_slice(trim_ws(line)).ok()?;
+        if raw.ty != "assistant" {
+            return None;
+        }
+        let ts_ms = raw.timestamp.as_deref().and_then(parse_iso_ms)?;
+        let uses: Vec<ToolUse> = raw
+            .message?
+            .content?
+            .into_iter()
+            .filter(|b| b.ty.as_deref() == Some("tool_use"))
+            .filter_map(|b| {
+                let name = b.name?.into_owned();
+                let (skill, agent_type) = b.input.map_or((None, None), |i| {
+                    (i.skill.map(Cow::into_owned), i.subagent_type.map(Cow::into_owned))
+                });
+                Some(ToolUse { name, skill, agent_type })
+            })
+            .collect();
+        if uses.is_empty() {
+            return None;
+        }
+        Some(ToolLine { session_id: raw.session_id.map(Cow::into_owned), ts_ms, uses })
     }
 
     fn wanted(&self, line: &[u8]) -> bool {
