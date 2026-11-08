@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Minus, Plus } from "@phosphor-icons/react";
 import { Button, Card, IconButton, PageTitle, Row, Toggle } from "../components/controls";
 import { Dialog } from "../components/Dialog";
@@ -131,7 +132,7 @@ export function Settings() {
       ? `Claude Code keeps conversation logs for ${plural(ov.cleanupDays, "day")}.`
       : "Claude Code keeps conversation logs for its default of 30 days.";
 
-  const bodies: Record<SectionId, JSX.Element> = {
+  const bodies: Record<SectionId, ReactNode> = {
     appearance: (
       <>
         <ThemePicker theme={info.settings.theme} platform={info.platform} onChange={setTheme} />

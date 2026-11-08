@@ -144,6 +144,12 @@ Phase 2 and Phase 3 specs and worktrees (`crates/core/src/{cache,usage,setup,lay
   3 real samples before the importer is written; the finding goes into this spec and the
   wording follows it ("Claude changed this during <session title>"). A subagent edit
   names the parent session and the subagent's human name (D-S6).
+  **Finding (built, `crates/core/src/history/import.rs`):** the copy for a tracked file is
+  found through the transcripts' `file-history-snapshot` lines: each names a relative file
+  plus a `backupFileName`; the tracked path is the relative name joined with the session's
+  real parent dir (`realParentDir`), and the copy sits at
+  `<config>/file-history/<sessionId>/<backupFileName>`. Only rows whose path is a tracked
+  item are imported. The three real samples were not recorded as file names in this spec.
 - D-H11. Imports are idempotent, keyed by (source, origin_ref, or path + mtime); a rerun
   adds nothing. They run at first launch and on each rescan for new files.
 - D-H12. Prune: keep the newest N versions per item (default 50, Settings D-T6); never
@@ -275,6 +281,13 @@ Phase 2 and Phase 3 specs and worktrees (`crates/core/src/{cache,usage,setup,lay
 |---|---|---|---|---|
 | 1280x800 | 880 px | hero strip + two panes | cover + 2-column cards | rail 176 px + column |
 | 900x600 (min) | 588 px | hero strip + one pane, slide-in detail | cover + 1 column | chip row + column |
+
+**No-scroll decision (Will, 2026-11-08: "I don't want too much information on one tab ... don't want to have to scroll"):**
+the page itself never scrolls at 1280x800 or 900x600. History: hero strip, then timeline
+and detail as two panes that scroll inside themselves. Wrapped: an inline click-through
+story (cover, then one slide per page; Back / Next / arrow keys / progress bars), no cards
+stack. Settings: a rail and one section at a time (Appearance, Claude folder, Your data,
+History, About). This supersedes the stacked "cards" and "column" wording in the table.
 
 ## Files
 | Path | Change |

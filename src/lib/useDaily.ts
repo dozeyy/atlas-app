@@ -77,6 +77,7 @@ export function useDaily(scope: string | null): Daily | null {
   const [data, setData] = useState<Daily | null>(null);
   const [tick, setTick] = useState(0);
   const seq = useRef(0);
+  const tries = useRef(0);
 
   useEffect(() => {
     const l = () => setTick((t) => t + 1);
@@ -106,11 +107,25 @@ export function useDaily(scope: string | null): Daily | null {
       return;
     }
     const id = ++seq.current;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     fetchDaily(localDay(new Date()), scope)
-      .then((d) => id === seq.current && setData(d))
-      .catch(() => {});
+      .then((d) => {
+        if (id === seq.current) {
+          tries.current = 0;
+          setData(d);
+        }
+      })
+      .catch(() => {
+        // The engine may still be opening its cache at launch and nothing else tells us when it is
+        // ready (no files to read means no "changed" event), so ask again a few times.
+        if (id === seq.current && tries.current < 6) {
+          tries.current++;
+          retry = setTimeout(() => setTick((t) => t + 1), 800 * tries.current);
+        }
+      });
     return () => {
       seq.current++;
+      if (retry) clearTimeout(retry);
     };
   }, [scope, tick]);
 

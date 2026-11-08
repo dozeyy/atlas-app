@@ -57,7 +57,8 @@ describe("Settings", () => {
 
   it("steps how many versions History keeps, inside 10 to 200", async () => {
     mount();
-    await userEvent.click(await screen.findByRole("button", { name: "History" }));
+    const rail = await screen.findByRole("navigation", { name: "Settings sections" });
+    await userEvent.click(within(rail).getByRole("button", { name: "History" }));
     const group = await screen.findByRole("group", { name: "Versions kept" });
     expect(within(group).getByText("50")).toBeInTheDocument();
     await userEvent.click(within(group).getByRole("button", { name: "Keep more versions" }));
@@ -68,7 +69,7 @@ describe("Settings", () => {
   it("asks before rebuilding from scratch, and reads logs again straight away", async () => {
     const backend = mount();
     const reindex = vi.spyOn(backend, "usageReindex");
-    await userEvent.click(await screen.findByRole("button", { name: "Your data" }));
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Your data" }));
     await userEvent.click(await screen.findByRole("button", { name: "Read logs again" }));
     expect(reindex).toHaveBeenCalledWith("changed");
 
@@ -85,7 +86,7 @@ describe("Settings", () => {
 
   it("shows how long Claude Code keeps its logs", async () => {
     mount();
-    await userEvent.click(await screen.findByRole("button", { name: "Claude folder" }));
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude folder" }));
     expect(await screen.findByText(/Claude Code keeps conversation logs for/)).toBeInTheDocument();
   });
 });
