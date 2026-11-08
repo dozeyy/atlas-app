@@ -1,0 +1,8 @@
+{
+  "outputStyle": "Proj Style",
+  "permissions": {
+    "deny": [
+      "Bash(curl:*)"
+    ]
+  }
+}

@@ -3,6 +3,7 @@
 
 mod commands;
 mod intro;
+mod setup_service;
 mod state;
 
 use std::sync::Arc;
@@ -72,6 +73,7 @@ fn main() {
                 .build(),
         )
         .manage(Arc::clone(&state))
+        .manage(Arc::new(setup_service::SetupHub::default()))
         .invoke_handler(tauri::generate_handler![
             commands::get_app_info,
             commands::update_settings,
@@ -84,6 +86,9 @@ fn main() {
             intro::intro_skip,
             intro::intro_main_painted,
             intro::splash_done,
+            setup_service::setup_snapshot,
+            setup_service::setup_read_source,
+            setup_service::setup_reveal,
         ])
         .setup(|app| {
             let state = app.state::<Arc<AppState>>().inner().clone();

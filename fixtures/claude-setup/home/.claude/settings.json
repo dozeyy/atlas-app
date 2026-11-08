@@ -1,0 +1,54 @@
+{
+  "outputStyle": "Calm Notes",
+  "env": {
+    "SECRET_TOKEN": "FIXTURE-PLACEHOLDER",
+    "PLAIN": "FIXTURE-PLACEHOLDER"
+  },
+  "skillOverrides": {
+    "user-only": "user-invocable-only"
+  },
+  "enabledPlugins": {
+    "fixture-plugin@fixture-market": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Read(*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)"
+    ],
+    "ask": [
+      "WebFetch"
+    ],
+    "defaultMode": "default"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"@ROOT@/home/.claude/hooks/fmt.sh\" --check",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo done"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "sh \"@ROOT@/home/.claude/statusline.sh\""
+  }
+}

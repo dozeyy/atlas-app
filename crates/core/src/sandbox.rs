@@ -127,28 +127,7 @@ pub struct Sandbox {
     pub report: SandboxReport,
 }
 
-/// Top-level names that hold secrets or private history.
-const SENSITIVE_TOP: [&str; 3] = [".credentials.json", "sessions", "history.jsonl"];
-/// Top-level names that are bulk Claude Code keeps for itself.
-const BULK_TOP: [&str; 17] = [
-    "backups",
-    "cache",
-    "debug",
-    "file-history",
-    "session-env",
-    "shell-snapshots",
-    "jobs",
-    "daemon",
-    "ide",
-    "bridge-spawn",
-    "cloud",
-    "state",
-    "scheduled-tasks",
-    "telemetry",
-    "statsig",
-    "todos",
-    "paste-cache",
-];
+use crate::layout::{BULK_TOP, SENSITIVE_TOP};
 
 fn skip_reason(name: &str, depth: usize, is_dir: bool) -> Option<SkipReason> {
     let lower = name.to_ascii_lowercase();

@@ -3,6 +3,8 @@
 
 import type { SettingsPatch } from "./ipc";
 import type { AppInfo, ConfigView, Platform, Settings } from "./types";
+import type { SetupSnapshot, SourceView } from "./setup-types";
+import { mockSetupReveal, mockSetupSnapshot, mockSetupSource } from "./setup-mock";
 
 const KEY = "atlas.mock.settings";
 
@@ -137,5 +139,21 @@ export class MockBackend {
   async onInfo(cb: (i: AppInfo) => void): Promise<() => void> {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
+  }
+
+  async setupSnapshot(includeWorktrees = false): Promise<SetupSnapshot> {
+    return mockSetupSnapshot(includeWorktrees);
+  }
+
+  async setupReadSource(id: string): Promise<SourceView> {
+    return mockSetupSource(id);
+  }
+
+  async setupReveal(id: string, index: number): Promise<string> {
+    return mockSetupReveal(id, index);
+  }
+
+  async onSetupChanged(): Promise<() => void> {
+    return () => {};
   }
 }

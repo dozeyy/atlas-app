@@ -1,4 +1,4 @@
-import { ChatsCircle, ClockCounterClockwise, Sparkle, Wrench } from "@phosphor-icons/react";
+import { ChatsCircle, ClockCounterClockwise, Sparkle } from "@phosphor-icons/react";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/controls";
 
@@ -14,24 +14,6 @@ export function Sessions() {
         seed={11}
         title="No sessions to show yet"
         body="Each conversation will appear here with what it cost, how long it ran and which project it belonged to. You will be able to search them and open any one."
-        badge="Coming soon"
-      />
-    </>
-  );
-}
-
-export function Setup() {
-  return (
-    <>
-      <PageHeader
-        title="Setup"
-        subtitle="The agents, skills, commands and rules that shape how Claude works for you."
-      />
-      <EmptyState
-        icon={Wrench}
-        seed={23}
-        title="Nothing to set up here yet"
-        body="You will be able to read and edit your agents, skills, commands, output styles and rules in one place, with a safe backup before every change."
         badge="Coming soon"
       />
     </>

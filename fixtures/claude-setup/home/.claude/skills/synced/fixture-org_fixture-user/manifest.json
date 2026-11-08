@@ -1,0 +1,13 @@
+{
+  "lastUpdated": "2026-11-01T00:00:00Z",
+  "skills": [
+    {
+      "skillId": "skill_fixture",
+      "name": "synced-skill",
+      "description": "A skill synced from the account.",
+      "source": "anthropic",
+      "backingPluginId": null,
+      "updatedAt": "2026-11-01T00:00:00Z"
+    }
+  ]
+}

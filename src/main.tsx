@@ -6,6 +6,7 @@ import { AtlasProvider } from "./state/AtlasProvider";
 import { getBackend } from "./lib/ipc";
 import { applyBoot } from "./lib/theme";
 import { armIntro, installIntroReveal } from "./lib/intro";
+import { startSetup } from "./state/setupStore";
 
 const backend = getBackend();
 
@@ -22,6 +23,9 @@ createRoot(document.getElementById("root")!).render(
     </AtlasProvider>
   </StrictMode>,
 );
+
+// Start reading the Claude setup now, so the Setup page is already full when it is opened.
+startSetup();
 
 // Tell Rust we have painted: it shows the (hidden until now) window.
 requestAnimationFrame(() =>

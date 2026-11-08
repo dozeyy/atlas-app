@@ -1,0 +1,2 @@
+{"type":"api-request","cwd":"/not/this/one"}
+{"type":"user","cwd":"@ROOT@/work/app","message":{"role":"user","content":"[fixture user message]"}}

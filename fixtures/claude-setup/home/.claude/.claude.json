@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "decoy-srv": {
+      "command": "node",
+      "args": [
+        "decoy.js"
+      ]
+    }
+  }
+}

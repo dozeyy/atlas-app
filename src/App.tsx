@@ -3,7 +3,8 @@ import { WarningCircle } from "@phosphor-icons/react";
 import { NAV, Sidebar } from "./components/Sidebar";
 import { useAtlas } from "./state/AtlasProvider";
 import { Dashboard } from "./pages/Dashboard";
-import { History, Sessions, Setup, Wrapped } from "./pages/Placeholders";
+import { History, Sessions, Wrapped } from "./pages/Placeholders";
+import { Setup } from "./pages/Setup";
 import { Settings } from "./pages/Settings";
 import type { View } from "./lib/types";
 
@@ -60,7 +61,10 @@ export function App() {
           info.backdrop ? "rounded-tl-[var(--r-sheet)] border-l border-t border-line" : "border-l border-line"
         }`}
       >
-        <div key={view} className="page-enter mx-auto w-full max-w-[var(--content-max)] px-10 py-10">
+        <div
+          key={view}
+          className={`page-enter mx-auto w-full px-10 py-10 ${view === "setup" ? "flex min-h-full max-w-[1180px] flex-col" : "max-w-[var(--content-max)]"}`}
+        >
           {info.settingsSaveError && (
             <div
               role="alert"

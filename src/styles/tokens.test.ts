@@ -123,6 +123,15 @@ for (const [name, set] of [
       expect(contrast(border, get(set, "raised"))).toBeGreaterThanOrEqual(1.3);
     });
 
+    it.each(["keyword", "string", "number", "comment", "name", "heading"])(
+      "code color %s is readable on surface and raised",
+      (c) => {
+        for (const s of ["surface", "raised"]) {
+          expect(contrast(get(set, `syntax-${c}`), get(set, s))).toBeGreaterThanOrEqual(4.5);
+        }
+      },
+    );
+
     it("danger is clearly a different color from the terracotta accent", () => {
       const a = oklchHue(get(set, "accent"));
       const d = oklchHue(get(set, "danger"));
