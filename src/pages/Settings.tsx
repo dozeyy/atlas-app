@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Minus, Plus } from "@phosphor-icons/react";
 import { Button, Card, IconButton, PageTitle, Row, Toggle } from "../components/controls";
@@ -118,15 +118,6 @@ export function Settings() {
   };
 
   const indexing = status?.state === "indexing";
-  const hero = useMemo(() => {
-    if (!cfg) return "Waiting for the sandbox copy of your Claude folder.";
-    const parts: string[] = [];
-    if (status && status.filesTracked > 0) parts.push(plural(status.filesTracked, "session log"));
-    if (ov && ov.historyItems > 0) parts.push(plural(ov.historyItems, "setup file"));
-    const what = parts.length ? `: ${parts.join(" and ")}` : "";
-    return `Reading ${sb.enabled ? "a sandbox copy of " : ""}Claude Code's folder${what}. Everything stays on this computer.`;
-  }, [cfg, sb.enabled, status, ov]);
-
   const cleanup =
     ov?.cleanupDays != null
       ? `Claude Code keeps conversation logs for ${plural(ov.cleanupDays, "day")}.`
@@ -312,7 +303,6 @@ export function Settings() {
   return (
     <div className="@container flex min-h-0 flex-1 flex-col gap-4" ref={root}>
       <PageTitle title="Settings" />
-      <p className="text-body text-ink-2">{hero}</p>
       <div className={wide ? "grid min-h-0 flex-1 grid-cols-[160px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-8" : "flex min-h-0 flex-1 flex-col gap-3"}>
         <nav aria-label="Settings sections" className="st-nav" data-wide={wide ? "" : undefined}>
           {SECTIONS.map((s) => (
