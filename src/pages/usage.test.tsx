@@ -155,8 +155,8 @@ describe("Sessions", () => {
   it("filters by search text and says so when nothing matches", async () => {
     mount("data", "sessions");
     await screen.findAllByRole("button", { name: /tokens/ });
-    await userEvent.type(screen.getByRole("searchbox", { name: "Search sessions" }), "zzzz-nothing");
-    expect(await screen.findByText("No sessions match")).toBeInTheDocument();
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search chats" }), "zzzz-nothing");
+    expect(await screen.findByText("No chats match")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ }).length).toBeGreaterThan(0));
   });
@@ -176,7 +176,7 @@ describe("Sessions", () => {
     await userEvent.click(screen.getByRole("button", { name: /Show conversation/ }));
     expect(await screen.findByText(/Mock request number 1\./)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "All sessions" }));
-    expect(await screen.findByRole("searchbox", { name: "Search sessions" })).toBeVisible();
+    expect(await screen.findByRole("searchbox", { name: "Search chats" })).toBeVisible();
   });
 
   it("reports a load failure with a retry", async () => {
@@ -253,7 +253,7 @@ describe("Helpers (subagents) inside a session", () => {
     }
   });
 
-  it("shows a session by its name with a helpers chip in the list", async () => {
+  it("shows a session by its name with the helper count as plain colored text in the list", async () => {
     const backend = mount("data", "sessions");
     const page = await backend.sessionsList({ limit: 50 });
     const row = page.rows.find((r) => r.agentCount > 0)!;
@@ -262,6 +262,10 @@ describe("Helpers (subagents) inside a session", () => {
     const line = list.find((b) => within(b).queryByText(chip) !== null)!;
     expect(line).toBeDefined();
     expect(within(line).getByText(row.name ?? `Session in ${row.projectName}`)).toBeInTheDocument();
+    // Text only: no chip, pill or box around the count.
+    const count = within(line).getByText(chip);
+    expect(count.className).toContain("text-accent-text");
+    expect(count.className).not.toMatch(/chip|rounded|border|bg-/);
   });
 
   it("opens a session with its main-versus-total split and one card per helper", async () => {

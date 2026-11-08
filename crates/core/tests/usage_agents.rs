@@ -145,6 +145,30 @@ fn sessions_are_named_by_title_then_agent_name_then_prompt_never_an_id() {
 }
 
 #[test]
+fn also_ids_adds_chats_found_by_message_search_to_the_title_matches() {
+    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let ids = |q: SessionQuery| -> Vec<String> {
+        let mut v: Vec<String> = fx.engine.sessions_list(&q).unwrap().rows.into_iter().map(|r| r.session_id).collect();
+        v.sort();
+        v
+    };
+    let base = SessionQuery { limit: 50, ..Default::default() };
+    // Only the ids: those sessions and nothing else, and the total counts them.
+    let only = SessionQuery { also_ids: vec![SB.into(), SC.into()], ..base.clone() };
+    assert_eq!(ids(only.clone()), vec![SB.to_string(), SC.to_string()]);
+    assert_eq!(fx.engine.sessions_list(&only).unwrap().total, 2);
+    // With text: the union (title match for "dark mode" is SD).
+    let both = SessionQuery { text: Some("dark mode".into()), also_ids: vec![SB.into()], ..base.clone() };
+    assert_eq!(ids(both), vec![SB.to_string(), SD.to_string()]);
+    // The other filters still apply to an id that was found by message text.
+    let wrong_project = SessionQuery { also_ids: vec![SB.into()], projects: vec!["no-such-project".into()], ..base.clone() };
+    assert!(ids(wrong_project).is_empty());
+    // An id that does not exist adds nothing and breaks nothing.
+    let ghost = SessionQuery { also_ids: vec!["ghost".into()], ..base };
+    assert!(ids(ghost).is_empty());
+}
+
+#[test]
 fn one_helper_shows_what_it_spent_and_what_it_was_asked() {
     let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
     let a = fx.engine.agent_detail(SA, "a1").unwrap().unwrap();

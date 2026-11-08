@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
@@ -6,6 +6,8 @@ import { AtlasProvider } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
 import { MockBackend } from "../lib/mock";
 import { isCollapsed } from "../lib/useSidebar";
+import { invalidateDaily } from "../lib/useDaily";
+import { localDay } from "../lib/usage";
 
 function mount(narrow: boolean) {
   vi.stubGlobal("matchMedia", (query: string) => ({
@@ -71,10 +73,40 @@ describe("sidebar folding", () => {
     expect(side()).toHaveClass("side-collapsed");
   });
 
-  it("folded, the streak chip is not shown at all", () => {
-    mount(true);
-    // CSS hides it (display: none); the class that does so is the fold itself.
-    expect(side()).toHaveClass("side-collapsed");
+  it("Settings is an icon-only button at the foot; no streak chip in the sidebar", () => {
+    mount(false);
+    const settings = within(side()).getByRole("button", { name: "Settings" });
+    expect(settings).toHaveTextContent("");
+    expect(within(side()).queryByText(/day streak/)).not.toBeInTheDocument();
+  });
+
+  it("On a roll counts Will's real week as 2 (Thu and Fri empty)", async () => {
+    // Will's real week to Sun Nov 8, 2026: Thu and Fri empty, Sat and Sun used -> 2, not 3.
+    const back = [21_207_932, 1_818_406, 0, 0, 9_112_596, 41_193_420, 56_095_560];
+    const b = new MockBackend();
+    const real = b.usageTimeline.bind(b);
+    b.usageTimeline = async (a) => {
+      if (a.bucket !== "day" || a.groupBy) return real(a);
+      const t = await real(a);
+      const today = localDay(new Date());
+      const points = t.points.map((p) => {
+        const ago = Math.round((Date.parse(`${today}T12:00:00`) - Date.parse(`${p.start}T12:00:00`)) / 86_400_000);
+        const v = ago < back.length ? back[ago] : 0;
+        return { ...p, tokens: { ...p.tokens, input: v, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, total: v } };
+      });
+      return { ...t, points };
+    };
+    invalidateDaily();
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    setBackend(b);
+    render(
+      <AtlasProvider>
+        <App />
+      </AtlasProvider>,
+    );
+    const roll = await screen.findByRole("region", { name: "On a roll" });
+    await waitFor(() => expect(within(roll).getByText("2")).toHaveClass("d-stat"));
+    invalidateDaily();
   });
 
   it("isCollapsed: auto follows the width, an explicit choice wins", () => {

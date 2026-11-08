@@ -64,6 +64,27 @@ describe("hit box stays put", () => {
     expect(offenders).toEqual([]);
   });
 
+  // Dead edges (Will, 2026-11-08). Traced with CDP: a click lands on the nearest common ancestor of the
+  // pointerdown and pointerup targets, so a press that slips 1-2 px past a row or card before release,
+  // or starts on the 1 px rule / border the row sits against, never clicks the button. The fix lives on
+  // the shared primitive: an invisible ring owned by the button, under its content.
+  it("gives rows and cards an invisible hit slop that belongs to the button and sits under the content", () => {
+    const rule = (sel: string) => rules().find((r) => r.selector.split(",").map((s) => s.trim()).includes(sel))?.body ?? "";
+    for (const host of [".row-btn", ".card-hit"]) {
+      expect(rule(host), host).toMatch(/position:\s*relative/);
+      expect(rule(host), host).toMatch(/isolation:\s*isolate/);
+      const ring = rule(`${host}::before`);
+      expect(ring, `${host}::before`).toMatch(/position:\s*absolute/);
+      expect(ring, `${host}::before`).toMatch(/z-index:\s*-1/);
+      expect(ring, `${host}::before`).toMatch(/inset:\s*-/);
+      expect(ring, `${host}::before`).not.toMatch(/pointer-events:\s*none/);
+    }
+  });
+
+  it("lets the session list clip its last rule without clipping the row slop at the sides", () => {
+    expect(css).toMatch(/\.session-clip\s*\{[^}]*clip-path:\s*inset\(0\s+-\d+px\)/);
+  });
+
   it("keeps the old shrinking selectors gone", () => {
     expect(css).not.toMatch(/\.press:active:not\(:disabled\)\s*\{[^}]*transform/);
     expect(css).not.toMatch(/\.btn:active:not\(:disabled\)\s*\{[^}]*transform/);

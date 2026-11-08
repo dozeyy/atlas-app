@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChatsCircle } from "@phosphor-icons/react";
+import { ArrowsDownUp, ChatsCircle } from "@phosphor-icons/react";
 import { Button, Card, PageTitle } from "../components/controls";
 import { EmptyState } from "../components/EmptyState";
 import { IndexProgress } from "../components/IndexProgress";
-import { OptionField, OptionsMenu } from "../components/OptionsMenu";
+import { FilterLines } from "../components/icons";
+import { ChoiceList, OptionField, OptionsMenu } from "../components/OptionsMenu";
 import { SessionGrid, SessionLine } from "../components/usage/SessionList";
 import { SearchField, SelectField } from "../components/usage/fields";
 import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
@@ -11,11 +12,15 @@ import { SessionDetailView } from "./SessionDetail";
 import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
 import { clearPendingSession, peekPendingSession } from "../lib/nav";
+import { useChatSearch, useDebounced } from "../lib/useChatSearch";
+import type { ChatSearch } from "../lib/useChatSearch";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
-import { addDays, localDay, modelLabel, plural } from "../lib/usage";
+import { addDays, exact, localDay, modelLabel, plural } from "../lib/usage";
 import type { SessionPage, SessionQuery, SessionRow } from "../lib/types";
 
 const PAGE = 50;
+/** Titles and projects are filtered this soon after the last keystroke. Message text waits a little longer (useChatSearch). */
+const TITLE_DEBOUNCE_MS = 60;
 
 const SORTS = {
   newest: { sort: "started", dir: "desc", label: "Newest first" },
@@ -25,6 +30,7 @@ const SORTS = {
   longest: { sort: "duration", dir: "desc", label: "Longest" },
 } as const;
 type SortKey = keyof typeof SORTS;
+const SORT_CHOICES = (Object.keys(SORTS) as SortKey[]).map((value) => ({ value, label: SORTS[value].label }));
 
 const SPANS = [
   { value: "all", label: "All time", days: 0 },
@@ -33,13 +39,14 @@ const SPANS = [
   { value: "90", label: "Last 90 days", days: 89 },
 ];
 
-function useDebounced<T>(value: T, ms: number): T {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return v;
+/** The quiet line under the toolbar while searching inside chats cannot yet cover everything. */
+function searchNote(chat: ChatSearch): string | null {
+  if (chat.error) return "Searching inside chats did not work just now. Titles and projects still do.";
+  const ix = chat.index;
+  if (!ix || ix.ready) return null;
+  if (ix.state === "error") return "Searching inside chats is not available right now. Titles and projects still work.";
+  if (ix.filesTotal > 0) return `Still reading your chats so search can look inside them: ${exact(ix.filesDone)} of ${exact(ix.filesTotal)} files. More results appear as it goes.`;
+  return "Getting search ready. Words inside chats start to match in a moment.";
 }
 
 export function Sessions() {
@@ -55,7 +62,9 @@ export function Sessions() {
   const [model, setModel] = useState("");
   const [span, setSpan] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
-  const debounced = useDebounced(text.trim(), 250);
+  const typed = text.trim();
+  const titleQ = useDebounced(typed, TITLE_DEBOUNCE_MS);
+  const chat = useChatSearch(text);
 
   const options = useFetched(() => backend.usageFilterOptions(), [info.config?.projectsDir ?? null]);
   useLiveReload(options.reload);
@@ -63,7 +72,9 @@ export function Sessions() {
   const query = useMemo<SessionQuery>(() => {
     const days = SPANS.find((s) => s.value === span)?.days ?? 0;
     return {
-      text: debounced || null,
+      text: titleQ || null,
+      // Chats whose messages match are listed too, whatever their title says.
+      alsoIds: chat.ids,
       projects: project ? [project] : [],
       models: model ? [model] : [],
       from: days > 0 ? addDays(localDay(new Date()), -days) : null,
@@ -73,10 +84,14 @@ export function Sessions() {
       dir: SORTS[sortKey].dir,
       limit: PAGE,
     };
-  }, [debounced, project, model, span, sortKey]);
+  }, [titleQ, chat.ids, project, model, span, sortKey]);
 
   const first = useFetched(() => backend.sessionsList(query), [JSON.stringify(query), info.config?.projectsDir ?? null]);
   useLiveReload(first.reload);
+
+  // Every chat there is: the "of N" in the count when the list is narrowed.
+  const everything = useFetched(() => backend.sessionsList({ includeMissing: true, limit: 1 }), [info.config?.projectsDir ?? null]);
+  useLiveReload(everything.reload);
 
   // Pages after the first are kept here, tied to the first page they follow: a new query
   // or a refresh produces a new first page, which drops them without an effect and so
@@ -106,20 +121,28 @@ export function Sessions() {
 
   const rows = [...(first.data?.rows ?? []), ...more];
   const total = first.data?.total ?? 0;
-  const filtered = Boolean(debounced || project || model || span !== "all");
-  // What differs from the defaults: shown as the badge on the options button.
-  const changed = [project, model, span !== "all", sortKey !== "newest"].filter(Boolean).length;
-  const resetOptions = () => {
+  const filtered = Boolean(typed || project || model || span !== "all");
+  // The answer for what is typed is still on its way: an empty list now is not yet "no match".
+  const settling = filtered && (first.loading || chat.pending);
+  // What differs from the defaults: shown as the badge on the Filter button. Sort has no badge.
+  const changed = [project, model, span !== "all"].filter(Boolean).length;
+  const resetFilters = () => {
     setProject("");
     setModel("");
     setSpan("all");
-    setSortKey("newest");
   };
   const clear = () => {
     setText("");
-    resetOptions();
+    resetFilters();
   };
   const firstIndex = status?.state === "indexing" && !status.firstIndexDone;
+  const note = typed.length >= 2 ? searchNote(chat) : null;
+
+  const count = first.data
+    ? filtered
+      ? `${exact(total)} of ${plural(Math.max(everything.data?.total ?? total, total), "chat")}`
+      : plural(total, "chat")
+    : "";
 
   return (
     <>
@@ -130,8 +153,11 @@ export function Sessions() {
 
       <div hidden={selected !== null}>
         <div className="mb-4 flex items-center gap-2">
-          <SearchField value={text} onChange={setText} label="Search sessions" placeholder="Search by title or project" />
-          <OptionsMenu label="Filters" count={changed} onReset={resetOptions}>
+          <SearchField value={text} onChange={setText} label="Search chats" placeholder="Search titles, projects and messages" />
+          <span aria-live="polite" className="min-w-[4.5rem] shrink-0 whitespace-nowrap px-1 text-caption tabular-nums text-ink-2">
+            {count}
+          </span>
+          <OptionsMenu label="Filter" icon={<FilterLines size={16} />} count={changed} onReset={resetFilters}>
             <OptionField label="Project">
               <SelectField
                 wide
@@ -159,17 +185,16 @@ export function Sessions() {
             <OptionField label="Time">
               <SelectField wide label="Time span" value={span} onChange={setSpan} options={SPANS.map((s) => ({ value: s.value, label: s.label }))} />
             </OptionField>
-            <OptionField label="Sort by">
-              <SelectField
-                wide
-                label="Sort"
-                value={sortKey}
-                onChange={(v) => setSortKey(v as SortKey)}
-                options={Object.entries(SORTS).map(([value, s]) => ({ value, label: s.label }))}
-              />
-            </OptionField>
+          </OptionsMenu>
+          <OptionsMenu label="Sort" status={SORTS[sortKey].label} icon={<ArrowsDownUp size={16} aria-hidden="true" />} width={200}>
+            {(close) => <ChoiceList label="Sort order" value={sortKey} choices={SORT_CHOICES} onChange={setSortKey} onPick={close} />}
           </OptionsMenu>
         </div>
+        {note && (
+          <p role="status" className="-mt-2 mb-3 text-caption text-ink-2">
+            {note}
+          </p>
+        )}
 
         {info.config === null ? (
           <p role="status" className="rounded-card border border-line bg-surface px-5 py-4 text-body text-ink-2">
@@ -177,7 +202,7 @@ export function Sessions() {
           </p>
         ) : first.error && !cacheNotReady(status) ? (
           <ErrorBlock title="Could not load your sessions" message={first.error} onRetry={() => first.reload(false)} />
-        ) : (first.loading || first.error) && !first.data ? (
+        ) : ((first.loading || first.error) && !first.data) || (total === 0 && settling) ? (
           <Card>
             <div role="status" aria-label="Loading sessions" className="divide-y divide-line">
               {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -197,7 +222,7 @@ export function Sessions() {
             icon={ChatsCircle}
             seed={11}
             className="min-h-[max(320px,calc(100vh-14.5rem))]"
-            title="No sessions match"
+            title="No chats match"
             body="Nothing fits the search and filters you set. Loosen them or start again."
           >
             <Button onClick={clear}>Clear filters</Button>
@@ -211,32 +236,26 @@ export function Sessions() {
             body="Each Claude Code conversation shows up here with what it cost, how long it ran and which project it belonged to."
           />
         ) : (
-          <>
-            <div aria-live="polite" className="mb-2 text-caption text-ink-2">
-              {plural(total, "session")}
-              {filtered ? " match" : ""}
-            </div>
-            <Card>
-              <SessionGrid>
-                {rows.map((r, i) => (
-                  <SessionLine key={r.sessionId} row={r} onOpen={setSelected} index={i < PAGE ? i : 0} />
-                ))}
-              </SessionGrid>
-              {(cursor || moreError) && (
-                <div className="flex items-center gap-3 border-t border-line px-5 py-3">
-                  <Button onClick={loadMore} disabled={busy}>
-                    {busy ? "Loading..." : "Show more"}
-                  </Button>
-                  <span className="text-caption text-ink-2">{`Showing ${rows.length} of ${total}`}</span>
-                  {moreError && (
-                    <span role="alert" className="text-caption text-danger">
-                      {moreError}
-                    </span>
-                  )}
-                </div>
-              )}
-            </Card>
-          </>
+          <Card>
+            <SessionGrid>
+              {rows.map((r, i) => (
+                <SessionLine key={r.sessionId} row={r} onOpen={setSelected} index={i < PAGE ? i : 0} snippet={chat.snippets.get(r.sessionId)} />
+              ))}
+            </SessionGrid>
+            {(cursor || moreError) && (
+              <div className="flex items-center gap-3 border-t border-line px-5 py-3">
+                <Button onClick={loadMore} disabled={busy}>
+                  {busy ? "Loading..." : "Show more"}
+                </Button>
+                <span className="text-caption text-ink-2">{`Showing ${rows.length} of ${total}`}</span>
+                {moreError && (
+                  <span role="alert" className="text-caption text-danger">
+                    {moreError}
+                  </span>
+                )}
+              </div>
+            )}
+          </Card>
         )}
       </div>
     </>

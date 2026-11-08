@@ -11,7 +11,6 @@ import {
 import { IconMotion } from "./IconMotion";
 import type { Motion } from "./IconMotion";
 import { useAtlas } from "../state/AtlasProvider";
-import { useDaily } from "../lib/useDaily";
 import { modName } from "../lib/appMenu";
 import { useSidebar } from "../lib/useSidebar";
 import type { View } from "../lib/types";
@@ -33,7 +32,6 @@ export function Sidebar() {
   const mod = modName(info.platform);
   const { collapsed } = useSidebar();
   const sb = info.sandbox;
-  const daily = useDaily(info.config?.projectsDir ?? null);
   // Settings sits at the foot of the sidebar; the sliding pill lives with the others.
   const top = NAV.filter((n) => n.view !== "settings");
   const at = top.findIndex((n) => n.view === view);
@@ -52,7 +50,7 @@ export function Sidebar() {
         <IconMotion motion={motion} fill>
           <Icon />
         </IconMotion>
-        <span className="nav-label">{label}</span>
+        {!solo && <span className="nav-label">{label}</span>}
       </span>
     </button>
   );
@@ -73,20 +71,6 @@ export function Sidebar() {
       </nav>
 
       <div className="mt-auto flex flex-col gap-2 pt-4">
-        {daily && daily.streak >= 1 && (
-          <button
-            type="button"
-            onClick={() => setView("dashboard")}
-            title={daily.streak === 1 ? "1 day streak. See it on the Dashboard" : `${daily.streak} day streak. See it on the Dashboard`}
-            aria-label={daily.streak === 1 ? "1 day streak" : `${daily.streak} day streak`}
-            className="nav-item hover-host streak-btn"
-          >
-            <span className="nav-face text-body text-accent-text">
-              <span aria-hidden="true" className="spark" />
-              <span className="nav-label font-semibold">{daily.streak === 1 ? "1 day streak" : `${daily.streak} day streak`}</span>
-            </span>
-          </button>
-        )}
         {sb.enabled && (
           <div
             role="status"
@@ -101,7 +85,8 @@ export function Sidebar() {
             </span>
           </div>
         )}
-        <nav aria-label="Secondary" className="flex flex-col gap-0.5">
+        {/* Settings: icon only, in the sidebar's bottom-right corner (centred when folded). */}
+        <nav aria-label="Secondary" className="nav-settings-row">
           {item(NAV.length - 1, NAV[NAV.length - 1]!, true)}
         </nav>
       </div>

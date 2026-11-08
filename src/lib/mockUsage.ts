@@ -407,9 +407,15 @@ export class MockUsage {
   async sessionsList(q: SessionQuery): Promise<SessionPage> {
     this.guard();
     let rows = this.data().slice();
-    if (q.text) {
-      const t = q.text.toLowerCase();
-      rows = rows.filter((s) => (s.name ?? "").toLowerCase().includes(t) || s.projectName.toLowerCase().includes(t));
+    // Title / project match OR a chat a message search found (the Rust `also_ids`).
+    const t = q.text?.trim().toLowerCase();
+    const also = new Set(q.alsoIds ?? []);
+    if (t || also.size > 0) {
+      rows = rows.filter(
+        (s) =>
+          also.has(s.sessionId) ||
+          (t ? (s.name ?? "").toLowerCase().includes(t) || s.projectName.toLowerCase().includes(t) : false),
+      );
     }
     if (q.projects?.length) rows = rows.filter((s) => q.projects!.includes(PROJECTS.find((p) => p.name === s.projectName)!.key));
     if (q.models?.length) rows = rows.filter((s) => q.models!.includes(s.model));

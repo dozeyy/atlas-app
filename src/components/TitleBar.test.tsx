@@ -89,19 +89,49 @@ describe("session row", () => {
     tokens: { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0, total: 117000, webSearch: 0, webFetch: 0 },
   } as unknown as SessionRow;
 
-  it("has no leading tile, one never-wrapping meta line, and models folded into one run", () => {
+  it("has a big bold title, one never-wrapping meta line in order, and nothing boxed or iconed", () => {
     render(
       <ul>
         <SessionLine row={row} onOpen={() => {}} />
       </ul>,
     );
     const btn = screen.getByRole("button");
-    expect(btn.querySelector(".bg-accent-tint.size-10")).toBeNull();
+    // No leading tile, no row icon, no chip or pill anywhere in the row.
+    expect(btn.querySelector("svg, img, .chip, [class*='rounded'], [class*='border']")).toBeNull();
+    const title = screen.getByText("Tidy the invoice rounding");
+    expect(title.className).toMatch(/text-lead/);
+    expect(title.className).toMatch(/font-bold/);
     const meta = btn.querySelector(".truncate.text-caption") as HTMLElement;
     expect(meta).not.toBeNull();
-    expect(meta.textContent).toMatch(/^pixel-garden . .+ . 2 h 9 min . Sonnet \+ Haiku$/);
-    // The helpers chip stays; cost and tokens stay on the right.
-    expect(screen.getByText("2 helpers")).toBeInTheDocument();
-    expect(screen.getByText("117k tokens")).toBeInTheDocument();
+    // Order: when, spend, tokens, helpers, project.
+    expect(meta.textContent).toMatch(/^.+(\d\d:\d\d)\u00b7\$0\.56, estimated\u00b7117k tokens\u00b72 helpers\u00b7pixel-garden$/);
+    // The helper count is colored text and nothing else.
+    expect(screen.getByText("2 helpers").className).toMatch(/text-accent-text/);
+  });
+
+  it("adds a one-line snippet with the matched words heavier, only when given one", () => {
+    const { rerender } = render(
+      <ul>
+        <SessionLine row={row} onOpen={() => {}} />
+      </ul>,
+    );
+    expect(screen.queryByText(/backoff/)).toBeNull();
+    rerender(
+      <ul>
+        <SessionLine
+          row={row}
+          onOpen={() => {}}
+          snippet={[
+            { text: "the ", hit: false },
+            { text: "backoff", hit: true },
+            { text: " counter never resets", hit: false },
+          ]}
+        />
+      </ul>,
+    );
+    const hit = screen.getByText("backoff");
+    expect(hit.className).toMatch(/font-semibold/);
+    expect(hit.className).not.toMatch(/bg-|rounded|border/);
+    expect(hit.parentElement?.className).toMatch(/truncate/);
   });
 });
