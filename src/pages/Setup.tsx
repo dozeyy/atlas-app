@@ -5,11 +5,11 @@ import { CollectionView } from "../components/setup/CollectionView";
 import { ConfirmDelete } from "../components/setup/ConfirmDelete";
 import { CreateFlow } from "../components/setup/CreateFlow";
 import { DetailSheet } from "../components/setup/DetailSheet";
-import { ItemCard, ItemRow } from "../components/setup/ItemViews";
+import { ItemRow } from "../components/setup/ItemViews";
 import { NoSetup, SetupError, SetupSkeleton } from "../components/setup/states";
 import { TopSlot } from "../components/setup/TopSlot";
 import { TypeTiles } from "../components/setup/TypeTiles";
-import { countByKind, itemsForTile, MORE_KINDS, recentlyChanged, worthALook, type TileId } from "../lib/setup-model";
+import { countByKind, itemsForTile, MORE_KINDS, type TileId } from "../lib/setup-model";
 import type { CreateKind, SetupItem, SetupProject, SetupSnapshot } from "../lib/setup-types";
 import { reloadSetup, startSetup, useSetup } from "../state/setupStore";
 import { useAtlas } from "../state/AtlasProvider";
@@ -76,28 +76,6 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
   );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-baseline gap-2">
-        <h2 className="text-lead font-semibold text-ink">{title}</h2>
-        {hint && <span className="text-body text-ink-2">{hint}</span>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function CardGrid({ items, onOpen, onDelete }: { items: SetupItem[]; onOpen: (id: string) => void; onDelete: (item: SetupItem) => void }) {
-  return (
-    <div className="grid grid-cols-1 gap-3 min-[1000px]:grid-cols-2 min-[1000px]:[&>:last-child:nth-child(odd)]:col-span-2">
-      {items.map((i) => (
-        <ItemCard key={i.id} item={i} onOpen={onOpen} onDelete={onDelete} />
-      ))}
-    </div>
-  );
-}
-
 function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot; includeWorktrees: boolean; loads: number; error: string | null }) {
   const { info } = useAtlas();
   const [tile, setTile] = useState<TileId | null>(null);
@@ -121,8 +99,6 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
   const counted = useMemo(() => live.filter((i) => !i.backup && !i.worktree), [live]);
   const counts = useMemo(() => countByKind(counted), [counted]);
   const moreCount = useMemo(() => MORE_KINDS.reduce((n, k) => n + (counts.get(k) ?? 0), 0), [counts]);
-  const recent = useMemo(() => recentlyChanged(counted), [counted]);
-  const look = useMemo(() => worthALook(counted), [counted]);
   const byId = useMemo(() => new Map(snap.items.map((i) => [i.id, i])), [snap.items]);
   const selected = selectedId ? (byId.get(selectedId) ?? null) : null;
   const tileItems = useMemo(() => (tile ? itemsForTile(live, tile) : []), [live, tile]);
@@ -154,7 +130,7 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
         </p>
       )}
       {noFolder ? (
-        <NoSetup dir={snap.root.dir} />
+        <NoSetup />
       ) : tile ? (
         <CollectionView
           key={tile}
@@ -178,16 +154,6 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
           )}
           <TopSlot items={counted} loads={loads} onCreate={setCreating} onOpen={setSelectedId} />
           <TypeTiles counts={counts} moreCount={moreCount} onOpen={openTile} />
-          {recent.length > 0 && (
-            <Section title="Recently changed" hint="The newest edits across everything">
-              <CardGrid items={recent} onOpen={setSelectedId} onDelete={setPendingDelete} />
-            </Section>
-          )}
-          {look.length > 0 && (
-            <Section title="Worth a look" hint="Notes and clashes Atlas noticed">
-              <CardGrid items={look} onOpen={setSelectedId} onDelete={setPendingDelete} />
-            </Section>
-          )}
           <div className="mt-8">
             <MissingProjects projects={missingProjects} items={gone} onOpen={setSelectedId} />
           </div>

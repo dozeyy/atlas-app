@@ -56,14 +56,14 @@ export function SetupError({ message, onRetry }: { message: string; onRetry: () 
   );
 }
 
-export function NoSetup({ dir }: { dir: string }) {
+export function NoSetup() {
   return (
     <EmptyState
       fill
       icon={FolderDashed}
       seed={67}
       title="No Claude setup found here"
-      body={`Atlas looked in ${dir} and found no skills, agents, commands or settings. If your Claude folder lives somewhere else, choose it in Settings.`}
+      body="Atlas found no skills, agents, commands or settings. If your Claude folder lives somewhere else, choose it in Settings."
     />
   );
 }

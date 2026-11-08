@@ -192,6 +192,19 @@ main[tabindex="-1"]:focus-visible {
 .press:active:not(:disabled) {
   transform: scale(var(--press-scale));
 }
+/*
+ * The press shrink must not shrink the hit area. A scaled box no longer covers its own
+ * edge pixels, so a press that starts 2 px inside an edge would end on the parent, the
+ * browser would send the click to the parent, and the button would feel dead near its
+ * edge (worst on wide buttons: 3% of 480 px is 7 px a side). While pressed, the element is
+ * a containing block (it has a transform), so an invisible pseudo-element that is just
+ * big enough to undo the scale (plus 1%) keeps the full original box hittable.
+ */
+.press:active:not(:disabled)::after {
+  content: "";
+  position: absolute;
+  inset: calc((1 / var(--press-scale) - 1) * -50% - 1%);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .pulse-dot,

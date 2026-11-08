@@ -86,6 +86,24 @@ async function languageFor(language: string): Promise<Extension | null> {
   }
 }
 
+/**
+ * CodeMirror writes its base styles into a <style> element, and the app's content security policy
+ * (style-src 'self') refuses injected style elements: the editor then renders as bare, stacked text.
+ * Inside a shadow root CodeMirror adopts a constructed stylesheet instead, which the policy allows,
+ * so the policy stays strict. Custom properties inherit through the boundary, so the tokens still apply.
+ * Sizing uses the style object (CSSOM), which the policy also allows.
+ */
+function shadowMount(parent: HTMLElement): { root: ShadowRoot; mount: HTMLElement; remove: () => void } {
+  const host = document.createElement("div");
+  host.style.height = "100%";
+  parent.appendChild(host);
+  const root = host.attachShadow({ mode: "open" });
+  const mount = document.createElement("div");
+  mount.style.height = "100%";
+  root.appendChild(mount);
+  return { root, mount, remove: () => host.remove() };
+}
+
 const maskMark = Decoration.mark({ class: "cm-masked" });
 
 /** Ranges are UTF-16 offsets (what CodeMirror counts too); clamp and sort defensively. */
@@ -117,14 +135,20 @@ export async function mountViewer(parent: HTMLElement, text: string, language: s
     maskExtension(masked, text.length),
     lang.of([]),
   ];
-  const view = new EditorView({ parent, state: EditorState.create({ doc: text, extensions: base }) });
+  const shadow = shadowMount(parent);
+  const view = new EditorView({ parent: shadow.mount, root: shadow.root, state: EditorState.create({ doc: text, extensions: base }) });
   // The grammar loads after the first paint, so the text shows immediately.
   languageFor(language)
     .then((ext) => {
       if (ext && view.dom.isConnected) view.dispatch({ effects: lang.reconfigure(ext) });
     })
     .catch(() => {});
-  return { destroy: () => view.destroy() };
+  return {
+    destroy: () => {
+      view.destroy();
+      shadow.remove();
+    },
+  };
 }
 
 // ---- the editor (same look, but you can type) ----
@@ -173,8 +197,10 @@ export async function mountEditor(
     import("@codemirror/view"),
   ]);
   const lang = new Compartment();
+  const shadow = shadowMount(parent);
   const view = new EditorView({
-    parent,
+    parent: shadow.mount,
+    root: shadow.root,
     state: EditorState.create({
       doc: text,
       extensions: [
@@ -207,6 +233,9 @@ export async function mountEditor(
   return {
     focus: () => view.focus(),
     markLine: (line) => view.dispatch({ effects: setErrorLine.of(line) }),
-    destroy: () => view.destroy(),
+    destroy: () => {
+      view.destroy();
+      shadow.remove();
+    },
   };
 }

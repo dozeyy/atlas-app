@@ -100,7 +100,10 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
   );
 });
 
-/** A one-line row for long, simple lists (permissions, memory, hook scripts). */
+/**
+ * A one-line row for long, simple lists (permissions, memory, hook scripts). No press-scale: content-visibility
+ * (kept so long lists stay cheap) clips to the element's own box, which would shrink the hit area when scaled.
+ */
 export const ItemRow = memo(function ItemRow({ item, onOpen, mono }: ItemProps & { mono?: boolean }) {
   return (
     <button
@@ -110,7 +113,7 @@ export const ItemRow = memo(function ItemRow({ item, onOpen, mono }: ItemProps &
       onClick={() => onOpen(item.id)}
       onKeyDown={(e) => onCopyKey(e, item)}
       aria-label={`${KIND_BY_ID[item.kind].singular} ${item.name}, ${item.scopeLabel}`}
-      className="press flex min-h-9 w-full cursor-pointer items-center gap-3 border-b border-line px-4 py-1.5 text-left [contain-intrinsic-size:auto_36px] [content-visibility:auto] last:border-b-0 hover:bg-raised"
+      className="flex min-h-9 w-full cursor-pointer items-center gap-3 border-b border-line px-4 py-1.5 text-left transition-colors duration-[var(--dur-fast)] [contain-intrinsic-size:auto_36px] [content-visibility:auto] last:border-b-0 hover:bg-raised active:bg-raised"
     >
       <span className={`min-w-0 flex-1 truncate text-body text-ink ${mono ? "mono" : "font-medium"}`}>{item.name}</span>
       {item.description && <span className="hidden max-w-[34%] truncate text-caption text-ink-2 md:block">{item.description}</span>}

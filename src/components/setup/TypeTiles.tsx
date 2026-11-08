@@ -4,7 +4,8 @@ import type { ItemKind } from "../../lib/setup-types";
 
 /**
  * Twelve tiles, all the same size. 12 divides into 2, 3, 4 and 6 columns, so every
- * row is full at every width: no ragged last row.
+ * row is full at every width: no ragged last row. The grid takes the rest of the page,
+ * so the rows grow to fill the window (never below 92px).
  */
 export function TypeTiles({ counts, moreCount, onOpen }: { counts: Map<ItemKind, number>; moreCount: number; onOpen: (id: TileId) => void }) {
   const tiles: { id: TileId; label: string; singular: string; count: number; Icon: (typeof KIND_BY_ID)[ItemKind]["icon"] }[] = [
@@ -20,16 +21,16 @@ export function TypeTiles({ counts, moreCount, onOpen }: { counts: Map<ItemKind,
   return (
     <ul
       aria-label="Types of things in your setup"
-      className="grid grid-cols-2 gap-3 min-[640px]:grid-cols-3 min-[1100px]:grid-cols-4 min-[1400px]:grid-cols-6"
+      className="grid flex-1 auto-rows-[minmax(92px,1fr)] grid-cols-2 gap-3 min-[640px]:grid-cols-3 min-[1100px]:grid-cols-4 min-[1400px]:grid-cols-6"
     >
       {tiles.map(({ id, label, count, Icon }) => (
-        <li key={id}>
+        <li key={id} className="flex">
           <button
             type="button"
             data-tile={id}
             aria-label={`${label}, ${count}`}
             onClick={() => onOpen(id)}
-            className="press group flex h-[92px] w-full cursor-pointer items-center gap-3 rounded-card border border-line bg-surface px-3.5 text-left hover:border-line-strong hover:bg-raised"
+            className="press group flex min-h-[92px] w-full cursor-pointer items-center gap-3 rounded-card border border-line bg-surface px-3.5 text-left hover:border-line-strong hover:bg-raised"
           >
             <span
               aria-hidden="true"

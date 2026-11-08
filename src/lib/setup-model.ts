@@ -310,18 +310,3 @@ export function itemsForTile(items: SetupItem[], id: TileId): SetupItem[] {
   const kinds = tileKinds(id);
   return items.filter((i) => kinds.includes(i.kind));
 }
-
-/** Newest first; backups, worktree copies, rules lists and files with no date are left out. */
-export function recentlyChanged(items: SetupItem[], max = 6): SetupItem[] {
-  return items
-    .filter((i) => !i.backup && !i.worktree && i.modifiedMs && i.kind !== "permission" && i.kind !== "hookScript" && i.kind !== "other")
-    .sort((a, b) => (b.modifiedMs ?? 0) - (a.modifiedMs ?? 0))
-    .slice(0, max);
-}
-
-/** Things with a warning or a clash worth looking at. */
-export function worthALook(items: SetupItem[], max = 4): SetupItem[] {
-  return items
-    .filter((i) => !i.backup && !i.worktree && (i.warnings.length > 0 || (i.conflict !== null && i.conflict.status !== "overrides")))
-    .slice(0, max);
-}

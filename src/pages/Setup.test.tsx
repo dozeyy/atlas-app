@@ -6,7 +6,8 @@ import { AtlasProvider } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
 import { MockBackend } from "../lib/mock";
 import { mockSetupSnapshot } from "../lib/setup-mock";
-import { resetSetupStore } from "../state/setupStore";
+import { reloadSetup, resetSetupStore } from "../state/setupStore";
+import { CELEBRATE_MS, CHECKLIST_DONE_KEY } from "../components/setup/TopSlot";
 import { resetToasts } from "../state/toastStore";
 import type { SetupSnapshot } from "../lib/setup-types";
 
@@ -59,6 +60,10 @@ async function openTile(label: string) {
   return screen.findByRole("heading", { level: 2, name: label });
 }
 
+async function openTilesReady() {
+  await screen.findByRole("button", { name: /^Skills, \d+$/ });
+}
+
 let backend: Backend;
 beforeEach(() => {
   localStorage.clear();
@@ -74,7 +79,7 @@ afterEach(() => {
 });
 
 describe("Setup page: main view", () => {
-  it("shows placeholders only while the first scan runs, then the tiles and the checklist", async () => {
+  it("shows placeholders only while the first scan runs, then the tiles with no checklist once setup is complete", async () => {
     let done!: (s: SetupSnapshot) => void;
     backend.snapshot = () => new Promise((r) => (done = r));
     await open(backend);
@@ -84,7 +89,7 @@ describe("Setup page: main view", () => {
     await act(async () => done(await mockSetupSnapshot(false)));
     expect(screen.queryByRole("status", { name: "Reading your Claude setup" })).not.toBeInTheDocument();
     expect(screen.getByRole("list", { name: "Types of things in your setup" })).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "Setup progress" })).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar", { name: "Setup progress" })).not.toBeInTheDocument();
   });
 
   it("has no summary card, no Read only chip and no Live tag anywhere", async () => {
@@ -95,6 +100,31 @@ describe("Setup page: main view", () => {
     expect(text).not.toMatch(/\bLive\b/);
     expect(text).not.toMatch(/Coming soon/i);
     expect(text).not.toMatch(/things set up across/);
+  });
+
+  it("has no Recently changed or Worth a look section, only the tiles", async () => {
+    await open(backend);
+    await screen.findByRole("list", { name: "Types of things in your setup" });
+    expect(screen.queryByRole("heading", { name: "Recently changed" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Worth a look" })).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Recently changed|Worth a look/);
+  });
+
+  it("never lets a pressable clip its own box (that is what made edge clicks miss)", async () => {
+    // A press shrinks the element; content-visibility / overflow clipping on the element itself would
+    // also clip the invisible hit box that keeps its edges clickable. jsdom has no layout, so check the contract.
+    await open(backend);
+    await screen.findByRole("list", { name: "Types of things in your setup" });
+    const bad = (root: ParentNode) =>
+      [...root.querySelectorAll<HTMLElement>(".press")].filter((e) => /content-visibility|overflow-hidden|\btruncate\b/.test(e.className)).map((e) => e.getAttribute("aria-label") ?? e.textContent);
+    expect(bad(document)).toEqual([]);
+    await userEvent.click(await screen.findByRole("button", { name: /^More, \d+$/ }));
+    await screen.findByRole("heading", { level: 2, name: "More" });
+    expect(bad(document)).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: "Back to Setup" }));
+    await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
+    await screen.findByRole("heading", { level: 2, name: "Skills" });
+    expect(bad(document)).toEqual([]);
   });
 
   it("lays the types out as twelve equal tiles with their counts", async () => {
@@ -176,7 +206,7 @@ describe("Setup page: a collection", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Back to Setup" }));
     const tile = await screen.findByRole("button", { name: /^Skills, \d+$/ });
-    expect(screen.getByRole("progressbar", { name: "Setup progress" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Types of things in your setup" })).toBeInTheDocument();
     await waitFor(() => expect(tile).toHaveFocus());
   });
 
@@ -463,10 +493,70 @@ describe("Setup page: edit", () => {
 });
 
 describe("Setup page: checklist and create", () => {
-  it("ticks itself from the real setup and celebrates only when everything is in place", async () => {
+  it("is not on the page at all once everything is in place", async () => {
     await open(backend);
+    await openTilesReady();
+    expect(screen.queryByRole("progressbar", { name: "Setup progress" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Your setup/)).not.toBeInTheDocument();
+    expect(localStorage.getItem(CHECKLIST_DONE_KEY)).toBe("1");
+  });
+
+  it("celebrates once when the last step lands, then folds away", async () => {
+    const snap = await mockSetupSnapshot(false);
+    const full = snap.items;
+    let current = { ...snap, items: full.filter((i) => i.kind !== "agent") };
+    backend.snapshot = async () => current;
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await open(backend);
+    expect(await screen.findByRole("heading", { name: "Your setup: 6 of 7 done" })).toBeInTheDocument();
+    current = { ...snap, items: full };
+    act(() => reloadSetup());
     expect(await screen.findByRole("heading", { name: "Your setup is complete" })).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "Setup progress" })).toHaveAttribute("aria-valuenow", "7");
+    act(() => {
+      vi.advanceTimersByTime(CELEBRATE_MS + 200);
+    });
+    await waitFor(() => expect(screen.queryByRole("progressbar", { name: "Setup progress" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /^Skills, \d+$/ })).toBeInTheDocument();
+    expect(localStorage.getItem(CHECKLIST_DONE_KEY)).toBe("1");
+  });
+
+  it("does not celebrate a second time, and the card returns when a step becomes undone", async () => {
+    const snap = await mockSetupSnapshot(false);
+    const full = snap.items;
+    let current = { ...snap, items: full };
+    backend.snapshot = async () => current;
+    await open(backend);
+    await openTilesReady();
+    expect(screen.queryByRole("progressbar", { name: "Setup progress" })).not.toBeInTheDocument();
+
+    current = { ...snap, items: full.filter((i) => i.kind !== "agent") };
+    act(() => reloadSetup());
+    expect(await screen.findByRole("heading", { name: "Your setup: 6 of 7 done" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add an agent: Add your first agent" })).toBeInTheDocument();
+
+    current = { ...snap, items: full };
+    act(() => reloadSetup());
+    await waitFor(() => expect(screen.queryByRole("progressbar", { name: "Setup progress" })).not.toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: "Your setup is complete" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the Claude folder off the Setup page", async () => {
+    await open(backend);
+    await openTilesReady();
+    expect(document.body.textContent).not.toContain("C:/Users/you/.claude");
+    expect(screen.queryByText(/open folder/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /open folder/i })).not.toBeInTheDocument();
+  });
+
+  it("does not print the folder on the empty state either", async () => {
+    const snap = await mockSetupSnapshot(false);
+    snap.items = [];
+    snap.root = { ...snap.root, dirExists: false };
+    backend.snapshot = async () => snap;
+    await open(backend);
+    expect(await screen.findByText("No Claude setup found here")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("C:/Users/you/.claude");
+    expect(screen.getByText(/choose it in Settings/)).toBeInTheDocument();
   });
 
   it("lists what is still to do with a button each, and counts progress", async () => {

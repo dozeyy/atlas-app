@@ -83,8 +83,8 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
 
   const open = (id: string, children: ReactNode) =>
     onOpen ? (
-      <button type="button" onClick={() => onOpen(id)} className="press min-w-0 cursor-pointer truncate text-left text-body font-medium text-ink hover:text-accent-text">
-        {children}
+      <button type="button" onClick={() => onOpen(id)} className="press min-w-0 cursor-pointer text-left text-body font-medium text-ink hover:text-accent-text">
+        <span className="block truncate">{children}</span>
       </button>
     ) : (
       <span className="min-w-0 truncate text-body font-medium text-ink">{children}</span>

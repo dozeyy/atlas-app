@@ -15,11 +15,12 @@ describe("the file viewer", () => {
     document.body.appendChild(host);
     viewer = await mountViewer(host, "name: demo\nline two", "yaml", []);
 
-    const content = host.querySelector<HTMLElement>(".cm-content")!;
+    const inner = host.firstElementChild!.shadowRoot!;
+    const content = inner.querySelector<HTMLElement>(".cm-content")!;
     expect(content.getAttribute("aria-readonly")).toBe("true");
     expect(content.getAttribute("aria-label")).toBe("File contents, read only");
 
-    const view = EditorView.findFromDOM(host.querySelector<HTMLElement>(".cm-editor")!)!;
+    const view = EditorView.findFromDOM(inner.querySelector<HTMLElement>(".cm-editor")!)!;
     expect(view.state.readOnly).toBe(true);
 
     expect(view.state.doc.toString()).toBe("name: demo\nline two");
