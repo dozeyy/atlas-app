@@ -3,6 +3,7 @@
 
 mod commands;
 mod intro;
+mod now;
 mod search;
 mod setup_service;
 mod state;
@@ -92,6 +93,7 @@ fn main() {
             usage::usage_reindex,
             usage::pricing_get,
             usage::pricing_reveal,
+            now::now_snapshot,
             search::search_chats,
             search::search_status,
             intro::splash_ready,

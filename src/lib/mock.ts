@@ -7,6 +7,7 @@ import type { CreateKind, DeleteOutcome, Draft, Problem, RawEdit, SaveReply, Set
 import { MockSetupWorld, mockSetupReveal, mockSetupSource } from "./setup-mock";
 import { MockUsage } from "./mockUsage";
 import { MockSearch } from "./mockSearch";
+import { MockNow } from "./mockNow";
 
 const KEY = "atlas.mock.settings";
 
@@ -172,6 +173,11 @@ export class MockBackend {
   searchChats: Backend["searchChats"] = (q, limit, offset) => this.search.searchChats(q, limit, offset);
   searchStatus: Backend["searchStatus"] = () => this.search.searchStatus();
   onSearchStatus: Backend["onSearchStatus"] = (cb) => this.search.onSearchStatus(cb);
+
+  // ---- Now: the stand-in lives in mockNow.ts ----
+  readonly now = new MockNow();
+  nowSnapshot: Backend["nowSnapshot"] = () => this.now.nowSnapshot();
+  onNowUpdate: Backend["onNowUpdate"] = (cb) => this.now.onNowUpdate(cb);
 
   async onInfo(cb: (i: AppInfo) => void): Promise<() => void> {
     this.listeners.add(cb);

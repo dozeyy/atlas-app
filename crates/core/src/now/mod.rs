@@ -289,10 +289,11 @@ impl State {
             }
         }
         for (sid, (ms, f)) in &newest {
-            if *ms >= cutoff && !self.sessions.iter().any(|s| s.id == *sid) {
-                if let Some(pd) = State::proj_dir_of(&f.path, f.is_subagent) {
-                    active.push((sid, pd));
-                }
+            if *ms >= cutoff
+                && !self.sessions.iter().any(|s| s.id == *sid)
+                && let Some(pd) = State::proj_dir_of(&f.path, f.is_subagent)
+            {
+                active.push((sid, pd));
             }
         }
         active.sort_by_key(|(sid, _)| newest[sid].0);

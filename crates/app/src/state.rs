@@ -22,6 +22,7 @@ use atlas_core::sandbox::{self, Sandbox, SandboxError, SandboxOptions, SandboxRe
 use atlas_core::settings::{self, Settings, Theme, View};
 use serde::Serialize;
 
+use crate::now::NowHost;
 use crate::search::SearchHost;
 use crate::usage::{Roots, UsageHost};
 
@@ -71,6 +72,8 @@ pub struct AppState {
     pub usage: Arc<UsageHost>,
     /// The chat-search index; follows the same folder as `usage`.
     pub search: Arc<SearchHost>,
+    /// The Now tab's live view of running chats; follows the same folder as usage.
+    pub now: Arc<NowHost>,
     home: PathBuf,
     cwd: PathBuf,
     env_config: Option<OsString>,
@@ -200,6 +203,7 @@ impl AppState {
             local_data_dir,
             usage: Arc::new(UsageHost::default()),
             search: Arc::new(SearchHost::default()),
+            now: Arc::new(NowHost::default()),
             home,
             cwd,
             env_config,
@@ -503,6 +507,7 @@ impl AppState {
     pub fn shutdown(&self) {
         // The chat index first: it is the longer pass to cancel, and both stop at the
         // next line or batch.
+        self.now.shutdown();
         self.search.shutdown();
         self.usage.shutdown();
         let (old, build) = {

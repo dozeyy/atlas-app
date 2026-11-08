@@ -6,6 +6,7 @@ import { TitleBar } from "./components/TitleBar";
 import { ToastHost } from "./components/Toasts";
 import { useAtlas } from "./state/AtlasProvider";
 import { Dashboard } from "./pages/Dashboard";
+import { Now } from "./pages/Now";
 import { History, Wrapped } from "./pages/Placeholders";
 import { Sessions } from "./pages/Sessions";
 import { Setup } from "./pages/Setup";
@@ -14,6 +15,7 @@ import type { View } from "./lib/types";
 
 const PAGES: Record<View, () => React.JSX.Element> = {
   dashboard: Dashboard,
+  now: Now,
   sessions: Sessions,
   setup: Setup,
   history: History,
@@ -66,7 +68,7 @@ export function App() {
         <main ref={main} tabIndex={-1} aria-label={NAV.find((n) => n.view === view)?.label} className="min-h-0 flex-1 overflow-y-auto outline-none">
           <div
             key={view}
-            className={`page-enter @container w-full px-[var(--gutter)] py-[var(--gutter-y)] ${view === "setup" || view === "history" || view === "wrapped" ? "flex min-h-full flex-col" : ""}`}
+            className={`page-enter @container w-full px-[var(--gutter)] py-[var(--gutter-y)] ${view === "now" || view === "setup" || view === "history" || view === "wrapped" ? "flex min-h-full flex-col" : ""}`}
           >
             {info.settingsSaveError && (
               <div

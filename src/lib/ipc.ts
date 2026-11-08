@@ -37,6 +37,7 @@ import type {
   SourceView,
   UndoOutcome,
 } from "./setup-types";
+import type { NowSnapshot } from "./nowTypes";
 import { MockBackend } from "./mock";
 
 declare global {
@@ -51,6 +52,7 @@ export const USAGE_STATUS_EVENT = "atlas://usage/status";
 export const USAGE_PROGRESS_EVENT = "atlas://usage/progress";
 export const USAGE_CHANGED_EVENT = "atlas://usage/changed";
 export const SEARCH_STATUS_EVENT = "atlas://search/status";
+export const NOW_UPDATE_EVENT = "atlas://now/update";
 
 export type Unlisten = () => void;
 export const SETUP_EVENT = "atlas://setup-changed";
@@ -104,6 +106,10 @@ export interface Backend {
   searchChats(query: string, limit?: number, offset?: number): Promise<SearchPage>;
   searchStatus(): Promise<SearchStatus>;
   onSearchStatus(cb: (s: SearchStatus) => void): Promise<Unlisten>;
+
+  // Now: the chats running right now, followed read-only. Pushed as events; the page never polls.
+  nowSnapshot(): Promise<NowSnapshot>;
+  onNowUpdate(cb: (s: NowSnapshot) => void): Promise<Unlisten>;
 
   /** Setup: the whole setup without file bodies. */
   setupSnapshot(includeWorktrees?: boolean): Promise<SetupSnapshot>;
@@ -169,6 +175,8 @@ const tauriBackend: Backend = {
   searchChats: (query, limit = 20, offset = 0) => invoke<SearchPage>("search_chats", { query, limit, offset }),
   searchStatus: () => invoke<SearchStatus>("search_status"),
   onSearchStatus: (cb) => listen<SearchStatus>(SEARCH_STATUS_EVENT, (e) => cb(e.payload)),
+  nowSnapshot: () => invoke<NowSnapshot>("now_snapshot"),
+  onNowUpdate: (cb) => listen<NowSnapshot>(NOW_UPDATE_EVENT, (e) => cb(e.payload)),
   setupSnapshot: (includeWorktrees) => invoke<SetupSnapshot>("setup_snapshot", { includeWorktrees }),
   setupReadSource: (id) => invoke<SourceView>("setup_read_source", { id }),
   setupReveal: (id, index) => invoke<string>("setup_reveal", { id, index }),

@@ -2,7 +2,7 @@
 
 /** "system" follows the OS (Light or Dark); the other three are pinned. */
 export type Theme = "system" | "light" | "silver" | "dark";
-export type View = "dashboard" | "sessions" | "setup" | "history" | "wrapped" | "settings";
+export type View = "dashboard" | "now" | "sessions" | "setup" | "history" | "wrapped" | "settings";
 export type Platform = "windows" | "macos" | "linux";
 export type ConfigSource = "flag" | "settings" | "env" | "default" | "sandbox";
 
@@ -71,7 +71,7 @@ export interface AppInfo {
   firstPaintMs: number | null;
 }
 
-export const VIEWS: View[] = ["dashboard", "sessions", "setup", "history", "wrapped", "settings"];
+export const VIEWS: View[] = ["dashboard", "now", "sessions", "setup", "history", "wrapped", "settings"];
 
 export * from "./usageTypes";
 export * from "./searchTypes";

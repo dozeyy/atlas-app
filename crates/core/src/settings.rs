@@ -38,6 +38,7 @@ pub enum Theme {
 pub enum View {
     #[default]
     Dashboard,
+    Now,
     Sessions,
     Setup,
     History,
