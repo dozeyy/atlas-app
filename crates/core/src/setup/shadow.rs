@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::model::*;
 
 /// Where the order was checked. Update both when a docs page changes.
-pub const PRECEDENCE_SOURCES: &str = "code.claude.com/docs: skills, sub-agents, slash commands, output styles, mcp (checked 2026-11-08, see MEMORY.md)";
+pub const PRECEDENCE_SOURCES: &str = "code.claude.com/docs/en: skills, sub-agents, mcp pages read 2026-11-08; commands and output styles have no documented winner (spec default), not re-read";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Group {

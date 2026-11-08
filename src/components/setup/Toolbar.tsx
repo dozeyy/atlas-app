@@ -52,7 +52,7 @@ export function Toolbar({
                 onChange({ query: "" });
               }
             }}
-            placeholder="Search names, descriptions, files"
+            placeholder="Search your setup"
             aria-label="Search your setup"
             spellCheck={false}
             className="selectable h-9 w-full rounded-control border border-line-strong bg-surface pl-9 pr-16 text-body text-ink placeholder:text-ink-2 [&::-webkit-search-cancel-button]:hidden"
@@ -87,6 +87,8 @@ export function Toolbar({
           onChange={(scope) => onChange({ scope, projectId: scope === "project" ? filters.projectId : null })}
         />
 
+      </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
         {filters.scope === "project" && (
           <select
             aria-label="Project"
@@ -105,11 +107,13 @@ export function Toolbar({
 
         <Labeled label="Worktrees" checked={filters.showWorktrees} onChange={(v) => onChange({ showWorktrees: v })} count={hidden.worktrees} />
         <Labeled label="Backups" checked={filters.showBackups} onChange={(v) => onChange({ showBackups: v })} count={hidden.backups} />
+        <p role="status" className="ml-auto text-caption text-ink-2">
+          {shown === total
+            ? `${total.toLocaleString()} ${total === 1 ? "item" : "items"}`
+            : `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} items`}
+          {filters.kind ? " (one type)" : ""}
+        </p>
       </div>
-      <p role="status" className="mt-2 text-caption text-ink-2">
-        {shown === total ? `${total.toLocaleString()} items` : `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} items`}
-        {filters.kind ? " (one type)" : ""}
-      </p>
     </div>
   );
 }

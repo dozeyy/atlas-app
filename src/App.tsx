@@ -62,7 +62,7 @@ export function App() {
       >
         <div
           key={view}
-          className={`page-enter mx-auto w-full px-10 py-10 ${view === "setup" ? "max-w-[1180px]" : "max-w-[var(--content-max)]"}`}
+          className={`page-enter mx-auto w-full px-10 py-10 ${view === "setup" ? "flex min-h-full max-w-[1180px] flex-col" : "max-w-[var(--content-max)]"}`}
         >
           <Page />
         </div>

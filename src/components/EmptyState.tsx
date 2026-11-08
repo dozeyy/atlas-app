@@ -9,6 +9,7 @@ export function EmptyState({
   body,
   badge,
   seed,
+  fill,
   children,
 }: {
   icon: ComponentType<IconProps>;
@@ -16,10 +17,12 @@ export function EmptyState({
   body: string;
   badge?: string;
   seed?: number;
+  /** Grow to take the rest of a page that is a flex column, so the card never floats in blank space. */
+  fill?: boolean;
   children?: ReactNode;
 }) {
   return (
-    <section className="relative isolate flex min-h-[320px] flex-col items-center justify-center overflow-hidden rounded-card border border-line bg-surface px-8 py-12 text-center">
+    <section className={`relative isolate flex min-h-[320px] ${fill ? "flex-1" : ""} flex-col items-center justify-center overflow-hidden rounded-card border border-line bg-surface px-8 py-12 text-center`}>
       <Topo seed={seed} />
       <div className="relative flex size-12 items-center justify-center rounded-card border border-line bg-bg text-accent-text">
         <Icon size={24} weight="duotone" aria-hidden="true" />

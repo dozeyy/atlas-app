@@ -58,8 +58,14 @@ pub fn is_relevant(path: &Path, root: &Path) -> bool {
     if pk.contains("/node_modules/") || pk.contains("/.git/") || pk.contains("/.claude/worktrees/") {
         return false;
     }
-    true
+    // A project folder is watched one level deep (and its `.claude` folder fully), and
+    // that folder can be the home folder or a temp folder that sees constant churn
+    // (measured: 77 rescans in 25 s on a busy machine). Only what Setup reads counts.
+    pk.ends_with("/.claude") || pk.contains("/.claude/") || PROJECT_FILES.iter().any(|f| name.eq_ignore_ascii_case(f))
 }
+
+/// Files a project keeps beside its `.claude` folder that Setup lists or reads.
+const PROJECT_FILES: [&str; 4] = ["CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", ".mcp.json"];
 
 /// What to watch for these inputs and the projects the last scan covered.
 fn plan(inputs: &DiscoveryInputs, d: &Discovery) -> Vec<(PathBuf, RecursiveMode)> {
@@ -201,5 +207,19 @@ mod tests {
         assert!(is_relevant(Path::new("/h/.claude/projects/p1/memory/a.md"), root));
         assert!(is_relevant(Path::new("/w/app/CLAUDE.md"), root));
         assert!(!is_relevant(Path::new("/w/app/node_modules/x/y.js"), root));
+        assert!(is_relevant(Path::new("/w/app/.mcp.json"), root));
+        assert!(is_relevant(Path::new("/w/app/.claude/skills/s/SKILL.md"), root));
+        assert!(is_relevant(Path::new("/w/app/.claude"), root));
+    }
+
+    #[test]
+    fn churn_in_a_watched_home_or_temp_folder_is_ignored() {
+        // A project folder can be the home folder or Temp: the OS reports everything in it.
+        let root = Path::new("/h/.claude");
+        assert!(!is_relevant(Path::new("/h/ntuser.dat.LOG1"), root));
+        assert!(!is_relevant(Path::new("/h/AppData/Local/Temp/claude"), root));
+        assert!(!is_relevant(Path::new("/h/AppData/Local/Temp/host_sculpt_autosave.blend@"), root));
+        assert!(!is_relevant(Path::new("/w/app/src/main.rs"), root));
+        assert!(!is_relevant(Path::new("/w/app/.claude/worktrees/a/CLAUDE.md"), root));
     }
 }

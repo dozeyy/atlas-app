@@ -60,6 +60,11 @@ button {
   outline-offset: 2px;
 }
 
+/* The page container is only focused by code (route change, scroll keys), never tabbed to. */
+main[tabindex="-1"]:focus-visible {
+  outline: none;
+}
+
 ::selection {
   background: var(--accent-tint);
 }

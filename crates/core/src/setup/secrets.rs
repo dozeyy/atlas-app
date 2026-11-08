@@ -162,6 +162,8 @@ struct Frame {
 }
 
 /// Mask a JSON (or JSON-like) text. Tolerant: it tokenises, it does not validate.
+// `flush_to!` keeps `copied` current; the write before the final flush is unread by design.
+#[allow(unused_assignments)]
 pub fn mask_json(text: &str) -> Masked {
     let b = text.as_bytes();
     let mut s = Builder { out: String::with_capacity(text.len()), utf16: 0, ranges: Vec::new(), originals: Vec::new() };
@@ -376,5 +378,22 @@ mod tests {
         let t = "{\n  \"a\": [1, 2, {\"b\": \"c\"}],\n  \"d\": null\n}\n";
         let m = mask_json(t);
         assert_eq!(m.text, t);
+    }
+
+    #[test]
+    fn multibyte_text_around_secrets_survives_and_offsets_hold() {
+        // 2-byte, 3-byte and 4-byte characters before and after each value.
+        let t = "{\"n\": \"caf\u{e9} \u{65e5}\u{672c}\", \"env\": {\"API_KEY\": \"s\u{e9}cret-\u{65e5}-1234\", \"Z\": \"\u{1F600}x\"}, \"tail\": \"\u{e9}\u{65e5}\u{1F600}\"}";
+        let m = mask_json(t);
+        assert!(!m.text.contains("s\u{e9}cret"), "{}", m.text);
+        assert!(m.text.contains("caf\u{e9} \u{65e5}\u{672c}") && m.text.contains("\u{e9}\u{65e5}\u{1F600}\""));
+        let units: Vec<u16> = m.text.encode_utf16().collect();
+        for (r, o) in m.ranges.iter().zip(&m.originals) {
+            assert_eq!(String::from_utf16(&units[r.start..r.end]).unwrap(), MASK);
+            assert!(!o.is_empty());
+        }
+        assert_eq!(reveal(t, true, 0).as_deref(), Some("s\u{e9}cret-\u{65e5}-1234"));
+        let p = mask_plain("caf\u{e9}\u{65e5} password=hunter2-\u{e9}\u{65e5}x tail \u{1F600}\n");
+        assert!(!p.text.contains("hunter2") && p.text.contains("tail \u{1F600}"), "{}", p.text);
     }
 }

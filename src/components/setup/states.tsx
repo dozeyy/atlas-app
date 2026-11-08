@@ -15,9 +15,9 @@ export function SetupSkeleton() {
         <Bar w="120px" h={26} className="mt-5" />
         <Bar w="100%" h={8} className="mt-4" />
       </div>
-      <div className="mb-6 grid grid-cols-[repeat(auto-fill,minmax(136px,1fr))] gap-2.5">
-        {Array.from({ length: 8 }, (_, i) => (
-          <div key={i} className="flex items-center gap-3 rounded-card border border-line bg-surface p-3">
+      <div className="mb-6 flex flex-wrap gap-2.5">
+        {Array.from({ length: 10 }, (_, i) => (
+          <div key={i} className="flex min-w-[148px] flex-[1_1_148px] items-center gap-3 rounded-card border border-line bg-surface p-3">
             <span className="skeleton size-8 rounded-control" />
             <span className="flex-1">
               <Bar w="40%" h={16} />
@@ -52,7 +52,7 @@ export function SetupSkeleton() {
 
 export function SetupError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <EmptyState icon={WarningOctagon} seed={61} title="Atlas could not read your Claude setup" body={message}>
+    <EmptyState fill icon={WarningOctagon} seed={61} title="Atlas could not read your Claude setup" body={message}>
       <Button variant="primary" onClick={onRetry}>
         Try again
       </Button>
@@ -63,6 +63,7 @@ export function SetupError({ message, onRetry }: { message: string; onRetry: () 
 export function NoSetup({ dir }: { dir: string }) {
   return (
     <EmptyState
+      fill
       icon={FolderDashed}
       seed={67}
       title="No Claude setup found here"
@@ -73,7 +74,7 @@ export function NoSetup({ dir }: { dir: string }) {
 
 export function NoMatches({ onClear }: { onClear: () => void }) {
   return (
-    <EmptyState icon={MagnifyingGlass} seed={71} title="Nothing matches" body="Try a different word, or turn off a filter.">
+    <EmptyState fill icon={MagnifyingGlass} seed={71} title="Nothing matches" body="Try a different word, or turn off a filter.">
       <Button onClick={onClear}>Clear search and filters</Button>
     </EmptyState>
   );

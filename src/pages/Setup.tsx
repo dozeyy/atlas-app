@@ -192,7 +192,7 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
             shown={shown.length}
             total={visible.length}
           />
-          <div ref={list} onKeyDown={onListKey}>
+          <div ref={list} onKeyDown={onListKey} className="flex flex-1 flex-col">
             {groups.length === 0 ? (
               <NoMatches onClear={clearAll} />
             ) : (
@@ -227,7 +227,7 @@ export function Setup() {
     <>
       <PageHeader
         title="Setup"
-        subtitle="Everything Claude loads for you, read straight from your folders. Nothing here can be changed."
+        subtitle="Everything Claude has to hand: your skills, agents, tools and notes. Have a look around. This page only reads, so nothing can break."
       />
       {st.snapshot ? (
         <Loaded snap={st.snapshot} includeWorktrees={st.includeWorktrees} loads={st.loads} error={st.status === "ready" ? st.error : null} />

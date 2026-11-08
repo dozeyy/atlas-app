@@ -95,7 +95,7 @@ describe("Setup page", () => {
     await open(backend);
     const tiles = await screen.findByRole("list", { name: "Filter by type" });
     expect(within(tiles).getByRole("button", { name: /Skills/ })).toBeInTheDocument();
-    expect(screen.getByText(/items across 2 projects/)).toBeInTheDocument();
+    expect(screen.getByText(/things set up across 2 projects/)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Global \d+, Project \d+/ })).toBeInTheDocument();
   });
 
@@ -123,6 +123,23 @@ describe("Setup page", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Skills" })).toBeInTheDocument();
   });
 
+  it("narrows by where things live: All, Global, then one project", async () => {
+    await open(backend);
+    await screen.findByText("commit-helper");
+    const scope = screen.getByLabelText("Show items from");
+    const project = "Project copy of a shared skill.";
+    expect(screen.getByText(project)).toBeInTheDocument();
+
+    await userEvent.click(within(scope).getByRole("radio", { name: "Global" }));
+    await waitFor(() => expect(screen.queryByText(project)).not.toBeInTheDocument());
+    expect(screen.getByText("commit-helper")).toBeInTheDocument();
+
+    await userEvent.click(within(scope).getByRole("radio", { name: "Projects" }));
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Project" }), "p-atlas");
+    expect(await screen.findByText(project)).toBeInTheDocument();
+    expect(screen.queryByText("commit-helper")).not.toBeInTheDocument();
+  });
+
   it("folds and unfolds a group", async () => {
     await open(backend);
     const head = (await screen.findAllByRole("button", { name: /Agents/ })).find((b) => b.hasAttribute("aria-expanded"))!;
@@ -144,6 +161,29 @@ describe("Setup page", () => {
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(card).toHaveFocus();
+  });
+
+  it("opens the detail view with Enter on a focused card", async () => {
+    await open(backend);
+    const card = await screen.findByRole("button", { name: /skill commit-helper/ });
+    card.focus();
+    await userEvent.keyboard("{Enter}");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "commit-helper" })).toBeInTheDocument();
+  });
+
+  it("walks the cards with the arrow keys and stops at both ends", async () => {
+    await open(backend);
+    await screen.findByText("commit-helper");
+    const cards = () => Array.from(document.querySelectorAll<HTMLElement>("[data-item-card]"));
+    const first = cards()[0]!;
+    first.focus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(cards()[1]).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}{ArrowUp}");
+    expect(cards()[1]).toHaveFocus();
+    await userEvent.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
+    expect(first).toHaveFocus();
   });
 
   it("shows which item wins when two define the same thing, and jumps between them", async () => {
