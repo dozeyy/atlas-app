@@ -647,3 +647,69 @@ fn switching_the_root_builds_a_fresh_scan() {
     assert!(!db.snapshot.items.iter().any(|i| i.name == "user-only"));
     assert!(db.snapshot.items.iter().any(|i| i.name == "solo"));
 }
+
+// ---- the wire format the page reads ------------------------------------------------
+
+/// Every JSON key the page can receive, per object. `fixtures/setup-wire-keys.json`
+/// is the one list; src/lib/setup-wire.test.ts checks the TypeScript mock against it.
+/// Run with ATLAS_WRITE_WIRE=1 to rewrite the list after an intended change.
+#[test]
+fn the_wire_format_matches_the_front_end_key_list() {
+    use serde_json::Value;
+    use std::collections::BTreeSet;
+
+    fn keys(set: &mut BTreeMap<&'static str, BTreeSet<String>>, name: &'static str, v: &Value) {
+        if let Value::Object(m) = v {
+            set.entry(name).or_default().extend(m.keys().cloned());
+        }
+    }
+
+    let fx = Fx::new();
+    let d = fx.discover();
+    let snap = serde_json::to_value(&d.snapshot).unwrap();
+    let mut got: BTreeMap<&'static str, BTreeSet<String>> = BTreeMap::new();
+    keys(&mut got, "snapshot", &snap);
+    keys(&mut got, "root", &snap["root"]);
+    keys(&mut got, "hidden", &snap["hidden"]);
+    for p in snap["projects"].as_array().unwrap() {
+        keys(&mut got, "project", p);
+    }
+    for i in snap["items"].as_array().unwrap() {
+        keys(&mut got, "item", i);
+        keys(&mut got, "enabled", &i["enabled"]);
+        if !i["conflict"].is_null() {
+            keys(&mut got, "conflict", &i["conflict"]);
+            for x in i["conflict"]["definedIn"].as_array().unwrap() {
+                keys(&mut got, "definedIn", x);
+            }
+        }
+        for r in i["detail"].as_array().unwrap() {
+            keys(&mut got, "detailRow", r);
+        }
+        if !i["mcp"].is_null() {
+            keys(&mut got, "mcp", &i["mcp"]);
+            for p in i["mcp"]["perProject"].as_array().unwrap() {
+                keys(&mut got, "projectState", p);
+            }
+        }
+    }
+    let mut masked = false;
+    for i in &d.snapshot.items {
+        let v = serde_json::to_value(d.read_source(&i.id).unwrap()).unwrap();
+        keys(&mut got, "source", &v);
+        if let Some(r) = v["maskedRanges"].as_array().and_then(|a| a.first()) {
+            keys(&mut got, "maskedRange", r);
+            masked = true;
+        }
+    }
+    assert!(masked);
+
+    let out: BTreeMap<&str, Vec<String>> = got.iter().map(|(k, v)| (*k, v.iter().cloned().collect())).collect();
+    let path = fixtures().join("setup-wire-keys.json");
+    if std::env::var_os("ATLAS_WRITE_WIRE").is_some() {
+        fs::write(&path, serde_json::to_string_pretty(&out).unwrap() + "\n").unwrap();
+    }
+    let want: BTreeMap<String, Vec<String>> = serde_json::from_str(&fs::read_to_string(&path).expect("fixtures/setup-wire-keys.json")).unwrap();
+    let have: BTreeMap<String, Vec<String>> = out.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+    assert_eq!(have, want, "the Rust wire format changed: update setup-types.ts, the mock, then ATLAS_WRITE_WIRE=1");
+}

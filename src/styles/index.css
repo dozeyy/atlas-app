@@ -114,6 +114,27 @@ button {
   animation: pulse-dot 1.4s ease-in-out infinite;
 }
 
+/* Setup: loading placeholders and the detail sheet sliding in from the right. */
+.skeleton {
+  background: var(--raised);
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--travel) * 3));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.sheet-enter {
+  animation: sheet-in var(--dur-slow) var(--ease-out) both;
+}
+
 .press {
   transition:
     transform var(--dur-fast) var(--ease-out),
@@ -126,10 +147,12 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pulse-dot {
+  .pulse-dot,
+  .skeleton {
     animation: none;
   }
   .page-enter,
+  .sheet-enter,
   .fade-in {
     animation-duration: 1ms;
   }

@@ -123,7 +123,10 @@ fn real_config_read_only_budget() {
                 sources_read += 1;
                 leaked_source += secrets.iter().filter(|s| v.text.contains(s.as_str())).count();
             }
-            Err(_) => source_errors += 1,
+            Err(e) => {
+                source_errors += 1;
+                println!("SETUP_SOURCE_ERROR kind={} scope={:?} err={e}", it.kind.as_str(), it.scope);
+            }
         }
     }
     let conflicts = d.snapshot.items.iter().filter(|i| i.conflict.is_some()).count();
@@ -131,6 +134,20 @@ fn real_config_read_only_budget() {
     println!(
         "SETUP_SECRETS distinct_secret_values={} leaked_in_snapshot={leaked_snapshot} leaked_in_sources={leaked_source} sources_read={sources_read} source_errors={source_errors} conflicts={conflicts} items_with_warnings={warned}",
         secrets.len()
+    );
+    // With agent worktrees listed too (the page can then show them on request).
+    let mut with_wt = inputs.clone();
+    with_wt.include_worktrees = true;
+    let mut c2 = Cache::default();
+    let t = Instant::now();
+    let w = discover(&with_wt, &mut c2);
+    let w_ms = t.elapsed().as_secs_f64() * 1000.0;
+    let w_bytes = serde_json::to_vec(&w.snapshot).unwrap().len();
+    println!(
+        "SETUP_WORKTREES first_ms={w_ms:.1} items={} projects={} bytes={w_bytes} worktree_items={}",
+        w.snapshot.items.len(),
+        w.snapshot.projects.len(),
+        w.snapshot.items.iter().filter(|i| i.worktree).count()
     );
     assert_eq!(leaked_snapshot, 0);
     assert_eq!(leaked_source, 0);

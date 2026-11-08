@@ -162,6 +162,24 @@ impl AppState {
         })
     }
 
+    /// What Setup scans: the folder Atlas works on (the real one, or the sandbox
+    /// copy once it is ready). None while a sandbox is still being prepared.
+    pub fn setup_inputs(&self, include_worktrees: bool) -> Option<atlas_core::setup::DiscoveryInputs> {
+        let inner = self.lock();
+        let (root, sandboxed) = match &inner.slot {
+            Slot::Off => (self.real_root(&inner), false),
+            Slot::Ready(sb) => (sb.root.clone(), true),
+            _ => return None,
+        };
+        Some(atlas_core::setup::DiscoveryInputs {
+            root,
+            home: self.home.clone(),
+            managed_dir: atlas_core::setup::default_managed_dir(),
+            include_worktrees,
+            sandboxed,
+        })
+    }
+
     pub fn info(&self) -> AppInfo {
         let inner = self.lock();
         self.info_locked(&inner)

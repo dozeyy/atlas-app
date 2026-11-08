@@ -72,6 +72,8 @@ pub fn frontend_ready(app: AppHandle, state: Shared) -> u64 {
         let _ = w.set_focus();
     }
     eprintln!("[atlas] startup: {ms} ms to first paint");
+    // Setup reads Will's Claude folder in the background so its page is full when opened.
+    crate::setup_service::prefetch(&app);
     // The page booted with first_paint_ms unset; tell it the number now.
     let _ = app.emit(crate::state::INFO_EVENT, state.info());
     ms

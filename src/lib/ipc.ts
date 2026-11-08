@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AppInfo, Theme, View } from "./types";
+import type { SetupSnapshot, SourceView } from "./setup-types";
 import { MockBackend } from "./mock";
 
 declare global {
@@ -15,6 +16,7 @@ declare global {
 }
 
 export const INFO_EVENT = "atlas://info";
+export const SETUP_EVENT = "atlas://setup-changed";
 
 export const inTauri = (): boolean =>
   typeof window !== "undefined" && window.__TAURI_INTERNALS__ !== undefined;
@@ -27,6 +29,13 @@ export interface Backend {
   clearConfigDir(): Promise<AppInfo>;
   frontendReady(): Promise<void>;
   onInfo(cb: (info: AppInfo) => void): Promise<() => void>;
+  /** Setup (read only): the whole setup without file bodies. */
+  setupSnapshot(includeWorktrees?: boolean): Promise<SetupSnapshot>;
+  /** The masked text of one item. */
+  setupReadSource(id: string): Promise<SourceView>;
+  /** One masked value, on request. */
+  setupReveal(id: string, index: number): Promise<string>;
+  onSetupChanged(cb: (version: number) => void): Promise<() => void>;
 }
 
 const tauriBackend: Backend = {
@@ -40,6 +49,13 @@ const tauriBackend: Backend = {
   },
   onInfo: async (cb) => {
     const off = await listen<AppInfo>(INFO_EVENT, (e) => cb(e.payload));
+    return off;
+  },
+  setupSnapshot: (includeWorktrees) => invoke<SetupSnapshot>("setup_snapshot", { includeWorktrees }),
+  setupReadSource: (id) => invoke<SourceView>("setup_read_source", { id }),
+  setupReveal: (id, index) => invoke<string>("setup_reveal", { id, index }),
+  onSetupChanged: async (cb) => {
+    const off = await listen<{ version: number }>(SETUP_EVENT, (e) => cb(e.payload.version));
     return off;
   },
 };

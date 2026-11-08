@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod setup_service;
 mod state;
 
 use std::sync::Arc;
@@ -31,6 +32,7 @@ fn main() {
                 .build(),
         )
         .manage(Arc::clone(&state))
+        .manage(Arc::new(setup_service::SetupHub::default()))
         .invoke_handler(tauri::generate_handler![
             commands::get_app_info,
             commands::update_settings,
@@ -38,6 +40,9 @@ fn main() {
             commands::choose_config_dir,
             commands::clear_config_dir,
             commands::frontend_ready,
+            setup_service::setup_snapshot,
+            setup_service::setup_read_source,
+            setup_service::setup_reveal,
         ])
         .setup(|app| {
             let state = app.state::<Arc<AppState>>().inner().clone();
