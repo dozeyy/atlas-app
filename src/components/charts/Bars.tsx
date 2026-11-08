@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { barPath } from "../../lib/chartPaths";
+import { ZERO_STUB, barPath, barTop } from "../../lib/chartPaths";
 import { useIntro } from "../../lib/motion";
 import { niceMax } from "../../lib/usage";
 import { ChartTooltip } from "./ChartTooltip";
@@ -50,7 +50,7 @@ export function Bars({
   const base = height - BOTTOM;
   const slot = plotW / Math.max(1, n);
   const bw = Math.max(2, slot * 0.62);
-  const yOf = (v: number) => base - (v / max) * (base - TOP);
+  const yOf = (v: number) => barTop(v, max, base, TOP);
   const hot = highlight ?? n - 1;
 
   const busiest = useMemo(() => {
@@ -121,7 +121,7 @@ export function Bars({
                   style={{ ["--hs" as string]: Math.min(1.6, (h + 4) / Math.max(h, 1)), ["--i" as string]: i }}
                 />
               ) : (
-                <rect className="bar zero" x={x} y={base - 3} width={bw} height={3} rx={1.5} style={{ ["--i" as string]: i }} />
+                <rect className="bar zero" x={x} y={base - ZERO_STUB} width={bw} height={ZERO_STUB} rx={1.5} style={{ ["--i" as string]: i }} />
               )}
               {/* The pointer target never moves: a full-height slot, not the bar. */}
               <rect
