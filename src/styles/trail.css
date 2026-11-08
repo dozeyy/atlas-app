@@ -595,8 +595,21 @@ html.reduced .options-panel {
   opacity: 0;
   transition-delay: 0ms;
 }
-.side-collapsed .streak-btn {
-  display: none; /* the streak is for the open sidebar only */
+/* Settings at the foot: one square icon button in the bottom-right corner; centred under the
+   other icons when folded. */
+.nav-settings-row {
+  display: flex;
+  justify-content: flex-end;
+}
+.side-collapsed .nav-settings-row {
+  justify-content: center;
+}
+.nav-settings-row .nav-item {
+  width: 36px;
+}
+.nav-settings-row .nav-face {
+  justify-content: center;
+  padding: 0;
 }
 .side-collapsed [role="status"] {
   justify-content: center;

@@ -28,7 +28,8 @@ describe("navigation", () => {
     expect(labels).toEqual(["Dashboard", "Sessions", "Toolkit", "History", "Wrapped"]);
     // Settings sits at the foot of the sidebar, where the version used to be; the version lives in Settings.
     const foot = screen.getByRole("navigation", { name: "Secondary" });
-    expect(Array.from(foot.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Settings"]);
+    // Icon only (Will, 2026-11-08): the name is the accessible label and tooltip, not visible text.
+    expect(Array.from(foot.querySelectorAll("button")).map((b) => b.getAttribute("aria-label"))).toEqual(["Settings"]);
     expect(screen.queryByText(/^Version /)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();

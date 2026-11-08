@@ -73,13 +73,14 @@ describe("sidebar folding", () => {
     expect(side()).toHaveClass("side-collapsed");
   });
 
-  it("folded, the streak chip is not shown at all", () => {
-    mount(true);
-    // CSS hides it (display: none); the class that does so is the fold itself.
-    expect(side()).toHaveClass("side-collapsed");
+  it("Settings is an icon-only button at the foot; no streak chip in the sidebar", () => {
+    mount(false);
+    const settings = within(side()).getByRole("button", { name: "Settings" });
+    expect(settings).toHaveTextContent("");
+    expect(within(side()).queryByText(/day streak/)).not.toBeInTheDocument();
   });
 
-  it("the streak chip and On a roll count one streak from the same daily series", async () => {
+  it("On a roll counts Will's real week as 2 (Thu and Fri empty)", async () => {
     // Will's real week to Sun Nov 8, 2026: Thu and Fri empty, Sat and Sun used -> 2, not 3.
     const back = [21_207_932, 1_818_406, 0, 0, 9_112_596, 41_193_420, 56_095_560];
     const b = new MockBackend();
@@ -103,7 +104,6 @@ describe("sidebar folding", () => {
         <App />
       </AtlasProvider>,
     );
-    expect(await screen.findByRole("button", { name: "2 day streak" })).toBeInTheDocument();
     const roll = await screen.findByRole("region", { name: "On a roll" });
     await waitFor(() => expect(within(roll).getByText("2")).toHaveClass("d-stat"));
     invalidateDaily();
