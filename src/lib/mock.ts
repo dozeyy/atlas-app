@@ -36,6 +36,7 @@ function loadSettings(): Settings {
 export function mockInfo(overrides: Partial<AppInfo> = {}, platform: Platform = "windows"): AppInfo {
   const real = view("C:/Users/you/.claude", "default");
   return {
+    seq: 0,
     version: "0.1.0",
     platform,
     backdrop: false,
@@ -46,6 +47,7 @@ export function mockInfo(overrides: Partial<AppInfo> = {}, platform: Platform = 
     configLockedByFlag: false,
     settings: loadSettings(),
     settingsNote: null,
+    settingsSaveError: null,
     firstPaintMs: null,
     ...overrides,
   };
@@ -59,7 +61,8 @@ export class MockBackend {
     return this.info;
   }
 
-  private commit(next: AppInfo): AppInfo {
+  private commit(change: AppInfo): AppInfo {
+    const next = { ...change, seq: this.info.seq + 1 };
     this.info = next;
     try {
       localStorage.setItem(KEY, JSON.stringify(next.settings));

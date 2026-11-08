@@ -138,6 +138,9 @@
   --sidebar-w: 232px;
   --content-max: 960px;
   --titlebar-inset: 0px; /* macOS overlay title bar sets this to 28px */
+  /* Same numbers as MIN_WIDTH / MIN_HEIGHT in crates/app/src/main.rs. */
+  --window-min-w: 900px;
+  --window-min-h: 600px;
 }
 
 @media (prefers-reduced-motion: reduce) {

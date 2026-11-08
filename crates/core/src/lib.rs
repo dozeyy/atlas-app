@@ -8,5 +8,6 @@
 pub mod fsutil;
 pub mod launch;
 pub mod paths;
+pub mod redact;
 pub mod sandbox;
 pub mod settings;

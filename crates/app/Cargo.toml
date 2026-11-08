@@ -26,3 +26,6 @@ windows-version = "0.1"
 # tauri build turns this on: the front end is served from the binary instead of
 # the Vite dev server.
 custom-protocol = ["tauri/custom-protocol"]
+
+[dev-dependencies]
+tempfile.workspace = true

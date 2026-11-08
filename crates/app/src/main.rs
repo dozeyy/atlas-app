@@ -9,7 +9,28 @@ use std::time::Duration;
 
 use atlas_core::launch::LaunchArgs;
 use state::AppState;
-use tauri::{Manager, RunEvent, WebviewWindowBuilder};
+use tauri::{Emitter, LogicalSize, Manager, RunEvent, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+
+/// Smallest window the layout is designed for (same as `minWidth`/`minHeight` in
+/// tauri.conf.json). The OS only applies a minimum to dragging an edge, not to a
+/// size that is set from code or restored from the last session, so it is also
+/// enforced here.
+const MIN_WIDTH: f64 = 900.0;
+const MIN_HEIGHT: f64 = 600.0;
+
+fn enforce_min_size(w: &WebviewWindow) {
+    if w.is_minimized().unwrap_or(false) || w.is_maximized().unwrap_or(false) || w.is_fullscreen().unwrap_or(false) {
+        return;
+    }
+    let (Ok(scale), Ok(inner)) = (w.scale_factor(), w.inner_size()) else { return };
+    let size = inner.to_logical::<f64>(scale);
+    if size.width == 0.0 || size.height == 0.0 {
+        return; // minimizing reports an empty size on some systems
+    }
+    if size.width + 0.5 < MIN_WIDTH || size.height + 0.5 < MIN_HEIGHT {
+        let _ = w.set_size(LogicalSize::new(size.width.max(MIN_WIDTH), size.height.max(MIN_HEIGHT)));
+    }
+}
 
 fn main() {
     let launch = LaunchArgs::parse(std::env::args_os().skip(1));
@@ -54,8 +75,19 @@ fn main() {
             }
             let window = WebviewWindowBuilder::from_config(app.handle(), &cfg)?
                 .initialization_script(format!("window.__ATLAS_BOOT__ = {boot};"))
+                .min_inner_size(MIN_WIDTH, MIN_HEIGHT)
                 .build()?;
             commands::apply_window_theme(&window, info.settings.theme);
+
+            // The window-state plugin may have restored a size from a session that
+            // ended small, and a program can resize the window to anything.
+            enforce_min_size(&window);
+            let w = window.clone();
+            window.on_window_event(move |e| {
+                if matches!(e, WindowEvent::Resized(_)) {
+                    enforce_min_size(&w);
+                }
+            });
 
             // Failsafe: never leave the window invisible if the page fails to load.
             let w = window.clone();
@@ -66,13 +98,19 @@ fn main() {
                 }
             });
 
-            // Sandbox Mode copies in the background; the window never waits for it.
+            // Background changes (a sandbox copy finishing) reach the page as events.
             let handle = app.handle().clone();
+            state.set_notifier(Arc::new(move |info| {
+                let _ = handle.emit(state::INFO_EVENT, info);
+            }));
+            state.start_heartbeat();
+
+            // Sandbox Mode copies in the background; the window never waits for it.
             let st = Arc::clone(&state);
             std::thread::spawn(move || {
                 st.sweep_stale_sandboxes();
                 if st.info().sandbox.enabled {
-                    st.restart_sandbox_if_wanted(&handle);
+                    st.restart_sandbox_if_wanted();
                 }
             });
             Ok(())

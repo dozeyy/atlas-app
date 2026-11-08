@@ -41,3 +41,14 @@ the end (the known-fix-lookup hook reads the tail; later entries win).
   ~/.claude = 2468 files in 4.3 s on a background thread, real files untouched.
 
 - CI: first run failed on macOS only: std::path::absolute keeps ".." on Unix, so the real-config write guard missed home/x/../.claude/a when x did not exist (guard hole, fixed in comparable()). Second run green on both OS (run 42498855503). macOS runtime (launch, vibrancy, traffic lights) still unverified: no Mac.
+
+## 2026-11-08 - Phase 1 review fixes
+- Sandbox discards (set_sandbox, config override, clear) run off the UI thread; the copy thread drops the state lock before discarding a superseded copy; copies are cancellable.
+- Sweep keeps a sandbox whose marker pid is alive (14-day cap) and removes a dead owner's after 5 min; a heartbeat touches the marker. Marker is written first and deleted last. Normal exit and Sandbox-off both clean up (checked in the release app with TEMP pointed at scratch: 0 leftovers).
+- File symlinks are never followed blindly: skipped when the target is outside the source or matches skip_reason (new SkipReason::FileLink). Symlink end-to-end tests skip locally (no privilege on Windows) and run on CI.
+- Sandbox copies of .claude.json and settings*.json redact env values, headers, tokens, OAuth/account fields (fails closed on non-JSON); sandbox root is 0700 on Unix.
+- Settings save: failure surfaces as a banner (settingsSaveError), file write is outside the mutex; AppInfo.seq drops stale INFO_EVENT snapshots. comparable() canonicalizes the deepest existing prefix before applying "..". fsync of the parent dir on Unix; read-only target fails fast on Windows.
+- CSP: 'unsafe-inline' styles dropped (React/Radix/floating-ui style via CSSOM) plus base-uri/object-src/form-action/frame-ancestors; app renders normally in the release build.
+- Min window 900x600 set at creation and re-enforced on Resize (window-state plugin can restore a tiny size); CSS backstop on #root via tokens. A 400x300 SetWindowPos stayed at 900x600 client.
+- Dead ends: WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS is overridden by Tauri (no CDP port); Start-Sleep'd UIA + SetWindowPos + CopyFromScreen drove the release app instead. Start-Process -ArgumentList needs the args pre-quoted when a path has spaces.
+- The 3 old real-%TEMP% atlas-sandbox-* folders were left in place (delete outside the project is gated).
