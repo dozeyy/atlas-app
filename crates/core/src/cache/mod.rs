@@ -198,6 +198,19 @@ pub fn register_functions(conn: &Connection, prices: &PriceHandle, tz: Tz) -> ru
         let basis = Basis { model, speed, geo, service_tier: tier, price_tier: ctx.get(4)? };
         Ok(table.cost(&basis, &counts))
     })?;
+    // price_tier_of(model, input, cw5m, cw1h, cr): the long-context flag under the live table.
+    let handle = Arc::clone(prices);
+    conn.create_scalar_function("price_tier_of", 5, FunctionFlags::SQLITE_UTF8, move |ctx| {
+        let table = handle.read().unwrap_or_else(|p| p.into_inner()).clone();
+        let counts = Counts {
+            input: ctx.get::<i64>(1)?.max(0) as u64,
+            cw5m: ctx.get::<i64>(2)?.max(0) as u64,
+            cw1h: ctx.get::<i64>(3)?.max(0) as u64,
+            cr: ctx.get::<i64>(4)?.max(0) as u64,
+            ..Default::default()
+        };
+        Ok(table.price_tier(ctx.get_raw(0).as_str().unwrap_or(""), &counts))
+    })?;
     conn.create_scalar_function(
         "hour_of",
         1,

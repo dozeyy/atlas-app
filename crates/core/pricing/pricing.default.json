@@ -145,7 +145,7 @@
       "cacheWrite5m": 1.25,
       "cacheWrite1h": 2,
       "cacheRead": 0.1,
-      "aliases": [],
+      "aliases": ["claude-haiku-4-5-20251001"],
       "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing"
     }
   }

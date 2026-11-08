@@ -592,6 +592,21 @@ fn refresh_aggregates(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
     )
 }
 
+/// Recompute the stored long-context flag of every message under the live price table, then
+/// rebuild the aggregates that carry it. Needed when a price-file edit moves a threshold.
+/// Returns how many messages changed tier.
+pub fn retier_all(conn: &mut Connection) -> rusqlite::Result<usize> {
+    let n = conn.execute(
+        "UPDATE messages SET price_tier = price_tier_of(model, input, cw5m, cw1h, cr)
+         WHERE price_tier != price_tier_of(model, input, cw5m, cw1h, cr)",
+        [],
+    )?;
+    if n > 0 {
+        rebuild_all_aggregates(conn)?;
+    }
+    Ok(n)
+}
+
 /// Rebuild every aggregate from `messages` (time-zone change, repair).
 pub fn rebuild_all_aggregates(conn: &mut Connection) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;

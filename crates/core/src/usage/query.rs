@@ -170,7 +170,7 @@ pub struct TimelineArgs {
     pub group_by: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionQuery {
     #[serde(default)]
@@ -185,7 +185,9 @@ pub struct SessionQuery {
     pub text: Option<String>,
     #[serde(default)]
     pub min_cost_usd: Option<f64>,
-    #[serde(default)]
+    /// Sessions whose transcript files are gone stay listed unless the caller says false
+    /// (the same default the UI sends).
+    #[serde(default = "yes")]
     pub include_missing: bool,
     #[serde(default)]
     pub sort: String,
@@ -195,6 +197,28 @@ pub struct SessionQuery {
     pub cursor: Option<String>,
     #[serde(default)]
     pub limit: usize,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for SessionQuery {
+    fn default() -> Self {
+        SessionQuery {
+            from: None,
+            to: None,
+            projects: Vec::new(),
+            models: Vec::new(),
+            text: None,
+            min_cost_usd: None,
+            include_missing: true,
+            sort: String::new(),
+            dir: String::new(),
+            cursor: None,
+            limit: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -768,6 +768,7 @@ impl Core {
         let current = self.prices.read().unwrap_or_else(|p| p.into_inner()).clone();
         let loaded = pricing_file::load(&self.cfg.data_dir, Some(&current));
         let changed = *current != loaded.table;
+        let loaded_sig = loaded.table.tier_signature();
         if changed {
             *self.prices.write().unwrap_or_else(|p| p.into_inner()) = Arc::new(loaded.table.clone());
         }
@@ -780,6 +781,14 @@ impl Core {
         self.sink.emit(Event::Pricing(info));
         if changed {
             self.log("usage: prices changed");
+            if current.tier_signature() != loaded_sig {
+                if let Some(conn) = self.conn.as_mut().filter(|_| self.kind == OpenKind::Ready) {
+                    match ingest::retier_all(conn) {
+                        Ok(n) => self.sink.log(&format!("usage: long-context threshold changed, {n} messages re-tiered")),
+                        Err(e) => self.sink.log(&format!("usage: re-tier failed: {e}")),
+                    }
+                }
+            }
             self.queue_changed("reprice", &[], None, None);
             self.publish(State::Idle, None);
         }

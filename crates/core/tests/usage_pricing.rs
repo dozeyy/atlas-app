@@ -126,3 +126,45 @@ fn editing_a_price_reprices_with_zero_transcript_bytes_and_emits() {
     assert!((kept - after).abs() < 1e-12, "last good table stays in force");
     assert_eq!(engine.bytes_read(), bytes);
 }
+
+/// Editing a long-context threshold re-tiers the stored messages and aggregates: the live engine
+/// ends on exactly the numbers a cold engine computes with the edited file from the start.
+#[test]
+fn editing_a_long_context_threshold_retiers_stored_rows() {
+    let config = tempfile::tempdir().unwrap();
+    copy_tree(&fixture("claude-basic"), config.path());
+    let data = tempfile::tempdir().unwrap();
+    let engine = UsageEngine::start(config_for(config.path(), data.path(), Tz::Fixed(0)), Arc::new(Capture::default()));
+    assert!(engine.wait_pass(0, WAIT));
+    let before = engine.dashboard().unwrap().month.cost.usd.unwrap();
+
+    let edit = |live: &std::path::Path| {
+        let mut v: serde_json::Value = serde_json::from_str(&fs::read_to_string(live).unwrap()).unwrap();
+        v["models"]["claude-haiku-5-5"]["longContext"]["thresholdTokens"] = 1.into();
+        fs::write(live, serde_json::to_string_pretty(&v).unwrap()).unwrap();
+    };
+    let live = pricing_file::live_path(data.path());
+    edit(&live);
+    engine.reload_pricing();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let mut after = before;
+    while std::time::Instant::now() < deadline {
+        after = engine.dashboard().unwrap().month.cost.usd.unwrap();
+        if (after - before).abs() > 1e-12 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(after > before, "long-context rates must now apply: {before} -> {after}");
+    // Give the writer a moment so the aggregate rebuild has surely finished, then read again.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let after = engine.dashboard().unwrap().month.cost.usd.unwrap();
+
+    let data2 = tempfile::tempdir().unwrap();
+    pricing_file::init(data2.path(), None);
+    edit(&pricing_file::live_path(data2.path()));
+    let cold = UsageEngine::start(config_for(config.path(), data2.path(), Tz::Fixed(0)), Arc::new(Capture::default()));
+    assert!(cold.wait_pass(0, WAIT));
+    let cold_cost = cold.dashboard().unwrap().month.cost.usd.unwrap();
+    assert!((cold_cost - after).abs() < 1e-9, "live {after} vs cold {cold_cost}");
+}

@@ -172,6 +172,18 @@ impl PriceTable {
         i64::from(c.prompt() > threshold)
     }
 
+    /// Everything `price_tier` depends on. Equal signatures mean no stored tier can change.
+    pub fn tier_signature(&self) -> Vec<(String, u64)> {
+        let mut v: Vec<(String, u64)> = self
+            .models
+            .iter()
+            .map(|(id, m)| (id.clone(), m.long_context.as_ref().map_or(0, |l| l.threshold_tokens)))
+            .collect();
+        v.extend(self.alias_index.iter().map(|(a, id)| (format!("{a}={id}"), 0)));
+        v.sort();
+        v
+    }
+
     /// Dollars for the row, or `None` when it cannot be priced exactly.
     pub fn cost(&self, b: &Basis, c: &Counts) -> Option<f64> {
         let m = self.model(b.model)?;
@@ -179,7 +191,9 @@ impl PriceTable {
         if !self.service_tiers.iter().any(|t| t == tier) {
             return None;
         }
-        let geo = if b.geo.is_empty() { "global" } else { b.geo };
+        // "not_available" is what the API reports when the model has no geo control (28 % of the
+        // rows on Will's PC): billed like global, as Claude Code does.
+        let geo = if b.geo.is_empty() || b.geo == "not_available" { "global" } else { b.geo };
         let geo_mult = *self.geo_multipliers.get(geo)?;
         let (mut pin, mut pout, mut w5, mut w1, mut pr) = if b.price_tier == 1 {
             match &m.long_context {
@@ -274,6 +288,39 @@ mod tests {
         x.input = 80_000; // prompt exactly 100,000
         let tier = t.price_tier("claude-haiku-5-5", &x);
         assert_eq!(tier, 0);
+    }
+
+    #[test]
+    fn geo_not_available_bills_as_global() {
+        let t = PriceTable::seed();
+        let g = basis("claude-opus-5-5", "standard", "global", "standard", 0);
+        let na = basis("claude-opus-5-5", "standard", "not_available", "standard", 0);
+        let empty = basis("claude-opus-5-5", "standard", "", "standard", 0);
+        let want = t.cost(&g, &c(1000, 1000)).unwrap();
+        assert_eq!(t.cost(&na, &c(1000, 1000)), Some(want));
+        assert_eq!(t.cost(&empty, &c(1000, 1000)), Some(want));
+        let unknown = basis("claude-opus-5-5", "standard", "mars", "standard", 0);
+        assert!(t.cost(&unknown, &c(1, 1)).is_none());
+    }
+
+    #[test]
+    fn dated_haiku_4_5_alias_is_priced() {
+        let t = PriceTable::seed();
+        assert!(t.is_known("claude-haiku-4-5-20251001"));
+        let a = basis("claude-haiku-4-5-20251001", "standard", "global", "standard", 0);
+        let b = basis("claude-haiku-4-5", "standard", "global", "standard", 0);
+        assert_eq!(t.cost(&a, &c(1000, 1000)), t.cost(&b, &c(1000, 1000)));
+    }
+
+    #[test]
+    fn tier_signature_moves_with_the_threshold_only() {
+        let a = PriceTable::seed();
+        let mut b = a.clone();
+        assert_eq!(a.tier_signature(), b.tier_signature());
+        b.models.get_mut("claude-opus-5-5").unwrap().input = 9.0; // a price edit, not a tier edit
+        assert_eq!(a.tier_signature(), b.tier_signature());
+        b.models.get_mut("claude-haiku-5-5").unwrap().long_context.as_mut().unwrap().threshold_tokens = 50_000;
+        assert_ne!(a.tier_signature(), b.tier_signature());
     }
 
     #[test]
