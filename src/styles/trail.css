@@ -398,19 +398,12 @@
   width: 36px;
   height: 32px;
 }
-/* Sessions: the search and its two buttons sit one step taller (Will, 2026-11-08). */
-.toolbar-tall input[type="search"] {
-  height: 40px;
-  padding-left: 36px;
-}
-.toolbar-tall label > svg {
-  left: 14px;
-  width: 16px;
-  height: 16px;
-}
+/* Sessions: the search and its two buttons sit one step taller (Will, 2026-11-08). The buttons take
+   it here; the search box takes the same --field-tall from its `tall` prop (fields.tsx), because
+   a rule in this layer loses to the field's own h-8 utility. That was the miss: the search stayed 28. */
 .toolbar-tall .options-trigger {
   width: 44px;
-  height: 40px;
+  height: var(--field-tall);
 }
 .options-trigger .btn-face {
   position: relative;

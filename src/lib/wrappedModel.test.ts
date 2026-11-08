@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { buildSlides, coverageLine, hourLabel, hourTotals, peakHour, MAX_CELEBRATIONS } from "./wrappedModel";
 import type { WrappedData } from "./wrappedModel";
 import type { ItemUse } from "./usageTypes";
@@ -13,8 +13,6 @@ function data(over: Partial<WrappedData> = {}): WrappedData {
     spanDays: 31,
     activeDays: 22,
     tokens: 48_200_000,
-    usd: 61.5,
-    costComplete: true,
     sessions: 140,
     busiest: { day: "2026-10-27", tokens: 4_100_000, sessions: 9 },
     streak: 4,
@@ -45,7 +43,7 @@ describe("buildSlides", () => {
   it("tells the full story with real numbers and ends on what it covers", () => {
     const s = buildSlides(data());
     const ids = s.map((x) => x.id);
-    expect(ids).toEqual(["tokens", "days", "skill", "helper", "tool", "busiest", "rhythm", "project", "cost", "end"]);
+    expect(ids).toEqual(["tokens", "days", "skill", "helper", "tool", "busiest", "rhythm", "project", "models", "end"]);
     expect(s[0].figure).toBe("48M");
     expect(s.find((x) => x.id === "skill")?.figure).toBe("frontend-design");
     expect(s[s.length - 1].line).toContain("clears its logs after 30 days");
@@ -57,13 +55,16 @@ describe("buildSlides", () => {
   });
 
   it("leaves out a slide whose numbers are missing instead of making them up", () => {
-    const s = buildSlides(data({ skills: [], agents: [], tools: [], projects: [], usd: null, busiest: null, hours: new Array(24).fill(0) }));
+    const s = buildSlides(data({ skills: [], agents: [], tools: [], projects: [], models: [], busiest: null, hours: new Array(24).fill(0) }));
     expect(s.map((x) => x.id)).toEqual(["tokens", "days", "end"]);
   });
 
-  it("marks an estimate that is missing some prices with a plus", () => {
-    const cost = buildSlides(data({ costComplete: false })).find((x) => x.id === "cost");
-    expect(cost?.figure.endsWith("+")).toBe(true);
+  it("counts tokens, never dollars", () => {
+    const s = buildSlides(data());
+    const models = s.find((x) => x.id === "models");
+    expect(models?.figure).toBe("Opus 5.5");
+    expect(models?.line).toBe("83% of your tokens.");
+    expect(JSON.stringify(s)).not.toContain("$");
   });
 
   it("celebrates at most three moments", () => {

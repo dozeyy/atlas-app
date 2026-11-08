@@ -270,6 +270,11 @@
   --r-sheet: 18px;
   --r-pill: 999px;
 
+  /* The taller toolbar row (Sessions): the search box and the Filter and Sort buttons all use this
+     one height, so they cannot drift apart. Utilities beat the components layer, so a field takes
+     it through its own class, never through a `.toolbar` descendant selector. */
+  --field-tall: 40px;
+
   /* Motion: 150-250 ms ease-out; reduced motion removes travel, keeps fades. */
   --dur-fast: 120ms;
   --dur: 180ms;

@@ -12,7 +12,7 @@ import { Sparkline } from "../components/charts/Sparkline";
 import { StackBar } from "../components/charts/StackBar";
 import type { StackItem } from "../components/charts/StackBar";
 import { ActivityCard } from "../components/usage/ActivityCard";
-import { CostText } from "../components/usage/CostText";
+
 import { SessionGrid, SessionLine } from "../components/usage/SessionList";
 import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
 import { useAtlas } from "../state/AtlasProvider";
@@ -31,7 +31,7 @@ import {
   weekdayInitial,
 } from "../lib/dashboardModel";
 import { usualDay } from "../lib/chartPaths";
-import { addDays, compact, exact, formatUsd, headline, localDay, modelLabel, plural } from "../lib/usage";
+import { addDays, compact, exact, formatUsd, headline, localDay, modelLabel, plural, tokenHint } from "../lib/usage";
 import type { BarDatum } from "../components/charts/Bars";
 import type { Dashboard as DashboardData, Timeline, UsageStatus } from "../lib/types";
 
@@ -60,7 +60,7 @@ function Notes({ data, status }: { data: DashboardData; status: UsageStatus | nu
   const notes: string[] = [];
   if (data.warnings.unknownModels.length > 0) {
     notes.push(
-      `No price for ${data.warnings.unknownModels.map(modelLabel).join(", ")}. Their tokens are counted, but their cost is left out, so a cost with a plus sign is higher in real life.`,
+      `No price for ${data.warnings.unknownModels.map(modelLabel).join(", ")}. Their tokens are counted, but they get no dollar estimate, so an estimate with a plus sign is higher in real life.`,
     );
   }
   if (status && status.cwAssumedRows > 0) {
@@ -97,7 +97,7 @@ function PriceFootnote() {
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-ink-2">
       <span>
-        Costs are estimates from a price list{info ? ` (updated ${info.table.updated})` : ""}, not a bill.
+        Dollar figures in hovers are estimates from a price list{info ? ` (updated ${info.table.updated})` : ""}, not a bill.
       </span>
       {info?.error && (
         <span role="status" className="text-warning">
@@ -265,15 +265,12 @@ export function Dashboard() {
                     <h2 className="d d-figure text-ink">Last 7 days</h2>
                     {week?.delta != null && <Delta pct={week.delta} />}
                   </div>
-                  <div className="my-3.5 flex items-baseline gap-2.5">
+                  <div className="my-3.5 flex items-baseline gap-2.5" title={tokenHint(weekTokens, data.week.cost)}>
                     <CountUp value={weekTokens} format={exact} id="dash:hero" className="d d-hero text-ink" />
                     <span className="text-lead font-semibold text-ink-2">tokens</span>
                   </div>
                   <div className="text-body text-ink-2">
-                    <b className="d d-small text-ink">
-                      <CostText cost={data.week.cost} />
-                    </b>{" "}
-                    estimated · {plural(data.week.sessions, "session")}
+                    {plural(data.week.sessions, "session")}
                     {projects.count ? ` · ${plural(projects.count, "project")}` : ""}
                   </div>
                   {data.week.tokens.cacheRead > 0 && (
@@ -310,7 +307,7 @@ export function Dashboard() {
                     }
                   >
                     <div>
-                      <div className="d d-figure text-ink" title={`${exact(headline(data.today.tokens))} tokens`}>
+                      <div className="d d-figure text-ink" title={tokenHint(headline(data.today.tokens), data.today.cost)}>
                         {compact(headline(data.today.tokens))}
                       </div>
                       <div className="text-caption text-ink-2">tokens</div>
@@ -325,9 +322,7 @@ export function Dashboard() {
                     </div>
                     <div>
                       <b className="d d-small block text-ink">{plural(data.today.sessions, "session")}</b>
-                      <span className="text-caption text-ink-2">
-                        <CostText cost={data.today.cost} /> estimated
-                      </span>
+                      <span className="text-caption text-ink-2">started today</span>
                     </div>
                   </div>
                 </div>

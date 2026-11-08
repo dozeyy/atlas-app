@@ -1,5 +1,5 @@
-//! The tray icon (Windows notification area, macOS menu bar): a tooltip and a menu that
-//! read "Today: N tokens, ~$X est." (see `atlas_core::readout`), a left click that opens
+//! The tray icon (Windows notification area, macOS menu bar): a menu that reads "Today: N
+//! tokens" and a tooltip that adds "~$X est." (see `atlas_core::readout`), a left click that opens
 //! Atlas, and the opt-in close-to-tray.
 //!
 //! The numbers come from the usage engine's own queries (headline tokens, estimated
@@ -44,19 +44,21 @@ pub fn focus_main(app: &AppHandle) {
     }
 }
 
-/// The text for right now.
-fn line_for(state: &AppState) -> String {
-    let Ok(engine) = state.usage.engine() else { return readout::WAITING.to_string() };
+/// The text for right now: (menu line, tooltip). The menu shows tokens only; the tooltip is
+/// the hover and adds the estimated money.
+fn line_for(state: &AppState) -> (String, String) {
+    let same = |s: &str| (s.to_string(), s.to_string());
+    let Ok(engine) = state.usage.engine() else { return same(readout::WAITING) };
     let status = engine.status();
     if status.state == UsageState::Error && !status.first_index_done {
-        return "Atlas: usage is unavailable".to_string();
+        return same("Atlas: usage is unavailable");
     }
     if !status.first_index_done {
-        return readout::WAITING.to_string();
+        return same(readout::WAITING);
     }
     match engine.today() {
-        Ok(p) => readout::today_line(&p),
-        Err(_) => readout::WAITING.to_string(),
+        Ok(p) => (readout::today_line(&p), readout::today_hover(&p)),
+        Err(_) => same(readout::WAITING),
     }
 }
 
@@ -101,12 +103,12 @@ pub fn install(app: &AppHandle, state: &Arc<AppState>) -> tauri::Result<()> {
     std::thread::Builder::new()
         .name("tray-readout".into())
         .spawn(move || {
-            let mut shown = String::new();
+            let mut shown = (String::new(), String::new());
             loop {
                 let text = line_for(&st);
                 if text != shown {
-                    let _ = icon.set_tooltip(Some(text.as_str()));
-                    let _ = today.set_text(&text);
+                    let _ = icon.set_tooltip(Some(text.1.as_str()));
+                    let _ = today.set_text(&text.0);
                     shown = text;
                 }
                 match rx.recv_timeout(FALLBACK) {
