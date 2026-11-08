@@ -66,16 +66,14 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
 /// Windows refuses to replace a read-only file, and the rename retry below would
 /// spend about a second finding that out. Say so at once, in plain words.
 fn fail_fast_if_read_only(target: &Path) -> io::Result<()> {
-    if cfg!(windows) {
-        if let Ok(meta) = fs::metadata(target) {
-            if meta.permissions().readonly() {
+    if cfg!(windows)
+        && let Ok(meta) = fs::metadata(target)
+            && meta.permissions().readonly() {
                 return Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
                     format!("{} is read-only; clear its read-only flag to let Atlas change it", target.display()),
                 ));
             }
-        }
-    }
     Ok(())
 }
 
@@ -140,16 +138,16 @@ pub fn check_write_allowed(path: &Path) -> io::Result<()> {
     }
     let home = crate::paths::home_dir();
     let env = std::env::var_os("CLAUDE_CONFIG_DIR");
-    if let Some(home) = home {
-        if is_real_claude_path(path, &home, env.as_deref().map(Path::new)) {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                format!(
-                    "refused: {} is part of the real Claude config; development and test builds never write it (use a fixture, --config-dir or Sandbox Mode)",
-                    path.display()
-                ),
-            ));
-        }
+    if let Some(home) = home
+        && is_real_claude_path(path, &home, env.as_deref().map(Path::new))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "refused: {} is part of the real Claude config; development and test builds never write it (use a fixture, --config-dir or Sandbox Mode)",
+                path.display()
+            ),
+        ));
     }
     Ok(())
 }
@@ -167,10 +165,10 @@ pub fn is_real_claude_path(path: &Path, home: &Path, env_config_dir: Option<&Pat
         return true;
     }
     let home_c = comparable(home);
-    if p.parent() == Some(home_c.as_path()) {
-        if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
-            return name.starts_with(".claude.json");
-        }
+    if p.parent() == Some(home_c.as_path())
+        && let Some(name) = p.file_name().and_then(|n| n.to_str())
+    {
+        return name.starts_with(".claude.json");
     }
     false
 }

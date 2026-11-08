@@ -517,6 +517,46 @@ Commands run from the repo root; test names are the ones to create.
 - `claude-api` skill vs the live pricing page: Sonnet 5.5 cache read $0.20 vs $0.10; the
   page wins.
 
+## Amendments, 2026-11-08 (subagents, item usage; cache schema v2 and v3)
+
+- **Schema v2 (`m0002`)**: `agents(session_id, agent_id, file_id, agent_type, description,
+  tool_use_id, parent_agent_id, spawn_depth, prompt_summary)` and `sessions.prompt_summary`,
+  `files.tool_calls`. Subagent
+  files are read like any other file; their messages count once, under the parent session
+  (line `sessionId`, else the parent folder). The helper's name comes from its `.meta.json`
+  sidecar (`description`, then `agentType`), then a short summary of its first prompt, then
+  "Helper". The parent `Agent` tool_use is not parsed for naming; the sidecar is enough and
+  is present for every real helper checked.
+- **Privacy amendment (explicit exception to D15 and D43, at Will's direction)**: one line of
+  at most 80 characters of the first prompt is cached, as `prompt_summary`, to name sessions
+  and helpers that have no title or description. The full prompt is never cached: it is read
+  from the transcript when a helper's detail is opened (`transcript::first_prompt`, capped at
+  4,000 characters) and is not stored.
+- **Commands added**: `usage_agent_detail {sessionId, agentId}` returns `AgentDetail`
+  (tokens, cost, models, duration, tool calls, prompt, timeline); `session_detail` now
+  carries `agents` and `main` (the main thread alone) and `sessions_list` rows carry `name`,
+  `nameSource` and `agentCount`. Helpers are never rows of their own.
+- **Schema v3 (`m0003`) and item usage**: `item_use(file_id, session_id, hour_utc,
+  hour_local, kind, item, uses, last_ts)`, one row per file, session, hour, kind and item,
+  `kind` being `tool` (every tool_use name), `skill` (`Skill`, `input.skill`) or `agent`
+  (`Agent` or `Task`, `input.subagent_type`, else `general-purpose`). `PARSER_VERSION` is
+  "3", so an old cache re-reads once. `hour_local` follows the time zone and is rewritten
+  with the other buckets when the zone changes.
+- **`usage_by_item {kind, from?, to?, sessionId?, limit?}`** returns
+  `[{id, kind, uses, sessions, lastUsed}]`, busiest first. `uses` and `sessions` count the
+  local days `from..to` (inclusive); `lastUsed` (epoch ms) is the last time ever, so
+  "used this month" is `uses > 0` and "never used" is an installed item that is not in the
+  list. Never-used items are not returned. The Setup page reads this as
+  `uses30d` = `uses` over the last 30 days.
+- **Caveat**: tool calls are counted each time they appear, and about 1 % of tool ids repeat
+  across files (resumed sessions), so a call can count twice; token totals are de-duplicated.
+- **Time zones**: day buckets use the zone offset at the time of the call; a zone with a
+  half-hour offset or a daylight change shifts a call near midnight to the neighbouring day
+  the same way the token buckets move.
+- Tests: `crates/core/tests/usage_agents.rs` (8) and `usage_items.rs` (9) with the synthetic
+  fixtures `fixtures/claude-agents` and `fixtures/claude-items`. Invented sample prompts in
+  fixtures carry `"fixtureText": true`, which the "no real text" guard accepts.
+
 ## Open questions
 - Q1. Where does the usage timeline live: the Dashboard (usage chart + heatmap) only, or
   a usage tab on the History page, which the spec reserves for change history?
@@ -524,6 +564,19 @@ Commands run from the repo root; test names are the ones to create.
   input + output only? D37 defaults to the billed total; Will decides what dad sees.
 - Q3. `usage.iterations[]`: do the top-level counts already include the iterations? D19
   assumes yes; unit A checks one real multi-iteration line (read-only) before release.
+  **Answered 2026-11-08 (Will's default: never add iterations on top of top-level).**
+  Read-only scan of the real `~/.claude/projects` (assistant lines carrying the key,
+  numbers only, no text kept): 181,889 lines have `usage.iterations`; 256 are empty arrays;
+  all 181,633 non-empty ones hold exactly one iteration, and for 181,631 of them the
+  iteration's input, output, cache-read and cache-creation counts equal the top-level
+  counts exactly. Adding the iterations on top would double count about 181,000 lines, so
+  D19 stands. The other 2 lines are one message written twice with all-zero top-level
+  counts and a populated iteration; the parser already skips all-zero lines
+  (`Skip::ZeroUsage`), so the earlier full copy of that message is the one that counts.
+  Limit of the evidence: this machine has no line with two or more iterations, so
+  "top-level is the sum over several iterations" is untested. If a line with several
+  iterations ever shows up and its top-level counts are smaller than their sum, the
+  Dashboard undercounts it (it never double counts); repeat the scan then.
 - Q4. Does Claude Code ever write 1h cache tokens without the `cache_creation`
   breakdown? D18 books those as 5m.
 - Q5. What deviation between Atlas's estimate and Claude Code's `cost-state` figure is

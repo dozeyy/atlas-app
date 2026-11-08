@@ -204,8 +204,7 @@ mod tests {
         assert!(Settings::from_json("{}").unwrap().launch_animation);
         assert!(Settings::from_json(r#"{"launchAnimation":"no"}"#).unwrap().launch_animation);
         let d = tempdir().unwrap();
-        let mut s = Settings::default();
-        s.launch_animation = false;
+        let s = Settings { launch_animation: false, ..Settings::default() };
         save(d.path(), &s).unwrap();
         let text = fs::read_to_string(path_in(d.path())).unwrap();
         assert!(text.contains("\"launchAnimation\": false"), "{text}");

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Atlas Dashboard (fun pass mockup)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="mock.css">
+<script src="icons.js"></script>
+<script src="mock.js"></script>
+<style>
+  .grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  .grid11 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; }
+  .hero { display: flex; justify-content: space-between; align-items: stretch; gap: 16px; padding: 20px 20px 16px 24px; }
+  .hero-num { display: flex; align-items: baseline; gap: 10px; margin: 14px 0 6px; }
+  .unit { font-size: 16px; font-weight: 600; color: var(--ink-2); }
+  .delta { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px;
+    background: var(--accent-tint); color: var(--accent-text); font-size: 12px; font-weight: 700; }
+  .today { display: flex; gap: 18px; align-items: center; margin-top: 14px; }
+  .kv { display: flex; flex-direction: column; gap: 10px; }
+  .kv b { display: block; }
+  .proj { display: grid; grid-template-columns: 1fr 64px 64px; gap: 12px; align-items: center; padding: 8px 8px; border-radius: 8px;
+    transition: background-color var(--dur-fast) var(--ease-out); }
+  .proj:hover, .proj.hover { background: var(--raised); }
+  .proj .name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .proj .ico { width: 16px; height: 16px; color: var(--ink-2); }
+  .heat-legend { display: flex; align-items: center; gap: 4px; }
+  .heat-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<script>
+const week = [64120, 188340, 412860, 236410, 151900, 12410, 182270];
+const weekLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+// 30 days Oct 10 - Nov 8 (Nov 8 2026 is a Sunday). Seeded, so every render matches.
+let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const start = new Date(2026, 9, 10);
+const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+const off = new Set([1, 2, 8, 9, 16, 22]);
+const days30 = [];
+for (let i = 0; i < 30; i++) {
+  const dt = new Date(start); dt.setDate(start.getDate() + i);
+  let v = i >= 23 ? week[i - 23] : off.has(i) ? 0 : Math.round(30000 + rnd() * 240000);
+  days30.push({ v, label: fmtDay(dt), cost: v * 0.0000338, s: v ? 1 + Math.floor(v / 70000) : 0 });
+}
+// 84 days for the heat grid, Monday first, ending today (Sunday Nov 8).
+const days84 = [];
+const s84 = new Date(2026, 7, 17); // Mon Aug 17
+for (let i = 0; i < 84; i++) {
+  const dt = new Date(s84); dt.setDate(s84.getDate() + i);
+  const dow = i % 7;
+  let v = i >= 54 ? days30[i - 54].v : (rnd() < (dow >= 5 ? 0.55 : 0.18) ? 0 : Math.round(20000 + rnd() * rnd() * 380000));
+  days84.push({ v, label: fmtDay(dt) });
+}
+
+document.getElementById("app").innerHTML = sidebar("dashboard") + `
+<main class="main"><div class="page">
+  <div class="head rise" style="--i:0">
+    <div>
+      <div class="eyebrow">Sunday, November 8</div>
+      <div class="d d-title" style="margin-top:4px">Good evening.</div>
+      <div class="muted" style="margin-top:6px;font-size:15px">You and Claude got through 1.2M tokens this week, most of it in recipe-box.</div>
+    </div>
+    <span class="caption">Updated just now</span>
+  </div>
+
+  <div class="grid2">
+    <section class="card hero rise" style="--i:1">
+      <div>
+        <div class="card-title">This week <span class="delta">${icon("ArrowRight").replace('class="ico ', 'style="width:12px;height:12px;rotate:-45deg" class="ico ')} 18% vs last week</span></div>
+        <div class="hero-num"><span class="d d-hero" data-to="1248310">1,248,310</span><span class="unit">tokens</span></div>
+        <div class="muted"><b class="d d-small" style="color:var(--ink)">$<span data-to="42.17" data-dec="2">42.17</span></b> estimated · 23 sessions · 5 projects</div>
+      </div>
+      <div id="ridge" style="align-self:flex-end"></div>
+    </section>
+
+    <section class="card rise" style="--i:2">
+      <div class="card-head"><div class="card-title">Today</div><span class="caption">so far</span></div>
+      <div class="today">
+        <div id="ring"></div>
+        <div class="kv">
+          <div><b class="d d-figure">64%</b><span class="caption">of a usual day</span></div>
+          <div><b class="d d-small">3 sessions</b><span class="caption">$6.10 estimated</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="grid2" style="margin-top:16px">
+    <section class="card rise" style="--i:3">
+      <div class="card-head">
+        <div class="card-title">Activity</div>
+        <div style="display:flex;gap:8px">
+          <div class="seg"><div class="seg-thumb" style="width:70px;transform:translateX(0)"></div><button class="on" style="width:70px">Tokens</button><button>Cost</button></div>
+          <div class="seg"><div class="seg-thumb" style="width:76px;transform:translateX(66px)"></div><button style="width:66px">7 days</button><button class="on" style="width:76px">30 days</button><button>12 weeks</button></div>
+        </div>
+      </div>
+      <div id="bars" style="margin-top:14px"></div>
+    </section>
+
+    <section class="card rise" style="--i:4">
+      <div class="card-head"><div class="card-title">On a roll</div><span class="chip clay"><span class="spark" style="width:12px;height:12px;background:currentColor"></span>Longest yet</span></div>
+      <div style="display:flex;align-items:baseline;gap:8px;margin:10px 0 14px"><span class="d d-stat" data-to="9">9</span><span class="muted" style="font-weight:600">days in a row</span></div>
+      <div id="heat"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+        <span class="caption">Last 12 weeks</span>
+        <span class="heat-legend caption">Less ${[0, 1, 2, 3, 4, 5].map((b) => `<i style="background:var(--heat-${b})"></i>`).join("")} More</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="grid11" style="margin-top:16px">
+    <section class="card rise" style="--i:5">
+      <div class="card-head"><div class="card-title">Models</div><span class="caption">This week</span></div>
+      <div class="stack" style="margin:16px 0 10px" id="stack">
+        <div class="seg-bar" data-pin="seg-0" style="--i:0;flex:62;background:var(--chart-1)"></div>
+        <div class="seg-bar" data-pin="seg-1" style="--i:1;flex:30;background:var(--chart-2)"></div>
+        <div class="seg-bar" data-pin="seg-2" style="--i:2;flex:8;background:var(--chart-3)"></div>
+      </div>
+      ${[["Opus 5.5", "var(--chart-1)", 773952, 62], ["Sonnet 5.5", "var(--chart-2)", 374493, 30], ["Haiku 5.5", "var(--chart-3)", 99865, 8]]
+        .map(([n, c, v, p], i) => `<div class="legend-row" data-pin="leg-${i}"><span class="dot" style="background:${c}"></span><span style="font-weight:600">${n}</span><span class="muted">${short(v)} tokens</span><span class="d d-small" style="text-align:right">${p}%</span></div>`).join("")}
+    </section>
+    <section class="card rise" style="--i:6">
+      <div class="card-head"><div class="card-title">Projects</div><span class="caption">This week</span></div>
+      <div style="margin-top:10px" id="projects"></div>
+    </section>
+  </div>
+</div></main>`;
+
+ridge(document.getElementById("ridge"), week, ["M", "T", "W", "T", "F", "S", "S"], 236, 128);
+ring(document.getElementById("ring"), 0.64, 104, 11, `<div><div class="d d-figure">182k</div><div class="caption">tokens</div></div>`);
+const B = bars(document.getElementById("bars"), days30, 547, 192, { ticks: [[0, "Oct 10"], [7, "Oct 17"], [14, "Oct 24"], [21, "Oct 31"], [29, "Today"]] });
+heat(document.getElementById("heat"), days84, 9, 15, 4);
+const projects = [["recipe-box", 412300, [3, 5, 4, 9, 6, 2, 7]], ["garden-planner", 318900, [6, 4, 7, 5, 8, 6, 3]], ["photo-sorter", 241050, [1, 2, 6, 7, 3, 1, 4]], ["boat-log", 162400, [4, 3, 2, 5, 4, 0, 2]]];
+document.getElementById("projects").innerHTML = projects.map(([n, v, s], i) => {
+  const max = Math.max(...s), pts = s.map((y, j) => [2 + j * 10, 18 - (y / max) * 15]);
+  return `<div class="proj" data-pin="proj-${i}"><span class="name">${icon("FolderSimple")}${n}</span>
+    <svg class="chart" width="64" height="20"><path class="spark-line" d="${smooth(pts)}"/><circle cx="${pts[6][0]}" cy="${pts[6][1]}" r="2.5" fill="var(--accent)"/></svg>
+    <span class="d d-small" style="text-align:right">${short(v)}</span></div>`;
+}).join("");
+
+startCounts();
+pinHovers();
+const pinned = window.PINS.find((p) => p.startsWith("bar-"));
+if (pinned) B.show(+pinned.slice(4));
+if (window.PINS.some((p) => p.startsWith("seg-"))) document.getElementById("stack").classList.add("dim");
+</script>
+</body>
+</html>

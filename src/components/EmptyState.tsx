@@ -9,6 +9,7 @@ export function EmptyState({
   body,
   badge,
   seed,
+  className = "min-h-[320px]",
   fill,
   children,
 }: {
@@ -17,12 +18,14 @@ export function EmptyState({
   body: string;
   badge?: string;
   seed?: number;
+  /** Extra classes, e.g. a taller min-height so the card fills the rest of the window. */
+  className?: string;
   /** Grow to take the rest of a page that is a flex column, so the card never floats in blank space. */
   fill?: boolean;
   children?: ReactNode;
 }) {
   return (
-    <section className={`relative isolate flex min-h-[320px] ${fill ? "flex-1" : ""} flex-col items-center justify-center overflow-hidden rounded-card border border-line bg-surface px-8 py-12 text-center`}>
+    <section className={`relative isolate flex ${fill ? "flex-1" : ""} flex-col items-center justify-center overflow-hidden rounded-card border border-line bg-surface px-8 py-12 text-center ${className}`}>
       <Topo seed={seed} />
       <div className="relative flex size-12 items-center justify-center rounded-card border border-line bg-bg text-accent-text">
         <Icon size={24} weight="duotone" aria-hidden="true" />

@@ -18,7 +18,7 @@ export function TopSlot({
   onCreate: (kind: CreateKind) => void;
   onOpen: (id: string) => void;
 }) {
-  const rows = useUsageRows(loads);
+  const rows = useUsageRows(items, loads);
   return (
     <div className="mb-6 flex flex-col gap-4">
       <Checklist items={items} onCreate={onCreate} />

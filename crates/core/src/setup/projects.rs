@@ -124,21 +124,19 @@ fn probe_cwd_uncached(path: &Path) -> Option<String> {
         let Some(i) = line.find("\"cwd\":") else { continue };
         let rest = line[i + 6..].trim_start();
         let mut de = serde_json::Deserializer::from_str(rest).into_iter::<String>();
-        if let Some(Ok(s)) = de.next() {
-            if !s.is_empty() {
+        if let Some(Ok(s)) = de.next()
+            && !s.is_empty() {
                 return Some(s);
             }
-        }
     }
     None
 }
 
 fn probe_cwd(path: &Path, size: u64, mtime: i64, cache: &mut Cache) -> Option<String> {
-    if let Some((s, m, v)) = cache.cwd.get(path) {
-        if *s == size && *m == mtime {
+    if let Some((s, m, v)) = cache.cwd.get(path)
+        && *s == size && *m == mtime {
             return v.clone();
         }
-    }
     let v = probe_cwd_uncached(path);
     cache.cwd.insert(path.to_path_buf(), (size, mtime, v.clone()));
     v
@@ -196,7 +194,7 @@ pub fn scan_folders(projects_dir: &Path, cache: &mut Cache) -> Vec<Folder> {
         }
         // One folder is one project: the newest transcripts that name a cwd
         // are enough (a few probes at most, each reading 64 KB, cached).
-        transcripts.sort_by(|a, b| b.2.cmp(&a.2));
+        transcripts.sort_by_key(|t| std::cmp::Reverse(t.2));
         for (p, size, mt) in transcripts.iter().take(4) {
             if let Some(c) = probe_cwd(p, *size, *mt, cache) {
                 folder.cwds.push(c);

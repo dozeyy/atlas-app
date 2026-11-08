@@ -444,10 +444,10 @@ fn copy_dir(
             };
             match copied {
                 Ok(()) => {
-                    if let Ok(mtime) = meta.modified() {
-                        if let Ok(f) = File::options().write(true).open(&out) {
-                            let _ = f.set_modified(mtime);
-                        }
+                    if let Ok(mtime) = meta.modified()
+                        && let Ok(f) = File::options().write(true).open(&out)
+                    {
+                        let _ = f.set_modified(mtime);
                     }
                     ctx.report.files_copied += 1;
                     ctx.report.bytes_copied += len;

@@ -156,11 +156,10 @@ pub fn apply(items: &mut [SetupItem]) {
     let skills: BTreeMap<String, Vec<usize>> = {
         let mut m: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for (i, it) in items.iter().enumerate() {
-            if it.kind == ItemKind::Skill && !it.worktree && !it.backup && matches!(it.scope, ScopeKind::User | ScopeKind::Project | ScopeKind::Managed) {
-                if let Some(k) = &it.shadow_key {
+            if it.kind == ItemKind::Skill && !it.worktree && !it.backup && matches!(it.scope, ScopeKind::User | ScopeKind::Project | ScopeKind::Managed)
+                && let Some(k) = &it.shadow_key {
                     m.entry(k.to_lowercase()).or_default().push(i);
                 }
-            }
         }
         m
     };

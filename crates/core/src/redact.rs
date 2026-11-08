@@ -76,12 +76,11 @@ fn walk(v: &mut Value, force: bool) {
             for (k, child) in map.iter_mut() {
                 let norm = normalize(k);
                 let child_force = force || is_secret_container(&norm) || is_secret_key(&norm);
-                if norm == "args" {
-                    if let Value::Array(items) = child {
+                if norm == "args"
+                    && let Value::Array(items) = child {
                         redact_args(items);
                         continue;
                     }
-                }
                 walk(child, child_force);
             }
         }

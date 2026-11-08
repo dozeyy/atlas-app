@@ -69,13 +69,14 @@ pub fn clear_config_dir(state: Shared) -> AppInfo {
 pub fn frontend_ready(app: AppHandle, state: Shared) -> u64 {
     let ms = state.mark_first_paint();
     // During the launch intro the intro shows the window at the handoff.
-    if !crate::intro::main_ready(&app) {
-        if let Some(w) = app.get_webview_window("main") {
+    if !crate::intro::main_ready(&app)
+        && let Some(w) = app.get_webview_window("main") {
             let _ = w.show();
             let _ = w.set_focus();
         }
-    }
     eprintln!("[atlas] startup: {ms} ms to first paint");
+    // The usage engine starts only now, after the first paint (D40), on its own thread.
+    state.usage.sync_in_background(state.inner());
     // Setup reads Will's Claude folder in the background so its page is full when opened.
     crate::setup_service::prefetch(&app);
     // The page booted with first_paint_ms unset; tell it the number now.

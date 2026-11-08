@@ -274,6 +274,26 @@ export class MockSetupWorld {
     return { ...base, items, hidden: { ...base.hidden, worktrees: includeWorktrees ? 0 : wt } };
   }
 
+  /** The masked text the detail view shows: the same text the editor opens, secrets hidden. */
+  source(id: string): SourceView {
+    const i = this.find(id);
+    const raw = this.texts.get(id) ?? "";
+    const dots = "\u2022".repeat(8);
+    const ranges: MaskedRange[] = [];
+    let text = "";
+    let at = 0;
+    const re = /"([A-Za-z_]+)":\s*"mock-secret-value-0000"/g;
+    for (let m = re.exec(raw); m; m = re.exec(raw)) {
+      const valueAt = m.index + m[0].indexOf(SECRET);
+      text += raw.slice(at, valueAt);
+      ranges.push({ start: text.length, end: text.length + dots.length, key: m[1]!, index: ranges.length });
+      text += dots;
+      at = valueAt + SECRET.length;
+    }
+    text += raw.slice(at);
+    return { id, text, language: langFor(i), truncated: false, maskedRanges: ranges, size: raw.length, lineEnding: "LF", bom: false };
+  }
+
   raw(id: string, reveal: boolean): RawEdit {
     const i = this.find(id);
     const text = this.texts.get(id) ?? "";

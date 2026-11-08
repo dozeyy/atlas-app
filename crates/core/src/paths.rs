@@ -121,6 +121,21 @@ pub fn data_dir(
     dirs::data_dir().map(|d| d.join("atlas"))
 }
 
+/// Where the usage cache lives (Q7): the machine-local app data folder, so a roaming
+/// profile never syncs a multi-hundred-MB database. `--data-dir` and `ATLAS_DATA_DIR`
+/// still win, so tests and dev runs keep everything under one chosen folder.
+pub fn local_data_dir(
+    flag: Option<&Path>,
+    env: Option<&OsStr>,
+    home: &Path,
+    cwd: &Path,
+) -> Option<PathBuf> {
+    if flag.is_some_and(|p| !p.as_os_str().is_empty()) || env.is_some_and(|e| !e.is_empty()) {
+        return data_dir(flag, env, home, cwd);
+    }
+    dirs::data_local_dir().map(|d| d.join("atlas"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,6 +153,17 @@ mod tests {
     fn base() -> (PathBuf, PathBuf) {
         let root = std::env::temp_dir().join("atlas-paths-test");
         (root.join("home"), root.join("cwd"))
+    }
+
+    #[test]
+    fn local_data_dir_follows_the_overrides_then_local_app_data() {
+        let (home, cwd) = base();
+        let flag = Path::new("flagdir");
+        assert_eq!(local_data_dir(Some(flag), None, &home, &cwd), data_dir(Some(flag), None, &home, &cwd));
+        let env = std::ffi::OsString::from("envdir");
+        assert_eq!(local_data_dir(None, Some(&env), &home, &cwd), data_dir(None, Some(&env), &home, &cwd));
+        let d = local_data_dir(None, None, &home, &cwd).unwrap();
+        assert_eq!(d, dirs::data_local_dir().unwrap().join("atlas"));
     }
 
     #[test]

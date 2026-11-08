@@ -157,11 +157,10 @@ impl Build<'_> {
 
     /// Markdown facts for a file, from the cache or the first 16 KB.
     pub(crate) fn md_meta(&mut self, path: &Path, size: u64, mtime: i64) -> Arc<MdMeta> {
-        if let Some((s, m, v)) = self.cache.md.get(path) {
-            if *s == size && *m == mtime {
+        if let Some((s, m, v)) = self.cache.md.get(path)
+            && *s == size && *m == mtime {
                 return v.clone();
             }
-        }
         let mut text = read_head(path, frontmatter::HEAD_BYTES).unwrap_or_default();
         if frontmatter::needs_more(&text) && size as usize > frontmatter::HEAD_BYTES {
             text = read_head(path, frontmatter::WIDE_BYTES).unwrap_or(text);
@@ -287,11 +286,10 @@ impl Build<'_> {
         }
         let mut worktree_counts: HashMap<String, u32> = HashMap::new();
         for p in &self.col.projects {
-            if p.is_worktree {
-                if let Some(parent) = &p.parent_key {
+            if p.is_worktree
+                && let Some(parent) = &p.parent_key {
                     *worktree_counts.entry(parent.clone()).or_default() += 1;
                 }
-            }
         }
         // Worktrees are also counted when they were left out of the list.
         if !self.inputs.include_worktrees {
@@ -299,12 +297,11 @@ impl Build<'_> {
             let mut seen = HashSet::new();
             for k in cj_keys.iter().chain(self.folders.iter().flat_map(|f| f.cwds.iter())) {
                 let nk = projects::norm_key(k);
-                if let Some(parent) = projects::worktree_parent(&nk) {
-                    if seen.insert(nk) {
+                if let Some(parent) = projects::worktree_parent(&nk)
+                    && seen.insert(nk) {
                         *worktree_counts.entry(parent).or_default() += 1;
                         hidden.worktrees += 1;
                     }
-                }
             }
         }
         let mut out_projects = Vec::new();
@@ -313,7 +310,7 @@ impl Build<'_> {
             if p.is_worktree {
                 hidden.worktrees += 1;
             }
-            let listed = if p.exists { n > 0 || m > 0 } else { n > 0 || m > 0 };
+            let listed = n > 0 || m > 0;
             if !listed {
                 if p.is_worktree {
                     continue;

@@ -22,6 +22,8 @@ use atlas_core::sandbox::{self, Sandbox, SandboxError, SandboxOptions, SandboxRe
 use atlas_core::settings::{self, Settings, Theme, View};
 use serde::Serialize;
 
+use crate::usage::{Roots, UsageHost};
+
 pub const INFO_EVENT: &str = "atlas://info";
 
 /// How often the running app tells other Atlas instances its sandbox is in use.
@@ -63,6 +65,9 @@ pub struct AppState {
     pub started: Instant,
     pub launch: LaunchArgs,
     pub data_dir: PathBuf,
+    /// Where the usage cache lives: machine-local app data, or `--data-dir` (Q7).
+    pub local_data_dir: PathBuf,
+    pub usage: Arc<UsageHost>,
     home: PathBuf,
     cwd: PathBuf,
     env_config: Option<OsString>,
@@ -159,7 +164,10 @@ impl AppState {
         let data_dir =
             paths::data_dir(launch.data_dir.as_deref(), atlas_env.as_deref(), &home, &cwd)
                 .unwrap_or_else(|| std::env::temp_dir().join("atlas"));
-        Self::with_parts(launch, home, cwd, env_config, data_dir, std::env::temp_dir())
+        let local_data_dir =
+            paths::local_data_dir(launch.data_dir.as_deref(), atlas_env.as_deref(), &home, &cwd)
+                .unwrap_or_else(|| data_dir.clone());
+        Self::with_parts(launch, home, cwd, env_config, data_dir, local_data_dir, std::env::temp_dir())
     }
 
     /// Everything `new` reads from the machine, passed in (tests use scratch folders).
@@ -169,6 +177,7 @@ impl AppState {
         cwd: PathBuf,
         env_config: Option<OsString>,
         data_dir: PathBuf,
+        local_data_dir: PathBuf,
         sandbox_parent: PathBuf,
     ) -> Arc<AppState> {
         let started = Instant::now();
@@ -182,6 +191,8 @@ impl AppState {
             started,
             launch,
             data_dir,
+            local_data_dir,
+            usage: Arc::new(UsageHost::default()),
             home,
             cwd,
             env_config,
@@ -228,6 +239,23 @@ impl AppState {
             env: self.env_config.as_deref(),
             home: &self.home,
             cwd: &self.cwd,
+        })
+    }
+
+    /// The folder the usage engine reads, or None while there is none to read (a
+    /// sandbox still copying or failed: never a silent fall back to the real folder).
+    pub fn usage_roots(&self) -> Option<Roots> {
+        let inner = self.lock();
+        let real = self.real_root(&inner);
+        let root = match &inner.slot {
+            Slot::Off => real.clone(),
+            Slot::Ready(sb) => sb.root.clone(),
+            Slot::Preparing | Slot::Failed(_) => return None,
+        };
+        Some(Roots {
+            real: real.source != ConfigSource::Flag && root.projects_dir == real.projects_dir,
+            projects_dir: root.projects_dir,
+            config_dir: root.dir,
         })
     }
 
@@ -390,6 +418,9 @@ impl AppState {
         if let Slot::Ready(sb) = old {
             self.discard_in_background(*sb);
         }
+        // The engine stops reading the old folder at once; it starts on the new one
+        // when there is one (now, or when the sandbox copy is ready).
+        self.usage.sync_in_background(self);
         if !wanted {
             return;
         }
@@ -434,6 +465,7 @@ impl AppState {
                 if let Some(sb) = leftover {
                     let _ = sb.discard();
                 }
+                this.usage.sync_in_background(&this);
                 this.announce();
             })
             .expect("spawn sandbox thread");
@@ -452,6 +484,7 @@ impl AppState {
     /// App exit: stop any copy, remove the live sandbox and wait (briefly) for
     /// deletes already under way, so no `atlas-sandbox-*` folder is left behind.
     pub fn shutdown(&self) {
+        self.usage.shutdown();
         let (old, build) = {
             let mut inner = self.lock();
             inner.generation += 1; // a copy that finishes now is thrown away
@@ -568,6 +601,7 @@ mod tests {
             tmp.path().join("home"),
             tmp.path().to_path_buf(),
             None,
+            tmp.path().join("data"),
             tmp.path().join("data"),
             tmp.path().join("sbx"),
         );

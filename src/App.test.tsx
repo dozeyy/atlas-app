@@ -32,11 +32,11 @@ describe("navigation", () => {
 
   it("switches pages on click and shows a designed empty state, not filler", async () => {
     mount();
-    await userEvent.click(screen.getByRole("button", { name: "Sessions" }));
-    expect(screen.getByRole("heading", { level: 1, name: "Sessions" })).toBeInTheDocument();
-    expect(screen.getByText("No sessions to show yet")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "History" }));
+    expect(screen.getByRole("heading", { level: 1, name: "History" })).toBeInTheDocument();
+    expect(screen.getByText("No changes yet")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/lorem ipsum/i);
-    expect(screen.getByRole("button", { name: "Sessions" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "History" })).toHaveAttribute("aria-current", "page");
   });
 
   it("jumps with Ctrl+number", async () => {

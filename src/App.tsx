@@ -4,7 +4,8 @@ import { NAV, Sidebar } from "./components/Sidebar";
 import { ToastHost } from "./components/Toasts";
 import { useAtlas } from "./state/AtlasProvider";
 import { Dashboard } from "./pages/Dashboard";
-import { History, Sessions, Wrapped } from "./pages/Placeholders";
+import { History, Wrapped } from "./pages/Placeholders";
+import { Sessions } from "./pages/Sessions";
 import { Setup } from "./pages/Setup";
 import { Settings } from "./pages/Settings";
 import type { View } from "./lib/types";
@@ -64,7 +65,7 @@ export function App() {
       >
         <div
           key={view}
-          className={`page-enter mx-auto w-full px-10 py-10 ${view === "setup" ? "flex min-h-full max-w-[1180px] flex-col" : "max-w-[var(--content-max)]"}`}
+          className={`page-enter mx-auto w-full px-10 py-10 ${view === "setup" ? "flex min-h-full max-w-[1180px] flex-col" : view === "history" || view === "wrapped" ? "flex min-h-full max-w-[var(--content-max)] flex-col" : "max-w-[var(--content-max)]"}`}
         >
           {info.settingsSaveError && (
             <div

@@ -131,13 +131,13 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
   const openTile = useCallback((id: TileId) => {
     savedScroll.current = scroller()?.scrollTop ?? 0;
     setTile(id);
-    scroller()?.scrollTo({ top: 0 });
+    scroller()?.scrollTo?.({ top: 0 });
   }, []);
   const closeTile = useCallback(() => {
     const id = tile;
     setTile(null);
     requestAnimationFrame(() => {
-      scroller()?.scrollTo({ top: savedScroll.current });
+      scroller()?.scrollTo?.({ top: savedScroll.current });
       if (id) document.querySelector<HTMLElement>(`[data-tile="${id}"]`)?.focus({ preventScroll: true });
     });
   }, [tile]);

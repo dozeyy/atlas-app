@@ -146,7 +146,8 @@ fn fixtures_hold_no_real_text_and_no_real_secrets() {
             for l in text.split('\n').filter(|l| !l.is_empty()) {
                 let Ok(v) = serde_json::from_str::<Value>(l) else { continue };
                 if let Some(c) = v["message"]["content"].as_str() {
-                    assert!(c.starts_with("[fixture"), "{rel}: message text is not a placeholder");
+                    // Invented sample prompts (so names and summaries can be tested) carry `fixtureText`.
+                    assert!(c.starts_with("[fixture") || v["fixtureText"] == true, "{rel}: message text is not a placeholder");
                 }
                 if let Some(parts) = v["message"]["content"].as_array() {
                     for p in parts {

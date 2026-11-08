@@ -1,30 +1,59 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { getBackend } from "../../lib/ipc";
 import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
+import { cacheNotReady } from "../../lib/useUsage";
+import { joinUsage, usageWindow } from "../../lib/usage-join";
 import type { SetupItem } from "../../lib/setup-types";
 import type { UsageRow } from "../../lib/usage-types";
 
 const TOP = 5;
 const NEVER_CAP = 8;
 
-/** Usage rows from the backend, or null when there is no usage data source at all. */
-export function useUsageRows(reloadKey: number): UsageRow[] | null {
+/**
+ * Skills and agents joined to the last 30 days of real use, or null when the usage
+ * engine has no answer (still reading, failed, nothing indexed): the panel then
+ * draws nothing at all.
+ */
+export function useUsageRows(items: SetupItem[], reloadKey: number): UsageRow[] | null {
   const [rows, setRows] = useState<UsageRow[] | null>(null);
+  const [bump, setBump] = useState(0);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  // The numbers changed (new sessions were read): ask again.
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let alive = true;
+    getBackend()
+      .onUsageChanged(() => setBump((n) => n + 1))
+      .then((fn) => (alive ? (off = fn) : fn()))
+      .catch(() => {});
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, []);
+
   useEffect(() => {
     let alive = true;
-    const fn = getBackend().usageRows;
-    if (!fn) {
-      setRows(null);
-      return;
-    }
-    fn.call(getBackend())
+    const backend = getBackend();
+    const { from, to } = usageWindow();
+    (async () => {
+      const status = await backend.usageStatus();
+      if (cacheNotReady(status) || status.state === "error" || status.filesTracked === 0) return null;
+      const [skills, agents] = await Promise.all([
+        backend.usageByItem({ kind: "skill", from, to, limit: 5000 }),
+        backend.usageByItem({ kind: "agent", from, to, limit: 5000 }),
+      ]);
+      return joinUsage(itemsRef.current, skills, agents);
+    })()
       .then((r) => alive && setRows(r))
       .catch(() => alive && setRows(null));
     return () => {
       alive = false;
     };
-  }, [reloadKey]);
+  }, [reloadKey, bump]);
   return rows;
 }
 
@@ -39,12 +68,16 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
     const known = rows.filter((r) => byId.has(r.id));
     if (known.length === 0) return null;
     const used = known.filter((r) => r.uses30d > 0).sort((a, b) => b.uses30d - a.uses30d);
-    const never = known.filter((r) => r.uses30d === 0);
-    return { byId, used, never, max: used[0]?.uses30d ?? 1 };
+    const idle = known.filter((r) => r.uses30d === 0);
+    // Anything made or changed inside the window is listed apart, never counted as unused.
+    const never = idle.filter((r) => !r.isNew);
+    const fresh = idle.filter((r) => r.isNew);
+    if (used.length + never.length === 0) return null;
+    return { byId, used, never, fresh, max: used[0]?.uses30d ?? 1 };
   }, [rows, items]);
 
   if (!model) return null;
-  const { byId, used, never, max } = model;
+  const { byId, used, never, fresh, max } = model;
   const total = used.length + never.length;
   const usedPct = Math.round((used.length / total) * 100);
 
@@ -117,12 +150,32 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
                   <li key={r.id} className="flex items-center gap-2">
                     <Icon size={14} aria-hidden="true" className="shrink-0 text-ink-2" />
                     {open(r.id, it.name)}
-                    <span className="ml-auto shrink-0 text-caption text-ink-2">{KIND_BY_ID[it.kind].singular}</span>
+                    <span className="ml-auto shrink-0 text-caption text-ink-2">
+                      {r.lastUsed ? `last used ${relativeTime(r.lastUsed)}` : KIND_BY_ID[it.kind].singular}
+                    </span>
                   </li>
                 );
               })}
               {never.length > NEVER_CAP && <li className="text-caption text-ink-2">and {never.length - NEVER_CAP} more</li>}
             </ul>
+          )}
+          {fresh.length > 0 && (
+            <div className="mt-3">
+              <h4 className="mb-1.5 text-caption font-semibold text-ink-2">New, too soon to tell</h4>
+              <ul className="space-y-1.5">
+                {fresh.slice(0, NEVER_CAP).map((r) => {
+                  const it = byId.get(r.id)!;
+                  const Icon = KIND_BY_ID[it.kind].icon;
+                  return (
+                    <li key={r.id} className="flex items-center gap-2">
+                      <Icon size={14} aria-hidden="true" className="shrink-0 text-ink-2" />
+                      {open(r.id, it.name)}
+                      <span className="ml-auto shrink-0 rounded-full bg-accent-tint px-2 text-caption text-accent-text">new</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           )}
         </div>
       </div>

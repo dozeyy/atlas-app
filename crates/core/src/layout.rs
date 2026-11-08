@@ -65,13 +65,11 @@ pub fn is_denied(rel: &str) -> bool {
         return true;
     }
     // Synced-skill staging buckets.
-    if first == "skills" && parts.get(1) == Some(&"synced") {
-        if let Some(b) = parts.get(2) {
-            if b.starts_with(".bucket-") {
+    if first == "skills" && parts.get(1) == Some(&"synced")
+        && let Some(b) = parts.get(2)
+            && b.starts_with(".bucket-") {
                 return true;
             }
-        }
-    }
     false
 }
 

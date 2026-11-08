@@ -81,11 +81,10 @@ pub fn walk(base: &Path, top_skip: &[&str], only_top: Option<&[&str]>) -> Vec<Fi
                     if top_skip.contains(&low.as_str()) {
                         continue;
                     }
-                    if let Some(only) = only_top {
-                        if !only.contains(&low.as_str()) {
+                    if let Some(only) = only_top
+                        && !only.contains(&low.as_str()) {
                             continue;
                         }
-                    }
                 }
                 if depth + 1 >= MAX_DEPTH {
                     continue;
@@ -202,13 +201,12 @@ impl Build<'_> {
             self.watched_projects.push(p.path.clone());
             for (name, kind) in [("CLAUDE.md", ItemKind::Instructions), ("CLAUDE.local.md", ItemKind::Instructions), ("AGENTS.md", ItemKind::Instructions)] {
                 let f = p.path.join(name);
-                if let Ok(md) = fs::metadata(&f) {
-                    if md.is_file() {
+                if let Ok(md) = fs::metadata(&f)
+                    && md.is_file() {
                         let ent = FileEnt { rel: name.into(), path: f, size: md.len(), mtime: mtime_ms(&md), link: None };
                         let _ = kind;
                         self.instructions_item(&ent, &pscope);
                     }
-                }
             }
             let mcp = p.path.join(".mcp.json");
             if mcp.is_file() {
@@ -299,13 +297,11 @@ impl Build<'_> {
                 skill_dirs.insert(format!("skills/{}", segs[1]), i);
             } else if segs.len() == 5 && segs[1] == "synced" && segs[4] == "SKILL.md" {
                 skill_dirs.insert(format!("skills/synced/{}/{}", segs[2], segs[3]), i);
-            } else if segs.len() == 4 && segs[1] == "synced" && segs[3] == "manifest.json" {
-                if let Some(t) = read_head(&e.path, 2 * 1024 * 1024) {
-                    if let Ok(v) = serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')) {
+            } else if segs.len() == 4 && segs[1] == "synced" && segs[3] == "manifest.json"
+                && let Some(t) = read_head(&e.path, 2 * 1024 * 1024)
+                    && let Ok(v) = serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')) {
                         synced_manifests.insert(format!("skills/synced/{}", segs[2]), v);
                     }
-                }
-            }
         }
         let mut attachments: HashMap<String, Vec<String>> = HashMap::new();
         let mut consumed: HashSet<usize> = HashSet::new();
@@ -419,13 +415,12 @@ impl Build<'_> {
         it.attachments = att;
         let ptr = "";
         let idx = self.add(it, &scope_eff, &e.path, ptr, SourceRef::File { path: e.path.clone() });
-        if let (Some(i), Some(fm)) = (idx, meta.fm.as_ref()) {
-            if let Some(h) = fm.get("hooks") {
+        if let (Some(i), Some(fm)) = (idx, meta.fm.as_ref())
+            && let Some(h) = fm.get("hooks") {
                 let sc = scope_eff.clone();
                 self.add_hooks(h, &e.path, &sc, "/frontmatter/hooks", false);
                 let _ = i;
             }
-        }
     }
 
     fn finish_md_item(&self, it: &mut SetupItem, meta: &MdMeta, desc: String) {
@@ -454,11 +449,10 @@ impl Build<'_> {
         let desc = meta.description.clone();
         self.finish_md_item(&mut it, &meta, desc);
         let idx = self.add(it, scope, &e.path, "", SourceRef::File { path: e.path.clone() });
-        if let (Some(_), Some(fm)) = (idx, meta.fm.as_ref()) {
-            if let Some(h) = fm.get("hooks") {
+        if let (Some(_), Some(fm)) = (idx, meta.fm.as_ref())
+            && let Some(h) = fm.get("hooks") {
                 self.add_hooks(h, &e.path, scope, "/frontmatter/hooks", false);
             }
-        }
     }
 
     fn command_item(&mut self, e: &FileEnt, scope: &ScopeCtx) {

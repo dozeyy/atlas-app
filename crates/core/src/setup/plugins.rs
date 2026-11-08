@@ -72,7 +72,7 @@ impl Build<'_> {
             let mut it = SetupItem::new(ItemKind::Plugin, pscope.kind, id.clone());
             it.description = truncate_chars(&redact_inline(manifest.get("description").and_then(Value::as_str).unwrap_or("")), 400);
             if exists {
-                it.path = Some(display_path(&manifest_path)).filter(|_| manifest_path.is_file());
+                it.path = manifest_path.is_file().then(|| display_path(&manifest_path));
                 if let Ok(md) = fs::metadata(&manifest_path) {
                     it.size = Some(md.len());
                     it.modified_ms = Some(mtime_ms(&md));
@@ -114,13 +114,11 @@ impl Build<'_> {
             let ents = walk(&dir, &[], Some(PLUGIN_TOP));
             self.classify(ents, &child_scope, Mode::Plugin);
             let hooks_json = dir.join("hooks").join("hooks.json");
-            if let Some(t) = read_head(&hooks_json, 512 * 1024) {
-                if let Ok(hv) = serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')) {
-                    if let Some(h) = hv.get("hooks") {
+            if let Some(t) = read_head(&hooks_json, 512 * 1024)
+                && let Ok(hv) = serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}'))
+                    && let Some(h) = hv.get("hooks") {
                         self.add_hooks(h, &hooks_json, &child_scope, "/hooks", true);
                     }
-                }
-            }
             let dot_mcp = dir.join(".mcp.json");
             if dot_mcp.is_file() {
                 self.add_mcp_file(&dot_mcp, &child_scope, "mcpServers");

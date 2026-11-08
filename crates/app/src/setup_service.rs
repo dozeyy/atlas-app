@@ -56,11 +56,10 @@ impl SetupHub {
             .ok_or_else(|| "Your Claude folder is not ready yet.".to_string())?;
         let key = key_of(&inputs);
         let mut g = self.active.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(a) = g.as_ref() {
-            if a.key == key {
+        if let Some(a) = g.as_ref()
+            && a.key == key {
                 return Ok(a.live.clone());
             }
-        }
         let started = Instant::now();
         let handle = app.clone();
         let live = LiveSetup::start(inputs, move |v| {

@@ -1,24 +1,6 @@
-import { ChatsCircle, ClockCounterClockwise, Sparkle } from "@phosphor-icons/react";
+import { ClockCounterClockwise, Sparkle } from "@phosphor-icons/react";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/controls";
-
-export function Sessions() {
-  return (
-    <>
-      <PageHeader
-        title="Sessions"
-        subtitle="Every Claude Code conversation on this computer, in one list."
-      />
-      <EmptyState
-        icon={ChatsCircle}
-        seed={11}
-        title="No sessions to show yet"
-        body="Each conversation will appear here with what it cost, how long it ran and which project it belonged to. You will be able to search them and open any one."
-        badge="Coming soon"
-      />
-    </>
-  );
-}
 
 export function History() {
   return (
@@ -28,6 +10,7 @@ export function History() {
         subtitle="A record of every change Atlas makes to your Claude setup."
       />
       <EmptyState
+        fill
         icon={ClockCounterClockwise}
         seed={31}
         title="No changes yet"
@@ -46,6 +29,7 @@ export function Wrapped() {
         subtitle="Your Claude Code year, as a page you can keep or share."
       />
       <EmptyState
+        fill
         icon={Sparkle}
         seed={47}
         title="Your Wrapped is still being written"

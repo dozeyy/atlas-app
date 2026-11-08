@@ -36,11 +36,10 @@ fn secret_values(path: &std::path::Path, out: &mut Vec<String>) {
             _ => {}
         }
     }
-    if let Ok(t) = fs::read_to_string(path) {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(t.trim_start_matches('\u{feff}')) {
+    if let Ok(t) = fs::read_to_string(path)
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(t.trim_start_matches('\u{feff}')) {
             walk(&v, false, out);
         }
-    }
 }
 
 fn stamp(p: &str) -> Option<(u64, u128)> {

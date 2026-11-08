@@ -207,15 +207,14 @@ impl Build<'_> {
                     } else {
                         SourceRef::File { path: file.to_path_buf() }
                     };
-                    if let Some(i) = self.add(it, scope, file, &ptr, src) {
-                        if let Some(c) = cmd {
+                    if let Some(i) = self.add(it, scope, file, &ptr, src)
+                        && let Some(c) = cmd {
                             let id = self.items[i].id.clone();
                             let missing = self.note_scripts(c, scope, &id);
                             for m in missing {
                                 self.items[i].warnings.push(format!("Script not found: {m}"));
                             }
                         }
-                    }
                 }
             }
         }
@@ -336,7 +335,7 @@ impl Build<'_> {
                 Some((id, _)) => Some(id.as_str()) == project,
             })
             .collect();
-        v.sort_by(|a, b| b.rank.cmp(&a.rank));
+        v.sort_by_key(|f| std::cmp::Reverse(f.rank));
         v
     }
 

@@ -94,13 +94,11 @@ impl Discovery {
                 if layout::is_denied_name(&cname) {
                     return Err("This file is never shown".into());
                 }
-                if let Ok(root) = fs::canonicalize(&self.root_dir) {
-                    if let Ok(rel) = canon.strip_prefix(&root) {
-                        if layout::is_denied(&rel.to_string_lossy().replace('\\', "/")) {
+                if let Ok(root) = fs::canonicalize(&self.root_dir)
+                    && let Ok(rel) = canon.strip_prefix(&root)
+                        && layout::is_denied(&rel.to_string_lossy().replace('\\', "/")) {
                             return Err("This file is never shown".into());
                         }
-                    }
-                }
                 let (mut text, truncated, size) = read_file_text(&canon)?;
                 let bom = text.starts_with('\u{feff}');
                 if bom {

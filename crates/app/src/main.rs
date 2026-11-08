@@ -5,6 +5,7 @@ mod commands;
 mod intro;
 mod setup_service;
 mod state;
+mod usage;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -81,6 +82,18 @@ fn main() {
             commands::choose_config_dir,
             commands::clear_config_dir,
             commands::frontend_ready,
+            usage::usage_status,
+            usage::usage_dashboard,
+            usage::usage_timeline,
+            usage::sessions_list,
+            usage::session_detail,
+            usage::usage_agent_detail,
+            usage::usage_by_item,
+            usage::session_transcript,
+            usage::usage_filter_options,
+            usage::usage_reindex,
+            usage::pricing_get,
+            usage::pricing_reveal,
             intro::splash_ready,
             intro::splash_covered,
             intro::intro_skip,
@@ -98,6 +111,11 @@ fn main() {
             setup_service::setup_create,
             setup_service::setup_validate_draft,
         ])
+        .on_window_event(|window, event| {
+            if let WindowEvent::Focused(focused) = event {
+                window.state::<Arc<AppState>>().usage.focus(*focused);
+            }
+        })
         .setup(|app| {
             let state = app.state::<Arc<AppState>>().inner().clone();
 
@@ -169,6 +187,7 @@ fn main() {
             });
 
             // Background changes (a sandbox copy finishing) reach the page as events.
+            state.usage.attach(app.handle().clone());
             let handle = app.handle().clone();
             state.set_notifier(Arc::new(move |info| {
                 let _ = handle.emit(state::INFO_EVENT, info);

@@ -82,13 +82,12 @@ pub fn inline_secret_spans(s: &str) -> Vec<(usize, usize)> {
                     let key = seg[..eq].trim_start_matches('-');
                     let val = &seg[eq + 1..];
                     let val_t = trim_word(val);
-                    if is_sensitive_key(key) && val_t.len() >= 6 && !val_t.starts_with('$') && !val_t.starts_with("${") {
-                        if let Some(off) = val.find(val_t) {
+                    if is_sensitive_key(key) && val_t.len() >= 6 && !val_t.starts_with('$') && !val_t.starts_with("${")
+                        && let Some(off) = val.find(val_t) {
                             let a = start + seg_start + eq + 1 + off;
                             spans.push((a, a + val_t.len()));
                             handled = true;
                         }
-                    }
                 }
                 seg_start = p + 1;
             }
@@ -96,11 +95,10 @@ pub fn inline_secret_spans(s: &str) -> Vec<(usize, usize)> {
         if !handled {
             let t = trim_word(word);
             let after_bearer = prev_word.eq_ignore_ascii_case("bearer") && t.len() >= 8 && !t.starts_with('$');
-            if looks_like_secret(t) || after_bearer {
-                if let Some(off) = word.find(t) {
+            if (looks_like_secret(t) || after_bearer)
+                && let Some(off) = word.find(t) {
                     spans.push((start + off, start + off + t.len()));
                 }
-            }
         }
         prev_word = trim_word(word);
     }
@@ -200,11 +198,10 @@ pub fn mask_json(text: &str) -> Masked {
                 i += 1;
             }
             b',' => {
-                if let Some(f) = stack.last_mut() {
-                    if f.is_obj {
+                if let Some(f) = stack.last_mut()
+                    && f.is_obj {
                         f.expect_key = true;
                     }
-                }
                 i += 1;
             }
             b':' => {

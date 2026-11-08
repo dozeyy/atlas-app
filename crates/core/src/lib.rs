@@ -7,6 +7,7 @@
 //! Phase 3 adds `layout` (what is never read) and `setup` (read-only discovery
 //! of every Claude Code setup item).
 
+pub mod cache;
 pub mod fsutil;
 pub mod launch;
 pub mod layout;
@@ -14,5 +15,6 @@ pub mod paths;
 pub mod redact;
 pub mod sandbox;
 pub mod settings;
+pub mod usage;
 pub mod setup;
 pub mod setup_write;

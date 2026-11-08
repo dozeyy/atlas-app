@@ -420,17 +420,15 @@ fn remove_entry(root: &mut Value, pointer: &[String]) -> Option<Removed> {
     if n >= 5 && pointer[n - 2] == "hooks" && pointer[0] == "hooks" {
         let group_ptr = &pointer[..n - 2];
         let group_hooks_empty = navigate(root, &pointer[..n - 1]).and_then(Value::as_array).is_some_and(Vec::is_empty);
-        if group_hooks_empty {
-            if let Some(r) = remove_at(root, group_ptr) {
+        if group_hooks_empty
+            && let Some(r) = remove_at(root, group_ptr) {
                 removed = r;
                 let event_ptr = &pointer[..n - 3];
-                if navigate(root, event_ptr).and_then(Value::as_array).is_some_and(Vec::is_empty) {
-                    if let Some(r) = remove_at(root, event_ptr) {
+                if navigate(root, event_ptr).and_then(Value::as_array).is_some_and(Vec::is_empty)
+                    && let Some(r) = remove_at(root, event_ptr) {
                         removed = r;
                     }
-                }
             }
-        }
     }
     Some(removed)
 }
@@ -542,11 +540,10 @@ fn copy_tree(src: &Path, dst: &Path, depth: usize) -> io::Result<()> {
         io::Write::write_all(&mut f, &bytes)?;
         f.sync_all()?;
         drop(f);
-        if let Ok(t) = md.modified() {
-            if let Ok(f) = fs::OpenOptions::new().write(true).open(dst) {
+        if let Ok(t) = md.modified()
+            && let Ok(f) = fs::OpenOptions::new().write(true).open(dst) {
                 let _ = f.set_modified(t);
             }
-        }
     }
     Ok(())
 }
@@ -708,11 +705,10 @@ fn restore_path(payload_copy: &Path, dest: &Path, is_dir: bool) -> Res<()> {
     } else {
         let bytes = fs::read(payload_copy)?;
         atomic_write(dest, &bytes)?;
-        if let Ok(t) = fs::metadata(payload_copy).and_then(|m| m.modified()) {
-            if let Ok(f) = fs::OpenOptions::new().write(true).open(dest) {
+        if let Ok(t) = fs::metadata(payload_copy).and_then(|m| m.modified())
+            && let Ok(f) = fs::OpenOptions::new().write(true).open(dest) {
                 let _ = f.set_modified(t);
             }
-        }
     }
     Ok(())
 }
@@ -803,13 +799,11 @@ pub fn validate(kind: ItemKind, language: &str, folder_name: Option<&str>, is_en
                     match frontmatter::parse_yaml(y) {
                         Err(e) => out.push(Problem { message: format!("The frontmatter can't be read: {e}"), line: None }),
                         Ok(map) => {
-                            if kind == ItemKind::Skill {
-                                if let (Some(Value::String(n)), Some(folder)) = (map.get("name"), folder_name) {
-                                    if n != folder {
+                            if kind == ItemKind::Skill
+                                && let (Some(Value::String(n)), Some(folder)) = (map.get("name"), folder_name)
+                                    && n != folder {
                                         out.push(Problem { message: format!("The skill's name must match its folder (\"{folder}\"), but it says \"{n}\"."), line: None });
                                     }
-                                }
-                            }
                         }
                     }
                 }
@@ -1013,13 +1007,11 @@ pub fn create_draft(kind: &str, name: &str, event: Option<&str>, ctx: &CreateCtx
         }
         "mcpServer" => {
             let p = ctx.claude_json.to_path_buf();
-            if let Ok(bytes) = fs::read(&p) {
-                if let Ok(v) = parse_json_bytes(&bytes) {
-                    if v.get("mcpServers").and_then(Value::as_object).is_some_and(|m| m.contains_key(name)) {
+            if let Ok(bytes) = fs::read(&p)
+                && let Ok(v) = parse_json_bytes(&bytes)
+                    && v.get("mcpServers").and_then(Value::as_object).is_some_and(|m| m.contains_key(name)) {
                         return refuse(format!("You already have a server called {name}."));
                     }
-                }
-            }
             draft(kind, name, &format!("Connect MCP server: {name}"), &p, "json", "{\n  \"type\": \"stdio\",\n  \"command\": \"npx\",\n  \"args\": [\"-y\", \"@modelcontextprotocol/server-memory\"]\n}\n".into(), None, "Added to your user servers, available in every project.")
         }
         _ => return refuse("Atlas cannot make that kind of item."),
