@@ -32,6 +32,15 @@ export function AppMenu() {
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const focusFirst = useRef(false);
+  const focusSub = useRef(false);
+
+  // Keyboard-opened submenu: focus its first item as soon as it has rendered, so the very
+  // next arrow key already acts inside it (a rAF here lost fast key presses).
+  useEffect(() => {
+    if (!sub || !focusSub.current) return;
+    focusSub.current = false;
+    itemsOf(root.current?.querySelector(`[data-menu="${sub}"]`))[0]?.focus({ preventScroll: true });
+  }, [sub]);
   const menuId = useId();
 
   const close = useCallback((refocus: boolean) => {
@@ -121,9 +130,12 @@ export function AppMenu() {
         const id = (at as HTMLElement | null)?.dataset.sub;
         if (!id) return;
         e.preventDefault();
+        if (sub === id) {
+          itemsOf(root.current?.querySelector(`[data-menu="${id}"]`))[0]?.focus({ preventScroll: true });
+          return;
+        }
+        focusSub.current = true;
         setSub(id);
-        // The submenu mounts on the next render; focus its first item once it is there.
-        requestAnimationFrame(() => itemsOf(root.current?.querySelector(`[data-menu="${id}"]`))[0]?.focus({ preventScroll: true }));
         return;
       }
       case "ArrowLeft":

@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // Reads tokens.css itself, so the guarantees below hold for what actually ships.
-const css = readFileSync(resolve(__dirname, "tokens.css"), "utf8");
+// CRLF on Windows checkouts (core.autocrlf) is normalised so selectors match.
+const css = readFileSync(resolve(__dirname, "tokens.css"), "utf8").replace(/\r\n/g, "\n");
 
 type Vars = Record<string, string>;
 
