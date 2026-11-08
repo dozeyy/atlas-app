@@ -19,6 +19,12 @@ describe("launch intro timeline", () => {
     expect(CLAY_AT).toBeGreaterThan(T.ripple.at);
   });
 
+  it("the logo is gone into the disc before the ripple starts", () => {
+    expect(T.markFade.at + T.markFade.dur).toBeLessThanOrEqual(T.ripple.at);
+    expect(T.markFade.at).toBeGreaterThanOrEqual(T.core.at); // the disc is already firming up under it
+    expect(T.markFade.at + T.markFade.dur).toBeGreaterThanOrEqual(T.core.at + T.core.dur - 10); // never uncovered
+  });
+
   it("the trails can close the gaps: wide enough spread at the fastest spin", () => {
     // Fastest speed (deg per ms) at the end of the build-up, from the ease-in's end slope.
     const peak = (Math.abs(T.spin.turn1) / T.spin.dur1) * (0.47 / 0.32);

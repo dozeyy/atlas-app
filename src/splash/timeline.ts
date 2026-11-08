@@ -73,12 +73,13 @@ export const T = {
   /** The spinning mark itself turns a lighter clay, so the spin stays readable on the disc. */
   lead: { at: 1000, dur: 240 },
   /** The solid disc behind the trails (arm-tip radius) fades in as they close up. */
-  core: { at: 1120, dur: 200 },
+  core: { at: 1040, dur: 200 },
   /** Ripple: `rings` nested discs of slightly different clay roll out from the disc's rim,
    *  one after the other; the last one is the flat clay that fills the window. */
   ripple: { at: 1240, dur: 320, stagger: 40, rings: 4 },
-  /** The spinning mark fades into the clay while the ripple passes it. */
-  markFade: { at: 1440, dur: 240 },
+  /** The mark (trails, arms, lighter lead) cross-fades into the disc's clay while the disc firms
+   *  up, so it is gone by the time the disc is complete and the ripple starts. */
+  markFade: { at: 1050, dur: 190 },
   /** Clay halves slide apart to show the app; the app lands from `appFrom`. */
   /** Wipe: a hole opens in the flat clay from the middle (a soft rim of `feather` px with a
    *  lighter ring in it) and grows until the clay is gone; the app lands from `from` inside it. */
