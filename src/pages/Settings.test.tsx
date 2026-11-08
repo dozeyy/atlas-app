@@ -30,15 +30,21 @@ afterEach(() => {
 });
 
 describe("Settings", () => {
-  it("has a section rail and the five sections, with the version at the bottom", async () => {
+  it("shows one section at a time from the rail, so the page never scrolls", async () => {
     mount();
     const rail = await screen.findByRole("navigation", { name: "Settings sections" });
     expect(within(rail).getAllByRole("button").map((b) => b.textContent)).toEqual(["Appearance", "Claude folder", "Your data", "History", "About"]);
-    for (const name of ["Appearance", "Claude folder", "Your data", "History", "About"]) {
-      expect(screen.getByRole("heading", { level: 2, name })).toBeInTheDocument();
-    }
-    expect(screen.getByText("Atlas on this computer")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Appearance" })).toBeInTheDocument();
+    expect(screen.queryByText("Folder Atlas reads")).not.toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Appearance" })).toHaveAttribute("aria-current", "true");
+
+    await userEvent.click(within(rail).getByRole("button", { name: "Claude folder" }));
+    expect(screen.getByText("Folder Atlas reads")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Keep running when closed" })).not.toBeInTheDocument();
+
+    await userEvent.click(within(rail).getByRole("button", { name: "About" }));
     expect(screen.getByText("Atlas never sends your data anywhere", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("Version")).toBeInTheDocument();
   });
 
   it("turns Keep running when closed on and off", async () => {
@@ -51,6 +57,7 @@ describe("Settings", () => {
 
   it("steps how many versions History keeps, inside 10 to 200", async () => {
     mount();
+    await userEvent.click(await screen.findByRole("button", { name: "History" }));
     const group = await screen.findByRole("group", { name: "Versions kept" });
     expect(within(group).getByText("50")).toBeInTheDocument();
     await userEvent.click(within(group).getByRole("button", { name: "Keep more versions" }));
@@ -61,6 +68,7 @@ describe("Settings", () => {
   it("asks before rebuilding from scratch, and reads logs again straight away", async () => {
     const backend = mount();
     const reindex = vi.spyOn(backend, "usageReindex");
+    await userEvent.click(await screen.findByRole("button", { name: "Your data" }));
     await userEvent.click(await screen.findByRole("button", { name: "Read logs again" }));
     expect(reindex).toHaveBeenCalledWith("changed");
 
@@ -77,6 +85,7 @@ describe("Settings", () => {
 
   it("shows how long Claude Code keeps its logs", async () => {
     mount();
+    await userEvent.click(await screen.findByRole("button", { name: "Claude folder" }));
     expect(await screen.findByText(/Claude Code keeps conversation logs for/)).toBeInTheDocument();
   });
 });

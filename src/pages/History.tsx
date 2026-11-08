@@ -24,8 +24,8 @@ const rise = (n: number) => ({ ["--i" as string]: n });
 function Hero({ o, now, onPick }: { o: HistoryOverview; now: number; onPick: (day: number) => void }) {
   return (
     <section aria-label="Summary" className="rise" style={rise(1)}>
-      <Card className="grid grid-cols-1 gap-x-10 gap-y-5 px-6 py-5 @[740px]:grid-cols-[auto_minmax(0,1fr)]">
-        <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+      <Card className="grid grid-cols-1 items-center gap-x-10 gap-y-2 px-5 py-2 @[740px]:grid-cols-[auto_minmax(0,1fr)]">
+        <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
           <div>
             <CountUp value={o.watchedEvents} format={exact} id="hist:seen" className="d d-hero text-ink" />
             <div className="text-body text-ink-2">changes seen</div>
@@ -201,7 +201,7 @@ export function History() {
   }
 
   return (
-    <div className="@container flex flex-1 flex-col gap-4" ref={root}>
+    <div className="@container flex min-h-0 flex-1 flex-col gap-3" ref={root}>
       <PageTitle title="History" />
 
       {!(opened && !wide) && (
@@ -240,18 +240,20 @@ export function History() {
           {filtered ? "Nothing matches that. Try another filter or search." : "No changes yet."}
         </p>
       ) : wide ? (
-        <div className="rise grid grid-cols-[minmax(300px,380px)_minmax(0,1fr)] items-start gap-6" style={rise(3)}>
-          <Timeline
-            sections={view.sections}
-            selectedId={selected?.id ?? null}
-            onSelect={pick}
-            selectOnMove
-            more={list.more}
-            loadingMore={list.loadingMore}
-            onMore={() => void list.loadMore()}
-            now={view.now}
-          />
-          <div className="sticky top-4 max-h-[calc(100vh-var(--titlebar-h)-2rem)] self-start overflow-y-auto rounded-card">
+        <div className="rise grid min-h-[240px] flex-1 grid-cols-[minmax(300px,380px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-6" style={rise(3)}>
+          <div className="min-h-0 overflow-y-auto pr-1">
+            <Timeline
+              sections={view.sections}
+              selectedId={selected?.id ?? null}
+              onSelect={pick}
+              selectOnMove
+              more={list.more}
+              loadingMore={list.loadingMore}
+              onMore={() => void list.loadMore()}
+              now={view.now}
+            />
+          </div>
+          <div className="min-h-0 overflow-y-auto rounded-card">
             {showDetail && selected && (
               <Card className="p-5">
                 <Detail key={selected.id} event={selected} />
@@ -260,11 +262,13 @@ export function History() {
           </div>
         </div>
       ) : showDetail && selected ? (
-        <Card className="p-5">
-          <Detail key={selected.id} event={selected} onBack={() => setOpened(false)} />
-        </Card>
+        <div className="min-h-[240px] flex-1 overflow-y-auto rounded-card">
+          <Card className="p-5">
+            <Detail key={selected.id} event={selected} onBack={() => setOpened(false)} />
+          </Card>
+        </div>
       ) : (
-        <div className="rise" style={rise(3)}>
+        <div className="rise min-h-[240px] flex-1 overflow-y-auto" style={rise(3)}>
           <Timeline
             sections={view.sections}
             selectedId={selected?.id ?? null}

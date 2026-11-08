@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
@@ -29,40 +29,40 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const position = () => screen.getByText(/^\d+ of \d+$/).textContent ?? "";
+
 describe("Wrapped", () => {
-  it("opens on the cover and the slide cards, said honestly about how far back it goes", async () => {
+  it("opens on the cover, said honestly about how far back it goes", async () => {
     mount();
-    expect(await screen.findByRole("button", { name: "Play the story" })).toBeInTheDocument();
-    expect(screen.getByText("tokens so far")).toBeInTheDocument();
+    expect(await screen.findByText("tokens so far")).toBeInTheDocument();
     expect(screen.getAllByText(/Claude Code clears its logs after \d+ days/).length).toBeGreaterThan(0);
-    const cards = screen.getAllByRole("button", { name: /Open the story here/ });
-    expect(cards.length).toBeGreaterThan(2);
+    expect(position()).toMatch(/^1 of \d+$/);
+    expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
     expect(screen.queryByText(/Live/)).not.toBeInTheDocument();
   });
 
-  it("plays the story with the keyboard and closes on Escape", async () => {
+  it("clicks through the slides with the buttons and the arrow keys", async () => {
     mount();
-    await userEvent.click(await screen.findByRole("button", { name: "Play the story" }));
-    const story = await screen.findByRole("dialog", { name: "Your story" });
-    expect(within(story).getByText(/^1 of \d+$/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    expect(position()).toMatch(/^2 of \d+$/);
+    expect(screen.queryByText("tokens so far")).not.toBeInTheDocument();
     await userEvent.keyboard("{ArrowRight}");
-    expect(within(story).getByText(/^2 of \d+$/)).toBeInTheDocument();
+    expect(position()).toMatch(/^3 of \d+$/);
     await userEvent.keyboard("{ArrowLeft}");
-    expect(within(story).getByText(/^1 of \d+$/)).toBeInTheDocument();
-    await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Your story" })).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(position()).toMatch(/^1 of \d+$/);
+    expect(screen.getByText("tokens so far")).toBeInTheDocument();
   });
 
-  it("opens the story at the card you picked, and ends with Done", async () => {
+  it("jumps from the progress bar, ends on Replay, and starts over", async () => {
     mount();
-    const cards = await screen.findAllByRole("button", { name: /Open the story here/ });
-    await userEvent.click(cards[1]);
-    const story = await screen.findByRole("dialog", { name: "Your story" });
-    expect(within(story).getByText(/^2 of \d+$/)).toBeInTheDocument();
-    const total = Number(/of (\d+)/.exec(within(story).getByText(/^2 of \d+$/).textContent ?? "")?.[1]);
-    await userEvent.click(within(story).getByRole("button", { name: new RegExp(`Slide ${total} of ${total}`) }));
-    expect(within(story).getByRole("button", { name: "Replay" })).toBeInTheDocument();
-    await userEvent.click(within(story).getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Your story" })).not.toBeInTheDocument());
+    await screen.findByText("tokens so far");
+    const total = Number(/of (\d+)/.exec(position())?.[1]);
+    await userEvent.click(screen.getByRole("button", { name: new RegExp(`Slide ${total} of ${total}`) }));
+    expect(position()).toBe(`${total} of ${total}`);
+    expect(screen.queryByRole("button", { name: "Next" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Replay" }));
+    expect(position()).toBe(`1 of ${total}`);
+    expect(screen.getByText("tokens so far")).toBeInTheDocument();
   });
 });

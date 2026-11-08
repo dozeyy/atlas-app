@@ -290,12 +290,20 @@
   --wr-k: 12cqi;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+  width: min(100%, 1040px);
   border: 1px solid var(--line);
-  border-radius: var(--r-card);
+  border-radius: var(--r-sheet);
   background: var(--surface);
-  padding: 24px;
+  padding: clamp(24px, 5cqi, 56px);
   min-width: 0;
+}
+@media (max-height: 720px) {
+  .wr-slide {
+    --wr-max: 84px;
+    gap: 10px;
+    padding: clamp(20px, 3.5cqi, 36px);
+  }
 }
 .wr-slide[data-tone="accent"] {
   background: linear-gradient(var(--accent-tint), var(--accent-tint)), var(--surface);
@@ -305,19 +313,6 @@
 }
 .wr-slide[data-tone="slate"] {
   background: color-mix(in srgb, var(--slate) 14%, var(--surface));
-}
-.wr-slide[data-size="card"] {
-  --wr-min: 34px;
-  --wr-max: 56px;
-  height: 100%;
-  gap: 8px;
-  border-radius: var(--r-card);
-}
-.wr-slide[data-size="story"] {
-  width: min(100%, 960px);
-  border-radius: var(--r-sheet);
-  padding: clamp(24px, 5cqi, 56px);
-  gap: 16px;
 }
 .wr-kicker {
   color: var(--ink-2);
@@ -356,9 +351,12 @@
   line-height: 22px;
   max-width: 52ch;
 }
-.wr-slide[data-size="story"] .wr-line {
+.wr-slide .wr-line {
   font-size: 18px;
   line-height: 26px;
+}
+.wr-cover-fig {
+  display: block;
 }
 .wr-chart {
   margin-top: auto;
@@ -377,27 +375,6 @@ html.reduced .wr-fig[data-pop],
 html.reduced .intro .wr-bar,
 html.reduced .wr-split > i {
   animation-name: t-fade !important;
-}
-
-.wr-card {
-  display: block;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  perspective: 900px;
-  border-radius: var(--r-card);
-}
-.wr-card-face {
-  height: 100%;
-  border-radius: var(--r-card);
-  transition: transform var(--dur) var(--ease-out);
-  transform-style: preserve-3d;
-}
-.wr-card:hover .wr-slide {
-  border-color: var(--line-strong);
 }
 
 .wr-bar {
@@ -433,25 +410,17 @@ html.reduced .wr-split > i {
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-/* The story: a full-window stage under the title bar. */
+/* The story: progress, a stage that takes the rest of the page, and Back / Next. Never scrolls
+   at ordinary sizes; the stage scrolls only if a window is made very short. */
 .wr-story {
-  position: fixed;
-  z-index: 55;
-  inset: var(--titlebar-h) 0 0 0;
   display: flex;
+  flex: 1;
   flex-direction: column;
-  background: var(--bg);
-  outline: none;
-}
-.wr-story-top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px var(--gutter) 0;
+  gap: 8px;
+  min-height: 0;
 }
 .wr-prog {
   display: flex;
-  flex: 1;
   gap: 6px;
   min-width: 0;
 }
@@ -476,19 +445,22 @@ html.reduced .wr-split > i {
   background: var(--accent);
 }
 .wr-story-stage {
+  display: flex;
   flex: 1;
   min-height: 0;
-  display: grid;
-  place-items: center;
-  padding: 20px var(--gutter);
   overflow-y: auto;
+}
+.wr-story-slide {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin: auto 0;
 }
 .wr-story-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 var(--gutter) 20px;
 }
 
 /* ---- Settings: section rail, stepper ------------------------------------------------------- */
@@ -498,8 +470,6 @@ html.reduced .wr-split > i {
   gap: 2px;
 }
 .st-nav[data-wide] {
-  position: sticky;
-  top: 0;
   flex-direction: column;
   flex-wrap: nowrap;
   align-self: start;
@@ -527,9 +497,6 @@ html.reduced .wr-split > i {
 .st-nav-item[aria-current="true"] {
   background: var(--accent-tint);
   color: var(--accent-text);
-}
-.st-section {
-  scroll-margin-top: 8px;
 }
 .st-step {
   display: inline-flex;
