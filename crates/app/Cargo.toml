@@ -1,0 +1,28 @@
+[package]
+name = "atlas"
+description = "Atlas: a calm companion for Claude Code"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+atlas-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-window-state = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-version = "0.1"
+
+[features]
+# tauri build turns this on: the front end is served from the binary instead of
+# the Vite dev server.
+custom-protocol = ["tauri/custom-protocol"]

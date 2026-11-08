@@ -65,12 +65,16 @@ Reliability beats feature count.
     text `#1F1D1A` · text-2 `#6B655C` · line `#1F1D1A` at 10 %.
   - Dark: bg `#1C1A17` deep charcoal · surface `#252220` · raised `#2E2A27` ·
     text `#EDE8E1` · text-2 `#A39B90` · line `#EDE8E1` at 10 %.
-  - Accent terracotta (spec, **OPEN: keep?**): fill `#C96442` for large marks and
-    charts; `#B4532F` for text, links and filled buttons (white text, about 5:1); dark
-    mode `#E07A55` (about 5.8:1 on bg).
-  - Semantic: danger `#B42318` / `#F97066`, success `#3F7D58` / `#6FBF8E`, warning
-    `#B7791F` / `#E3B341`. Danger sits close to terracotta in hue: always pair it
-    with an icon and words.
+  - Accent terracotta (Will kept it, 2026-11-08): `--accent` `#C96442` for large marks
+    and charts; `--accent-solid` `#B4532F` filled buttons (white text); `--accent-text`
+    `#9C4524` text and links; dark mode `#E07A55` fill, `#E8896A` text. Shipped values
+    are in `src/styles/tokens.css`; `src/styles/tokens.test.ts` fails if any text pair
+    drops under 4.5:1, a graphic under 3:1, or accent and danger come within 25 degrees
+    of OKLCH hue. The app UI accent stays as tuned for contrast; do not retune it to
+    match the icon color.
+  - Semantic (tuned in Phase 1; the proposal values failed AA or sat too close to
+    terracotta): danger raspberry `#B80F4A` / `#FF6B8B`, success `#36704E` / `#6FBF8E`,
+    warning `#86570F` / `#E3B341`. Still pair danger with an icon and words.
   - Charts: terracotta, then warm neutrals and one cool slate (`#5B7083`) for contrast;
     validate with the dataviz palette checker.
 - Typography: system stack (SF Pro on macOS, Segoe UI Variable on Windows); SF Mono /
@@ -85,8 +89,13 @@ Reliability beats feature count.
   states, onboarding and Wrapped, the "atlas" thread; (2) number ticker on hero stats
   (MagicUI Number Ticker technique); (3) native vibrancy sidebar on macOS, Mica on
   Windows.
-- Icon motif: **OPEN** (the mountain/campfire was for "Basecamp"). No Anthropic or
-  Claude logos or trademarks anywhere.
+- Icon: **DECIDED by Will (2026-11-08)**. Cream tile `#F7EBDC`, mark `#DC784D`.
+  Sources and rebuild script in `assets/brand/` (`atlas-icon-1024.png` macOS tile,
+  `atlas-icon-fullbleed-1024.png` Windows/full bleed, `atlas-mark-1024.png` mark only
+  for the tray, `source-chatgpt.png` the original, `build.py`). Installed set:
+  `crates/app/icons/` (generated with `npx tauri icon`; Windows set from the full-bleed
+  file, `icon.icns` from the tile). The sidebar logo is `src/assets/atlas-icon-64.png`.
+  No Anthropic or Claude logos or trademarks anywhere.
 
 ## Stack / Tools
 - Tauri 2.x (stable line; 3.0 is alpha, do not use) · Rust 1.97 · Cargo workspace
@@ -114,12 +123,12 @@ via a CI-built `.dmg` that dad (or Will on a Mac) installs and runs.
 ## Roadmap
 
 ### Now
-- [x] Phase 0: recon + architecture + spec changes (`docs/phase0-recon.md`). **Waiting
-      for Will's OK and the open questions before Phase 1.**
+- [x] Phase 0: recon + architecture + spec changes (`docs/phase0-recon.md`).
+- [x] Phase 1: workspace, Tauri shell, sidebar nav, tokens + light/dark, fixture config
+      dirs, `--config-dir`, Sandbox Mode, CI matrix. Verified on Windows (screenshots in
+      `docs/shots/phase1/`); macOS is built and tested only by CI until a Mac is at hand.
 
 ### Next
-- [ ] Phase 1: workspace, Tauri shell, sidebar nav, tokens + light/dark, fixture config
-      dirs, `--config-dir`, Sandbox Mode, CI matrix skeleton.
 - [ ] Phase 2: usage engine (incremental parser, SQLite cache, dedup, pricing table),
       Dashboard, Sessions, search, Session Detail.
 - [ ] Phase 3: Setup read: discovery of every item type, global + project, cards,
@@ -133,11 +142,30 @@ via a CI-built `.dmg` that dad (or Will on a Mac) installs and runs.
 - [ ] Phase 7: Wrapped 2026 + first-launch intro, tray/menu bar, spend alerts.
 - [ ] Phase 8: icon, onboarding, empty/error states, perf + a11y pass, README.
 
+### Decided
+- Terracotta accent kept; icon chosen (see Design Identity); repo is private
+  `dozeyy/atlas`.
+
 ### Open questions
-- Icon motif for Atlas.
-- Keep the terracotta accent (it sits close to Claude's own brand color)?
-- GitHub repo for CI (account `dozeyy`).
 - macOS signing: unsigned (Open Anyway in Privacy & Security) vs a paid Apple
   Developer ID (gated: spending).
 - Wrapped history: transcripts are swept after `cleanupPeriodDays` (default 30), so a
   full-year Wrapped needs dad's retention setting checked; see the recon doc.
+
+## Phase 1 notes (how it is wired)
+- Config dir: `--config-dir`, then Settings override, then `CLAUDE_CONFIG_DIR`, then
+  `~/.claude`; `.claude.json` sits inside the config dir when `CLAUDE_CONFIG_DIR` or a
+  flag/override is used. Data dir: `--data-dir`, `ATLAS_DATA_DIR`, then the OS data dir.
+  Use a data-dir override for first-run tests.
+- Sandbox Mode copies to `<temp>/atlas-sandbox-*` on a background thread and Atlas
+  reads only the copy; while it is preparing or failed, the UI shows nothing rather
+  than the real folder. `projects/` is never copied (linked read-only). Debug builds
+  refuse writes under the real Claude folder (`fsutil::check_write_allowed`).
+- Frontend talks to Rust only through `src/lib/ipc.ts`; a plain browser or tests get
+  an in-memory `MockBackend`.
+- Commands: `npm test` (Vitest), `cargo test --workspace` (plain `cargo test` skips the
+  app crate by design), `npx tauri build --debug --no-bundle` then run
+  `target/debug/atlas.exe --config-dir fixtures/claude-basic --data-dir <scratch>`.
+  Fixtures regenerate with `python tools/make-fixtures.py`.
+- Deferred on purpose: single-instance lock, Framer Motion, tray (Phase 7); the window
+  state plugin stores bounds in its own app-config folder, not in `--data-dir`.

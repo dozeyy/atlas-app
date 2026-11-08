@@ -1,0 +1,33 @@
+{
+  "model": "claude-sonnet-5-5",
+  "outputStyle": "terse",
+  "env": {
+    "FIXTURE_FLAG": "1"
+  },
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Bash(git status)",
+      "Read(./**)"
+    ],
+    "deny": [
+      "Read(./.env)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/format.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "fixture-plugin@fixture-market": true
+  }
+}

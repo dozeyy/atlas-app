@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/app", "crates/mcp"]
+# Plain `cargo test` / `cargo build` covers the crates that need neither the
+# front end nor WebView2. CI and `cargo test --workspace` include the Tauri app
+# (its build needs `dist/`, so run `npm run build` first).
+default-members = ["crates/core", "crates/mcp"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+dirs = "6"
+tempfile = "3"
+atlas-core = { path = "crates/core" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

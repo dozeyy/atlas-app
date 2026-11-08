@@ -1,0 +1,97 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { App } from "./App";
+import { AtlasProvider } from "./state/AtlasProvider";
+import { setBackend } from "./lib/ipc";
+import { MockBackend } from "./lib/mock";
+
+function mount() {
+  setBackend(new MockBackend());
+  return render(
+    <AtlasProvider>
+      <App />
+    </AtlasProvider>,
+  );
+}
+
+beforeEach(() => {
+  localStorage.clear();
+  document.documentElement.removeAttribute("data-theme");
+});
+
+describe("navigation", () => {
+  it("lists the six sections and starts on the dashboard", () => {
+    mount();
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    const labels = Array.from(nav.querySelectorAll("button")).map((b) => b.textContent);
+    expect(labels).toEqual(["Dashboard", "Sessions", "Setup", "History", "Wrapped", "Settings"]);
+    expect(screen.getByRole("button", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
+  });
+
+  it("switches pages on click and shows a designed empty state, not filler", async () => {
+    mount();
+    await userEvent.click(screen.getByRole("button", { name: "Sessions" }));
+    expect(screen.getByRole("heading", { level: 1, name: "Sessions" })).toBeInTheDocument();
+    expect(screen.getByText("No sessions to show yet")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/lorem ipsum/i);
+    expect(screen.getByRole("button", { name: "Sessions" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("jumps with Ctrl+number", async () => {
+    mount();
+    await userEvent.keyboard("{Control>}5{/Control}");
+    expect(screen.getByRole("heading", { level: 1, name: "Wrapped" })).toBeInTheDocument();
+  });
+
+  it("remembers the last page", async () => {
+    const first = mount();
+    await userEvent.click(screen.getByRole("button", { name: "History" }));
+    first.unmount();
+    mount();
+    expect(screen.getByRole("heading", { level: 1, name: "History" })).toBeInTheDocument();
+  });
+
+  it("moves focus to the page after navigating", async () => {
+    mount();
+    await userEvent.click(screen.getByRole("button", { name: "Setup" }));
+    await waitFor(() => expect(screen.getByRole("main")).toHaveFocus());
+  });
+});
+
+describe("theme", () => {
+  it("pins the theme on <html> and persists it", async () => {
+    const first = mount();
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    first.unmount();
+
+    mount();
+    await act(async () => {});
+    expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").theme).toBe("dark");
+  });
+
+  it("System removes the pin so the OS decides", async () => {
+    mount();
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Light" }));
+    expect(document.documentElement.dataset.theme).toBe("light");
+    await userEvent.click(screen.getByRole("radio", { name: "System" }));
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+  });
+});
+
+describe("sandbox", () => {
+  it("shows preparing, then ready, and never shows the real folder meanwhile", async () => {
+    mount();
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("switch", { name: "Sandbox mode" }));
+    expect(await screen.findByText("Making the copy...")).toBeInTheDocument();
+    expect(screen.getAllByText("Preparing sandbox").length).toBeGreaterThan(0);
+    expect(screen.queryByText("C:/Users/you/.claude")).not.toBeInTheDocument();
+    expect(await screen.findByText(/Copied 214 files/, undefined, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.getByText("Sandbox mode", { selector: "div" })).toBeInTheDocument();
+  });
+});

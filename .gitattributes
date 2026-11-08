@@ -1,0 +1,6 @@
+* text=auto
+# Fixtures are byte-exact test data (CRLF, BOM): git must never convert them.
+fixtures/** -text
+*.png binary
+*.ico binary
+*.icns binary

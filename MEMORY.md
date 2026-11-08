@@ -25,3 +25,18 @@ the end (the known-fix-lookup hook reads the tail; later entries win).
   inside it. Toolchain on Windows complete (Rust 1.97.1, Node 24.18, tauri-cli 2.11.4,
   VS Build Tools 2022, WebView2); no macOS target or Mac locally.
 - Phase 1 waits for Will's OK.
+
+## 2026-11-08 - Phase 1 foundation
+- Built: Cargo workspace (core/app/mcp stub), Tauri 2 shell, React 19 + Tailwind 4 + Radix
+  frontend, 6-page sidebar, tokens (one file, contrast-tested), System/Light/Dark switch,
+  Mica/vibrancy config, fixtures, `--config-dir`, Sandbox Mode, CI matrix. Will chose the
+  icon mid-phase (assets/brand/) and kept the terracotta accent.
+- Root causes found by tests: proposal colors failed AA (warning, accent text on the nav
+  wash) and danger sat 10 degrees from terracotta in hue, so danger moved to raspberry;
+  Windows canonicalize leaked a verbatim path prefix into the sandbox path shown in the UI
+  (stripped at the source); first-paint ms was unset in the boot payload (the app now emits
+  it after first paint). Once, a launch right after killing another instance opened no
+  window (harness timing; not reproduced with a 3 s gap).
+- Measured (debug build, Windows 11): 370-470 ms to first paint; Sandbox of the real
+  ~/.claude = 2468 files in 4.3 s on a background thread, real files untouched.
+

@@ -1,0 +1,136 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* Base. Everything visual comes from tokens.css. */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  overflow: hidden; /* the main panel scrolls, never the window */
+  user-select: none; /* it is an app, not a page; code and paths opt back in below */
+  cursor: default;
+}
+
+/* Mica / vibrancy: the window itself must be see-through, panels paint their own. */
+html.backdrop,
+html.backdrop body {
+  background: transparent;
+}
+
+html[data-platform="macos"] {
+  --titlebar-inset: 28px;
+}
+
+.selectable,
+code,
+.mono {
+  user-select: text;
+}
+
+.mono,
+code {
+  font-family: var(--font-code);
+  font-size: 12px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent-tint);
+}
+
+/* Thin, quiet scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* ---- Motion ---------------------------------------------------------------- */
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--travel));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.page-enter {
+  animation: page-enter var(--dur-slow) var(--ease-out) both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fade-in var(--dur) var(--ease-out) both;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+.press {
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.press:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot {
+    animation: none;
+  }
+  .page-enter,
+  .fade-in {
+    animation-duration: 1ms;
+  }
+}

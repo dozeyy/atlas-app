@@ -1,0 +1,63 @@
+{
+  "numStartups": 3,
+  "installMethod": "fixture",
+  "userID": "fixture-user-0000",
+  "oauthAccount": {
+    "emailAddress": "fixture@example.invalid",
+    "organizationName": "Fixture Org"
+  },
+  "mcpServers": {
+    "fixture-notes": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "notes-server.js"
+      ],
+      "env": {
+        "NOTES_DIR": "/fixture/notes"
+      }
+    }
+  },
+  "projects": {
+    "/fixture/app": {
+      "allowedTools": [],
+      "mcpContextUris": [],
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [
+        "fixture-extra"
+      ],
+      "hasTrustDialogAccepted": true,
+      "mcpServers": {
+        "fixture-local": {
+          "type": "stdio",
+          "command": "echo",
+          "args": [
+            "hi"
+          ],
+          "env": {}
+        }
+      },
+      "disabledMcpServers": [
+        "fixture-notes"
+      ],
+      "lastCost": 0.12,
+      "lastModelUsage": {
+        "claude-sonnet-5-5": {
+          "costUSD": 0.12
+        }
+      }
+    },
+    "/fixture/gone": {
+      "allowedTools": [],
+      "mcpServers": {},
+      "hasTrustDialogAccepted": false
+    }
+  },
+  "skillUsage": {
+    "commit-helper": {
+      "usageCount": 4,
+      "lastUsedAt": 1762560000000
+    }
+  },
+  "pluginUsage": {}
+}

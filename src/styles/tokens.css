@@ -1,0 +1,195 @@
+/*
+ * Atlas design tokens: the ONLY place colors, radii, type, spacing and motion are
+ * defined. Components use the Tailwind names that `@theme inline` below maps to
+ * these variables (bg-surface, text-ink-2, rounded-card ...), never raw values.
+ *
+ * Contrast is enforced by src/styles/tokens.test.ts, which parses this file:
+ * every text pair >= 4.5:1, every graphic >= 3:1, accent and danger >= 25 deg
+ * apart in OKLCH hue, in both themes. Change a value here and that test tells you
+ * whether it still passes.
+ *
+ * Theme: follows the OS unless <html data-theme="light|dark"> pins it. The dark
+ * set appears twice (pinned, and OS-dark when not pinned light); the test also
+ * checks the two copies are identical.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ---- Light ---------------------------------------------------------- */
+  --bg: #faf8f5; /* window and page */
+  --surface: #ffffff; /* cards, inputs */
+  --raised: #f3f0eb; /* hover, selected rows, wells */
+  --ink: #1f1d1a; /* primary text */
+  --ink-2: #6b655c; /* secondary text */
+  --line: rgb(31 29 26 / 0.1); /* 1px hairlines */
+  --line-strong: rgb(31 29 26 / 0.22); /* input borders: >= 3:1 is not required for decoration, this is for controls */
+
+  --accent: #c96442; /* terracotta: large marks, charts, illustrations (>= 3:1) */
+  --accent-solid: #b4532f; /* filled buttons; white text on it >= 4.5:1 */
+  --accent-text: #9c4524; /* links and accent text on any surface >= 4.5:1 */
+  --on-accent: #ffffff;
+  --accent-tint: rgb(201 100 66 / 0.12); /* selected state wash */
+
+  --danger: #b80f4a; /* raspberry, deliberately not terracotta-adjacent */
+  --danger-tint: rgb(184 15 74 / 0.1);
+  --success: #36704e;
+  --success-tint: rgb(54 112 78 / 0.12);
+  --warning: #86570f;
+  --warning-tint: rgb(134 87 15 / 0.13);
+  --slate: #5b7083; /* the cool second chart hue */
+
+  --sidebar-solid: #f1ede7; /* sidebar when there is no Mica / vibrancy */
+  --sidebar-glass: rgb(250 248 245 / 0.4); /* warm wash over Mica / vibrancy */
+  --shadow-pop: 0 8px 24px rgb(31 29 26 / 0.12), 0 1px 3px rgb(31 29 26 / 0.1);
+  --scrim: rgb(31 29 26 / 0.45);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* ---- Dark, pinned ------------------------------------------------------ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #1c1a17;
+  --surface: #252220;
+  --raised: #2e2a27;
+  --ink: #ede8e1;
+  --ink-2: #a39b90;
+  --line: rgb(237 232 225 / 0.1);
+  --line-strong: rgb(237 232 225 / 0.24);
+
+  --accent: #e07a55;
+  --accent-solid: #e07a55;
+  --accent-text: #e8896a;
+  --on-accent: #1c1a17;
+  --accent-tint: rgb(224 122 85 / 0.16);
+
+  --danger: #ff6b8b;
+  --danger-tint: rgb(255 107 139 / 0.14);
+  --success: #6fbf8e;
+  --success-tint: rgb(111 191 142 / 0.14);
+  --warning: #e3b341;
+  --warning-tint: rgb(227 179 65 / 0.14);
+  --slate: #8fa3b5;
+
+  --sidebar-solid: #211f1c;
+  --sidebar-glass: rgb(28 26 23 / 0.4);
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+  --scrim: rgb(0 0 0 / 0.55);
+}
+
+/* ---- Dark, from the OS (unless pinned light) --------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1c1a17;
+    --surface: #252220;
+    --raised: #2e2a27;
+    --ink: #ede8e1;
+    --ink-2: #a39b90;
+    --line: rgb(237 232 225 / 0.1);
+    --line-strong: rgb(237 232 225 / 0.24);
+
+    --accent: #e07a55;
+    --accent-solid: #e07a55;
+    --accent-text: #e8896a;
+    --on-accent: #1c1a17;
+    --accent-tint: rgb(224 122 85 / 0.16);
+
+    --danger: #ff6b8b;
+    --danger-tint: rgb(255 107 139 / 0.14);
+    --success: #6fbf8e;
+    --success-tint: rgb(111 191 142 / 0.14);
+    --warning: #e3b341;
+    --warning-tint: rgb(227 179 65 / 0.14);
+    --slate: #8fa3b5;
+
+    --sidebar-solid: #211f1c;
+    --sidebar-glass: rgb(28 26 23 / 0.4);
+    --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+    --scrim: rgb(0 0 0 / 0.55);
+  }
+}
+
+/* ---- Not theme-dependent ---------------------------------------------- */
+:root {
+  /* Type. System fonts only: SF Pro on macOS, Segoe UI Variable on Windows. */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-code: ui-monospace, "SF Mono", "Cascadia Code", "Cascadia Mono", Consolas, Menlo,
+    monospace;
+
+  /* Radii: controls 6, cards 10, sheets and popovers 14. */
+  --r-control: 6px;
+  --r-card: 10px;
+  --r-sheet: 14px;
+
+  /* Motion: 150-250 ms ease-out; reduced motion removes travel, keeps fades. */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 250ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --travel: 8px;
+  --press-scale: 0.97;
+
+  /* Layout */
+  --sidebar-w: 232px;
+  --content-max: 960px;
+  --titlebar-inset: 0px; /* macOS overlay title bar sets this to 28px */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --travel: 0px;
+    --press-scale: 1;
+  }
+}
+
+/* ---- Tailwind names ----------------------------------------------------- */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-solid: var(--accent-solid);
+  --color-accent-text: var(--accent-text);
+  --color-on-accent: var(--on-accent);
+  --color-accent-tint: var(--accent-tint);
+  --color-danger: var(--danger);
+  --color-danger-tint: var(--danger-tint);
+  --color-success: var(--success);
+  --color-success-tint: var(--success-tint);
+  --color-warning: var(--warning);
+  --color-warning-tint: var(--warning-tint);
+  --color-slate: var(--slate);
+
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-code);
+
+  --radius-control: var(--r-control);
+  --radius-card: var(--r-card);
+  --radius-sheet: var(--r-sheet);
+
+  --shadow-float: var(--shadow-pop);
+
+  /* Ramp: 12 caption, 14 body, 16 body-large, 20 subtitle, 28 title, 40 display. */
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-lead: 16px;
+  --text-lead--line-height: 24px;
+  --text-subtitle: 20px;
+  --text-subtitle--line-height: 28px;
+  --text-title: 28px;
+  --text-title--line-height: 34px;
+  --text-display: 40px;
+  --text-display--line-height: 46px;
+
+}

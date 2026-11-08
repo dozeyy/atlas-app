@@ -1,0 +1,262 @@
+# Phase 2 - Usage engine
+
+**What it is:** the build spec for the part of Atlas that reads Claude Code session
+transcripts, keeps a durable usage ledger in SQLite, prices it, and serves the
+Dashboard, Sessions (list + detail) and usage-timeline queries to the front end.
+**Status:** spec, 2026-11-08. Not started. Builds on Phase 1 (in progress when this was
+written: `crates/core/src/{paths,fsutil,sandbox,settings,launch}.rs`,
+`crates/app/src/{state,commands,main}.rs`, `src/lib/{ipc,types,mock}.ts`,
+`fixtures/claude-{basic,edge}`, `tools/make-fixtures.py`).
+**Sources:** `CLAUDE.md` (roadmap, safety invariants), `BUILD-PROMPT.md` (data sources
+A and B; features 1 and 2), `docs/phase0-recon.md` (wins over the spec), the live
+pricing page (fetched 2026-11-08), and read-only measurements of Will's
+`~/.claude/projects` (2026-11-08, below).
+
+---
+
+## Goal
+- Every assistant API call in `projects/**/*.jsonl` (main + `subagents/`) is counted
+  exactly once, with the correct (last-line) usage, priced from an editable data file,
+  and stored in a ledger that outlives Claude Code's 30-day transcript sweep.
+- The UI never waits on transcript I/O: it paints from the cache, the first-ever index
+  runs in the background with visible progress, and live sessions update within ~1 s.
+- `~/.claude` is only ever read.
+
+## Not in scope (this spec)
+- The visual build of the Dashboard charts, Sessions table, Session Detail screen,
+  heatmap and Wrapped (separate UI spec through `ui-builder`; this spec delivers their
+  data and one progress strip).
+- Full-text search / FTS5 (roadmap Phase 2 item; separate spec, see Open questions).
+- The "Edit prices" screen (BUILD-PROMPT feature 9). Prices are editable by editing the
+  JSON file; the screen comes later.
+- Real API spend via the Admin API (BUILD-PROMPT data source C).
+- Spend alerts, tray readout, Wrapped (Phase 7); they will consume these queries.
+- Filtering out Atlas-assistant sessions (Phase 6; a column is reserved for it).
+- `history.jsonl`, `stats-cache.json`, `~/.claude.json` `lastModelUsage` (not read).
+- Change history / backups / Undo (that is the History page; Phase 4).
+
+---
+
+## Measured baseline (Will's machine, read-only, 2026-11-08)
+| Measure | Value | How |
+|---|---|---|
+| Transcript files | 1,884 (1,511 subagent) | `find projects -name '*.jsonl'` |
+| Total bytes | 5.35 GB | sum of sizes |
+| Largest file | 300.0 MB (299,968,107 B), 26,708 lines, 6,217 assistant lines | `wc -l`, `grep -c` |
+| Total lines | 658,832 | `cat` + `awk` |
+| Longest single line | 2,065,864 chars (largest file: 1,362,852) | `awk length` |
+| Lines containing `"type":"assistant"` | 222,998 (about half are duplicates per recon) | `grep -o` + `wc -l` |
+| Raw sequential read, all files | 6.9 s first run, 3.9 s second (OS cache warm) | `xargs cat > /dev/null` |
+| Raw read, largest file | 0.30 s (warm) | `cat > /dev/null` |
+- Cold-cache (after reboot) read time was **not** measured; the bench harness must.
+
+## Performance budgets (pass/fail; bench harness, release build, Will's PC)
+| Metric | Budget | Measured on |
+|---|---|---|
+| First full index, OS cache warm | <= 30 s | real `projects/` (5.35 GB), read-only path |
+| First full index, cold (first run after reboot) | <= 90 s (or "not measured" + reason if a cold cache can't be forced) | same |
+| Synthetic 300 MB single file, full parse | <= 6 s | generated at bench time |
+| No-change rescan (stat all files, zero bytes parsed) | <= 300 ms | real data, after full index |
+| One append of <= 64 KB to one file -> DB commit | <= 50 ms after the debounce fires | bench append test |
+| Append on disk -> `atlas://usage/changed` reaches the page | <= 1.0 s (500 ms debounce + work) | app log timestamps |
+| Indexer peak memory (process working set) | <= 250 MB during full index; a 300 MB file adds <= 32 MB over a 1 MB file | bench prints `PeakWorkingSetSize` / `ru_maxrss` |
+| Per-line buffer | hard cap 64 MiB; longer lines skipped and counted | unit test |
+| `usage_dashboard` | <= 50 ms | real cache + synthetic 1,000,000-message cache |
+| `usage_timeline` 365 days x day | <= 50 ms | same |
+| `sessions_list` page of 50, any sort | <= 50 ms | same |
+| `session_detail` (largest session) | <= 100 ms | same |
+| UI thread | zero transcript or SQLite work; first paint unchanged from Phase 1 | `[atlas] startup` line before/after |
+| Dashboard populated from an existing cache | < 2 s from launch (CLAUDE.md) | log `usage: dashboard ready <ms>` |
+
+---
+## Decisions made (each line is a review checklist item)
+**Reading**
+- D1. Only `<projects_dir>/<proj>/<session>.jsonl` and
+  `<projects_dir>/<proj>/<session>/subagents/*.jsonl` are read. Nothing else under the
+  config root is opened (`tool-results/`, `memory/`, `.credentials.json`, `sessions/`
+  never touched). `projects_dir` comes from Phase 1 `ConfigRoot::projects_dir`.
+- D2. Every transcript open goes through one function, `usage::reader::open_read_only`,
+  using `OpenOptions::new().read(true)` only. On Windows the Rust default share mode
+  (read | write | delete) stays, so Claude Code can keep appending and its sweep can
+  delete a file Atlas is reading. No write/create/remove/rename call exists anywhere in
+  `crates/core/src/usage/`.
+- D3. File identity = (path, fs id, head hash). fs id: Windows volume serial + file
+  index (`winapi-util`), Unix (dev, ino). Head hash: SHA-256 of the first 4 KiB (whole
+  file if shorter), refreshed until the file reaches 4 KiB.
+- D4. Rescan rule per file: same fs id + head hash and size >= committed offset -> read
+  only `[offset, EOF)`. Size < offset, fs id changed, or head hash changed -> a new file
+  version, read from 0 (rows upsert by key, so re-reading is safe). File gone ->
+  `files.missing = 1`; its rows stay.
+- D5. The committed offset is the byte after the last `\n` read. A trailing partial line
+  is never parsed or committed; the next pass re-reads it. The offset and the rows parsed
+  from those bytes commit in the same SQLite transaction.
+- D6. Streaming only: `BufReader` (1 MiB) + one reusable line buffer per worker; no
+  `read_to_end` / `read_to_string` / `fs::read` on a transcript, ever. A line longer than
+  64 MiB is skipped by scanning to the next `\n` without buffering, counted in
+  `files.long_lines`.
+- D7. Cheap prefilter before JSON: a line is fully parsed only if it contains one of
+  `"type":"assistant"`, `"type":"custom-title"`, `"type":"agent-name"`,
+  `"type":"relocated"`, `"type":"cost-state"` (`memchr::memmem`). `api-request*` and
+  every other type are skipped unparsed. (Escaped JSON inside a string cannot produce
+  these exact bytes.)
+- D8. Parse into serde structs that borrow `&str` and skip unknown fields; never into
+  `serde_json::Value`. A line that fails to parse, or an `assistant` line missing
+  `message.id`, `requestId`, `message.model` or `message.usage`, is counted in
+  `files.malformed_lines` and skipped; the file continues.
+- D9. A UTF-8 BOM at offset 0 and CRLF line endings are tolerated.
+- D10. Not API calls, skipped: model `<synthetic>`, and lines whose four token counts
+  are all 0 (e.g. `isApiErrorMessage`). Counted in diagnostics, not stored.
+
+**Identity, dedup, attribution**
+- D11. Message key = `message.id + "|" + requestId`, global primary key.
+- D12. Within one file the **last** line for a key wins (all usage fields replaced).
+  Across files (recon saw none; still possible after resume/fork) the row with the
+  higher `output_tokens` wins, a tie keeps the existing row; each cross-file collision
+  increments `meta.cross_file_dupes`. The result is independent of scan order.
+- D13. Session id = the line's `sessionId`; for a subagent line without one, the
+  `<session>` folder above `subagents/`. Subagent rows carry `agent_id` (`agentId`) and
+  `is_sidechain` and roll up into the parent session.
+- D14. Project = `cwd` of the session's first line that has one; a `relocated` line
+  replaces it with `relocatedCwd`. A session never splits across projects. The folder
+  name is never decoded. Grouping key = the path with separators normalized and, on
+  Windows and macOS, case-folded; the display path keeps the original spelling.
+- D15. Session title = latest `custom-title` > latest `agent-name` > none (UI shows
+  "Session in <project folder name>"). No message text is stored in the cache.
+- D16. `cost-state.totalCostUSD`, when present, is stored per session as Claude Code's
+  own figure for a cross-check; it is never the displayed cost.
+
+**Tokens and pricing**
+- D17. Stored per message: `input_tokens`, `output_tokens`, cache writes split 5m/1h
+  from `cache_creation.ephemeral_{5m,1h}_input_tokens`, `cache_read_input_tokens`,
+  `server_tool_use.{web_search_requests, web_fetch_requests}`,
+  `output_tokens_details.thinking_tokens` (info only; already inside output), `speed`,
+  `inference_geo`, `service_tier`, `attributionSkill`, `attributionMcpServer`,
+  `attributionMcpTool`, `timestamp`.
+- D18. Missing `cache_creation` breakdown -> all of `cache_creation_input_tokens` is
+  booked as 5m and the row is flagged `cw_assumed = 1` (Open question Q4). A breakdown
+  that does not sum to the total wins over the total; the mismatch is counted.
+- D19. `usage.iterations[]` is not summed; top-level counts are used (Q3).
+- D20. Prices are a data file, not code: bundled seed
+  `crates/core/pricing/pricing.default.json` (also `include_str!`-ed as the last-resort
+  fallback) and the live copy `<data_dir>/pricing.json`, created from the seed on first
+  run. The live copy is watched; an edit reprices instantly with no reindex and no
+  rebuild. A live copy that fails validation is ignored (last good table kept) and the
+  error shows in `usage_status`.
+- D21. Seed upgrade: when a newer app ships a seed with a later `updated`, the live copy
+  is replaced only if its content hash still equals the seed it came from (never
+  edited); otherwise it is kept and status says a newer price list is available.
+- D22. Model match is the exact id, or an id listed in that model's `aliases`. No
+  prefix, family or "closest model" matching. Anything else is an **unknown model**:
+  its tokens count everywhere, its cost is `null`, and it is listed in warnings.
+- D23. Modifiers: `speed: "fast"` uses the model's `fast` input/output rates, with cache
+  rates scaled by the same ratio as the base rates (pricing page: caching multipliers
+  stack on fast mode); a fast row on a model with no `fast` entry is unpriced.
+  `inference_geo: "us"` x 1.1 on every category; `"global"` x 1.0. Any other geo,
+  speed, or `service_tier` other than `"standard"` -> unpriced (cost `null`, tokens
+  kept, warning). Never guessed.
+- D24. Haiku 5.5 long-context tier is decided per request: prompt = input + cache read +
+  cache writes; > 100,000 -> the `longContext` rates for that whole request (pricing
+  page). Stored as `price_tier` on the message.
+- D25. Web search: `webSearchPerThousand` x requests / 1000 ($10 per 1,000). Web fetch:
+  $0 extra (pricing page). Both shown as their own line in breakdowns.
+- D26. Cost is computed at query time from token buckets x the loaded price table, in
+  f64 dollars; never stored. A cost figure carries `complete: false` and the unpriced
+  token count when any row in it was unpriced. UI copy always says "estimated".
+
+**Cache (SQLite)**
+- D27. rusqlite, `bundled`. Location: `<data_dir>/cache.sqlite` when `projects_dir` is
+  the real default (`~/.claude/projects`, or `$CLAUDE_CONFIG_DIR/projects`), else
+  `<data_dir>/caches/<first 16 hex of sha256(canonical projects_dir)>.sqlite`, so
+  fixtures, `--config-dir` folders and excluded-projects sandboxes never mix into the
+  real ledger. A sandbox that links the real logs read-only shares the real ledger (same
+  `projects_dir`). If the cache path would fall inside `ConfigRoot.dir`, the engine
+  refuses to start (state `error`).
+- D28. Pragmas `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`,
+  `busy_timeout=5000`. One writer connection on the indexer thread; two read-only
+  connections in a small `Mutex<Vec<Connection>>` pool for commands. No r2d2.
+- D29. Schema version = `PRAGMA user_version`; parser version in `meta`. Migrations are
+  forward-only Rust functions `m0001...`, each in one transaction. A DB with a newer
+  `user_version` than the app knows opens read-only, is never migrated or indexed, and
+  the status says so.
+- D30. Parser version bump -> background re-read of every file still on disk from 0
+  (upsert; ledger rows of missing files kept). Never blocking.
+- D31. Durable ledger: no row is ever deleted because a transcript disappeared.
+- D32. Corruption: an open error `SQLITE_CORRUPT` / `SQLITE_NOTADB`, or a failing
+  `PRAGMA quick_check` run in the background after first paint -> close; rename the DB
+  (and `-wal`/`-shm`) to `*.corrupt-<unix ts>`; restore the newest `cache.sqlite.bak`
+  if it passes `quick_check`, else start empty; then index. Status says only transcripts
+  still on disk could be recovered.
+- D33. Backup snapshot: `VACUUM INTO cache.sqlite.bak.tmp`, then atomic rename to
+  `cache.sqlite.bak`, after a full index and at most once per 24 h, off the UI thread.
+  One snapshot kept. (It is what protects pre-sweep history from corruption.)
+- D34. Batches commit every <= 5,000 parsed lines or <= 64 MiB read, whichever comes
+  first; a killed app loses at most one batch and resumes from committed offsets.
+- D35. Aggregates are recomputed for the touched keys after each batch (`DELETE` +
+  `INSERT ... SELECT ... GROUP BY` for the affected `hour_local` buckets and sessions),
+  not maintained by +/- arithmetic. Self-healing; a full rebuild is the same SQL.
+- D36. Time: messages store `ts_utc_ms`. Buckets use the OS local time zone at index
+  time (`chrono::Local`), stored as `hour_local` (`YYYY-MM-DDTHH`); `meta` keeps a tz
+  fingerprint and a change triggers a background recompute. "Today" = local calendar
+  day; "7 days" = today + previous 6; "30 days" = today + previous 29. Weeks start Monday
+  (ISO; Q9).
+- D37. Token "total" = input + output + cache writes + cache reads (what is billed);
+  every response also carries each part (Q2).
+
+**Threads, watching, IPC**
+- D38. Every usage Tauri command is `async` (Tauri 2 runs sync commands on the main
+  thread) and does its SQLite work inside `tauri::async_runtime::spawn_blocking`.
+- D39. Indexer: `std::thread::scope` workers, `min(available_parallelism - 1, 4)`,
+  files ordered largest first; workers parse, a bounded `sync_channel(8)` feeds the
+  single writer. No rayon, no tokio in core.
+- D40. The engine starts after `frontend_ready` (no transcript or cache I/O before first
+  paint) and restarts on a config-root change (sandbox toggle, folder override); the
+  running pass is cancelled at the next batch boundary.
+- D41. Watcher: `notify` recursive on `projects_dir`; own trailing debounce of 500 ms
+  with a 2 s max wait (a constantly-appending live session still refreshes); only
+  `*.jsonl` paths queue work. Watcher error/overflow, window focus, and a 5-minute timer
+  while the window is visible trigger a stat sweep (D4) as the safety net.
+- D42. Events are coalesced: progress <= 10 per second, `changed` <= 1 per second.
+- D43. Session Detail's readable transcript streams from the jsonl files on demand
+  (user/assistant text blocks only, each capped at 20,000 chars), never cached. Missing
+  files -> "no longer on disk" instead of text.
+- D44. New core dependencies: `rusqlite` (bundled), `memchr`, `sha2`, `chrono` (clock),
+  `notify`, `winapi-util` (Windows only). Each serves a decision above; nothing else.
+
+---
+
+## Seed price table (`pricing.default.json`)
+- Source of every number: `https://platform.claude.com/docs/en/about-claude/pricing`,
+  fetched 2026-11-08 (Model pricing table + footnotes 1-3, Fast mode, Data residency,
+  Long context and Web search sections). Seed `updated: "2026-11-08"`.
+- Cross-checked with the `claude-api` skill (bundled with CLI 2.1.317, model table
+  cached 2026-10-06): input/output agree on every row. **One disagreement:** the skill
+  gives Sonnet 5.5 cache reads as $0.20; the live page gives $0.10 (footnote 2: 0.05x of
+  $2). The live page wins.
+- USD per million tokens:
+
+| Model id | Input | Output | 5m write | 1h write | Cache read | Fast in / out | Note |
+|---|---|---|---|---|---|---|---|
+| `claude-fable-5-1` | 10 | 50 | 12.50 | 20 | 0.25 | - | read = 0.025x |
+| `claude-fable-5` | 10 | 50 | 12.50 | 20 | 1.00 | - | seen on Will's PC |
+| `claude-opus-5-5` | 4 | 20 | 5 | 8 | 0.20 | 8 / 40 | read = 0.05x |
+| `claude-opus-5` | 5 | 25 | 6.25 | 10 | 0.50 | 10 / 50 | |
+| `claude-opus-4-8` | 5 | 25 | 6.25 | 10 | 0.50 | 10 / 50 | |
+| `claude-opus-4-7` | 5 | 25 | 6.25 | 10 | 0.50 | - | no fast mode on 4.7 |
+| `claude-opus-4-6` | 5 | 25 | 6.25 | 10 | 0.50 | - | |
+| `claude-sonnet-5-5` | 2 | 10 | 2.50 | 4 | 0.10 | - | read = 0.05x |
+| `claude-sonnet-5` | 2 | 10 | 2.50 | 4 | 0.20 | - | intro price made standard (footnote 3) |
+| `claude-sonnet-4-6` | 3 | 15 | 3.75 | 6 | 0.30 | - | |
+| `claude-haiku-5-5` (prompt <= 100k) | 0.10 | 0.50 | 0.125 | 0.20 | 0.01 | - | |
+| `claude-haiku-5-5` (prompt > 100k) | 0.50 | 2.50 | 0.625 | 1 | 0.05 | - | `longContext` block |
+| `claude-haiku-4-5` | 1 | 5 | 1.25 | 2 | 0.10 | - | |
+- Global keys: `webSearchPerThousand: 10`, `webFetchPerThousand: 0`,
+  `geoMultipliers: {"global": 1.0, "us": 1.1}`, `serviceTiers: ["standard"]`.
+- Entry shape: `"claude-opus-5-5": {"input": 4, "output": 20, "cacheWrite5m": 5,
+  "cacheWrite1h": 8, "cacheRead": 0.2, "fast": {"input": 8, "output": 40},
+  "aliases": [], "source": "<pricing url>#model-pricing"}`. Haiku 5.5 adds
+  `"longContext": {"thresholdTokens": 100000, "input": 0.5, "output": 2.5,
+  "cacheWrite5m": 0.625, "cacheWrite1h": 1, "cacheRead": 0.05}`. Top level:
+  `schemaVersion, updated, currency, unit, source, webSearchPerThousand,
+  webFetchPerThousand, geoMultipliers, serviceTiers, models`.
+
+---
