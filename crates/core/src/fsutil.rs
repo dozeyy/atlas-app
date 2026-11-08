@@ -150,9 +150,16 @@ fn comparable(path: &Path) -> PathBuf {
         if let Ok(c) = fs::canonicalize(cur) {
             break c;
         }
-        match (cur.parent(), cur.file_name()) {
+        // `file_name()` is None for a trailing `..`; keep it in the tail so it is
+        // resolved below instead of ending the walk (it does not on Unix, where
+        // `absolute` leaves `..` alone).
+        let name = match cur.components().next_back() {
+            Some(Component::ParentDir) => Some(std::ffi::OsString::from("..")),
+            _ => cur.file_name().map(|n| n.to_os_string()),
+        };
+        match (cur.parent(), name) {
             (Some(parent), Some(name)) => {
-                tail.push(name.to_os_string());
+                tail.push(name);
                 cur = parent;
             }
             _ => break cur.to_path_buf(),
@@ -164,7 +171,18 @@ fn comparable(path: &Path) -> PathBuf {
             out.push(part);
         }
     }
-    let out: PathBuf = out.components().filter(|c| !matches!(c, Component::CurDir)).collect();
+    // Resolve `..` lexically in the part that does not exist yet.
+    let mut norm = PathBuf::new();
+    for c in out.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                norm.pop();
+            }
+            other => norm.push(other.as_os_str()),
+        }
+    }
+    let out = norm;
     if cfg!(windows) { PathBuf::from(out.to_string_lossy().to_lowercase()) } else { out }
 }
 
