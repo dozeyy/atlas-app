@@ -40,3 +40,4 @@ the end (the known-fix-lookup hook reads the tail; later entries win).
 - Measured (debug build, Windows 11): 370-470 ms to first paint; Sandbox of the real
   ~/.claude = 2468 files in 4.3 s on a background thread, real files untouched.
 
+- CI: first run failed on macOS only: std::path::absolute keeps ".." on Unix, so the real-config write guard missed home/x/../.claude/a when x did not exist (guard hole, fixed in comparable()). Second run green on both OS (run 42498855503). macOS runtime (launch, vibrancy, traffic lights) still unverified: no Mac.
