@@ -10,6 +10,7 @@ export function History() {
         subtitle="A record of every change Atlas makes to your Claude setup."
       />
       <EmptyState
+        fill
         icon={ClockCounterClockwise}
         seed={31}
         title="No changes yet"
@@ -28,6 +29,7 @@ export function Wrapped() {
         subtitle="Your Claude Code year, as a page you can keep or share."
       />
       <EmptyState
+        fill
         icon={Sparkle}
         seed={47}
         title="Your Wrapped is still being written"
