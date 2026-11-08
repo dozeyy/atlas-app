@@ -52,7 +52,7 @@ async function open(b: Backend) {
       <App />
     </AtlasProvider>,
   );
-  await userEvent.click(screen.getByRole("button", { name: "Setup" }));
+  await userEvent.click(screen.getByRole("button", { name: "Toolkit" }));
 }
 
 async function openTile(label: string) {
@@ -83,18 +83,18 @@ describe("Setup page: main view", () => {
     let done!: (s: SetupSnapshot) => void;
     backend.snapshot = () => new Promise((r) => (done = r));
     await open(backend);
-    expect(screen.getByRole("status", { name: "Reading your Claude setup" })).toBeInTheDocument();
-    expect(screen.queryByText("No Claude setup found here")).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Reading your toolkit" })).toBeInTheDocument();
+    expect(screen.queryByText("No toolkit found here")).not.toBeInTheDocument();
 
     await act(async () => done(await mockSetupSnapshot(false)));
-    expect(screen.queryByRole("status", { name: "Reading your Claude setup" })).not.toBeInTheDocument();
-    expect(screen.getByRole("list", { name: "Types of things in your setup" })).toBeInTheDocument();
-    expect(screen.queryByRole("progressbar", { name: "Setup progress" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Reading your toolkit" })).not.toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Types of things in your toolkit" })).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar", { name: "Toolkit progress" })).not.toBeInTheDocument();
   });
 
   it("has no summary card, no Read only chip and no Live tag anywhere", async () => {
     await open(backend);
-    await screen.findByRole("list", { name: "Types of things in your setup" });
+    await screen.findByRole("list", { name: "Types of things in your toolkit" });
     const text = document.body.textContent ?? "";
     expect(text).not.toMatch(/Read only/);
     expect(text).not.toMatch(/\bLive\b/);
@@ -104,7 +104,7 @@ describe("Setup page: main view", () => {
 
   it("has no Recently changed or Worth a look section, only the tiles", async () => {
     await open(backend);
-    await screen.findByRole("list", { name: "Types of things in your setup" });
+    await screen.findByRole("list", { name: "Types of things in your toolkit" });
     expect(screen.queryByRole("heading", { name: "Recently changed" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Worth a look" })).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/Recently changed|Worth a look/);
@@ -114,14 +114,14 @@ describe("Setup page: main view", () => {
     // A press shrinks the element; content-visibility / overflow clipping on the element itself would
     // also clip the invisible hit box that keeps its edges clickable. jsdom has no layout, so check the contract.
     await open(backend);
-    await screen.findByRole("list", { name: "Types of things in your setup" });
+    await screen.findByRole("list", { name: "Types of things in your toolkit" });
     const bad = (root: ParentNode) =>
       [...root.querySelectorAll<HTMLElement>(".press")].filter((e) => /content-visibility|overflow-hidden|\btruncate\b/.test(e.className)).map((e) => e.getAttribute("aria-label") ?? e.textContent);
     expect(bad(document)).toEqual([]);
     await userEvent.click(await screen.findByRole("button", { name: /^More, \d+$/ }));
     await screen.findByRole("heading", { level: 2, name: "More" });
     expect(bad(document)).toEqual([]);
-    await userEvent.click(screen.getByRole("button", { name: "Back to Setup" }));
+    await userEvent.click(screen.getByRole("button", { name: "Back to Toolkit" }));
     await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
     await screen.findByRole("heading", { level: 2, name: "Skills" });
     expect(bad(document)).toEqual([]);
@@ -129,7 +129,7 @@ describe("Setup page: main view", () => {
 
   it("lays the types out as twelve equal tiles with their counts", async () => {
     await open(backend);
-    const list = await screen.findByRole("list", { name: "Types of things in your setup" });
+    const list = await screen.findByRole("list", { name: "Types of things in your toolkit" });
     const tiles = within(list).getAllByRole("button");
     expect(tiles).toHaveLength(12);
     expect(new Set(tiles.map((t) => t.className.match(/h-\[\d+px\]/)?.[0])).size).toBe(1);
@@ -149,9 +149,9 @@ describe("Setup page: main view", () => {
         <App />
       </AtlasProvider>,
     );
-    await userEvent.click(screen.getByRole("button", { name: "Setup" }));
-    expect(screen.queryByRole("status", { name: "Reading your Claude setup" })).not.toBeInTheDocument();
-    expect(screen.getByRole("list", { name: "Types of things in your setup" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Toolkit" }));
+    expect(screen.queryByRole("status", { name: "Reading your toolkit" })).not.toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Types of things in your toolkit" })).toBeInTheDocument();
   });
 
   it("explains a failed scan and tries again", async () => {
@@ -162,16 +162,16 @@ describe("Setup page: main view", () => {
       return mockSetupSnapshot(false);
     };
     await open(backend);
-    expect(await screen.findByText("Atlas could not read your Claude setup")).toBeInTheDocument();
+    expect(await screen.findByText("Atlas could not read your toolkit")).toBeInTheDocument();
     expect(screen.getByText("The Claude folder could not be read.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByRole("list", { name: "Types of things in your setup" })).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Types of things in your toolkit" })).toBeInTheDocument();
   });
 
   it("says so when there is nothing in the folder", async () => {
     backend.snapshot = async () => ({ ...(await mockSetupSnapshot(false)), items: [], projects: [], root: { ...(await mockSetupSnapshot(false)).root, dirExists: false } });
     await open(backend);
-    expect(await screen.findByText("No Claude setup found here")).toBeInTheDocument();
+    expect(await screen.findByText("No toolkit found here")).toBeInTheDocument();
   });
 
   it("puts projects that no longer exist in their own folded section", async () => {
@@ -202,11 +202,11 @@ describe("Setup page: a collection", () => {
     await openTile("Skills");
     expect(screen.getByText("commit-helper")).toBeInTheDocument();
     expect(screen.queryByText("code-reviewer")).not.toBeInTheDocument();
-    expect(screen.queryByRole("progressbar", { name: "Setup progress" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar", { name: "Toolkit progress" })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Back to Setup" }));
+    await userEvent.click(screen.getByRole("button", { name: "Back to Toolkit" }));
     const tile = await screen.findByRole("button", { name: /^Skills, \d+$/ });
-    expect(screen.getByRole("list", { name: "Types of things in your setup" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Types of things in your toolkit" })).toBeInTheDocument();
     await waitFor(() => expect(tile).toHaveFocus());
   });
 
@@ -496,8 +496,8 @@ describe("Setup page: checklist and create", () => {
   it("is not on the page at all once everything is in place", async () => {
     await open(backend);
     await openTilesReady();
-    expect(screen.queryByRole("progressbar", { name: "Setup progress" })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Your setup/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar", { name: "Toolkit progress" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/your toolkit/i)).not.toBeInTheDocument();
     expect(localStorage.getItem(CHECKLIST_DONE_KEY)).toBe("1");
   });
 
@@ -508,14 +508,14 @@ describe("Setup page: checklist and create", () => {
     backend.snapshot = async () => current;
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await open(backend);
-    expect(await screen.findByRole("heading", { name: "Your setup: 6 of 7 done" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Finish your toolkit" })).toBeInTheDocument();
     current = { ...snap, items: full };
     act(() => reloadSetup());
-    expect(await screen.findByRole("heading", { name: "Your setup is complete" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Your toolkit is complete" })).toBeInTheDocument();
     act(() => {
       vi.advanceTimersByTime(CELEBRATE_MS + 200);
     });
-    await waitFor(() => expect(screen.queryByRole("progressbar", { name: "Setup progress" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("progressbar", { name: "Toolkit progress" })).not.toBeInTheDocument());
     expect(screen.getByRole("button", { name: /^Skills, \d+$/ })).toBeInTheDocument();
     expect(localStorage.getItem(CHECKLIST_DONE_KEY)).toBe("1");
   });
@@ -527,17 +527,17 @@ describe("Setup page: checklist and create", () => {
     backend.snapshot = async () => current;
     await open(backend);
     await openTilesReady();
-    expect(screen.queryByRole("progressbar", { name: "Setup progress" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar", { name: "Toolkit progress" })).not.toBeInTheDocument();
 
     current = { ...snap, items: full.filter((i) => i.kind !== "agent") };
     act(() => reloadSetup());
-    expect(await screen.findByRole("heading", { name: "Your setup: 6 of 7 done" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Finish your toolkit" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add an agent: Add your first agent" })).toBeInTheDocument();
 
     current = { ...snap, items: full };
     act(() => reloadSetup());
-    await waitFor(() => expect(screen.queryByRole("progressbar", { name: "Setup progress" })).not.toBeInTheDocument());
-    expect(screen.queryByRole("heading", { name: "Your setup is complete" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("progressbar", { name: "Toolkit progress" })).not.toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: "Your toolkit is complete" })).not.toBeInTheDocument();
   });
 
   it("keeps the Claude folder off the Setup page", async () => {
@@ -554,7 +554,7 @@ describe("Setup page: checklist and create", () => {
     snap.root = { ...snap.root, dirExists: false };
     backend.snapshot = async () => snap;
     await open(backend);
-    expect(await screen.findByText("No Claude setup found here")).toBeInTheDocument();
+    expect(await screen.findByText("No toolkit found here")).toBeInTheDocument();
     expect(document.body.textContent).not.toContain("C:/Users/you/.claude");
     expect(screen.getByText(/choose it in Settings/)).toBeInTheDocument();
   });
@@ -564,7 +564,7 @@ describe("Setup page: checklist and create", () => {
     snap.items = snap.items.filter((i) => !(i.kind === "agent" || i.kind === "hook"));
     backend.snapshot = async () => snap;
     await open(backend);
-    expect(await screen.findByRole("heading", { name: "Your setup: 5 of 7 done" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Finish your toolkit" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add an agent: Add your first agent" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add a hook: Set up a hook" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Make a skill/ })).not.toBeInTheDocument();

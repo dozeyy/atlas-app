@@ -825,6 +825,76 @@ svg.chart {
 .row-btn:active {
   background: color-mix(in srgb, var(--raised) 85%, var(--ink));
 }
+/* The rounded square behind a Toolkit icon. On hover it relaxes into a soft blob. */
+.kind-tile {
+  border-radius: var(--r-control);
+  transition:
+    border-radius var(--dur-hover) var(--ease-spring),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.hover-host:hover .kind-tile {
+  border-radius: 46% 54% 52% 48% / 54% 46% 54% 46%;
+  background: color-mix(in srgb, var(--accent-tint) 70%, var(--accent) 30%);
+}
+
+/*
+ * The corner X (delete) and lock on a Toolkit card. The 28px button never moves; its face
+ * lifts with the card, tints on hover, turns a quarter on the X, and shrinks on press.
+ */
+.x-del {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: var(--r-control);
+  cursor: pointer;
+}
+.x-del-face {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  color: var(--ink-2);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    translate var(--dur-hover) var(--ease-spring),
+    transform var(--dur-press) var(--ease-out);
+}
+.x-del-face > svg {
+  transition: rotate var(--dur-hover) var(--ease-spring);
+}
+.x-del:hover .x-del-face {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+.x-lock:hover .x-del-face {
+  background: var(--raised);
+  color: var(--ink);
+}
+.x-del:hover .x-del-face > svg {
+  rotate: 90deg;
+}
+.x-lock:hover .x-del-face > svg {
+  rotate: 0deg;
+}
+.x-del:active .x-del-face {
+  transform: scale(var(--press-scale));
+}
+.item-wrap:hover .x-del-face {
+  translate: 0 var(--lift);
+}
+.x-del:focus-visible {
+  outline: 2px solid var(--focus, var(--accent));
+  outline-offset: 1px;
+}
+
 .row-caret {
   opacity: 0;
   translate: -4px 0;
@@ -989,6 +1059,7 @@ html.reduced .cell.on {
 html.reduced .btn:active:not(:disabled) .btn-face,
 html.reduced .btn-icon:active:not(:disabled) .btn-face,
 html.reduced .card-hit:active .card-face,
+html.reduced .x-del:active .x-del-face,
 html.reduced .seg-item:active .seg-face,
 html.reduced .nav-item:active .nav-face {
   transform: none;

@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import "@fontsource-variable/recursive/casl.css";
 import "./styles/index.css";
 import { App } from "./App";
 import { AtlasProvider } from "./state/AtlasProvider";
@@ -24,12 +25,21 @@ createRoot(document.getElementById("root")!).render(
   </StrictMode>,
 );
 
-// Start reading the Claude setup now, so the Setup page is already full when it is opened.
+// Start reading the Claude toolkit now, so the Toolkit page is already full when it is opened.
 startSetup();
 
+// Give the display face a moment to arrive (it is bundled, so this is a few ms) so the first
+// frame never shows the numbers in a fallback face and then swaps. Never wait more than 150 ms.
+const fontReady = Promise.race([
+  document.fonts?.load('760 1em "Recursive Variable"') ?? Promise.resolve(),
+  new Promise((done) => setTimeout(done, 150)),
+]).catch(() => {});
+
 // Tell Rust we have painted: it shows the (hidden until now) window.
-requestAnimationFrame(() =>
-  requestAnimationFrame(() => {
-    backend.frontendReady().catch(() => {});
-  }),
+void fontReady.then(() =>
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      backend.frontendReady().catch(() => {});
+    }),
+  ),
 );

@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import { MagnifyingGlass, X } from "@phosphor-icons/react";
 import { SegmentedControl, Toggle } from "../controls";
+import { SelectField } from "../usage/fields";
 import type { Filters, ScopeFilter } from "../../lib/setup-model";
 import type { HiddenCounts, SetupProject } from "../../lib/setup-types";
 
@@ -25,7 +26,7 @@ export function Toolbar({
   shortcut,
   shown,
   total,
-  placeholder = "Search your setup",
+  placeholder = "Search your toolkit",
 }: {
   filters: Filters;
   onChange: (f: Partial<Filters>) => void;
@@ -92,19 +93,12 @@ export function Toolbar({
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
         {filters.scope === "project" && (
-          <select
-            aria-label="Project"
+          <SelectField
+            label="Project"
             value={filters.projectId ?? ""}
-            onChange={(e) => onChange({ projectId: e.target.value || null })}
-            className="h-8 max-w-[220px] cursor-pointer rounded-control border border-line-strong bg-surface px-2 text-body text-ink"
-          >
-            <option value="">All projects</option>
-            {choices.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => onChange({ projectId: v || null })}
+            options={[{ value: "", label: "All projects" }, ...choices.map((p) => ({ value: p.id, label: p.name }))]}
+          />
         )}
 
         <Labeled label="Worktrees" checked={filters.showWorktrees} onChange={(v) => onChange({ showWorktrees: v })} count={hidden.worktrees} />

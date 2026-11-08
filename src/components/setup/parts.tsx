@@ -11,6 +11,7 @@ import {
   WarningCircle,
   ArrowsSplit,
 } from "@phosphor-icons/react";
+import { IconMotion, type Motion } from "../IconMotion";
 import { enabledTone, KIND_BY_ID, type Tone } from "../../lib/setup-model";
 import type { Conflict, Enabled, ItemKind, ScopeKind, SetupItem } from "../../lib/setup-types";
 
@@ -100,16 +101,31 @@ export function WarningMark({ warnings }: { warnings: string[] }) {
   );
 }
 
-/** The rounded square holding a kind's icon. */
-export function KindTile({ kind, size = 36 }: { kind: ItemKind; size?: number }) {
-  const Icon = KIND_BY_ID[kind].icon;
+/** Each kind of thing has its own small move when its card or tile is hovered. */
+export const KIND_MOTION: Record<string, Motion> = {
+  skill: "zap",
+  agent: "bob",
+  command: "nudge",
+  mcpServer: "plug",
+  hook: "swing",
+  plugin: "tilt",
+  outputStyle: "wiggle",
+  rule: "pop",
+  settings: "spin",
+};
+
+/** The rounded square holding a kind's icon. It relaxes into a blob and the icon moves when the card is hovered. */
+export function KindTile({ kind, size = 36, icon }: { kind: ItemKind | "more"; size?: number; icon?: ComponentType<IconProps> }) {
+  const Icon = icon ?? KIND_BY_ID[kind as ItemKind].icon;
   return (
     <span
       aria-hidden="true"
       style={{ width: size, height: size }}
-      className="flex shrink-0 items-center justify-center rounded-control bg-accent-tint text-accent-text"
+      className="kind-tile flex shrink-0 items-center justify-center bg-accent-tint text-accent-text"
     >
-      <Icon size={Math.round(size * 0.55)} weight="duotone" />
+      <IconMotion motion={KIND_MOTION[kind] ?? "pop"} size={Math.round(size * 0.55)}>
+        <Icon />
+      </IconMotion>
     </span>
   );
 }

@@ -1,4 +1,4 @@
-// The setup checklist, as data. Each step says how to tell it is done (from the
+// The toolkit checklist, as data. Each step says how to tell it is done (from the
 // real scan, never from a saved tick box) and which create flow its button opens.
 // Add, reorder or reword a step here and the panel follows.
 
@@ -95,5 +95,5 @@ export function progress(items: SetupItem[], steps: SetupStep[] = SETUP_STEPS): 
 }
 
 export function progressTitle(p: Progress): string {
-  return p.complete ? "Your setup is complete" : `Your setup: ${p.doneCount} of ${p.total} done`;
+  return p.complete ? "Your toolkit is complete" : "Finish your toolkit";
 }

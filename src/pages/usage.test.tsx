@@ -6,7 +6,7 @@ import { AtlasProvider } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
 import { openSessionNext } from "../lib/nav";
 import { MockBackend } from "../lib/mock";
-import { addDays, compact, headline, localDay } from "../lib/usage";
+import { addDays, exact, headline, localDay } from "../lib/usage";
 import type { Scenario } from "../lib/mockUsage";
 
 function mount(scenario: Scenario = "data", view: "dashboard" | "sessions" = "dashboard") {
@@ -33,10 +33,13 @@ describe("Dashboard", () => {
     const backend = mount();
     const dash = await backend.usageDashboard();
     await screen.findByText("Last 7 days");
-    const month = screen.getByRole("region", { name: "Last 30 days" });
-    expect(within(month).getByText(compact(headline(dash.month.tokens)))).toBeInTheDocument();
+    const week = screen.getByRole("region", { name: "Last 7 days" });
+    expect(within(week).getByText(exact(headline(dash.week.tokens)))).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Today" })).toBeInTheDocument();
-    expect(screen.getAllByText("estimated cost").length).toBe(3);
+    expect(screen.getByRole("region", { name: "Activity" })).toBeInTheDocument();
+    expect(screen.getAllByText(/estimated/).length).toBeGreaterThanOrEqual(2);
+    // Every screen opens on its content: no page title, no greeting, no sentence under one.
+    expect(screen.queryByText(/Good (morning|afternoon|evening)/)).not.toBeInTheDocument();
     expect(screen.queryByText("Coming soon")).not.toBeInTheDocument();
   });
 
@@ -61,13 +64,14 @@ describe("Dashboard", () => {
     mount();
     const chart = await screen.findByRole("group", { name: /Tokens, last 30 days/ });
     const readout = screen.getByTestId("chart-readout");
+    const live = chart.querySelector("[aria-live]") as HTMLElement;
     expect(readout).toHaveTextContent("Last 30 days");
+    expect(live).toBeEmptyDOMElement();
     chart.focus();
     await userEvent.keyboard("{End}");
-    expect(readout).not.toHaveTextContent("Last 30 days");
-    expect(readout).toHaveTextContent(/(Sun|Mon|Tue|Wed|Thu|Fri|Sat),/);
+    expect(live).toHaveTextContent(/(Sun|Mon|Tue|Wed|Thu|Fri|Sat),/);
     await userEvent.keyboard("{Escape}");
-    expect(readout).toHaveTextContent("Last 30 days");
+    expect(live).toBeEmptyDOMElement();
   });
 
   it("shows a designed empty state when there is no usage, without implying a failure", async () => {

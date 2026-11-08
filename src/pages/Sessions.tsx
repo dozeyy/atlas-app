@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChatsCircle } from "@phosphor-icons/react";
-import { Button, Card, PageHeader } from "../components/controls";
+import { Button, Card, PageTitle } from "../components/controls";
 import { EmptyState } from "../components/EmptyState";
 import { IndexProgress } from "../components/IndexProgress";
 import { SessionLine } from "../components/usage/SessionList";
@@ -116,7 +116,7 @@ export function Sessions() {
 
   return (
     <>
-      <PageHeader title="Sessions" subtitle="Every Claude Code conversation on this computer, in one list." />
+      <PageTitle title="Sessions" />
       <IndexProgress status={status} progress={progress} onRetry={() => void backend.usageReindex("changed").catch(() => {})} />
 
       {selected && <SessionDetailView id={selected} onBack={() => setSelected(null)} />}

@@ -52,11 +52,11 @@ describe("setup steps", () => {
     const full = progress(snap.items);
     expect(full.total).toBe(SETUP_STEPS.length);
     expect(full.complete).toBe(true);
-    expect(progressTitle(full)).toBe("Your setup is complete");
+    expect(progressTitle(full)).toBe("Your toolkit is complete");
 
     const bare = progress(snap.items.filter((i) => i.kind !== "agent" && i.kind !== "hook"));
     expect(bare.todo.map((s) => s.id)).toEqual(["agent", "hook"]);
-    expect(progressTitle(bare)).toBe(`Your setup: ${SETUP_STEPS.length - 2} of ${SETUP_STEPS.length} done`);
+    expect(progressTitle(bare)).toBe("Finish your toolkit");
   });
 
   it("do not count plugin, synced or backup copies as yours", async () => {

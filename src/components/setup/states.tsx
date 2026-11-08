@@ -9,7 +9,7 @@ function Bar({ w, h = 12, className = "" }: { w: string; h?: number; className?:
 /** Shown only while the first scan runs. Same shapes as the real page, so nothing jumps. */
 export function SetupSkeleton() {
   return (
-    <div role="status" aria-label="Reading your Claude setup" aria-busy="true">
+    <div role="status" aria-label="Reading your toolkit" aria-busy="true">
       <div className="mb-6 rounded-card border border-line bg-surface px-5 py-4">
         <Bar w="34%" h={16} />
         <Bar w="100%" h={8} className="mt-4" />
@@ -48,7 +48,7 @@ export function SetupSkeleton() {
 
 export function SetupError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <EmptyState fill icon={WarningOctagon} seed={61} title="Atlas could not read your Claude setup" body={message}>
+    <EmptyState fill icon={WarningOctagon} seed={61} title="Atlas could not read your toolkit" body={message}>
       <Button variant="primary" onClick={onRetry}>
         Try again
       </Button>
@@ -62,7 +62,7 @@ export function NoSetup() {
       fill
       icon={FolderDashed}
       seed={67}
-      title="No Claude setup found here"
+      title="No toolkit found here"
       body="Atlas found no skills, agents, commands or settings. If your Claude folder lives somewhere else, choose it in Settings."
     />
   );

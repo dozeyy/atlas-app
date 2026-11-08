@@ -137,25 +137,12 @@ export function Toggle({
   );
 }
 
-/** Page title in the display face. `aside` sits on the right (a caption, a button). */
-export function PageHeader({
-  title,
-  subtitle,
-  aside,
-}: {
-  title: string;
-  subtitle: ReactNode;
-  aside?: ReactNode;
-}) {
-  return (
-    <header className="mb-6 flex items-end justify-between gap-4">
-      <div className="min-w-0">
-        <h1 className="d d-title text-ink">{title}</h1>
-        <p className="mt-1 text-lead text-ink-2">{subtitle}</p>
-      </div>
-      {aside}
-    </header>
-  );
+/**
+ * Every screen opens straight on its content, so the page title is not drawn: it is the
+ * heading screen readers land on, and nothing else.
+ */
+export function PageTitle({ title }: { title: string }) {
+  return <h1 className="sr-only">{title}</h1>;
 }
 
 /**

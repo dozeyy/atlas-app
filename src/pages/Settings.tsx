@@ -1,4 +1,4 @@
-import { Button, Card, PageHeader, Row, Toggle } from "../components/controls";
+import { Button, Card, PageTitle, Row, Toggle } from "../components/controls";
 import { ThemePicker } from "../components/ThemePicker";
 import { useAtlas } from "../state/AtlasProvider";
 import { describeSource, formatBytes } from "../lib/labels";
@@ -27,7 +27,7 @@ export function Settings() {
 
   return (
     <>
-      <PageHeader title="Settings" subtitle="How Atlas looks and which Claude folder it reads." />
+      <PageTitle title="Settings" />
 
       <SectionTitle>Appearance</SectionTitle>
       <Card>

@@ -2,6 +2,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import type { KeyboardEvent } from "react";
 import { ArrowLeft, Plus } from "@phosphor-icons/react";
 import { Button } from "../controls";
+import { IconMotion } from "../IconMotion";
 import { GroupBody, GroupSection } from "./GroupSection";
 import { NoMatches } from "./states";
 import { Toolbar } from "./Toolbar";
@@ -9,7 +10,6 @@ import {
   DEFAULT_FILTERS,
   groupItems,
   KIND_BY_ID,
-  tileBlurb,
   tileKinds,
   tileTitle,
   visibleItems,
@@ -100,23 +100,20 @@ export function CollectionView({
   return (
     <div className="fade-in flex flex-1 flex-col">
       <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="press inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-control border border-line-strong bg-surface px-3 text-body font-medium text-ink hover:bg-raised"
-        >
-          <ArrowLeft size={14} weight="bold" aria-hidden="true" />
-          Back to Setup
-        </button>
-        <div className="min-w-0 flex-1">
-          <h2 ref={heading} tabIndex={-1} className="text-subtitle font-semibold text-ink outline-none">
-            {tileTitle(tile)}
-          </h2>
-          <p className="truncate text-body text-ink-2">{tileBlurb(tile)}</p>
-        </div>
+        <Button onClick={onBack}>
+          <IconMotion motion="nudge">
+            <ArrowLeft />
+          </IconMotion>
+          Back to Toolkit
+        </Button>
+        <h2 ref={heading} tabIndex={-1} className="d d-title min-w-0 flex-1 text-ink outline-none">
+          {tileTitle(tile)}
+        </h2>
         {creatable && (
           <Button variant="primary" onClick={() => onCreate(creatable)}>
-            <Plus size={14} weight="bold" aria-hidden="true" />
+            <IconMotion motion="pop">
+              <Plus />
+            </IconMotion>
             New {KIND_BY_ID[creatable].singular}
           </Button>
         )}

@@ -25,7 +25,7 @@ describe("navigation", () => {
     mount();
     const nav = screen.getByRole("navigation", { name: "Main" });
     const labels = Array.from(nav.querySelectorAll("button")).map((b) => b.textContent);
-    expect(labels).toEqual(["Dashboard", "Sessions", "Setup", "History", "Wrapped", "Settings"]);
+    expect(labels).toEqual(["Dashboard", "Sessions", "Toolkit", "History", "Wrapped", "Settings"]);
     expect(screen.getByRole("button", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
   });
@@ -55,7 +55,7 @@ describe("navigation", () => {
 
   it("moves focus to the page after navigating", async () => {
     mount();
-    await userEvent.click(screen.getByRole("button", { name: "Setup" }));
+    await userEvent.click(screen.getByRole("button", { name: "Toolkit" }));
     await waitFor(() => expect(screen.getByRole("main")).toHaveFocus());
   });
 });
@@ -73,13 +73,28 @@ describe("theme", () => {
     expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").theme).toBe("dark");
   });
 
-  it("System removes the pin so the OS decides", async () => {
+  it("offers Light, Silver and Dark, and Silver pins its own look", async () => {
+    mount();
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const names = screen.getAllByRole("radio").map((r) => r.getAttribute("aria-label"));
+    expect(names).toEqual(["Light", "Silver", "Dark"]);
+    await userEvent.click(screen.getByRole("radio", { name: "Silver" }));
+    expect(document.documentElement.dataset.theme).toBe("silver");
+  });
+
+  it("Match removes the pin so the OS decides, and picking a card turns it off again", async () => {
     mount();
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
     await userEvent.click(screen.getByRole("radio", { name: "Light" }));
     expect(document.documentElement.dataset.theme).toBe("light");
-    await userEvent.click(screen.getByRole("radio", { name: "System" }));
+    const match = screen.getByRole("switch", { name: /^Match / });
+    expect(match).toHaveAttribute("aria-checked", "false");
+    await userEvent.click(match);
     expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(match).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(match).toHaveAttribute("aria-checked", "false");
   });
 });
 

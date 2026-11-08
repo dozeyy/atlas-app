@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, FolderSimple, Info, SquaresFour } from "@phosphor-icons/react";
-import { Button, Card } from "../components/controls";
+import { Button, Card, PageTitle } from "../components/controls";
 import { CountUp } from "../components/CountUp";
 import { EmptyState } from "../components/EmptyState";
 import { IconMotion } from "../components/IconMotion";
@@ -22,10 +22,8 @@ import { useDaily } from "../lib/useDaily";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
 import {
   bin,
-  greeting,
   lastAndPrevious,
   lastDays,
-  longDate,
   percentChange,
   shortDay,
   sumTail,
@@ -37,7 +35,7 @@ import { addDays, compact, exact, formatUsd, headline, localDay, modelLabel, plu
 import type { BarDatum } from "../components/charts/Bars";
 import type { Dashboard as DashboardData, Timeline, UsageStatus } from "../lib/types";
 
-/** The current time, refreshed every `ms`, so "Updated 3 min ago" and the greeting stay true. */
+/** The current time, refreshed every `ms`, so "Updated 3 min ago" stays true. */
 function useNow(ms = 30_000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -217,27 +215,18 @@ export function Dashboard() {
     return { values, readouts };
   }, [daily]);
 
-  // Projects: this week's busiest (for the greeting) and a 30 day sparkline per top project.
+  // Projects: how many were active this week and a 30 day sparkline per top project.
   const projects = useMemo(() => {
     const series = projectSeries.data?.series ?? null;
-    if (!data) return { rows: [], busiest: null as string | null, count: null as number | null };
+    if (!data) return { rows: [], count: null as number | null };
     const byKey = new Map((series ?? []).map((s) => [s.key, s]));
     const rows = data.topProjects.map((p) => {
       const s = byKey.get(p.projectKey);
       return { p, spark: s ? bin(s.points.map((pt) => headline(pt.tokens)), 10) : null };
     });
-    let busiest: string | null = null;
-    let best = 0;
     let active = 0;
-    for (const s of series ?? []) {
-      const v = sumTail(s.points, 7);
-      if (v > 0) active++;
-      if (v > best) {
-        best = v;
-        busiest = s.label;
-      }
-    }
-    return { rows, busiest, count: series ? active : null };
+    for (const s of series ?? []) if (sumTail(s.points, 7) > 0) active++;
+    return { rows, count: series ? active : null };
   }, [data, projectSeries.data]);
 
   const weekTokens = data ? headline(data.week.tokens) : 0;
@@ -245,19 +234,7 @@ export function Dashboard() {
 
   return (
     <div className="@container">
-      <header className="rise mb-6 flex items-end justify-between gap-4" style={{ ["--i" as string]: 0 }}>
-        <div className="min-w-0">
-          <div className="text-caption font-semibold text-ink-2">{longDate(new Date(now))}</div>
-          <h1 className="d d-title mt-1 text-ink">{greeting(new Date(now))}</h1>
-          <p className="mt-1.5 text-lead text-ink-2">
-            {data && weekTokens > 0
-              ? `You and Claude got through ${compact(weekTokens)} tokens in the last 7 days${projects.busiest ? `, most of it in ${projects.busiest}` : ""}.`
-              : "How you are using Claude Code, at a glance."}
-          </p>
-        </div>
-        {updated && <span className="shrink-0 pb-1 text-caption text-ink-2">{updated}</span>}
-      </header>
-
+      <PageTitle title="Dashboard" />
       <IndexProgress status={status} progress={progress} onRetry={() => void backend.usageReindex("changed").catch(() => {})} />
 
       {cfg === null ? (
@@ -304,6 +281,7 @@ export function Dashboard() {
                       {`Plus ${compact(data.week.tokens.cacheRead)} cache reads, listed apart.`}
                     </div>
                   )}
+                  {updated && <div className="mt-1 text-caption text-ink-2">{updated}</div>}
                 </div>
                 {week && (
                   <div className="w-full self-end @xl:w-[220px] @xl:shrink-0">
