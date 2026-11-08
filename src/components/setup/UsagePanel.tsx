@@ -91,7 +91,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
     );
 
   return (
-    <section aria-labelledby="usage-title" className="rounded-card border border-line bg-surface px-5 py-4">
+    <section aria-labelledby="usage-title" className="@container min-w-0 rounded-card border border-line bg-surface px-5 py-4">
       <div className="flex flex-wrap items-baseline gap-x-3">
         <h2 id="usage-title" className="text-lead font-semibold text-ink">
           Used and never used
@@ -108,7 +108,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
         <span style={{ width: `${usedPct}%` }} className="bg-accent" />
       </div>
 
-      <div className="mt-4 grid gap-x-8 gap-y-4 min-[760px]:grid-cols-2">
+      <div className="mt-4 grid gap-x-8 gap-y-4 @min-[560px]:grid-cols-2">
         <div>
           <h3 className="mb-2 text-body font-semibold text-ink">Used most</h3>
           {used.length === 0 ? (

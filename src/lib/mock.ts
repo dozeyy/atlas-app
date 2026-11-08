@@ -3,8 +3,9 @@
 
 import type { Backend, SettingsPatch } from "./ipc";
 import type { AppInfo, ConfigView, Platform, Settings } from "./types";
-import type { CreateKind, DeleteOutcome, Draft, Problem, RawEdit, SaveReply, SetupSnapshot, SourceView, UndoOutcome } from "./setup-types";
+import type { CostReport, CreateKind, DeleteOutcome, Draft, Problem, RawEdit, SaveReply, SetupSnapshot, SourceView, UndoOutcome } from "./setup-types";
 import { MockSetupWorld, mockSetupReveal, mockSetupSource } from "./setup-mock";
+import { mockCostReport } from "./setup-cost-mock";
 import { MockUsage } from "./mockUsage";
 import { MockSearch } from "./mockSearch";
 
@@ -180,6 +181,10 @@ export class MockBackend {
 
   async setupSnapshot(includeWorktrees = false): Promise<SetupSnapshot> {
     return this.world.snapshot(includeWorktrees);
+  }
+
+  async setupCost(): Promise<CostReport> {
+    return mockCostReport(this.world.snapshot(false).items);
   }
 
   async setupReadSource(id: string): Promise<SourceView> {
