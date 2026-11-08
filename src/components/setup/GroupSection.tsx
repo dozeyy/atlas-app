@@ -22,14 +22,14 @@ function ShowMore({ hidden, onClick }: { hidden: number; onClick: () => void }) 
   );
 }
 
-function Cards({ items, onOpen }: { items: SetupItem[]; onOpen: (id: string) => void }) {
+function Cards({ items, onOpen, onDelete }: { items: SetupItem[]; onOpen: (id: string) => void; onDelete?: (item: SetupItem) => void }) {
   const [all, setAll] = useState(false);
   const list = all ? items : items.slice(0, CARD_CAP);
   return (
     <>
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:[&>:last-child:nth-child(odd)]:col-span-2">
+      <div className="grid grid-cols-1 gap-3 min-[1000px]:grid-cols-2 min-[1000px]:[&>:last-child:nth-child(odd)]:col-span-2">
         {list.map((i) => (
-          <ItemCard key={i.id} item={i} onOpen={onOpen} />
+          <ItemCard key={i.id} item={i} onOpen={onOpen} onDelete={onDelete} />
         ))}
       </div>
       {!all && items.length > CARD_CAP && <ShowMore hidden={items.length - CARD_CAP} onClick={() => setAll(true)} />}
@@ -52,16 +52,46 @@ function Rows({ items, onOpen, mono }: { items: SetupItem[]; onOpen: (id: string
   );
 }
 
+export function GroupBody({
+  group,
+  onOpenItem,
+  onDelete,
+}: {
+  group: Group;
+  onOpenItem: (id: string) => void;
+  onDelete?: (item: SetupItem) => void;
+}) {
+  const { meta, items } = group;
+  if (meta.kind === "permission") {
+    return (
+      <>
+        {permissionBuckets(items).map((b) => (
+          <div key={b.id} className="mb-4 last:mb-0">
+            <h3 className="mb-2 text-body font-medium text-ink-2">
+              {BUCKET_TITLE[b.id]} <span className="font-normal">({b.items.length})</span>
+            </h3>
+            <Rows items={b.items} onOpen={onOpenItem} mono />
+          </div>
+        ))}
+      </>
+    );
+  }
+  if (meta.compact) return <Rows items={items} onOpen={onOpenItem} mono={meta.kind === "hookScript" || meta.kind === "other"} />;
+  return <Cards items={items} onOpen={onOpenItem} onDelete={onDelete} />;
+}
+
 export function GroupSection({
   group,
   open,
   onToggle,
   onOpenItem,
+  onDelete,
 }: {
   group: Group;
   open: boolean;
   onToggle: () => void;
   onOpenItem: (id: string) => void;
+  onDelete?: (item: SetupItem) => void;
 }) {
   const { meta, items } = group;
   const id = `group-${meta.kind}`;
@@ -89,20 +119,7 @@ export function GroupSection({
       </button>
       {open && (
         <div id={`${id}-body`} className="fade-in">
-          {meta.kind === "permission" ? (
-            permissionBuckets(items).map((b) => (
-              <div key={b.id} className="mb-4 last:mb-0">
-                <h3 className="mb-2 text-body font-medium text-ink-2">
-                  {BUCKET_TITLE[b.id]} <span className="font-normal">({b.items.length})</span>
-                </h3>
-                <Rows items={b.items} onOpen={onOpenItem} mono />
-              </div>
-            ))
-          ) : meta.compact ? (
-            <Rows items={items} onOpen={onOpenItem} mono={meta.kind === "hookScript" || meta.kind === "other"} />
-          ) : (
-            <Cards items={items} onOpen={onOpenItem} />
-          )}
+          <GroupBody group={group} onOpenItem={onOpenItem} onDelete={onDelete} />
         </div>
       )}
     </section>

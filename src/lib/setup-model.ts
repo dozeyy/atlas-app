@@ -271,3 +271,42 @@ export function enabledTone(state: SetupItem["enabled"]["state"]): Tone {
       return "muted";
   }
 }
+
+// ---- the tile grid on the Setup page ----
+
+/** A tile opens a collection: one kind, or "more" for everything that has no tile of its own. */
+export type TileId = ItemKind | "more";
+
+/** Eleven kinds plus "more" = twelve tiles, which divide evenly into 2, 3, 4 and 6 columns. */
+export const TILE_KINDS: ItemKind[] = [
+  "skill",
+  "agent",
+  "command",
+  "mcpServer",
+  "hook",
+  "plugin",
+  "instructions",
+  "rule",
+  "permission",
+  "autoMemory",
+  "outputStyle",
+];
+
+export const MORE_KINDS: ItemKind[] = KINDS.map((k) => k.kind).filter((k) => !TILE_KINDS.includes(k));
+
+export function tileKinds(id: TileId): ItemKind[] {
+  return id === "more" ? MORE_KINDS : [id];
+}
+
+export function tileTitle(id: TileId): string {
+  return id === "more" ? "More" : KIND_BY_ID[id].plural;
+}
+
+export function tileBlurb(id: TileId): string {
+  return id === "more" ? "Settings files, the status line, hook scripts, keybindings and everything else." : KIND_BY_ID[id].blurb;
+}
+
+export function itemsForTile(items: SetupItem[], id: TileId): SetupItem[] {
+  const kinds = tileKinds(id);
+  return items.filter((i) => kinds.includes(i.kind));
+}

@@ -1,12 +1,12 @@
-// The read-only text viewer used by the Setup detail view (CodeMirror 6).
+// The text viewer and editor used by the Setup detail view (CodeMirror 6).
 //
 // This module is only ever loaded with `import()` when a detail view opens, so
 // none of it counts toward startup. Colors come from the --syntax-* tokens, so
 // light and dark need no separate theme. Secret values arrive already masked
 // (bullets); the ranges only get a quiet "hidden" look, never the real value.
 
-import { Compartment, EditorState, type Extension, RangeSetBuilder } from "@codemirror/state";
-import { Decoration, EditorView, lineNumbers } from "@codemirror/view";
+import { Compartment, EditorState, type Extension, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView, lineNumbers } from "@codemirror/view";
 import { HighlightStyle, StreamLanguage, syntaxHighlighting, type LanguageSupport } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import type { MaskedRange } from "./setup-types";
@@ -86,6 +86,24 @@ async function languageFor(language: string): Promise<Extension | null> {
   }
 }
 
+/**
+ * CodeMirror writes its base styles into a <style> element, and the app's content security policy
+ * (style-src 'self') refuses injected style elements: the editor then renders as bare, stacked text.
+ * Inside a shadow root CodeMirror adopts a constructed stylesheet instead, which the policy allows,
+ * so the policy stays strict. Custom properties inherit through the boundary, so the tokens still apply.
+ * Sizing uses the style object (CSSOM), which the policy also allows.
+ */
+function shadowMount(parent: HTMLElement): { root: ShadowRoot; mount: HTMLElement; remove: () => void } {
+  const host = document.createElement("div");
+  host.style.height = "100%";
+  parent.appendChild(host);
+  const root = host.attachShadow({ mode: "open" });
+  const mount = document.createElement("div");
+  mount.style.height = "100%";
+  root.appendChild(mount);
+  return { root, mount, remove: () => host.remove() };
+}
+
 const maskMark = Decoration.mark({ class: "cm-masked" });
 
 /** Ranges are UTF-16 offsets (what CodeMirror counts too); clamp and sort defensively. */
@@ -117,12 +135,107 @@ export async function mountViewer(parent: HTMLElement, text: string, language: s
     maskExtension(masked, text.length),
     lang.of([]),
   ];
-  const view = new EditorView({ parent, state: EditorState.create({ doc: text, extensions: base }) });
+  const shadow = shadowMount(parent);
+  const view = new EditorView({ parent: shadow.mount, root: shadow.root, state: EditorState.create({ doc: text, extensions: base }) });
   // The grammar loads after the first paint, so the text shows immediately.
   languageFor(language)
     .then((ext) => {
       if (ext && view.dom.isConnected) view.dispatch({ effects: lang.reconfigure(ext) });
     })
     .catch(() => {});
-  return { destroy: () => view.destroy() };
+  return {
+    destroy: () => {
+      view.destroy();
+      shadow.remove();
+    },
+  };
+}
+
+// ---- the editor (same look, but you can type) ----
+
+export interface Editor {
+  focus(): void;
+  /** Mark one line (1-based) as the place a problem is, or clear it with null. */
+  markLine(line: number | null): void;
+  destroy(): void;
+}
+
+const setErrorLine = StateEffect.define<number | null>();
+const errorLine = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, tr) {
+    value = value.map(tr.changes);
+    for (const e of tr.effects) {
+      if (!e.is(setErrorLine)) continue;
+      if (e.value === null || e.value < 1 || e.value > tr.state.doc.lines) return Decoration.none;
+      const at = tr.state.doc.line(e.value).from;
+      return Decoration.set([Decoration.line({ class: "cm-error-line" }).range(at)]);
+    }
+    return value;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+const editTheme = EditorView.theme({
+  ".cm-error-line": { backgroundColor: "var(--danger-tint)" },
+  "&": { minHeight: "320px" },
+  ".cm-cursor": { borderLeftColor: "var(--ink)" },
+});
+
+/**
+ * Edit `text` in `parent`. `onChange` fires on every edit with the whole text;
+ * `onSave` on Ctrl/Cmd+S. The caller owns `destroy()`.
+ */
+export async function mountEditor(
+  parent: HTMLElement,
+  text: string,
+  language: string,
+  opts: { label: string; onChange: (text: string) => void; onSave: () => void },
+): Promise<Editor> {
+  const [{ defaultKeymap, history, historyKeymap, indentWithTab }, { keymap }] = await Promise.all([
+    import("@codemirror/commands"),
+    import("@codemirror/view"),
+  ]);
+  const lang = new Compartment();
+  const shadow = shadowMount(parent);
+  const view = new EditorView({
+    parent: shadow.mount,
+    root: shadow.root,
+    state: EditorState.create({
+      doc: text,
+      extensions: [
+        history(),
+        keymap.of([
+          { key: "Mod-s", preventDefault: true, run: () => (opts.onSave(), true) },
+          ...defaultKeymap,
+          ...historyKeymap,
+          indentWithTab,
+        ]),
+        EditorView.contentAttributes.of({ "aria-label": opts.label, "aria-multiline": "true" }),
+        EditorView.updateListener.of((u) => {
+          if (u.docChanged) opts.onChange(u.state.doc.toString());
+        }),
+        EditorView.lineWrapping,
+        lineNumbers(),
+        theme,
+        editTheme,
+        syntaxHighlighting(highlight),
+        errorLine,
+        lang.of([]),
+      ],
+    }),
+  });
+  languageFor(language)
+    .then((ext) => {
+      if (ext && view.dom.isConnected) view.dispatch({ effects: lang.reconfigure(ext) });
+    })
+    .catch(() => {});
+  return {
+    focus: () => view.focus(),
+    markLine: (line) => view.dispatch({ effects: setErrorLine.of(line) }),
+    destroy: () => {
+      view.destroy();
+      shadow.remove();
+    },
+  };
 }

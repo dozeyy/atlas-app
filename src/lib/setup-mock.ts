@@ -1,7 +1,22 @@
 // A believable made-up setup for the plain-browser build and for tests.
 // Nothing here is a real person's file; secrets are the word "mock".
 
-import type { ItemKind, MaskedRange, ScopeKind, SetupItem, SetupProject, SetupSnapshot, SourceView } from "./setup-types";
+import type {
+  CreateKind,
+  DeleteOutcome,
+  Draft,
+  ItemKind,
+  MaskedRange,
+  Problem,
+  RawEdit,
+  SaveReply,
+  ScopeKind,
+  SetupItem,
+  SetupProject,
+  SetupSnapshot,
+  SourceView,
+  UndoOutcome,
+} from "./setup-types";
 
 let n = 0;
 
@@ -34,8 +49,27 @@ function item(kind: ItemKind, scope: ScopeKind, name: string, extra: Partial<Set
     realProjectFile: false,
     hasSecrets: false,
     worktree: false,
+    ...capabilities(kind, scope, extra.backup === true),
     ...extra,
   };
+}
+
+const LOCKED: Partial<Record<ScopeKind, string>> = {
+  plugin: "Installed by a plugin. Change it by updating or removing the plugin.",
+  synced: "Synced from your claude.ai account. Manage it there.",
+  managed: "Set by your organization, so it can't be changed here.",
+  connector: "A claude.ai connector. Manage it in your account.",
+};
+
+const DELETABLE: ItemKind[] = ["skill", "agent", "command", "rule", "outputStyle", "hook", "mcpServer"];
+const EDITABLE: ItemKind[] = [...DELETABLE, "instructions", "settings", "keybindings", "autoMemory", "agentMemory", "other"];
+
+/** The same rules as crates/core/src/setup/capability.rs, roughly. */
+function capabilities(kind: ItemKind, scope: ScopeKind, backup: boolean): Pick<SetupItem, "editable" | "deletable" | "locked"> {
+  const locked = LOCKED[scope] ?? null;
+  if (locked) return { editable: false, deletable: false, locked };
+  if (backup) return { editable: false, deletable: false, locked: null };
+  return { editable: EDITABLE.includes(kind), deletable: DELETABLE.includes(kind), locked: null };
 }
 
 const on = { state: "on", label: "On", raw: null } as const;
@@ -145,4 +179,245 @@ export function mockSetupSource(id: string): Promise<SourceView> {
 
 export function mockSetupReveal(_id: string, _index: number): Promise<string> {
   return Promise.resolve(SECRET);
+}
+
+// ---- a small in-memory "disk" so changes can be tried in the browser and in tests ----
+
+const SKILL_TEXT = (name: string, description: string) =>
+  `---\nname: ${name}\ndescription: ${description || "A made-up skill."}\n---\n\n# ${name}\n\nSteps Claude follows.\n\n- Look at the request\n- Do the work\n- Say what changed\n`;
+const AGENT_TEXT = (name: string, description: string) =>
+  `---\nname: ${name}\ndescription: ${description || "A made-up agent."}\nmodel: sonnet\ntools: Read, Grep, Bash\n---\n\nYou are ${name}. Work carefully and report briefly.\n`;
+
+function textFor(i: SetupItem): string {
+  switch (i.kind) {
+    case "skill":
+      return SKILL_TEXT(i.name, i.description);
+    case "agent":
+      return AGENT_TEXT(i.name, i.description);
+    case "command":
+    case "rule":
+    case "outputStyle":
+      return `---\ndescription: ${i.description || "A made-up file."}\n---\n\nSome text to read.\n`;
+    case "mcpServer":
+      return `{\n  "command": "npx",\n  "args": ["-y", "some-server"],\n  "env": {\n    "GITHUB_TOKEN": "${SECRET}"\n  }\n}\n`;
+    case "hook":
+      return `{\n  "matcher": "Bash",\n  "hooks": [\n    { "type": "command", "command": "fmt.sh --check" }\n  ]\n}\n`;
+    case "settings":
+      return `{\n  "env": {\n    "API_TOKEN": "${SECRET}"\n  },\n  "model": "sonnet"\n}\n`;
+    case "keybindings":
+      return `{\n  "bindings": []\n}\n`;
+    default:
+      return `# ${i.name}\n\n${i.description || "Some notes."}\n`;
+  }
+}
+
+function langFor(i: SetupItem): string {
+  return i.kind === "mcpServer" || i.kind === "hook" || i.kind === "settings" || i.kind === "keybindings" ? "json" : "markdown";
+}
+
+function problemsFor(language: string, folder: string | null, text: string): Problem[] {
+  if (language === "json") {
+    try {
+      JSON.parse(text);
+      return [];
+    } catch (e) {
+      const m = e instanceof Error ? e.message : "Not valid JSON";
+      return [{ message: `This is not valid JSON: ${m}`, line: null }];
+    }
+  }
+  if (!text.startsWith("---")) return [];
+  const rest = text.slice(3);
+  const end = rest.search(/\r?\n---[ \t]*(\r?\n|$)/);
+  if (end < 0) return [{ message: "The frontmatter is never closed. Add a line with --- after it.", line: 1 }];
+  const name = /^name:\s*(.+)$/m.exec(rest.slice(0, end))?.[1]?.trim();
+  if (folder && name && name !== folder) {
+    return [{ message: `The name "${name}" has to match the folder name "${folder}".`, line: 2 }];
+  }
+  return [];
+}
+
+export class MockSetupWorld {
+  private items: SetupItem[] = [];
+  private texts = new Map<string, string>();
+  private stamps = new Map<string, number>();
+  private removed = new Map<string, { item: SetupItem; text: string }>();
+  private serial = 0;
+  private listeners = new Set<() => void>();
+
+  constructor() {
+    this.items = build(true).items;
+    for (const i of this.items) {
+      this.texts.set(i.id, textFor(i));
+      this.stamps.set(i.id, 1);
+    }
+  }
+
+  onChange(cb: () => void): () => void {
+    this.listeners.add(cb);
+    return () => this.listeners.delete(cb);
+  }
+
+  private changed() {
+    this.listeners.forEach((l) => l());
+  }
+
+  private find(id: string): SetupItem {
+    const i = this.items.find((x) => x.id === id);
+    if (!i) throw new Error("That item is not there any more.");
+    return i;
+  }
+
+  snapshot(includeWorktrees: boolean): SetupSnapshot {
+    const base = build(includeWorktrees);
+    const wt = this.items.filter((i) => i.worktree).length;
+    const items = this.items.filter((i) => includeWorktrees || !i.worktree).map((i) => ({ ...i }));
+    return { ...base, items, hidden: { ...base.hidden, worktrees: includeWorktrees ? 0 : wt } };
+  }
+
+  /** The masked text the detail view shows: the same text the editor opens, secrets hidden. */
+  source(id: string): SourceView {
+    const i = this.find(id);
+    const raw = this.texts.get(id) ?? "";
+    const dots = "\u2022".repeat(8);
+    const ranges: MaskedRange[] = [];
+    let text = "";
+    let at = 0;
+    const re = /"([A-Za-z_]+)":\s*"mock-secret-value-0000"/g;
+    for (let m = re.exec(raw); m; m = re.exec(raw)) {
+      const valueAt = m.index + m[0].indexOf(SECRET);
+      text += raw.slice(at, valueAt);
+      ranges.push({ start: text.length, end: text.length + dots.length, key: m[1]!, index: ranges.length });
+      text += dots;
+      at = valueAt + SECRET.length;
+    }
+    text += raw.slice(at);
+    return { id, text, language: langFor(i), truncated: false, maskedRanges: ranges, size: raw.length, lineEnding: "LF", bom: false };
+  }
+
+  raw(id: string, reveal: boolean): RawEdit {
+    const i = this.find(id);
+    const text = this.texts.get(id) ?? "";
+    const hidden = i.hasSecrets && !reveal;
+    return {
+      id,
+      text: hidden ? "" : text,
+      language: langFor(i),
+      stamp: String(this.stamps.get(id) ?? 1),
+      lineEnding: "LF",
+      bom: false,
+      path: i.path ?? "",
+      hasSecrets: i.hasSecrets,
+      needsReveal: hidden,
+      folderName: i.kind === "skill" ? i.name : null,
+    };
+  }
+
+  validate(id: string, text: string): Problem[] {
+    const i = this.find(id);
+    return problemsFor(langFor(i), i.kind === "skill" ? i.name : null, text);
+  }
+
+  save(id: string, text: string, stamp: string, force: boolean): SaveReply {
+    const i = this.find(id);
+    if (!i.editable) throw new Error(i.locked ?? "Atlas will not change this.");
+    if (!force && stamp !== String(this.stamps.get(id) ?? 1)) return { status: "conflict", stamp: null, backupId: null };
+    const bad = this.validate(id, text);
+    if (bad.length) throw new Error(bad[0]!.message);
+    const next = (this.stamps.get(id) ?? 1) + 1;
+    this.texts.set(id, text);
+    this.stamps.set(id, next);
+    i.modifiedMs = Date.now();
+    i.size = text.length;
+    this.changed();
+    return { status: "saved", stamp: String(next), backupId: `mock-save-${++this.serial}` };
+  }
+
+  /** Tests: change the "file" without the editor knowing. */
+  touch(id: string, text?: string) {
+    this.stamps.set(id, (this.stamps.get(id) ?? 1) + 1);
+    if (text !== undefined) this.texts.set(id, text);
+  }
+
+  delete(id: string): DeleteOutcome {
+    const i = this.find(id);
+    if (!i.deletable) throw new Error(i.locked ?? "Atlas will not delete this.");
+    const backupId = `mock-del-${++this.serial}`;
+    this.removed.set(backupId, { item: i, text: this.texts.get(id) ?? "" });
+    this.items = this.items.filter((x) => x.id !== id);
+    this.changed();
+    return { backupId, name: i.name, kind: i.kind, note: null };
+  }
+
+  undo(backupId: string): UndoOutcome {
+    const r = this.removed.get(backupId);
+    if (!r) throw new Error("That backup is not there any more.");
+    this.removed.delete(backupId);
+    this.items.push(r.item);
+    this.texts.set(r.item.id, r.text);
+    this.changed();
+    return { name: r.item.name, kind: r.item.kind };
+  }
+
+  draft(kind: CreateKind, name: string, event?: string): Draft {
+    const nm = name.trim() || "new-item";
+    const where: Record<CreateKind, string> = {
+      instructions: "CLAUDE.md",
+      skill: `skills/${nm}/SKILL.md`,
+      agent: `agents/${nm}.md`,
+      command: `commands/${nm}.md`,
+      rule: `rules/${nm}.md`,
+      outputStyle: `output-styles/${nm}.md`,
+      hook: "settings.json (hooks)",
+      mcpServer: ".claude.json (mcpServers)",
+    };
+    const text =
+      kind === "skill"
+        ? SKILL_TEXT(nm, "Say when Claude should use this.")
+        : kind === "agent"
+          ? AGENT_TEXT(nm, "Say what this agent is for.")
+          : kind === "hook"
+            ? `{\n  "matcher": "Bash",\n  "hooks": [\n    { "type": "command", "command": "echo ${event ?? "PreToolUse"}" }\n  ]\n}\n`
+            : kind === "mcpServer"
+              ? `{\n  "command": "npx",\n  "args": ["-y", "your-server"]\n}\n`
+              : kind === "instructions"
+                ? `# How I like to work\n\n- Keep answers short.\n- Show me the result, not the plan.\n`
+                : `---\ndescription: Say what this is for.\n---\n\nWrite it here.\n`;
+    return {
+      kind,
+      name: nm,
+      title: nm,
+      path: `C:/Users/you/.claude/${where[kind]}`,
+      language: kind === "hook" || kind === "mcpServer" ? "json" : "markdown",
+      text,
+      folderName: kind === "skill" ? nm : null,
+      whereNote: where[kind],
+    };
+  }
+
+  validateDraft(kind: CreateKind, name: string, event: string | undefined, text: string): Problem[] {
+    const d = this.draft(kind, name, event);
+    return problemsFor(d.language, d.folderName, text);
+  }
+
+  create(kind: CreateKind, name: string, event: string | undefined, text: string): DeleteOutcome {
+    const nm = name.trim();
+    const d = this.draft(kind, nm, event);
+    const problems = problemsFor(d.language, d.folderName, text);
+    if (problems.length) throw new Error(problems[0]!.message);
+    const exists = this.items.some((x) => x.kind === kind && x.scope === "user" && x.name === nm);
+    if (exists && kind !== "instructions") throw new Error(`There is already a ${kind} called "${nm}". Atlas will not overwrite it.`);
+    const saved = n;
+    n = 1000 + this.serial + this.items.length;
+    const created = item(kind, "user", kind === "instructions" ? "CLAUDE.md" : nm, {
+      enabled: { state: "on", label: "On", raw: null },
+      path: d.path,
+    });
+    n = saved;
+    this.items = this.items.filter((x) => !(kind === "instructions" && x.kind === "instructions" && x.scope === "user"));
+    this.items.push(created);
+    this.texts.set(created.id, text);
+    this.stamps.set(created.id, 1);
+    this.changed();
+    return { backupId: `mock-new-${++this.serial}`, name: nm, kind, note: null };
+  }
 }

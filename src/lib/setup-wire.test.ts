@@ -1,21 +1,26 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { mockSetupSnapshot, mockSetupSource } from "./setup-mock";
+import { MockSetupWorld, mockSetupSnapshot, mockSetupSource } from "./setup-mock";
 import type {
   Conflict,
   DefinedIn,
+  DeleteOutcome,
   DetailRow,
+  Draft,
   Enabled,
   HiddenCounts,
   MaskedRange,
   McpInfo,
+  Problem,
   ProjectState,
+  RawEdit,
   RootStatus,
   SetupItem,
   SetupProject,
   SetupSnapshot,
   SourceView,
+  UndoOutcome,
 } from "./setup-types";
 
 // fixtures/setup-wire-keys.json is written by the Rust test
@@ -34,7 +39,7 @@ const TYPE_KEYS = {
   } satisfies Record<keyof SetupProject, 1>,
   item: {
     id: 1, kind: 1, scope: 1, scopeLabel: 1, projectId: 1, plugin: 1, name: 1, description: 1, path: 1, linkTarget: 1, size: 1, modifiedMs: 1,
-    enabled: 1, conflict: 1, chips: 1, warnings: 1, detail: 1, attachments: 1, usedBy: 1, mcp: 1, backup: 1, realProjectFile: 1, hasSecrets: 1, worktree: 1,
+    enabled: 1, conflict: 1, chips: 1, warnings: 1, detail: 1, attachments: 1, usedBy: 1, mcp: 1, backup: 1, realProjectFile: 1, hasSecrets: 1, worktree: 1, editable: 1, deletable: 1, locked: 1,
   } satisfies Record<keyof SetupItem, 1>,
   enabled: { state: 1, label: 1, raw: 1 } satisfies Record<keyof Enabled, 1>,
   conflict: { status: 1, label: 1, definedIn: 1 } satisfies Record<keyof Conflict, 1>,
@@ -44,6 +49,13 @@ const TYPE_KEYS = {
   projectState: { projectId: 1, projectName: 1, on: 1 } satisfies Record<keyof ProjectState, 1>,
   source: { id: 1, text: 1, language: 1, truncated: 1, maskedRanges: 1, size: 1, lineEnding: 1, bom: 1 } satisfies Record<keyof SourceView, 1>,
   maskedRange: { start: 1, end: 1, key: 1, index: 1 } satisfies Record<keyof MaskedRange, 1>,
+  rawEdit: {
+    id: 1, text: 1, language: 1, stamp: 1, lineEnding: 1, bom: 1, path: 1, hasSecrets: 1, needsReveal: 1, folderName: 1,
+  } satisfies Record<keyof RawEdit, 1>,
+  problem: { message: 1, line: 1 } satisfies Record<keyof Problem, 1>,
+  deleteOutcome: { backupId: 1, name: 1, kind: 1, note: 1 } satisfies Record<keyof DeleteOutcome, 1>,
+  undoOutcome: { name: 1, kind: 1 } satisfies Record<keyof UndoOutcome, 1>,
+  draft: { kind: 1, name: 1, title: 1, path: 1, language: 1, text: 1, folderName: 1, whereNote: 1 } satisfies Record<keyof Draft, 1>,
 };
 
 describe("wire format", () => {
@@ -73,5 +85,16 @@ describe("wire format", () => {
     const v = await mockSetupSource("settings:1");
     expect(Object.keys(v).sort()).toEqual(wire.source);
     for (const r of v.maskedRanges) expect(Object.keys(r).sort()).toEqual(wire.maskedRange);
+  });
+
+  it("the mock's write replies name exactly those keys", () => {
+    const w = new MockSetupWorld();
+    const skill = w.snapshot(false).items.find((i) => i.kind === "skill" && i.deletable)!;
+    expect(Object.keys(w.raw(skill.id, true)).sort()).toEqual(wire.rawEdit);
+    expect(Object.keys(w.validate(skill.id, "---\nname: x\n")[0]!).sort()).toEqual(wire.problem);
+    const out = w.delete(skill.id);
+    expect(Object.keys(out).sort()).toEqual(wire.deleteOutcome);
+    expect(Object.keys(w.undo(out.backupId)).sort()).toEqual(wire.undoOutcome);
+    expect(Object.keys(w.draft("skill", "wire-check")).sort()).toEqual(wire.draft);
   });
 });
