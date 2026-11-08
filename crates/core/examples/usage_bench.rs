@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use atlas_core::usage::query::{SessionQuery, TimelineArgs};
+use atlas_core::usage::query::{ItemKind, ItemQuery, SessionQuery, TimelineArgs};
 use atlas_core::usage::time::Tz;
 use atlas_core::usage::{Event, EventSink, UsageConfig, UsageEngine};
 
@@ -268,6 +268,22 @@ fn query_rows(rep: &mut Report, label: &str, engine: &UsageEngine, cache: &Path,
         engine.session_detail(&id).unwrap().unwrap();
     });
     rep.le(&format!("session_detail, largest session ({n} messages) ({label})"), "<= 100 ms", 100.0, max, format!("median {med:.1} ms, max {max:.1} ms"));
+
+    // Skills, helper types and tools: all three kinds over the last 30 days and over all time.
+    let today = std::time::SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64 / 86400;
+    let day = |d: i64| {
+        let (y, m, dd) = civil(d);
+        format!("{y:04}-{m:02}-{dd:02}")
+    };
+    let (from, to) = (day(today - 30), day(today));
+    let (med, max) = time("usage_by_item", &mut || {
+        for kind in [ItemKind::Skill, ItemKind::Agent, ItemKind::Tool] {
+            for (f, t) in [(None, None), (Some(from.clone()), Some(to.clone()))] {
+                engine.usage_by_item(&ItemQuery { kind, from: f, to: t, session_id: None, limit: None }).unwrap();
+            }
+        }
+    });
+    rep.le(&format!("usage_by_item, 3 kinds x (30 d, all time) ({label})"), "<= 50 ms", 50.0, max, format!("median {med:.1} ms, max {max:.1} ms for all six calls"));
 }
 
 fn cost_state_report(rep: &mut Report, engine: &UsageEngine, cache: &Path) {
@@ -583,4 +599,18 @@ fn main() {
     if fails > 0 {
         std::process::exit(1);
     }
+}
+
+/// Days since 1970-01-01 to (year, month, day), the civil-from-days algorithm.
+fn civil(z: i64) -> (i64, i64, i64) {
+    let z = z + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z.rem_euclid(146097);
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    (if m <= 2 { y + 1 } else { y }, m, d)
 }

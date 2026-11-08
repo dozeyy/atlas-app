@@ -111,10 +111,12 @@ export function AgentDetailView({
             </p>
           </div>
         </div>
-        <div className="flex flex-col justify-end">
-          <div className="mb-1 text-caption font-medium text-ink-2">Spend as it ran</div>
-          <Sparkline values={spend} className="h-14" />
-        </div>
+        {spend.length > 1 && (
+          <div className="flex flex-col justify-end">
+            <div className="mb-1 text-caption font-medium text-ink-2">Spend as it ran</div>
+            <Sparkline values={spend} className="h-14" />
+          </div>
+        )}
       </Card>
 
       <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
