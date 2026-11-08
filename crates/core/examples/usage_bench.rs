@@ -495,7 +495,16 @@ fn main() {
 
         let (engine, cache) = keep.unwrap();
         // no-change rescan
+        // The real folder may belong to a running Claude Code that appends while we measure.
+        // One settling pass catches up with the indexing time; then the bytes the rescans
+        // read are compared with how much the files actually grew during the window.
+        {
+            let n = engine.passes();
+            engine.reindex(false);
+            assert!(engine.wait_pass(n, WAIT));
+        }
         let mut re = Vec::new();
+        let win_before = list(proj);
         let read0 = engine.bytes_read();
         for _ in 0..(runs.max(3) * 2) {
             let n = engine.passes();
@@ -505,11 +514,23 @@ fn main() {
             re.push(ms(t.elapsed()));
         }
         let reread = engine.bytes_read() - read0;
+        let win_after = list(proj);
+        let grown: u64 = win_after.iter().map(|(k, (sz, _))| sz.saturating_sub(win_before.get(k).map(|v| v.0).unwrap_or(0))).sum();
         let rmax = re.iter().cloned().fold(0.0, f64::max);
         let rmed = median(&mut re.clone());
         rep.le("No-change rescan (stat all files, zero bytes parsed)", "<= 300 ms", 300.0, rmax, format!("median {rmed:.0} ms, max {rmax:.0} ms over {} rescans, {reread} bytes read", re.len()));
-        if reread != 0 {
-            rep.row("No-change rescan reads zero bytes", "0", format!("{reread} bytes"), "FAIL");
+        if grown == 0 {
+            if reread != 0 {
+                rep.row("No-change rescan reads zero bytes", "0", format!("{reread} bytes"), "FAIL");
+            }
+        } else {
+            let ok = reread <= grown;
+            rep.row(
+                "No-change rescan reads only bytes appended during the window",
+                "<= bytes the files grew",
+                format!("{reread} bytes read, files grew {grown} bytes (a running Claude Code appended while measuring)"),
+                if ok { "PASS" } else { "FAIL" },
+            );
         }
 
         query_rows(&mut rep, "real data", &engine, &cache, now_ms());

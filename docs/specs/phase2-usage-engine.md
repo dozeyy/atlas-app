@@ -524,6 +524,19 @@ Commands run from the repo root; test names are the ones to create.
   input + output only? D37 defaults to the billed total; Will decides what dad sees.
 - Q3. `usage.iterations[]`: do the top-level counts already include the iterations? D19
   assumes yes; unit A checks one real multi-iteration line (read-only) before release.
+  **Answered 2026-11-08 (Will's default: never add iterations on top of top-level).**
+  Read-only scan of the real `~/.claude/projects` (assistant lines carrying the key,
+  numbers only, no text kept): 181,889 lines have `usage.iterations`; 256 are empty arrays;
+  all 181,633 non-empty ones hold exactly one iteration, and for 181,631 of them the
+  iteration's input, output, cache-read and cache-creation counts equal the top-level
+  counts exactly. Adding the iterations on top would double count about 181,000 lines, so
+  D19 stands. The other 2 lines are one message written twice with all-zero top-level
+  counts and a populated iteration; the parser already skips all-zero lines
+  (`Skip::ZeroUsage`), so the earlier full copy of that message is the one that counts.
+  Limit of the evidence: this machine has no line with two or more iterations, so
+  "top-level is the sum over several iterations" is untested. If a line with several
+  iterations ever shows up and its top-level counts are smaller than their sum, the
+  Dashboard undercounts it (it never double counts); repeat the scan then.
 - Q4. Does Claude Code ever write 1h cache tokens without the `cache_creation`
   breakdown? D18 books those as 5m.
 - Q5. What deviation between Atlas's estimate and Claude Code's `cost-state` figure is
