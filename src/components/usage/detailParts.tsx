@@ -12,7 +12,7 @@ export function Stat({ label, children, sub, icon }: { label: string; children: 
         {icon}
         {label}
       </div>
-      <div className="mt-1 text-subtitle font-semibold tabular-nums text-ink">{children}</div>
+      <div className="d d-stat mt-1 text-ink">{children}</div>
       {sub && <div className="mt-1 text-caption text-ink-2">{sub}</div>}
     </Card>
   );

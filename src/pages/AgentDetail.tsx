@@ -1,14 +1,17 @@
 import { useMemo } from "react";
 import { ArrowBendDownRight, ArrowLeft, ChatTeardropText, Clock, Hash, Wrench } from "@phosphor-icons/react";
 import { Button, Card } from "../components/controls";
-import { BarChart } from "../components/usage/BarChart";
+import { Bars } from "../components/charts/Bars";
+import { Ridge } from "../components/charts/Ridge";
+import { IconMotion } from "../components/IconMotion";
 import { Breakdown, ModelSplit, Stat } from "../components/usage/detailParts";
-import { AgentAvatar, CostTicker, ModelChip, Sparkline } from "../components/usage/helperKit";
+import { AgentAvatar, CostFigure, ModelChip } from "../components/usage/helperKit";
 import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
-import { cumulativeSpend, timelineBars } from "../components/usage/timelineBars";
+import { hasClearPeak, spendRidge, timelineBars } from "../components/usage/timelineBars";
 import { getBackend } from "../lib/ipc";
+import { useIntro } from "../lib/motion";
 import { useFetched, useLiveReload } from "../lib/useUsage";
-import { compact, exact, formatDuration, formatWhen, headline, percent, plural, share } from "../lib/usage";
+import { compact, exact, formatDuration, formatWhen, headline, percent, share } from "../lib/usage";
 
 /** "general-purpose" -> "General purpose". */
 export function typeLabel(t: string | null): string {
@@ -33,12 +36,15 @@ export function AgentDetailView({
   const d = useFetched(() => backend.agentDetail(sessionId, agentId), [sessionId, agentId]);
   useLiveReload(d.reload);
 
+  const intro = useIntro(`agent:${sessionId}:${agentId}:share`);
   const bars = useMemo(() => (d.data ? timelineBars(d.data.timeline, d.data.agent.durationMs) : []), [d.data]);
-  const spend = useMemo(() => (d.data ? cumulativeSpend(d.data.timeline) : []), [d.data]);
+  const spend = useMemo(() => (d.data ? spendRidge(d.data.timeline, d.data.agent.durationMs) : []), [d.data]);
 
   const back = (
     <Button onClick={onBack} className="mb-4">
-      <ArrowLeft size={14} aria-hidden="true" />
+      <IconMotion motion="nudge">
+        <ArrowLeft />
+      </IconMotion>
       {`Back to ${sessionLabel}`}
     </Button>
   );
@@ -73,12 +79,12 @@ export function AgentDetailView({
   const frac = share(agent.cost.usd ?? 0, sessionCost.usd ?? 0);
 
   return (
-    <div>
+    <div className="@container">
       {back}
       <div className="flex items-start gap-4">
         <AgentAvatar type={agent.agentType} size={48} />
         <div className="min-w-0">
-          <h2 className="text-subtitle font-semibold text-ink">{agent.name}</h2>
+          <h2 className="d d-figure break-words text-ink">{agent.name}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-body text-ink-2">
             <span>{typeLabel(agent.agentType)}</span>
             {d.data.parentName && (
@@ -95,15 +101,15 @@ export function AgentDetailView({
         </div>
       </div>
 
-      <Card className="mt-6 grid grid-cols-1 gap-x-8 gap-y-4 px-6 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,18rem)]">
-        <div>
+      <Card className="mt-6 grid grid-cols-1 gap-x-8 gap-y-4 px-6 py-5 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
+        <div className="min-w-0">
           <div className="text-caption font-medium text-ink-2">This helper spent about</div>
-          <div className="mt-1 text-display font-semibold tracking-[-0.01em] text-ink">
-            <CostTicker cost={agent.cost} />
+          <div className="mt-2">
+            <CostFigure cost={agent.cost} id={`agent:${sessionId}:${agentId}:cost`} className="d d-hero text-ink" />
           </div>
-          <div className="mt-3 max-w-[28rem]">
-            <div role="img" aria-label={`${percent(frac)} of the session's spend`} className="h-2.5 overflow-hidden rounded-full bg-raised">
-              <div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(frac > 0 ? 2 : 0, frac * 100)}%` }} />
+          <div className="mt-4 max-w-[28rem]">
+            <div className={`share-bar${intro ? " intro" : ""}`} role="img" aria-label={`${percent(frac)} of the session's spend`}>
+              <i style={{ width: `${Math.max(frac > 0 ? 2 : 0, frac * 100)}%` }} />
             </div>
             <p className="mt-2 text-body text-ink-2">
               <span className="font-medium text-ink">{percent(frac)}</span>
@@ -112,14 +118,20 @@ export function AgentDetailView({
           </div>
         </div>
         {spend.length > 1 && (
-          <div className="flex flex-col justify-end">
+          <div className="flex min-w-0 flex-col justify-end">
             <div className="mb-1 text-caption font-medium text-ink-2">Spend as it ran</div>
-            <Sparkline values={spend} className="h-14" />
+            <Ridge
+              id={`agent:${sessionId}:${agentId}:spend`}
+              data={spend}
+              label="Spend as it ran"
+              height={132}
+              summit={hasClearPeak(spend.map((x) => x.value))}
+            />
           </div>
         )}
       </Card>
 
-      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-4 @3xl:grid-cols-4">
         <Stat
           label="Tokens"
           sub={agent.tokens.cacheRead > 0 ? `plus ${compact(agent.tokens.cacheRead)} cache reads` : undefined}
@@ -162,17 +174,12 @@ export function AgentDetailView({
         <section aria-label="Tokens through the run" className="mt-8">
           <SectionTitle>Through its run</SectionTitle>
           <Card className="px-5 py-4">
-            <BarChart
-              data={bars}
-              label="Tokens through the helper's run"
-              formatTick={compact}
-              fallback={{ title: "Whole run", valueText: compact(headline(agent.tokens)), detail: `tokens in ${plural(agent.messages, "message")}` }}
-            />
+            <Bars id={`agent:${sessionId}:${agentId}:bars`} data={bars} label="Tokens through the helper's run" formatTick={compact} />
           </Card>
         </section>
       )}
 
-      <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <div className="mt-8 grid grid-cols-1 gap-8 @3xl:grid-cols-2">
         <section aria-label="Token breakdown">
           <SectionTitle>Token breakdown</SectionTitle>
           <Breakdown t={agent.tokens} />

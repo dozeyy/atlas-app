@@ -1,4 +1,5 @@
-import { CaretRight, Clock, FileX, UsersThree } from "@phosphor-icons/react";
+import { CaretRight, Clock, FileX, Robot } from "@phosphor-icons/react";
+import { IconMotion } from "../IconMotion";
 import { formatDuration, formatWhen, compact, exact, plural } from "../../lib/usage";
 import type { SessionRow } from "../../lib/types";
 import { CostText } from "./CostText";
@@ -18,27 +19,26 @@ function ProjectTile({ name }: { name: string }) {
 
 /**
  * One session: what it was, where, when, how long, how much. Its helpers (subagents) are
- * counted inside it and shown on its page, never as rows of their own.
+ * counted inside it and shown on its page, never as rows of their own. A row is a list row,
+ * not a card: it washes on hover, never lifts, and the whole row is the click target.
  */
-export function SessionLine({ row, onOpen }: { row: SessionRow; onOpen: (id: string) => void }) {
+export function SessionLine({ row, onOpen, index = 0 }: { row: SessionRow; onOpen: (id: string) => void; index?: number }) {
   const name = sessionName(row);
   return (
-    <li>
-      <button
-        type="button"
-        onClick={() => onOpen(row.sessionId)}
-        className="press group flex w-full cursor-pointer items-center gap-4 px-5 py-3.5 text-left hover:bg-raised"
-      >
+    <li className="row-in" style={{ ["--i" as string]: index }}>
+      <button type="button" onClick={() => onOpen(row.sessionId)} className="row-btn items-center gap-4 px-5 py-3.5">
         <ProjectTile name={row.projectName} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className={`truncate text-body font-medium ${row.name ? "text-ink" : "text-ink-2"}`}>{name}</span>
+            <span className={`truncate text-body font-semibold ${row.name ? "text-ink" : "text-ink-2"}`}>{name}</span>
             {row.agentCount > 0 && (
               <span
                 title={`${plural(row.agentCount, "helper")} ran inside this session. Their usage is counted here.`}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-tint px-2 text-caption font-medium text-accent-text"
+                className="chip chip-clay shrink-0"
               >
-                <UsersThree size={12} weight="bold" aria-hidden="true" />
+                <IconMotion motion="tilt">
+                  <Robot />
+                </IconMotion>
                 {plural(row.agentCount, "helper")}
               </span>
             )}
@@ -65,14 +65,14 @@ export function SessionLine({ row, onOpen }: { row: SessionRow; onOpen: (id: str
           </div>
         </div>
         <div className="shrink-0 text-right">
-          <div className="text-body font-medium tabular-nums text-ink">
+          <div className="d d-small text-ink">
             <CostText cost={row.cost} />
           </div>
           <div className="text-caption tabular-nums text-ink-2" title={`${exact(row.tokens.total)} tokens`}>
             {compact(row.tokens.total)} tokens
           </div>
         </div>
-        <CaretRight size={14} aria-hidden="true" className="shrink-0 text-ink-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+        <CaretRight size={14} aria-hidden="true" className="row-caret shrink-0 text-ink-2" />
       </button>
     </li>
   );

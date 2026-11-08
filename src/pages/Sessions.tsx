@@ -198,8 +198,8 @@ export function Sessions() {
             </div>
             <Card>
               <ul className="divide-y divide-line">
-                {rows.map((r) => (
-                  <SessionLine key={r.sessionId} row={r} onOpen={setSelected} />
+                {rows.map((r, i) => (
+                  <SessionLine key={r.sessionId} row={r} onOpen={setSelected} index={i < PAGE ? i : 0} />
                 ))}
               </ul>
               {(cursor || moreError) && (

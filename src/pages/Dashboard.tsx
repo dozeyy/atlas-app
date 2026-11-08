@@ -1,76 +1,59 @@
-import { CheckCircle, Circle, Info, SquaresFour } from "@phosphor-icons/react";
-import { Button, Card, PageHeader } from "../components/controls";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowRight, FolderSimple, Info, SquaresFour } from "@phosphor-icons/react";
+import { Button, Card } from "../components/controls";
+import { CountUp } from "../components/CountUp";
 import { EmptyState } from "../components/EmptyState";
+import { IconMotion } from "../components/IconMotion";
 import { IndexProgress } from "../components/IndexProgress";
-import { Activity } from "../components/usage/Activity";
+import { HeatGrid } from "../components/charts/HeatGrid";
+import { Ridge } from "../components/charts/Ridge";
+import { Ring } from "../components/charts/Ring";
+import { Sparkline } from "../components/charts/Sparkline";
+import { StackBar } from "../components/charts/StackBar";
+import type { StackItem } from "../components/charts/StackBar";
+import { ActivityCard } from "../components/usage/ActivityCard";
 import { CostText } from "../components/usage/CostText";
-import { HBars } from "../components/usage/HBars";
 import { SessionLine } from "../components/usage/SessionList";
 import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
 import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
-import { describeSource } from "../lib/labels";
 import { openSessionNext } from "../lib/nav";
+import { useDaily } from "../lib/useDaily";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
-import { compact, exact, headline, localDay, modelLabel, plural } from "../lib/usage";
-import type { Dashboard as DashboardData, Period, UsageStatus } from "../lib/types";
+import {
+  bin,
+  greeting,
+  lastAndPrevious,
+  lastDays,
+  longDate,
+  percentChange,
+  shortDay,
+  sumTail,
+  updatedText,
+  weekdayInitial,
+} from "../lib/dashboardModel";
+import { usualDay } from "../lib/chartPaths";
+import { addDays, compact, exact, formatUsd, headline, localDay, modelLabel, plural } from "../lib/usage";
+import type { BarDatum } from "../components/charts/Bars";
+import type { Dashboard as DashboardData, Timeline, UsageStatus } from "../lib/types";
 
-function Check({ ok, label }: { ok: boolean; label: string }) {
-  const Icon = ok ? CheckCircle : Circle;
-  return (
-    <li className="flex items-center gap-2 text-body text-ink">
-      <Icon
-        size={16}
-        weight={ok ? "fill" : "regular"}
-        aria-hidden="true"
-        className={ok ? "text-success" : "text-ink-2"}
-      />
-      <span>{label}</span>
-      <span className="sr-only">{ok ? "found" : "not found"}</span>
-      <span aria-hidden="true" className="text-ink-2">
-        {ok ? "" : "not found"}
-      </span>
-    </li>
-  );
+/** The current time, refreshed every `ms`, so "Updated 3 min ago" and the greeting stay true. */
+function useNow(ms = 30_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+  return now;
 }
 
-function PeriodCard({ label, period }: { label: string; period: Period }) {
-  const t = period.tokens;
+function Delta({ pct }: { pct: number }) {
+  const up = pct >= 0;
   return (
-    <section aria-label={label}>
-    <Card className="px-5 py-4">
-      <div className="text-caption font-medium text-ink-2">{label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-title font-semibold tabular-nums text-ink" title={`${exact(headline(t))} tokens`}>
-          {compact(headline(t))}
-        </span>
-        <span className="text-body text-ink-2">tokens</span>
-      </div>
-      <div className="mt-3 flex items-baseline justify-between gap-3 text-body">
-        <CostText cost={period.cost} className="font-medium text-ink" />
-        <span className="text-caption text-ink-2">estimated cost</span>
-      </div>
-      <div className="mt-1 text-caption text-ink-2">
-        {plural(period.sessions, "session")}
-        {t.cacheRead > 0 && <span title={`${exact(t.cacheRead)} tokens`}>{`, plus ${compact(t.cacheRead)} cache reads`}</span>}
-      </div>
-    </Card>
-    </section>
-  );
-}
-
-function PeriodSkeleton() {
-  return (
-    <div role="status" aria-label="Loading your usage" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      {[0, 1, 2].map((i) => (
-        <Card key={i} className="px-5 py-4">
-          <Skeleton className="h-4 w-16" />
-          <Skeleton className="mt-3 h-8 w-28" />
-          <Skeleton className="mt-4 h-4 w-full" />
-          <Skeleton className="mt-2 h-4 w-24" />
-        </Card>
-      ))}
-    </div>
+    <span className="chip chip-clay" title="Compared with the 7 days before. More or less use is neither good nor bad.">
+      <ArrowRight size={12} weight="bold" aria-hidden="true" style={{ rotate: up ? "-45deg" : "45deg" }} />
+      {`${Math.abs(pct)}% vs last week`}
+    </span>
   );
 }
 
@@ -137,6 +120,44 @@ function PriceFootnote() {
   );
 }
 
+function DashboardSkeleton({ firstIndex }: { firstIndex: boolean }) {
+  return (
+    <div role="status" aria-label="Loading your usage">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <Card className="px-6 py-5">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="mt-4 h-14 w-56" />
+          <Skeleton className="mt-3 h-4 w-48" />
+        </Card>
+        <Card className="px-5 py-4">
+          <Skeleton className="h-4 w-16" />
+          <Skeleton className="mt-4 size-[104px] !rounded-full" />
+        </Card>
+      </div>
+      {firstIndex && <p className="mt-4 text-body text-ink-2">Reading your history. This runs once.</p>}
+    </div>
+  );
+}
+
+/** Top models as one stacked bar: three named, the rest folded into "Other". */
+function modelItems(data: DashboardData): StackItem[] {
+  const models = data.byModel.map((m) => ({ key: m.model, label: modelLabel(m.model), value: headline(m.tokens), title: m.model }));
+  const top = models.slice(0, 3);
+  const rest = models.slice(3);
+  const restValue = rest.reduce((s, m) => s + m.value, 0);
+  const all = restValue > 0 ? [...top, { key: "other", label: "Other", value: restValue, title: rest.map((r) => r.label).join(", ") }] : top;
+  const total = all.reduce((s, m) => s + m.value, 0) || 1;
+  return all.map((m, i) => ({
+    key: m.key,
+    label: m.label,
+    value: m.value,
+    tone: i + 1,
+    right: `${compact(m.value)} tokens`,
+    share: `${Math.round((m.value / total) * 100)}%`,
+    title: m.title,
+  }));
+}
+
 export function Dashboard() {
   const { info, setView } = useAtlas();
   const backend = getBackend();
@@ -144,8 +165,15 @@ export function Dashboard() {
   const { status, progress } = useUsageStatus();
   const dash = useFetched(() => backend.usageDashboard(), [cfg?.projectsDir ?? null]);
   useLiveReload(dash.reload);
+  const daily = useDaily(cfg?.projectsDir ?? null);
+  const now = useNow();
 
   const data = dash.data;
+  const today = data?.todayDate || localDay(new Date(now));
+  const projectSeries = useFetched<Timeline>(
+    () => backend.usageTimeline({ from: addDays(today, -29), to: today, bucket: "day", groupBy: "project" }),
+    [cfg?.projectsDir ?? null, today, data?.month.sessions ?? 0],
+  );
   const firstIndex = status?.state === "indexing" && !status.firstIndexDone;
   const nothing = data !== null && data.recent.length === 0 && data.month.tokens.total === 0 && data.month.sessions === 0;
 
@@ -154,20 +182,94 @@ export function Dashboard() {
     setView("sessions");
   };
 
+  const week = useMemo(() => {
+    if (!daily) return null;
+    const { last, prev } = lastAndPrevious(daily.tokens, 7);
+    const days = lastDays(daily.today, 7);
+    const points = daily.points.slice(-7);
+    const readouts: BarDatum[] = days.map((d, i) => ({
+      key: d,
+      value: last[i] ?? 0,
+      axis: weekdayInitial(d),
+      title: shortDay(d),
+      valueText: last[i] ? compact(last[i]) : "No activity",
+      detail: last[i] ? `tokens, ${points[i].cost.usd === null ? "no price" : `${formatUsd(points[i].cost.usd)} estimated`}` : "",
+    }));
+    const usual = usualDay(daily.tokens.slice(-31, -1));
+    return {
+      readouts,
+      delta: percentChange(last.reduce((s, v) => s + v, 0), prev.reduce((s, v) => s + v, 0)),
+      usual,
+      todayTokens: daily.tokens[daily.tokens.length - 1] ?? 0,
+    };
+  }, [daily]);
+
+  const heat = useMemo(() => {
+    if (!daily) return null;
+    const n = 84;
+    const values = daily.tokens.slice(-n);
+    const pts = daily.points.slice(-n);
+    const readouts = pts.map((p, i) => ({
+      title: shortDay(p.start),
+      valueText: values[i] > 0 ? `${compact(values[i])} tokens` : "No activity",
+      detail: values[i] > 0 ? `${formatUsd(p.cost.usd ?? 0)} estimated, ${plural(p.sessions, "session")} started` : "",
+    }));
+    return { values, readouts };
+  }, [daily]);
+
+  // Projects: this week's busiest (for the greeting) and a 30 day sparkline per top project.
+  const projects = useMemo(() => {
+    const series = projectSeries.data?.series ?? null;
+    if (!data) return { rows: [], busiest: null as string | null, count: null as number | null };
+    const byKey = new Map((series ?? []).map((s) => [s.key, s]));
+    const rows = data.topProjects.map((p) => {
+      const s = byKey.get(p.projectKey);
+      return { p, spark: s ? bin(s.points.map((pt) => headline(pt.tokens)), 10) : null };
+    });
+    let busiest: string | null = null;
+    let best = 0;
+    let active = 0;
+    for (const s of series ?? []) {
+      const v = sumTail(s.points, 7);
+      if (v > 0) active++;
+      if (v > best) {
+        best = v;
+        busiest = s.label;
+      }
+    }
+    return { rows, busiest, count: series ? active : null };
+  }, [data, projectSeries.data]);
+
+  const weekTokens = data ? headline(data.week.tokens) : 0;
+  const updated = updatedText(status?.lastIndexedAt ?? null, now);
+
   return (
-    <>
-      <PageHeader title="Dashboard" subtitle="How you are using Claude Code, at a glance." />
+    <div className="@container">
+      <header className="rise mb-6 flex items-end justify-between gap-4" style={{ ["--i" as string]: 0 }}>
+        <div className="min-w-0">
+          <div className="text-caption font-semibold text-ink-2">{longDate(new Date(now))}</div>
+          <h1 className="d d-title mt-1 text-ink">{greeting(new Date(now))}</h1>
+          <p className="mt-1.5 text-lead text-ink-2">
+            {data && weekTokens > 0
+              ? `You and Claude got through ${compact(weekTokens)} tokens in the last 7 days${projects.busiest ? `, most of it in ${projects.busiest}` : ""}.`
+              : "How you are using Claude Code, at a glance."}
+          </p>
+        </div>
+        {updated && <span className="shrink-0 pb-1 text-caption text-ink-2">{updated}</span>}
+      </header>
 
       <IndexProgress status={status} progress={progress} onRetry={() => void backend.usageReindex("changed").catch(() => {})} />
 
       {cfg === null ? (
         <p role="status" className="rounded-card border border-line bg-surface px-5 py-4 text-body text-ink-2">
-          Waiting for your Claude folder. Your usage appears here as soon as it is ready.
+          {info.sandbox.state === "failed"
+            ? "The sandbox copy could not be made, so nothing is shown. See Settings."
+            : "Waiting for your Claude folder. Your usage appears here as soon as it is ready."}
         </p>
       ) : dash.error && !cacheNotReady(status) ? (
         <ErrorBlock title="Could not load your usage" message={dash.error} onRetry={() => dash.reload(false)} />
       ) : !data || (nothing && firstIndex) ? (
-        <PeriodSkeleton />
+        <DashboardSkeleton firstIndex={firstIndex} />
       ) : nothing ? (
         <EmptyState
           icon={SquaresFour}
@@ -177,64 +279,182 @@ export function Dashboard() {
           body="Atlas reads the conversations Claude Code saves in your Claude folder. Use Claude Code once and the numbers show up here on their own."
         />
       ) : (
-        <div className="space-y-8">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <PeriodCard label="Today" period={data.today} />
-            <PeriodCard label="Last 7 days" period={data.week} />
-            <PeriodCard label="Last 30 days" period={data.month} />
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <section aria-label="Last 7 days" className="rise" style={{ ["--i" as string]: 1 }}>
+              <Card className="flex h-full flex-col gap-4 px-6 pb-4 pt-5 @xl:flex-row @xl:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="d d-figure text-ink">Last 7 days</h2>
+                    {week?.delta != null && <Delta pct={week.delta} />}
+                  </div>
+                  <div className="my-3.5 flex items-baseline gap-2.5">
+                    <CountUp value={weekTokens} format={exact} id="dash:hero" className="d d-hero text-ink" />
+                    <span className="text-lead font-semibold text-ink-2">tokens</span>
+                  </div>
+                  <div className="text-body text-ink-2">
+                    <b className="d d-small text-ink">
+                      <CostText cost={data.week.cost} />
+                    </b>{" "}
+                    estimated · {plural(data.week.sessions, "session")}
+                    {projects.count ? ` · ${plural(projects.count, "project")}` : ""}
+                  </div>
+                  {data.week.tokens.cacheRead > 0 && (
+                    <div className="mt-1 text-caption text-ink-2" title={`${exact(data.week.tokens.cacheRead)} tokens`}>
+                      {`Plus ${compact(data.week.tokens.cacheRead)} cache reads, listed apart.`}
+                    </div>
+                  )}
+                </div>
+                {week && (
+                  <div className="w-full self-end @xl:w-[220px] @xl:shrink-0">
+                    <Ridge id="dash:ridge" data={week.readouts} label="Tokens per day, last 7 days" height={132} />
+                  </div>
+                )}
+              </Card>
+            </section>
+
+            <section aria-label="Today" className="rise" style={{ ["--i" as string]: 2 }}>
+              <Card className="h-full px-5 py-4">
+                <div className="flex items-baseline justify-between">
+                  <h2 className="d d-figure text-ink">Today</h2>
+                  <span className="text-caption text-ink-2">so far</span>
+                </div>
+                <div className="mt-3.5 flex items-center gap-[18px]">
+                  <Ring
+                    id="dash:ring"
+                    size={104}
+                    stroke={11}
+                    frac={week && week.usual > 0 ? week.todayTokens / week.usual : 0}
+                    label={
+                      week && week.usual > 0
+                        ? `${Math.round((week.todayTokens / week.usual) * 100)} percent of a usual day`
+                        : "No usual day yet"
+                    }
+                  >
+                    <div>
+                      <div className="d d-figure text-ink" title={`${exact(headline(data.today.tokens))} tokens`}>
+                        {compact(headline(data.today.tokens))}
+                      </div>
+                      <div className="text-caption text-ink-2">tokens</div>
+                    </div>
+                  </Ring>
+                  <div className="flex min-w-0 flex-col gap-2.5">
+                    <div>
+                      <b className="d d-figure block text-ink">
+                        {week && week.usual > 0 ? `${Math.round((week.todayTokens / week.usual) * 100)}%` : "None yet"}
+                      </b>
+                      <span className="text-caption text-ink-2">{week && week.usual > 0 ? "of a usual day" : "no usual day to compare"}</span>
+                    </div>
+                    <div>
+                      <b className="d d-small block text-ink">{plural(data.today.sessions, "session")}</b>
+                      <span className="text-caption text-ink-2">
+                        <CostText cost={data.today.cost} /> estimated
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </section>
           </div>
 
-          <Activity today={data.todayDate || localDay(new Date())} />
+          <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <section aria-label="Activity" className="rise" style={{ ["--i" as string]: 3 }}>
+              <ActivityCard today={today} />
+            </section>
 
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-            <section aria-label="By model">
-              <SectionTitle aside={<span className="text-caption text-ink-2">Last 30 days</span>}>By model</SectionTitle>
-              <Card>
+            <section aria-label="On a roll" className="rise" style={{ ["--i" as string]: 4 }}>
+              <Card className="h-full px-5 py-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="d d-figure text-ink">On a roll</h2>
+                  {daily && daily.streak >= 2 && daily.streak === daily.longest && (
+                    <span className="chip chip-clay">
+                      <span className="spark" style={{ width: 12, height: 12, background: "currentColor" }} aria-hidden="true" />
+                      Longest yet
+                    </span>
+                  )}
+                </div>
+                <div className="my-2.5 flex items-baseline gap-2">
+                  <span className="d d-stat text-ink">{daily ? daily.streak : 0}</span>
+                  <span className="font-semibold text-ink-2">{daily && daily.streak === 1 ? "day in a row" : "days in a row"}</span>
+                </div>
+                {heat ? (
+                  <HeatGrid id="dash:heat" values={heat.values} readouts={heat.readouts} label="Daily activity, last 12 weeks" />
+                ) : (
+                  <Skeleton className="h-[120px] w-full" />
+                )}
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-caption text-ink-2">Last 12 weeks</span>
+                  <span aria-hidden="true" className="flex items-center gap-1 text-caption text-ink-2">
+                    Less
+                    {[0, 1, 2, 3, 4, 5].map((b) => (
+                      <i key={b} className="inline-block size-2.5 rounded-[3px]" style={{ background: `var(--heat-${b})` }} />
+                    ))}
+                    More
+                  </span>
+                </div>
+              </Card>
+            </section>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-2">
+            <section aria-label="Models" className="rise" style={{ ["--i" as string]: 5 }}>
+              <Card className="h-full px-5 py-4">
+                <div className="flex items-baseline justify-between">
+                  <h2 className="d d-figure text-ink">Models</h2>
+                  <span className="text-caption text-ink-2">Last 30 days</span>
+                </div>
                 {data.byModel.length === 0 ? (
-                  <p className="px-5 py-4 text-body text-ink-2">No model has been used in the last 30 days.</p>
+                  <p className="mt-3 text-body text-ink-2">No model has been used in the last 30 days.</p>
                 ) : (
-                  <HBars
-                    label="Usage by model"
-                    items={data.byModel.map((m) => ({
-                      key: m.model,
-                      label: modelLabel(m.model),
-                      sub: m.known ? undefined : "No price in the price list",
-                      value: headline(m.tokens),
-                      right: `${compact(headline(m.tokens))} tokens`,
-                      rightSub: <CostText cost={m.cost} />,
-                      title: m.model,
-                    }))}
-                  />
+                  <div className="mt-4">
+                    <StackBar id="dash:models" label="Share of tokens by model, last 30 days" items={modelItems(data)} />
+                  </div>
                 )}
               </Card>
             </section>
-            <section aria-label="Top projects">
-              <SectionTitle aside={<span className="text-caption text-ink-2">Last 30 days</span>}>Top projects</SectionTitle>
-              <Card>
-                {data.topProjects.length === 0 ? (
-                  <p className="px-5 py-4 text-body text-ink-2">No project has been used in the last 30 days.</p>
+
+            <section aria-label="Projects" className="rise" style={{ ["--i" as string]: 6 }}>
+              <Card className="h-full px-5 py-4">
+                <div className="flex items-baseline justify-between">
+                  <h2 className="d d-figure text-ink">Projects</h2>
+                  <span className="text-caption text-ink-2">Last 30 days</span>
+                </div>
+                {projects.rows.length === 0 ? (
+                  <p className="mt-3 text-body text-ink-2">No project has been used in the last 30 days.</p>
                 ) : (
-                  <HBars
-                    label="Usage by project"
-                    items={data.topProjects.map((p) => ({
-                      key: p.projectKey,
-                      label: p.name,
-                      sub: plural(p.sessions, "session"),
-                      value: headline(p.tokens),
-                      right: `${compact(headline(p.tokens))} tokens`,
-                      rightSub: <CostText cost={p.cost} />,
-                      title: p.path,
-                    }))}
-                  />
+                  <ul className="mt-2.5">
+                    {projects.rows.map(({ p, spark }) => (
+                      <li
+                        key={p.projectKey}
+                        title={p.path}
+                        className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-3 rounded-control px-2 py-2 transition-colors duration-[var(--dur-fast)] hover:bg-raised"
+                      >
+                        <span className="flex min-w-0 items-center gap-2 font-semibold text-ink">
+                          <FolderSimple size={16} aria-hidden="true" className="shrink-0 text-ink-2" />
+                          <span className="truncate">{p.name}</span>
+                          <span className="sr-only">{`, ${plural(p.sessions, "session")}`}</span>
+                        </span>
+                        {spark ? <Sparkline id={`dash:spark:${p.projectKey}`} values={spark} /> : <span />}
+                        <span className="d d-small text-right text-ink" title={`${exact(headline(p.tokens))} tokens`}>
+                          {compact(headline(p.tokens))}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </Card>
             </section>
           </div>
 
-          <section aria-label="Recent sessions">
+          <section aria-label="Recent sessions" className="rise pt-4" style={{ ["--i" as string]: 7 }}>
             <SectionTitle
               aside={
-                <Button onClick={() => setView("sessions")}>See all sessions</Button>
+                <Button onClick={() => setView("sessions")}>
+                  <IconMotion motion="nudge">
+                    <ArrowRight />
+                  </IconMotion>
+                  See all sessions
+                </Button>
               }
             >
               Recent sessions
@@ -252,29 +472,6 @@ export function Dashboard() {
 
       {data && !nothing && <Notes data={data} status={status} />}
       {data && !nothing && <PriceFootnote />}
-
-      <h2 className="mb-3 mt-8 text-lead font-semibold text-ink">Claude folder</h2>
-      <Card className="px-5 py-4">
-        {cfg ? (
-          <>
-            <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-              <code className="selectable break-all text-ink">{cfg.dir}</code>
-              <span className="text-caption text-ink-2">{describeSource(cfg.source)}</span>
-            </div>
-            <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
-              <Check ok={cfg.dirExists} label="Folder" />
-              <Check ok={cfg.claudeJsonExists} label="Settings file" />
-              <Check ok={cfg.projectsExists} label="Projects" />
-            </ul>
-          </>
-        ) : (
-          <p role="status" className="text-body text-ink-2">
-            {info.sandbox.state === "failed"
-              ? "The sandbox copy could not be made, so nothing is shown. See Settings."
-              : "Making a safe copy of your Claude folder..."}
-          </p>
-        )}
-      </Card>
-    </>
+    </div>
   );
 }

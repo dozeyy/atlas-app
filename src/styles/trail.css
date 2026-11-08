@@ -423,6 +423,118 @@
   font-weight: 600;
 }
 
+/* ---- Theme picker (Settings) --------------------------------------------------------------- */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 640px) {
+  .theme-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.theme-card {
+  border-radius: var(--r-card);
+}
+.theme-card-face {
+  display: block;
+  padding: 10px;
+}
+.theme-card[aria-checked="true"] .theme-card-face {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.theme-card-label {
+  display: grid;
+  gap: 2px;
+  padding: 10px 4px 2px;
+}
+.theme-card-hint {
+  display: block;
+}
+
+/* A mini Atlas window. It sets its own background and ink, so the tokens of ITS theme apply
+   whatever theme the page is in (tokens.css scopes each theme to .theme-preview[data-theme]). */
+.theme-preview {
+  display: flex;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+}
+.tp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 24%;
+  padding: 8px 7px;
+  background: var(--sidebar-solid);
+  border-right: 1px solid var(--line);
+}
+.tp-dot {
+  width: 10px;
+  height: 10px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.tp-pill {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line-strong);
+}
+.tp-pill-on {
+  background: var(--accent);
+}
+.tp-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 10px;
+}
+.tp-title {
+  width: 46%;
+  height: 7px;
+  border-radius: 3px;
+  background: var(--ink);
+}
+.tp-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.tp-line {
+  width: 34%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink-2);
+  opacity: 0.6;
+}
+.tp-bars {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  gap: 4px;
+}
+.tp-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  background: var(--bar-rest);
+}
+.tp-bar-now {
+  background: var(--accent);
+}
+
 /* ---- Tooltip ------------------------------------------------------------------------------ */
 .tip {
   position: absolute;
@@ -676,6 +788,90 @@ svg.chart {
   border-radius: 2px;
   background: var(--accent);
   transform-origin: left;
+}
+
+/* A native select: the field is fixed, the chevron dips when the pointer is over it. */
+.select-wrap select {
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.select-wrap:hover select {
+  border-color: var(--ink-2);
+}
+.select-wrap:active select {
+  background: color-mix(in srgb, var(--raised) 85%, var(--ink));
+}
+.select-caret {
+  transition: translate var(--dur-hover) var(--ease-spring);
+}
+.select-wrap:hover .select-caret {
+  translate: 0 2px;
+}
+
+/* A list row you can open: it washes on hover and press, and never moves or scales. */
+.row-btn {
+  display: flex;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  background: none;
+  border: 0;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.row-btn:hover {
+  background: var(--raised);
+}
+.row-btn:active {
+  background: color-mix(in srgb, var(--raised) 85%, var(--ink));
+}
+.row-caret {
+  opacity: 0;
+  translate: -4px 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    translate var(--dur-hover) var(--ease-spring);
+}
+.row-btn:hover .row-caret,
+.row-btn:focus-visible .row-caret,
+.card-hit:hover .row-caret,
+.card-hit:focus-visible .row-caret {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* Helpers that were started by another helper hang off a rail, so the nesting reads as a tree. */
+.helper-kids {
+  margin: 12px 0 0 20px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+.helper-kid {
+  position: relative;
+  margin-left: 12px;
+}
+.helper-kid::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  width: 12px;
+  height: 48px;
+  border-left: 1.5px solid var(--line-strong);
+  border-bottom: 1.5px solid var(--line-strong);
+  border-bottom-left-radius: 8px;
+  pointer-events: none;
+}
+.helper-kid:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 36px;
+  bottom: -12px;
+  border-left: 1.5px solid var(--line-strong);
+  pointer-events: none;
 }
 
 /* ---- First paint: empty to full, once per chart per launch (the `.intro` class) ---------- */

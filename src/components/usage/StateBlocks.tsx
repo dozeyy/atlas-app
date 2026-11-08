@@ -26,7 +26,7 @@ export function ErrorBlock({ message, onRetry, title = "Could not load this" }: 
 export function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
     <div className="mb-3 flex items-center justify-between gap-4">
-      <h2 className="text-lead font-semibold text-ink">{children}</h2>
+      <h2 className="d d-figure text-ink">{children}</h2>
       {aside}
     </div>
   );
