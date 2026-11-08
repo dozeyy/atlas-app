@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+
+/** Settings shows one section at a time; open one from its rail. */
+async function openSection(name: string) {
+  await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name }));
+}
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { AtlasProvider } from "./state/AtlasProvider";
@@ -35,11 +40,11 @@ describe("navigation", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
   });
 
-  it("switches pages on click and shows a designed empty state, not filler", async () => {
+  it("switches pages on click and shows real content, not filler", async () => {
     mount();
     await userEvent.click(screen.getByRole("button", { name: "History" }));
     expect(screen.getByRole("heading", { level: 1, name: "History" })).toBeInTheDocument();
-    expect(screen.getByText("No changes yet")).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Changes" })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/lorem ipsum/i);
     expect(screen.getByRole("button", { name: "History" })).toHaveAttribute("aria-current", "page");
   });
@@ -107,6 +112,7 @@ describe("sandbox", () => {
   it("shows preparing, then ready, and never shows the real folder meanwhile", async () => {
     mount();
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await openSection("Claude folder");
     await userEvent.click(screen.getByRole("switch", { name: "Sandbox mode" }));
     expect(await screen.findByText("Making the copy...")).toBeInTheDocument();
     expect(screen.getAllByText("Preparing sandbox").length).toBeGreaterThan(0);
@@ -131,6 +137,7 @@ describe("Claude folder", () => {
     await userEvent.click(screen.getByRole("button", { name: "Toolkit" }));
     expect(screen.queryByText("Folder Atlas reads")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await openSection("Claude folder");
     expect(await screen.findByText("Folder Atlas reads")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Open folder" }));
     expect(open).toHaveBeenCalledTimes(1);

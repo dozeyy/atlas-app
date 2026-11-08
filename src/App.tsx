@@ -6,7 +6,8 @@ import { TitleBar } from "./components/TitleBar";
 import { ToastHost } from "./components/Toasts";
 import { useAtlas } from "./state/AtlasProvider";
 import { Dashboard } from "./pages/Dashboard";
-import { History, Wrapped } from "./pages/Placeholders";
+import { History } from "./pages/History";
+import { Wrapped } from "./pages/Wrapped";
 import { Sessions } from "./pages/Sessions";
 import { Setup } from "./pages/Setup";
 import { Settings } from "./pages/Settings";
@@ -66,7 +67,7 @@ export function App() {
         <main ref={main} tabIndex={-1} aria-label={NAV.find((n) => n.view === view)?.label} className="min-h-0 flex-1 overflow-y-auto outline-none">
           <div
             key={view}
-            className={`page-enter @container w-full px-[var(--gutter)] py-[var(--gutter-y)] ${view === "setup" || view === "history" || view === "wrapped" ? "flex min-h-full flex-col" : ""}`}
+            className={`page-enter @container w-full px-[var(--gutter)] py-[var(--gutter-y)] ${view === "setup" ? "flex min-h-full flex-col" : view === "history" || view === "wrapped" || view === "settings" ? "flex h-full flex-col" : ""}`}
           >
             {info.settingsSaveError && (
               <div

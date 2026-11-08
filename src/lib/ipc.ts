@@ -37,6 +37,15 @@ import type {
   SourceView,
   UndoOutcome,
 } from "./setup-types";
+import type {
+  DiffArgs,
+  EventsArgs,
+  EventsPage,
+  HistoryDiff,
+  HistoryOverview,
+  ItemDetail,
+  SettingsOverview,
+} from "./historyTypes";
 import { MockBackend } from "./mock";
 
 declare global {
@@ -54,6 +63,7 @@ export const SEARCH_STATUS_EVENT = "atlas://search/status";
 
 export type Unlisten = () => void;
 export const SETUP_EVENT = "atlas://setup-changed";
+export const HISTORY_EVENT = "atlas://history/changed";
 
 export const inTauri = (): boolean =>
   typeof window !== "undefined" && window.__TAURI_INTERNALS__ !== undefined;
@@ -64,6 +74,8 @@ export interface SettingsPatch {
   launchAnimation?: boolean;
   /** Closing the window hides Atlas to the tray instead of quitting. */
   closeToTray?: boolean;
+  /** Copies kept per file in History (clamped to 10-200 by the backend). */
+  historyKeepVersions?: number;
 }
 
 export interface Backend {
@@ -128,6 +140,21 @@ export interface Backend {
   setupCreate(kind: CreateKind, name: string, event: string | undefined, text: string): Promise<DeleteOutcome>;
   /** What is wrong with `text` as a new item's content (nothing is written). */
   setupValidateDraft(kind: CreateKind, name: string, event: string | undefined, text: string): Promise<Problem[]>;
+
+  // History: Atlas's own record of how the setup changed. Read-only here; copies are masked.
+  /** Totals, the 30-day ribbon and the project list. null while History is paused (Sandbox Mode). */
+  historyOverview(): Promise<HistoryOverview | null>;
+  historyEvents(args: EventsArgs): Promise<EventsPage>;
+  historyItem(key: string): Promise<ItemDetail | null>;
+  historyDiff(args: DiffArgs): Promise<HistoryDiff>;
+  /** The masked text of one copy, for the clipboard. */
+  historyCopyVersion(versionId: number): Promise<string>;
+  /** Asks where to put a copy and writes it there. The path, or null when cancelled. */
+  historySaveCopy(versionId: number): Promise<string | null>;
+  historyOpenFolder(): Promise<void>;
+  onHistoryChanged(cb: () => void): Promise<Unlisten>;
+  /** Sizes and Claude Code's own cleanup setting, for the Settings page. */
+  settingsOverview(): Promise<SettingsOverview>;
 }
 
 const tauriBackend: Backend = {
@@ -184,6 +211,18 @@ const tauriBackend: Backend = {
     const off = await listen<{ version: number }>(SETUP_EVENT, (e) => cb(e.payload.version));
     return off;
   },
+  historyOverview: () =>
+    invoke<HistoryOverview | null>("history_overview", { offsetMin: -new Date().getTimezoneOffset() }),
+  historyEvents: (args) => invoke<EventsPage>("history_events", { args }),
+  historyItem: (key) => invoke<ItemDetail | null>("history_item", { key }),
+  historyDiff: (args) => invoke<HistoryDiff>("history_diff", { args }),
+  historyCopyVersion: (versionId) => invoke<string>("history_copy_version", { versionId }),
+  historySaveCopy: (versionId) => invoke<string | null>("history_save_copy", { versionId }),
+  historyOpenFolder: async () => {
+    await invoke("history_open_folder");
+  },
+  onHistoryChanged: (cb) => listen(HISTORY_EVENT, () => cb()),
+  settingsOverview: () => invoke<SettingsOverview>("settings_overview"),
 };
 
 let backend: Backend | null = null;
