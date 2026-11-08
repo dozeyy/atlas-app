@@ -1,28 +1,18 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CaretDown, CaretRight, FolderDashed, Info } from "@phosphor-icons/react";
 import { PageHeader } from "../components/controls";
+import { CollectionView } from "../components/setup/CollectionView";
+import { ConfirmDelete } from "../components/setup/ConfirmDelete";
+import { CreateFlow } from "../components/setup/CreateFlow";
 import { DetailSheet } from "../components/setup/DetailSheet";
-import { GroupSection } from "../components/setup/GroupSection";
-import { ItemRow } from "../components/setup/ItemViews";
-import { NoMatches, NoSetup, SetupError, SetupSkeleton } from "../components/setup/states";
-import { Summary } from "../components/setup/Summary";
-import { Toolbar } from "../components/setup/Toolbar";
-import {
-  applyKind,
-  countByKind,
-  countByScope,
-  DEFAULT_FILTERS,
-  groupItems,
-  visibleItems,
-  type Filters,
-} from "../lib/setup-model";
-import type { ItemKind, SetupItem, SetupProject, SetupSnapshot } from "../lib/setup-types";
-import { reloadSetup, setIncludeWorktrees, startSetup, useSetup } from "../state/setupStore";
+import { ItemCard, ItemRow } from "../components/setup/ItemViews";
+import { NoSetup, SetupError, SetupSkeleton } from "../components/setup/states";
+import { TopSlot } from "../components/setup/TopSlot";
+import { TypeTiles } from "../components/setup/TypeTiles";
+import { countByKind, itemsForTile, MORE_KINDS, recentlyChanged, worthALook, type TileId } from "../lib/setup-model";
+import type { CreateKind, SetupItem, SetupProject, SetupSnapshot } from "../lib/setup-types";
+import { reloadSetup, startSetup, useSetup } from "../state/setupStore";
 import { useAtlas } from "../state/AtlasProvider";
-
-/** Quiet by default: long, low-value lists start folded. */
-const FOLDED: ItemKind[] = ["other", "agentMemory"];
 
 const CLAUDE_JSON_NOTE: Record<string, string> = {
   missing: "Atlas could not find your .claude.json, so the project list and per-project MCP servers may be incomplete.",
@@ -86,35 +76,37 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
   );
 }
 
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="mt-8">
+      <div className="mb-3 flex items-baseline gap-2">
+        <h2 className="text-lead font-semibold text-ink">{title}</h2>
+        {hint && <span className="text-body text-ink-2">{hint}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function CardGrid({ items, onOpen, onDelete }: { items: SetupItem[]; onOpen: (id: string) => void; onDelete: (item: SetupItem) => void }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 min-[1000px]:grid-cols-2 min-[1000px]:[&>:last-child:nth-child(odd)]:col-span-2">
+      {items.map((i) => (
+        <ItemCard key={i.id} item={i} onOpen={onOpen} onDelete={onDelete} />
+      ))}
+    </div>
+  );
+}
+
 function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot; includeWorktrees: boolean; loads: number; error: string | null }) {
   const { info } = useAtlas();
-  const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS, showWorktrees: includeWorktrees });
-  const [folded, setFolded] = useState<Set<ItemKind>>(() => new Set(FOLDED));
+  const [tile, setTile] = useState<TileId | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const search = useRef<HTMLInputElement>(null);
-  const list = useRef<HTMLDivElement>(null);
+  const [pendingDelete, setPendingDelete] = useState<SetupItem | null>(null);
+  const [creating, setCreating] = useState<CreateKind | null>(null);
+  const top = useRef<HTMLDivElement>(null);
+  const savedScroll = useRef(0);
   const mac = info.platform === "macos";
-
-  const patch = useCallback((p: Partial<Filters>) => {
-    setFilters((f) => ({ ...f, ...p }));
-    if (p.showWorktrees !== undefined) setIncludeWorktrees(p.showWorktrees);
-  }, []);
-
-  // Ctrl/Cmd+F goes to the search box instead of the (useless here) browser find.
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if ((mac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        search.current?.focus();
-        search.current?.select();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [mac]);
-
-  const query = useDeferredValue(filters.query);
-  const effective = useMemo(() => ({ ...filters, query }), [filters, query]);
 
   const missingIds = useMemo(() => new Set(snap.projects.filter((p) => !p.exists).map((p) => p.id)), [snap.projects]);
   const missingProjects = useMemo(() => snap.projects.filter((p) => !p.exists), [snap.projects]);
@@ -125,46 +117,57 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
     return { live, gone };
   }, [snap.items, missingIds]);
 
-  const visible = useMemo(() => visibleItems(live, effective), [live, effective]);
-  const kindCounts = useMemo(() => countByKind(visible), [visible]);
-  const scopeCounts = useMemo(() => countByScope(visible), [visible]);
-  const shown = useMemo(() => applyKind(visible, filters.kind), [visible, filters.kind]);
-  const groups = useMemo(() => groupItems(shown), [shown]);
+  // What the tiles count: what the page shows by default (no backups, no worktree copies).
+  const counted = useMemo(() => live.filter((i) => !i.backup && !i.worktree), [live]);
+  const counts = useMemo(() => countByKind(counted), [counted]);
+  const moreCount = useMemo(() => MORE_KINDS.reduce((n, k) => n + (counts.get(k) ?? 0), 0), [counts]);
+  const recent = useMemo(() => recentlyChanged(counted), [counted]);
+  const look = useMemo(() => worthALook(counted), [counted]);
   const byId = useMemo(() => new Map(snap.items.map((i) => [i.id, i])), [snap.items]);
   const selected = selectedId ? (byId.get(selectedId) ?? null) : null;
+  const tileItems = useMemo(() => (tile ? itemsForTile(live, tile) : []), [live, tile]);
 
-  const forceOpen = query.trim() !== "" || filters.kind !== null;
-  const toggle = (k: ItemKind) =>
-    setFolded((s) => {
-      const n = new Set(s);
-      if (!n.delete(k)) n.add(k);
-      return n;
+  const scroller = () => top.current?.closest("main") ?? null;
+  const openTile = useCallback((id: TileId) => {
+    savedScroll.current = scroller()?.scrollTop ?? 0;
+    setTile(id);
+    scroller()?.scrollTo({ top: 0 });
+  }, []);
+  const closeTile = useCallback(() => {
+    const id = tile;
+    setTile(null);
+    requestAnimationFrame(() => {
+      scroller()?.scrollTo({ top: savedScroll.current });
+      if (id) document.querySelector<HTMLElement>(`[data-tile="${id}"]`)?.focus({ preventScroll: true });
     });
-  const clearAll = () => patch({ ...DEFAULT_FILTERS, showWorktrees: filters.showWorktrees });
+  }, [tile]);
 
-  // Up/Down walk the cards in reading order.
-  const onListKey = (e: KeyboardEvent) => {
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    const cards = Array.from(list.current?.querySelectorAll<HTMLElement>("[data-item-card]") ?? []);
-    const at = cards.indexOf(document.activeElement as HTMLElement);
-    if (at < 0) return;
-    e.preventDefault();
-    cards[Math.max(0, Math.min(cards.length - 1, at + (e.key === "ArrowDown" ? 1 : -1)))]?.focus();
-  };
-
-  const nothing = snap.items.length === 0;
+  const noFolder = !snap.root.dirExists;
   const jsonNote = CLAUDE_JSON_NOTE[snap.root.claudeJsonState];
 
   return (
-    <>
+    <div ref={top} className="flex flex-1 flex-col">
       {error && (
         <p role="alert" className="mb-4 flex items-start gap-2 rounded-card bg-warning-tint px-4 py-3 text-body text-warning">
           <Info size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
           Atlas could not refresh just now, so this is the last scan. {error}
         </p>
       )}
-      {!snap.root.dirExists || nothing ? (
+      {noFolder ? (
         <NoSetup dir={snap.root.dir} />
+      ) : tile ? (
+        <CollectionView
+          key={tile}
+          tile={tile}
+          items={tileItems}
+          snap={snap}
+          includeWorktrees={includeWorktrees}
+          mac={mac}
+          onBack={closeTile}
+          onOpenItem={setSelectedId}
+          onDelete={setPendingDelete}
+          onCreate={setCreating}
+        />
       ) : (
         <>
           {jsonNote && (
@@ -173,49 +176,45 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
               {jsonNote}
             </p>
           )}
-          <Summary
-            snapshot={snap}
-            total={visible.length}
-            kindCounts={kindCounts}
-            scopeCounts={scopeCounts}
-            activeKind={filters.kind}
-            onKind={(kind) => patch({ kind })}
-            live={true}
-          />
-          <Toolbar
-            filters={filters}
-            onChange={patch}
-            projects={snap.projects}
-            hidden={snap.hidden}
-            searchRef={search}
-            shortcut={mac ? "Cmd F" : "Ctrl F"}
-            shown={shown.length}
-            total={visible.length}
-          />
-          <div ref={list} onKeyDown={onListKey} className="flex flex-1 flex-col">
-            {groups.length === 0 ? (
-              <NoMatches onClear={clearAll} />
-            ) : (
-              groups.map((g) => (
-                <GroupSection
-                  key={g.meta.kind}
-                  group={g}
-                  open={forceOpen || !folded.has(g.meta.kind)}
-                  onToggle={() => toggle(g.meta.kind)}
-                  onOpenItem={setSelectedId}
-                />
-              ))
-            )}
-            {filters.kind === null && query.trim() === "" && filters.scope !== "global" && (
-              <MissingProjects projects={missingProjects} items={gone} onOpen={setSelectedId} />
-            )}
+          <TopSlot items={counted} loads={loads} onCreate={setCreating} onOpen={setSelectedId} />
+          <TypeTiles counts={counts} moreCount={moreCount} onOpen={openTile} />
+          {recent.length > 0 && (
+            <Section title="Recently changed" hint="The newest edits across everything">
+              <CardGrid items={recent} onOpen={setSelectedId} onDelete={setPendingDelete} />
+            </Section>
+          )}
+          {look.length > 0 && (
+            <Section title="Worth a look" hint="Notes and clashes Atlas noticed">
+              <CardGrid items={look} onOpen={setSelectedId} onDelete={setPendingDelete} />
+            </Section>
+          )}
+          <div className="mt-8">
+            <MissingProjects projects={missingProjects} items={gone} onOpen={setSelectedId} />
           </div>
         </>
       )}
       {selected && (
-        <DetailSheet item={selected} all={byId} loads={loads} onClose={() => setSelectedId(null)} onOpen={setSelectedId} />
+        <DetailSheet
+          item={selected}
+          all={byId}
+          loads={loads}
+          onClose={() => setSelectedId(null)}
+          onOpen={setSelectedId}
+          onDelete={setPendingDelete}
+        />
       )}
-    </>
+      {pendingDelete && (
+        <ConfirmDelete
+          item={pendingDelete}
+          onCancel={() => setPendingDelete(null)}
+          onDone={() => {
+            if (selectedId === pendingDelete.id) setSelectedId(null);
+            setPendingDelete(null);
+          }}
+        />
+      )}
+      {creating && <CreateFlow kind={creating} onClose={() => setCreating(null)} />}
+    </div>
   );
 }
 
@@ -227,7 +226,7 @@ export function Setup() {
     <>
       <PageHeader
         title="Setup"
-        subtitle="Everything Claude has to hand: your skills, agents, tools and notes. Have a look around. This page only reads, so nothing can break."
+        subtitle="Everything Claude has to hand: your skills, agents, tools and notes. Open anything to read it or change it. Atlas makes a backup before every change."
       />
       {st.snapshot ? (
         <Loaded snap={st.snapshot} includeWorktrees={st.includeWorktrees} loads={st.loads} error={st.status === "ready" ? st.error : null} />

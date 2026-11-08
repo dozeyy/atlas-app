@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { WarningCircle } from "@phosphor-icons/react";
 import { NAV, Sidebar } from "./components/Sidebar";
+import { ToastHost } from "./components/Toasts";
 import { useAtlas } from "./state/AtlasProvider";
 import { Dashboard } from "./pages/Dashboard";
 import { History, Sessions, Wrapped } from "./pages/Placeholders";
@@ -77,6 +78,7 @@ export function App() {
           <Page />
         </div>
       </main>
+      <ToastHost />
     </div>
   );
 }

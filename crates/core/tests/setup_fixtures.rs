@@ -704,6 +704,22 @@ fn the_wire_format_matches_the_front_end_key_list() {
     }
     assert!(masked);
 
+    // The replies of the write path (the front end names the same keys).
+    {
+        use atlas_core::setup_write as sw;
+        let it = find(&d, ItemKind::Skill, ScopeKind::User, "lf-skill");
+        keys(&mut got, "rawEdit", &serde_json::to_value(d.read_raw(&it.id, true).unwrap()).unwrap());
+        let bad = sw::validate(ItemKind::Settings, "json", None, false, "{");
+        keys(&mut got, "problem", &serde_json::to_value(&bad[0]).unwrap());
+        let backups = tempfile::tempdir().unwrap();
+        let out = sw::apply_delete(&d.delete_plan(&it.id).unwrap(), backups.path()).unwrap();
+        keys(&mut got, "deleteOutcome", &serde_json::to_value(&out).unwrap());
+        keys(&mut got, "undoOutcome", &serde_json::to_value(sw::restore(backups.path(), &out.backup_id).unwrap()).unwrap());
+        let (root, cj) = (fx.home.join(".claude"), fx.inputs().root.claude_json);
+        let draft = sw::create_draft("skill", "wire-check", None, &sw::CreateCtx { root: &root, claude_json: &cj }).unwrap();
+        keys(&mut got, "draft", &serde_json::to_value(&draft).unwrap());
+    }
+
     let out: BTreeMap<&str, Vec<String>> = got.iter().map(|(k, v)| (*k, v.iter().cloned().collect())).collect();
     let path = fixtures().join("setup-wire-keys.json");
     if std::env::var_os("ATLAS_WRITE_WIRE").is_some() {

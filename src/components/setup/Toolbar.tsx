@@ -25,6 +25,7 @@ export function Toolbar({
   shortcut,
   shown,
   total,
+  placeholder = "Search your setup",
 }: {
   filters: Filters;
   onChange: (f: Partial<Filters>) => void;
@@ -34,6 +35,7 @@ export function Toolbar({
   shortcut: string;
   shown: number;
   total: number;
+  placeholder?: string;
 }) {
   const choices = projects.filter((p) => p.exists && p.itemCount > 0 && !p.isWorktree).sort((a, b) => a.name.localeCompare(b.name));
   return (
@@ -52,8 +54,8 @@ export function Toolbar({
                 onChange({ query: "" });
               }
             }}
-            placeholder="Search your setup"
-            aria-label="Search your setup"
+            placeholder={placeholder}
+            aria-label={placeholder}
             spellCheck={false}
             className="selectable h-9 w-full rounded-control border border-line-strong bg-surface pl-9 pr-16 text-body text-ink placeholder:text-ink-2 [&::-webkit-search-cancel-button]:hidden"
           />
@@ -111,7 +113,6 @@ export function Toolbar({
           {shown === total
             ? `${total.toLocaleString()} ${total === 1 ? "item" : "items"}`
             : `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} items`}
-          {filters.kind ? " (one type)" : ""}
         </p>
       </div>
     </div>

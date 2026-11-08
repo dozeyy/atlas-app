@@ -5,6 +5,7 @@
 //! it returns. The page gets a `SetupSnapshot` (no file bodies); a body is
 //! fetched one at a time with `Discovery::read_source`.
 
+pub mod capability;
 pub mod claude_json;
 pub mod files;
 pub mod frontmatter;
@@ -251,12 +252,19 @@ pub fn discover(inputs: &DiscoveryInputs, cache: &mut Cache) -> Discovery {
     shadow::apply(&mut b.items);
 
     let snapshot = b.finish(cj_state, started);
-    Discovery {
+    let mut d = Discovery {
         snapshot,
         sources: std::mem::take(&mut b.sources),
         root_dir: root.dir.clone(),
         watched_projects: std::mem::take(&mut b.watched_projects),
+    };
+    for item in &mut d.snapshot.items {
+        let cap = capability::capability(item, d.sources.get(&item.id));
+        item.editable = cap.editable;
+        item.deletable = cap.deletable;
+        item.locked = cap.locked;
     }
+    d
 }
 
 impl Build<'_> {

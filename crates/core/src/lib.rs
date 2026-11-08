@@ -15,3 +15,4 @@ pub mod redact;
 pub mod sandbox;
 pub mod settings;
 pub mod setup;
+pub mod setup_write;

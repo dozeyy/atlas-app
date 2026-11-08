@@ -6,11 +6,13 @@ export function Button({
   variant = "secondary",
   className = "",
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" }) {
   const look =
     variant === "primary"
       ? "bg-accent-solid text-on-accent hover:brightness-110"
-      : "border border-line-strong bg-surface text-ink hover:bg-raised";
+      : variant === "danger"
+        ? "bg-danger text-on-accent hover:brightness-110"
+        : "border border-line-strong bg-surface text-ink hover:bg-raised";
   return (
     <button
       type="button"

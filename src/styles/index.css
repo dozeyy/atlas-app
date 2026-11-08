@@ -147,6 +147,41 @@ main[tabindex="-1"]:focus-visible {
   animation: sheet-in var(--dur-slow) var(--ease-out) both;
 }
 
+/* Dialogs rise in place; the checklist's finish gives one small, warm pop. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--travel)) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.pop-enter {
+  animation: pop-in var(--dur-slow) var(--ease-out) both;
+}
+
+@keyframes celebrate {
+  0% {
+    transform: scale(0.6);
+    box-shadow: 0 0 0 0 var(--accent-tint);
+  }
+  55% {
+    transform: scale(1.12);
+    box-shadow: 0 0 0 10px transparent;
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.celebrate {
+  animation: celebrate 700ms var(--ease-out) both;
+}
+
 .press {
   transition:
     transform var(--dur-fast) var(--ease-out),
@@ -165,6 +200,8 @@ main[tabindex="-1"]:focus-visible {
   }
   .page-enter,
   .sheet-enter,
+  .pop-enter,
+  .celebrate,
   .fade-in {
     animation-duration: 1ms;
   }

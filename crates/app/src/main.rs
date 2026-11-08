@@ -89,6 +89,14 @@ fn main() {
             setup_service::setup_snapshot,
             setup_service::setup_read_source,
             setup_service::setup_reveal,
+            setup_service::setup_item_raw,
+            setup_service::setup_validate,
+            setup_service::setup_save,
+            setup_service::setup_delete,
+            setup_service::setup_undo,
+            setup_service::setup_create_draft,
+            setup_service::setup_create,
+            setup_service::setup_validate_draft,
         ])
         .setup(|app| {
             let state = app.state::<Arc<AppState>>().inner().clone();

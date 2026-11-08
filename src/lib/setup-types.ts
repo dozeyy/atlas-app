@@ -104,6 +104,12 @@ export interface SetupItem {
   realProjectFile: boolean;
   hasSecrets: boolean;
   worktree: boolean;
+  /** Atlas can open this in the editor and save it. */
+  editable: boolean;
+  /** Atlas can delete it (backup first, Undo after). */
+  deletable: boolean;
+  /** Why Atlas will not change it; shown instead of the delete control. */
+  locked: string | null;
 }
 
 export interface SetupProject {
@@ -161,4 +167,59 @@ export interface SourceView {
   size: number;
   lineEnding: "LF" | "CRLF";
   bom: boolean;
+}
+
+// ---- changing things (setup_write.rs in core, setup_service.rs in the app) ----
+
+/** The text of one item for the editor. Text with secrets stays empty until asked for. */
+export interface RawEdit {
+  id: string;
+  text: string;
+  language: string;
+  /** What is on disk now; sent back on save so a change made meanwhile is noticed. */
+  stamp: string;
+  lineEnding: "LF" | "CRLF";
+  bom: boolean;
+  path: string;
+  hasSecrets: boolean;
+  needsReveal: boolean;
+  /** For skills: the folder name the frontmatter name must equal. */
+  folderName: string | null;
+}
+
+export interface Problem {
+  message: string;
+  /** 1-based, when known. */
+  line: number | null;
+}
+
+export interface SaveReply {
+  status: "saved" | "conflict";
+  stamp: string | null;
+  backupId: string | null;
+}
+
+export interface DeleteOutcome {
+  backupId: string;
+  name: string;
+  kind: string;
+  note: string | null;
+}
+
+export interface UndoOutcome {
+  name: string;
+  kind: string;
+}
+
+export type CreateKind = "instructions" | "skill" | "agent" | "command" | "rule" | "outputStyle" | "hook" | "mcpServer";
+
+export interface Draft {
+  kind: string;
+  name: string;
+  title: string;
+  path: string;
+  language: string;
+  text: string;
+  folderName: string | null;
+  whereNote: string;
 }

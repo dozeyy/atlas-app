@@ -1,8 +1,13 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, Copy, Eye, EyeSlash, Lock, WarningCircle, X } from "@phosphor-icons/react";
+import { Check, Copy, Eye, EyeSlash, Lock, PencilSimple, Trash, WarningCircle, X } from "@phosphor-icons/react";
+import { Button } from "../controls";
+import { Dialog } from "../Dialog";
+import { ItemEditor } from "./ItemEditor";
+import { Preview } from "./Preview";
 import { getBackend } from "../../lib/ipc";
+import { splitFrontmatter } from "../../lib/markdown";
 import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import type { MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
 import { Chip, ConflictChip, copyText, formatDate, formatSize, KindTile, ScopeChip, StateChip, TagChip } from "./parts";
@@ -156,6 +161,39 @@ function CodeView({ src }: { src: SourceView }) {
   return <div ref={host} className="h-[min(420px,50vh)] overflow-hidden rounded-card border border-line bg-surface" />;
 }
 
+const FIELD_LABEL: Record<string, string> = {
+  name: "Name",
+  description: "Description",
+  model: "Model",
+  tools: "Tools",
+  "allowed-tools": "Allowed tools",
+  color: "Color",
+};
+
+/** The header fields (model and tools for agents) and the text as it reads. */
+function MarkdownSections({ text }: { text: string }) {
+  const { fields, body } = useMemo(() => splitFrontmatter(text), [text]);
+  return (
+    <>
+      {fields.length > 0 && (
+        <Section title="Settings in the file's header">
+          <dl className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2">
+            {fields.map((f) => (
+              <div key={f.key} className="contents">
+                <dt className="text-body text-ink-2">{FIELD_LABEL[f.key] ?? f.key}</dt>
+                <dd className="selectable min-w-0 break-words text-body text-ink">{f.value || "-"}</dd>
+              </div>
+            ))}
+          </dl>
+        </Section>
+      )}
+      <Section title="Preview">
+        <Preview body={body} />
+      </Section>
+    </>
+  );
+}
+
 function SourceSection({ item, loads }: { item: SetupItem; loads: number }) {
   const [src, setSrc] = useState<SourceView | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -186,7 +224,8 @@ function SourceSection({ item, loads }: { item: SetupItem; loads: number }) {
   return (
     <>
       {src && src.maskedRanges.length > 0 && <HiddenValues itemId={item.id} ranges={src.maskedRanges} />}
-      <Section title="Contents">
+      {src && src.language === "markdown" && <MarkdownSections text={src.text} />}
+      <Section title={src?.language === "markdown" ? "Raw text" : "Contents"}>
         {noFile ? (
           <p className="text-body text-ink-2">This lives in your claude.ai account, so there is no file on this computer to show.</p>
         ) : err ? (
@@ -216,16 +255,34 @@ export function DetailSheet({
   loads,
   onClose,
   onOpen,
+  onDelete,
 }: {
   item: SetupItem;
   all: Map<string, SetupItem>;
   loads: number;
   onClose: () => void;
   onOpen: (id: string) => void;
+  onDelete: (item: SetupItem) => void;
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
   const meta = KIND_BY_ID[item.kind];
+  const [editing, setEditing] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [discard, setDiscard] = useState<"close" | "stop" | null>(null);
+
+  // A different item always opens on its details, never inside the last one's editor.
+  useEffect(() => {
+    setEditing(false);
+    setDirty(false);
+  }, [item.id]);
+
+  const leaveEdit = () => {
+    setEditing(false);
+    setDirty(false);
+  };
+  const tryClose = () => (editing && dirty ? setDiscard("close") : onClose());
+  const tryStop = () => (dirty ? setDiscard("stop") : leaveEdit());
 
   // Focus moves in, and back to the card that opened it when the sheet closes.
   useEffect(() => {
@@ -237,7 +294,7 @@ export function DetailSheet({
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       e.stopPropagation();
-      onClose();
+      tryClose();
       return;
     }
     if (e.key !== "Tab" || !panel.current) return;
@@ -271,7 +328,7 @@ export function DetailSheet({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div aria-hidden="true" onClick={onClose} className="fade-in absolute inset-0 bg-[var(--scrim)]" />
+      <div aria-hidden="true" onClick={tryClose} className="fade-in absolute inset-0 bg-[var(--scrim)]" />
       <div
         ref={panel}
         role="dialog"
@@ -298,13 +355,41 @@ export function DetailSheet({
           <button
             type="button"
             aria-label="Close"
-            onClick={onClose}
+            onClick={tryClose}
             className="press flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control text-ink-2 hover:bg-raised hover:text-ink"
           >
             <X size={18} aria-hidden="true" />
           </button>
         </header>
 
+        {(item.editable || item.deletable || item.locked) && (
+          <div className="flex flex-wrap items-center gap-2 px-6 pt-4">
+            {item.editable && !editing && (
+              <Button variant="primary" onClick={() => setEditing(true)}>
+                <PencilSimple size={14} weight="bold" aria-hidden="true" />
+                Edit
+              </Button>
+            )}
+            {item.deletable && !editing && (
+              <Button onClick={() => onDelete(item)} className="hover:text-danger">
+                <Trash size={14} aria-hidden="true" />
+                Delete
+              </Button>
+            )}
+            {item.locked && (
+              <p role="note" className="flex items-center gap-2 text-body text-ink-2">
+                <Lock size={14} aria-hidden="true" className="shrink-0" />
+                {item.locked}
+              </p>
+            )}
+            {editing && <p className="text-body text-ink-2">Editing. Nothing changes until you press Save.</p>}
+          </div>
+        )}
+
+        {editing ? (
+          <ItemEditor item={item} onCancel={tryStop} onSaved={leaveEdit} onDirtyChange={setDirty} />
+        ) : (
+          <>
         {item.description && <p className="selectable px-6 py-4 text-lead text-ink">{item.description}</p>}
 
         {item.warnings.length > 0 && (
@@ -401,8 +486,37 @@ export function DetailSheet({
         )}
 
         <SourceSection item={item} loads={loads} />
+          </>
+        )}
         <div className="h-6 shrink-0" />
       </div>
+      {discard && (
+        <Dialog
+          alert
+          title="Discard your changes?"
+          onClose={() => setDiscard(null)}
+          footer={
+            <>
+              <Button autoFocus onClick={() => setDiscard(null)}>
+                Keep editing
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  const closing = discard === "close";
+                  setDiscard(null);
+                  leaveEdit();
+                  if (closing) onClose();
+                }}
+              >
+                Discard
+              </Button>
+            </>
+          }
+        >
+          <p className="text-body text-ink">You have edits to {item.name} that are not saved. If you leave now they are lost.</p>
+        </Dialog>
+      )}
     </div>,
     document.body,
   );

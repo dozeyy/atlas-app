@@ -1,0 +1,175 @@
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { CheckCircle, WarningCircle } from "@phosphor-icons/react";
+import { Button } from "../controls";
+import { errorText } from "../../lib/setup-actions";
+import type { Editor } from "../../lib/codemirror";
+import type { Problem } from "../../lib/setup-types";
+
+/**
+ * The editing surface: CodeMirror, the problems found in the text (checked by
+ * Rust as you type), and Save / Cancel. Save stays off while anything is wrong.
+ */
+export function TextEditor({
+  initial,
+  language,
+  label,
+  validate,
+  onSubmit,
+  submitLabel = "Save",
+  requireChange = true,
+  onCancel,
+  onDirtyChange,
+  hint,
+}: {
+  initial: string;
+  language: string;
+  label: string;
+  validate: (text: string) => Promise<Problem[]>;
+  /** Throw (with a readable message) when it could not be done. */
+  onSubmit: (text: string) => Promise<void>;
+  submitLabel?: string;
+  /** Save needs a change (editing), or not (a new item starts from a template). */
+  requireChange?: boolean;
+  onCancel: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  hint?: ReactNode;
+}) {
+  const host = useRef<HTMLDivElement>(null);
+  const editor = useRef<Editor | null>(null);
+  const [text, setText] = useState(initial);
+  const [problems, setProblems] = useState<Problem[]>([]);
+  const [checked, setChecked] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const textRef = useRef(initial);
+  const seq = useRef(0);
+  const validateRef = useRef(validate);
+  validateRef.current = validate;
+  const submitRef = useRef<() => void>(() => {});
+
+  const dirty = text !== initial;
+  const canSave = !saving && problems.length === 0 && (dirty || !requireChange);
+  const canSaveRef = useRef(canSave);
+  canSaveRef.current = canSave;
+
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+
+  // Mount the editor once; it reports edits through refs so it never remounts.
+  useEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    let dead = false;
+    void import("../../lib/codemirror").then(async (m) => {
+      const ed = await m.mountEditor(el, textRef.current, language, {
+        label,
+        onChange: (t) => {
+          textRef.current = t;
+          setText(t);
+        },
+        onSave: () => submitRef.current(),
+      });
+      if (dead) ed.destroy();
+      else {
+        editor.current = ed;
+        ed.focus();
+      }
+    });
+    return () => {
+      dead = true;
+      editor.current?.destroy();
+      editor.current = null;
+    };
+  }, [language, label]);
+
+  // Check the text shortly after typing stops (and once at the start).
+  useEffect(() => {
+    const mine = ++seq.current;
+    const t = window.setTimeout(
+      () => {
+        validateRef
+          .current(text)
+          .then((p) => {
+            if (mine !== seq.current) return;
+            setProblems(p);
+            setChecked(true);
+          })
+          .catch((e) => {
+            if (mine !== seq.current) return;
+            setProblems([{ message: errorText(e, "Atlas could not check this text."), line: null }]);
+            setChecked(true);
+          });
+      },
+      checked ? 180 : 0,
+    );
+    return () => window.clearTimeout(t);
+    // `checked` only decides the first delay.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+
+  useEffect(() => editor.current?.markLine(problems[0]?.line ?? null), [problems]);
+
+  const submit = async () => {
+    if (!canSaveRef.current) return;
+    setSaving(true);
+    setError(null);
+    try {
+      // Last look at exactly what will be written.
+      const now = textRef.current;
+      const p = await validateRef.current(now);
+      if (p.length) {
+        setProblems(p);
+        return;
+      }
+      await onSubmit(now);
+    } catch (e) {
+      setError(errorText(e, "Atlas could not save that, so nothing was changed."));
+    } finally {
+      setSaving(false);
+    }
+  };
+  submitRef.current = () => void submit();
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div ref={host} data-editor className="h-[min(440px,52vh)] min-h-[260px] overflow-hidden rounded-card border border-line-strong bg-surface" />
+
+      <div aria-live="polite" className="min-h-6">
+        {problems.length > 0 ? (
+          <ul role="alert" className="space-y-1">
+            {problems.map((p, i) => (
+              <li key={`${i}-${p.message}`} className="flex items-start gap-2 text-body text-danger">
+                <WarningCircle size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
+                <span className="selectable">
+                  {p.line ? `Line ${p.line}: ` : ""}
+                  {p.message}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : checked ? (
+          <p className="flex items-center gap-2 text-body text-ink-2">
+            <CheckCircle size={16} weight="fill" aria-hidden="true" className="text-success" />
+            Looks good.
+          </p>
+        ) : null}
+        {error && (
+          <p role="alert" className="mt-1 flex items-start gap-2 rounded-control bg-danger-tint px-3 py-2 text-body text-danger">
+            {error}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {hint && <p className="mr-auto text-caption text-ink-2">{hint}</p>}
+        <Button onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+        <Button variant="primary" onClick={() => void submit()} disabled={!canSave} title={`${submitLabel} (Ctrl S)`}>
+          {saving ? "Saving..." : submitLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
