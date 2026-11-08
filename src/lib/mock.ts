@@ -8,6 +8,7 @@ import { MockSetupWorld, mockSetupReveal, mockSetupSource } from "./setup-mock";
 import { MockUsage } from "./mockUsage";
 import { MockSearch } from "./mockSearch";
 import { MockHistory } from "./mockHistory";
+import { MockNow } from "./mockNow";
 
 const KEY = "atlas.mock.settings";
 
@@ -189,6 +190,10 @@ export class MockBackend {
     ...(await this.history.settingsOverview()),
     keepVersions: this.info.settings.historyKeepVersions,
   });
+  // ---- Now: the stand-in lives in mockNow.ts ----
+  readonly now = new MockNow();
+  nowSnapshot: Backend["nowSnapshot"] = () => this.now.nowSnapshot();
+  onNowUpdate: Backend["onNowUpdate"] = (cb) => this.now.onNowUpdate(cb);
 
   async onInfo(cb: (i: AppInfo) => void): Promise<() => void> {
     this.listeners.add(cb);

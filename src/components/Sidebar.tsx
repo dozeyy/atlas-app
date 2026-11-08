@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import {
+  Binoculars,
   ChatsCircle,
   ClockCounterClockwise,
   GearSix,
@@ -17,6 +18,7 @@ import type { View } from "../lib/types";
 
 export const NAV: { view: View; label: string; icon: ComponentType<IconProps>; motion: Motion }[] = [
   { view: "dashboard", label: "Dashboard", icon: SquaresFour, motion: "pop" },
+  { view: "now", label: "Now", icon: Binoculars, motion: "tilt" },
   { view: "sessions", label: "Sessions", icon: ChatsCircle, motion: "bob" },
   { view: "setup", label: "Toolkit", icon: Wrench, motion: "wiggle" },
   { view: "history", label: "History", icon: ClockCounterClockwise, motion: "spin" },

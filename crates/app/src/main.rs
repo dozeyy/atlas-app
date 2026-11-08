@@ -4,6 +4,7 @@
 mod commands;
 mod history;
 mod intro;
+mod now;
 mod search;
 mod setup_service;
 mod state;
@@ -101,6 +102,7 @@ fn main() {
             history::history_save_copy,
             history::history_open_folder,
             history::settings_overview,
+            now::now_snapshot,
             search::search_chats,
             search::search_status,
             intro::splash_ready,

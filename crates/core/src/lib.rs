@@ -12,6 +12,7 @@ pub mod fsutil;
 pub mod history;
 pub mod launch;
 pub mod layout;
+pub mod now;
 pub mod paths;
 pub mod readout;
 pub mod redact;
