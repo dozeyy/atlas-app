@@ -103,8 +103,8 @@ describe("session row", () => {
     expect(title.className).toMatch(/font-bold/);
     const meta = btn.querySelector(".truncate.text-caption") as HTMLElement;
     expect(meta).not.toBeNull();
-    // Order: when, spend, tokens, helpers, project.
-    expect(meta.textContent).toMatch(/^.+(\d\d:\d\d)\u00b7\$0\.56, estimated\u00b7117k tokens\u00b72 helpers\u00b7pixel-garden$/);
+    // Will's order (2026-11-08): project, spend, tokens, helpers, when.
+    expect(meta.textContent).toMatch(/^pixel-garden\u00b7\$0\.56, estimated\u00b7117k tokens\u00b72 helpers\u00b7.+\d\d:\d\d$/);
     // The helper count is colored text and nothing else.
     expect(screen.getByText("2 helpers").className).toMatch(/text-accent-text/);
   });

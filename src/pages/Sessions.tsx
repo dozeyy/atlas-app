@@ -152,12 +152,12 @@ export function Sessions() {
       {selected && <SessionDetailView id={selected} onBack={() => setSelected(null)} />}
 
       <div hidden={selected !== null}>
-        <div className="mb-4 flex items-center gap-2">
+        <div className="toolbar-tall mb-4 flex items-center gap-2">
           <SearchField value={text} onChange={setText} label="Search chats" placeholder="Search titles, projects and messages" />
           <span aria-live="polite" className="min-w-[4.5rem] shrink-0 whitespace-nowrap px-1 text-caption tabular-nums text-ink-2">
             {count}
           </span>
-          <OptionsMenu label="Filter" icon={<FilterLines size={16} />} count={changed} onReset={resetFilters}>
+          <OptionsMenu label="Filter" icon={<FilterLines size={18} />} count={changed} onReset={resetFilters}>
             <OptionField label="Project">
               <SelectField
                 wide
@@ -186,7 +186,7 @@ export function Sessions() {
               <SelectField wide label="Time span" value={span} onChange={setSpan} options={SPANS.map((s) => ({ value: s.value, label: s.label }))} />
             </OptionField>
           </OptionsMenu>
-          <OptionsMenu label="Sort" status={SORTS[sortKey].label} icon={<ArrowsDownUp size={16} aria-hidden="true" />} width={200}>
+          <OptionsMenu label="Sort" status={SORTS[sortKey].label} icon={<ArrowsDownUp size={18} aria-hidden="true" />} width={200}>
             {(close) => <ChoiceList label="Sort order" value={sortKey} choices={SORT_CHOICES} onChange={setSortKey} onPick={close} />}
           </OptionsMenu>
         </div>
