@@ -183,6 +183,11 @@ pub struct SessionQuery {
     pub models: Vec<String>,
     #[serde(default)]
     pub text: Option<String>,
+    /// Sessions to list in addition to the ones `text` finds: the chats whose messages matched
+    /// a search. With `text` empty, only these. Every other filter still applies. Capped at
+    /// `ALSO_IDS_MAX`.
+    #[serde(default)]
+    pub also_ids: Vec<String>,
     #[serde(default)]
     pub min_cost_usd: Option<f64>,
     /// Sessions whose transcript files are gone stay listed unless the caller says false
@@ -211,6 +216,7 @@ impl Default for SessionQuery {
             projects: Vec::new(),
             models: Vec::new(),
             text: None,
+            also_ids: Vec::new(),
             min_cost_usd: None,
             include_missing: true,
             sort: String::new(),
@@ -888,6 +894,9 @@ fn session_rows_for(conn: &Connection, ctx: &QueryCtx, ids: &[String]) -> rusqli
     Ok(ids.iter().filter_map(|i| by_id.remove(i)).collect())
 }
 
+/// How many `also_ids` one query takes (SQLite binds each id; the UI sends at most ~200).
+const ALSO_IDS_MAX: usize = 400;
+
 fn like_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
 }
@@ -925,12 +934,23 @@ pub fn sessions_list(conn: &Connection, ctx: &QueryCtx, q: &SessionQuery) -> rus
         ));
         vals.extend(q.models.iter().map(|p| Value::Text(p.clone())));
     }
+    // The title / project text match, OR a session a message search found. One clause, so the
+    // filters above and the count below treat both kinds of match alike.
+    let mut found_by: Vec<String> = Vec::new();
     if let Some(t) = q.text.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
         let n = vals.len() + 1;
-        wh.push(format!(
+        found_by.push(format!(
             "(lower(COALESCE(s.title,'')) LIKE ?{n} ESCAPE '\\' OR lower(COALESCE(s.prompt_summary,'')) LIKE ?{n} ESCAPE '\\' OR lower(COALESCE(s.project_path,'')) LIKE ?{n} ESCAPE '\\')"
         ));
         vals.push(Value::Text(format!("%{}%", like_escape(&t.to_lowercase()))));
+    }
+    if !q.also_ids.is_empty() {
+        let ids = &q.also_ids[..q.also_ids.len().min(ALSO_IDS_MAX)];
+        found_by.push(format!("s.session_id IN ({})", placeholders(ids.len(), vals.len() + 1)));
+        vals.extend(ids.iter().map(|i| Value::Text(i.clone())));
+    }
+    if !found_by.is_empty() {
+        wh.push(format!("({})", found_by.join(" OR ")));
     }
     if let Some(c) = q.min_cost_usd {
         wh.push(format!("COALESCE(t.cost,0) >= ?{}", vals.len() + 1));
