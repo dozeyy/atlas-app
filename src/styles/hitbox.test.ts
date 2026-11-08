@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
  * `.press:active > *`) and SVG marks that only GROW from a fixed hit target (`.cell`,
  * `.seg-bar`, `.bar` have a separate `.bar-hit` rect, so the pointer target never moves).
  */
-const files = ["trail.css", "index.css"].map((f) => readFileSync(resolve(__dirname, f), "utf8"));
+const files = ["trail.css", "screens.css", "index.css"].map((f) => readFileSync(resolve(__dirname, f), "utf8"));
 const css = files.join("\n").replace(/\/\*[\s\S]*?\*\//g, "");
 
 const MOVES = /(^|[;\s])(transform|scale|translate|rotate|zoom)\s*:/;

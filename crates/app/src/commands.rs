@@ -86,7 +86,7 @@ pub fn open_data_dir(state: Shared) -> Result<(), String> {
     open_in_file_manager(&dir)
 }
 
-fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
+pub(crate) fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let mut cmd = std::process::Command::new("explorer");
     #[cfg(target_os = "macos")]
@@ -142,6 +142,8 @@ pub fn frontend_ready(app: AppHandle, state: Shared) -> u64 {
     state.usage.sync_in_background(state.inner());
     // Setup reads Will's Claude folder in the background so its page is full when opened.
     crate::setup_service::prefetch(&app);
+    // History keeps its own record of the setup, quietly, once the first index has settled.
+    state.history.start(&app);
     // The page booted with first_paint_ms unset; tell it the number now.
     let _ = app.emit(crate::state::INFO_EVENT, state.info());
     ms

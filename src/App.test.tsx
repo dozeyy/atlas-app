@@ -34,11 +34,11 @@ describe("navigation", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
   });
 
-  it("switches pages on click and shows a designed empty state, not filler", async () => {
+  it("switches pages on click and shows real content, not filler", async () => {
     mount();
     await userEvent.click(screen.getByRole("button", { name: "History" }));
     expect(screen.getByRole("heading", { level: 1, name: "History" })).toBeInTheDocument();
-    expect(screen.getByText("No changes yet")).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Changes" })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/lorem ipsum/i);
     expect(screen.getByRole("button", { name: "History" })).toHaveAttribute("aria-current", "page");
   });

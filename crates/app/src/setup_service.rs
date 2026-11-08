@@ -80,7 +80,7 @@ impl SetupHub {
         Ok(live)
     }
 
-    fn current(&self, app: &AppHandle, state: &AppState) -> Result<Arc<Discovery>, String> {
+    pub(crate) fn current(&self, app: &AppHandle, state: &AppState) -> Result<Arc<Discovery>, String> {
         Ok(self.ensure(app, state)?.current().1)
     }
 }

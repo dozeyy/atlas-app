@@ -7,6 +7,7 @@ import type { CreateKind, DeleteOutcome, Draft, Problem, RawEdit, SaveReply, Set
 import { MockSetupWorld, mockSetupReveal, mockSetupSource } from "./setup-mock";
 import { MockUsage } from "./mockUsage";
 import { MockSearch } from "./mockSearch";
+import { MockHistory } from "./mockHistory";
 
 const KEY = "atlas.mock.settings";
 
@@ -32,6 +33,7 @@ function loadSettings(): Settings {
     sandbox: false,
     launchAnimation: true,
     closeToTray: false,
+    historyKeepVersions: 50,
   };
   try {
     return { ...base, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
@@ -172,6 +174,21 @@ export class MockBackend {
   searchChats: Backend["searchChats"] = (q, limit, offset) => this.search.searchChats(q, limit, offset);
   searchStatus: Backend["searchStatus"] = () => this.search.searchStatus();
   onSearchStatus: Backend["onSearchStatus"] = (cb) => this.search.onSearchStatus(cb);
+
+  // ---- history: the stand-in lives in mockHistory.ts ----
+  readonly history = new MockHistory();
+  historyOverview: Backend["historyOverview"] = () => this.history.historyOverview();
+  historyEvents: Backend["historyEvents"] = (a) => this.history.historyEvents(a);
+  historyItem: Backend["historyItem"] = (k) => this.history.historyItem(k);
+  historyDiff: Backend["historyDiff"] = (a) => this.history.historyDiff(a);
+  historyCopyVersion: Backend["historyCopyVersion"] = (v) => this.history.historyCopyVersion(v);
+  historySaveCopy: Backend["historySaveCopy"] = (v) => this.history.historySaveCopy(v);
+  historyOpenFolder: Backend["historyOpenFolder"] = () => this.history.historyOpenFolder();
+  onHistoryChanged: Backend["onHistoryChanged"] = (cb) => this.history.onHistoryChanged(cb);
+  settingsOverview: Backend["settingsOverview"] = async () => ({
+    ...(await this.history.settingsOverview()),
+    keepVersions: this.info.settings.historyKeepVersions,
+  });
 
   async onInfo(cb: (i: AppInfo) => void): Promise<() => void> {
     this.listeners.add(cb);

@@ -9,6 +9,7 @@
 
 pub mod cache;
 pub mod fsutil;
+pub mod history;
 pub mod launch;
 pub mod layout;
 pub mod paths;
