@@ -36,6 +36,21 @@ export function barPath(x: number, w: number, top: number, base: number, radius:
   return `M${r2(x)},${r2(base)}V${r2(top + r)}Q${r2(x)},${r2(top)} ${r2(x + r)},${r2(top)}H${r2(x + w - r)}Q${r2(x + w)},${r2(top)} ${r2(x + w)},${r2(top + r)}V${r2(base)}Z`;
 }
 
+/** Height of the grey stub an empty bar slot shows. */
+export const ZERO_STUB = 3;
+/** Shortest bar a slot with any usage gets: always taller than an empty slot's stub. */
+export const MIN_BAR = ZERO_STUB + 1;
+
+/**
+ * Top edge of a bar for `v` on a 0..`max` scale drawn from `base` up to `top`. Proportional,
+ * except that any value above zero is lifted to at least MIN_BAR, so a day with real usage
+ * never looks lower than a day with none (1.8M tokens next to a 144M peak is 1 px tall).
+ */
+export function barTop(v: number, max: number, base: number, top: number): number {
+  if (!(v > 0) || !(max > 0)) return base;
+  return Math.min(base - (Math.min(v, max) / max) * (base - top), base - MIN_BAR);
+}
+
 export interface RidgeGeometry {
   pts: Pt[];
   line: string;

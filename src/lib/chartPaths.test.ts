@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  MIN_BAR,
+  ZERO_STUB,
   barPath,
+  barTop,
   heatBand,
   heatCuts,
   heatLayout,
@@ -107,5 +110,29 @@ describe("paths", () => {
   it("barPath keeps a flat bottom on the baseline", () => {
     expect(barPath(10, 8, 20, 100, 6)).toContain("V100Z");
     expect(barPath(10, 8, 99, 100, 6)).toBe("M10,100h8v-1h-8Z");
+  });
+});
+
+describe("barTop", () => {
+  // Will's real 30-day Activity chart, 2026-11-08: a 144M peak on a 200M scale, a 162 px plot.
+  const base = 162;
+  const top = 28;
+  const max = 200e6;
+  const h = (v: number) => base - barTop(v, max, base, top);
+
+  it("a day with usage is never drawn lower than an empty day's stub", () => {
+    // Sat Nov 7 (1.8M) was 1.2 px tall, under the 3 px stub of Thu Nov 5 and Fri Nov 6 (0).
+    expect(h(1.82e6)).toBeGreaterThan(ZERO_STUB);
+    expect(h(69e3)).toBe(MIN_BAR);
+    expect(h(0)).toBe(0);
+  });
+  it("stays proportional above the floor", () => {
+    expect(h(144e6)).toBeCloseTo(0.72 * (base - top), 6);
+    expect(h(56.1e6) / h(21.2e6)).toBeCloseTo(56.1 / 21.2, 6);
+    expect(h(max * 3)).toBe(base - top);
+  });
+  it("an empty scale draws nothing", () => {
+    expect(h(NaN)).toBe(0);
+    expect(base - barTop(5, 0, base, top)).toBe(0);
   });
 });
