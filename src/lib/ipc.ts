@@ -33,10 +33,12 @@ import type {
   CreateKind,
   DeleteOutcome,
   Draft,
+  DuplicateOutcome,
   Problem,
   RawEdit,
   SaveReply,
   SetupSnapshot,
+  SkillFile,
   SourceView,
   UndoOutcome,
 } from "./setup-types";
@@ -49,7 +51,7 @@ import type {
   ItemDetail,
   SettingsOverview,
 } from "./historyTypes";
-import type { NowSnapshot } from "./nowTypes";
+import type { NowFinished, NowSnapshot } from "./nowTypes";
 import type { UpdateInfo, UpdateProgress } from "./updateTypes";
 import { MockBackend } from "./mock";
 
@@ -66,6 +68,7 @@ export const USAGE_PROGRESS_EVENT = "atlas://usage/progress";
 export const USAGE_CHANGED_EVENT = "atlas://usage/changed";
 export const SEARCH_STATUS_EVENT = "atlas://search/status";
 export const NOW_UPDATE_EVENT = "atlas://now/update";
+export const NOW_FINISHED_EVENT = "atlas://now/finished";
 export const UPDATE_PROGRESS_EVENT = "atlas://update/progress";
 
 export type Unlisten = () => void;
@@ -81,6 +84,8 @@ export interface SettingsPatch {
   launchAnimation?: boolean;
   /** Closing the window hides Atlas to the tray instead of quitting. */
   closeToTray?: boolean;
+  /** Tell me (a toast, or a desktop notice when Atlas is behind) when a chat stops. Off by default. */
+  notifyOnFinish?: boolean;
   /** Copies kept per file in History (clamped to 10-200 by the backend). */
   historyKeepVersions?: number;
 }
@@ -138,6 +143,8 @@ export interface Backend {
   // Now: the chats running right now, followed read-only. Pushed as events; the page never polls.
   nowSnapshot(): Promise<NowSnapshot>;
   onNowUpdate(cb: (s: NowSnapshot) => void): Promise<Unlisten>;
+  /** A chat Atlas watched working has stopped. Only sent while "Tell me when a chat finishes" is on. */
+  onNowFinished(cb: (f: NowFinished) => void): Promise<Unlisten>;
 
   /** Setup: the whole setup without file bodies. */
   setupSnapshot(includeWorktrees?: boolean): Promise<SetupSnapshot>;
@@ -149,11 +156,17 @@ export interface Backend {
   setupReveal(id: string, index: number): Promise<string>;
   onSetupChanged(cb: (version: number) => void): Promise<() => void>;
   /** The editable text of one item (text with secrets is empty until `reveal`). */
-  setupItemRaw(id: string, reveal?: boolean): Promise<RawEdit>;
+  setupItemRaw(id: string, reveal?: boolean, file?: string): Promise<RawEdit>;
   /** What is wrong with `text` as this item's content (empty = fine). */
-  setupValidate(id: string, text: string): Promise<Problem[]>;
+  setupValidate(id: string, text: string, file?: string): Promise<Problem[]>;
   /** Backup, atomic write, read back. `conflict` when the file changed on disk. */
-  setupSave(id: string, text: string, stamp: string, force?: boolean): Promise<SaveReply>;
+  setupSave(id: string, text: string, stamp: string, force?: boolean, file?: string): Promise<SaveReply>;
+  /** The files inside a skill's folder, SKILL.md first (empty for anything else). */
+  setupSkillFiles(id: string): Promise<SkillFile[]>;
+  /** Show an item's file in the file manager (`open` false) or open it in the default editor (`open` true). */
+  setupOpenFile(id: string, file: string | undefined, open: boolean): Promise<void>;
+  /** Copy a user skill to a new folder name. Never over an existing one. */
+  setupDuplicate(id: string, name: string): Promise<DuplicateOutcome>;
   /** Back up the whole item, then delete it. */
   setupDelete(id: string): Promise<DeleteOutcome>;
   /** Put a deleted item back exactly as it was. */
@@ -235,13 +248,17 @@ const tauriBackend: Backend = {
   onSearchStatus: (cb) => listen<SearchStatus>(SEARCH_STATUS_EVENT, (e) => cb(e.payload)),
   nowSnapshot: () => invoke<NowSnapshot>("now_snapshot"),
   onNowUpdate: (cb) => listen<NowSnapshot>(NOW_UPDATE_EVENT, (e) => cb(e.payload)),
+  onNowFinished: (cb) => listen<NowFinished>(NOW_FINISHED_EVENT, (e) => cb(e.payload)),
   setupSnapshot: (includeWorktrees) => invoke<SetupSnapshot>("setup_snapshot", { includeWorktrees }),
   setupCost: () => invoke<CostReport>("setup_cost"),
   setupReadSource: (id) => invoke<SourceView>("setup_read_source", { id }),
   setupReveal: (id, index) => invoke<string>("setup_reveal", { id, index }),
-  setupItemRaw: (id, reveal) => invoke<RawEdit>("setup_item_raw", { id, reveal }),
-  setupValidate: (id, text) => invoke<Problem[]>("setup_validate", { id, text }),
-  setupSave: (id, text, stamp, force) => invoke<SaveReply>("setup_save", { id, text, stamp, force }),
+  setupItemRaw: (id, reveal, file) => invoke<RawEdit>("setup_item_raw", { id, reveal, file }),
+  setupValidate: (id, text, file) => invoke<Problem[]>("setup_validate", { id, text, file }),
+  setupSave: (id, text, stamp, force, file) => invoke<SaveReply>("setup_save", { id, text, stamp, force, file }),
+  setupSkillFiles: (id) => invoke<SkillFile[]>("setup_skill_files", { id }),
+  setupOpenFile: (id, file, open) => invoke<void>("setup_open_file", { id, file, open }),
+  setupDuplicate: (id, name) => invoke<DuplicateOutcome>("setup_duplicate", { id, name }),
   setupDelete: (id) => invoke<DeleteOutcome>("setup_delete", { id }),
   setupUndo: (backupId) => invoke<UndoOutcome>("setup_undo", { backupId }),
   setupCreateDraft: (kind, name, event) => invoke<Draft>("setup_create_draft", { kind, name, event }),
@@ -269,6 +286,23 @@ const tauriBackend: Backend = {
   },
   onUpdateProgress: (cb) => listen<UpdateProgress>(UPDATE_PROGRESS_EVENT, (e) => cb(e.payload)),
 };
+
+/** macOS menu bar (crates/app/src/macmenu.rs): the id of the picked Atlas item. */
+export const MENU_EVENT = "atlas://menu";
+
+/**
+ * Calls `cb` with the id of each macOS menu bar item the user picks ("settings", "about" and the
+ * Help sheet ids). Other platforms and the browser never send one.
+ */
+export async function onNativeMenu(cb: (id: string) => void): Promise<Unlisten> {
+  if (!inTauri()) return () => {};
+  return listen<string>(MENU_EVENT, (e) => cb(e.payload));
+}
+
+/** The macOS proof run's screenshot tour (crates/app/src/tour.rs). Debug builds only. */
+export function tourStep(action: "size" | "capture" | "log" | "done", arg = ""): Promise<void> {
+  return invoke<void>("tour_step", { action, arg });
+}
 
 let backend: Backend | null = null;
 

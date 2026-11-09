@@ -46,6 +46,12 @@ export function shortcutGroups(platform: Platform): { title: string; rows: { key
         { keys: `${mod}+K`, does: "Jump to a chat, page, project or skill; arrows move, Enter goes, Escape closes" },
         { keys: `${mod}+1 to ${mod}+7`, does: "Go to Dashboard, Now, Sessions, Toolkit, History, Settings, Wrapped" },
         { keys: `${mod}+B`, does: "Show or hide the sidebar" },
+        ...(platform === "macos"
+          ? [
+              { keys: "Cmd+,", does: "Open Settings" },
+              { keys: "Cmd+W / Cmd+Q", does: "Close the window (Atlas stays in the Dock) / quit Atlas" },
+            ]
+          : []),
         { keys: platform === "macos" ? "F10" : "Alt or F10", does: "Open the menu; arrow keys move, Enter picks, Escape closes" },
       ],
     },

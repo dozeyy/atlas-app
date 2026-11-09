@@ -17,5 +17,8 @@ skill/skills/atlas/bin/atlas-usage
 skill/skills/atlas/bin/atlas-usage.exe
 skill/skills/atlas/bin/cache/
 dist-cli/
+# macOS proof run output (tools/mac-check.sh, tools/webkit-shots.mjs)
+mac-check-out/
+shots-webkit/
 # Atlas Setup's front end (built by npm run build:setup, embedded by crates/setup)
 dist-setup/

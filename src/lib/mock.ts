@@ -1,9 +1,22 @@
-// In-memory stand-in for the Rust side: used in a plain browser and in tests.
+﻿// In-memory stand-in for the Rust side: used in a plain browser and in tests.
 // Settings persist in localStorage only so a browser reload keeps your choices.
 
 import type { Backend, SettingsPatch } from "./ipc";
 import type { AppInfo, ConfigView, Platform, Settings } from "./types";
-import type { CostReport, CreateKind, DeleteOutcome, Draft, Problem, RawEdit, SaveReply, SetupSnapshot, SourceView, UndoOutcome } from "./setup-types";
+import type {
+  CostReport,
+  CreateKind,
+  DeleteOutcome,
+  Draft,
+  DuplicateOutcome,
+  Problem,
+  RawEdit,
+  SaveReply,
+  SetupSnapshot,
+  SkillFile,
+  SourceView,
+  UndoOutcome,
+} from "./setup-types";
 import { MockSetupWorld, mockSetupReveal, mockSetupSource } from "./setup-mock";
 import { mockCostReport } from "./setup-cost-mock";
 import { MockUsage } from "./mockUsage";
@@ -36,6 +49,7 @@ function loadSettings(): Settings {
     sandbox: false,
     launchAnimation: true,
     closeToTray: false,
+    notifyOnFinish: false,
     historyKeepVersions: 50,
   };
   try {
@@ -45,15 +59,29 @@ function loadSettings(): Settings {
   }
 }
 
+/**
+ * The browser preview can play another platform: `?platform=macos` (the WebKit screenshot run,
+ * tools/webkit-shots.mjs). Tests and a plain `npm run dev` stay on Windows.
+ */
+function urlPlatform(): Platform {
+  try {
+    const p = new URLSearchParams(window.location.search).get("platform");
+    return p === "macos" || p === "linux" ? p : "windows";
+  } catch {
+    return "windows";
+  }
+}
+
 export function mockInfo(overrides: Partial<AppInfo> = {}, platform: Platform = "windows"): AppInfo {
-  const real = view("C:/Users/you/.claude", "default");
+  const mac = platform === "macos";
+  const real = view(mac ? "/Users/you/.claude" : "C:/Users/you/.claude", "default");
   return {
     seq: 0,
     version: "0.1.0",
     build: "release",
     platform,
     backdrop: false,
-    dataDir: "C:/Users/you/AppData/Roaming/atlas",
+    dataDir: mac ? "/Users/you/Library/Application Support/atlas" : "C:/Users/you/AppData/Roaming/atlas",
     config: real,
     realConfig: real,
     sandbox: { enabled: false, state: "off", error: null, path: null, report: null },
@@ -67,7 +95,7 @@ export function mockInfo(overrides: Partial<AppInfo> = {}, platform: Platform = 
 }
 
 export class MockBackend {
-  private info: AppInfo = mockInfo();
+  private info: AppInfo = mockInfo({}, urlPlatform());
   private listeners = new Set<(i: AppInfo) => void>();
   /** The made-up setup and its edits; tests reach in to simulate outside changes. */
   readonly world = new MockSetupWorld();
@@ -210,6 +238,7 @@ export class MockBackend {
   readonly now = new MockNow();
   nowSnapshot: Backend["nowSnapshot"] = () => this.now.nowSnapshot();
   onNowUpdate: Backend["onNowUpdate"] = (cb) => this.now.onNowUpdate(cb);
+  onNowFinished: Backend["onNowFinished"] = (cb) => this.now.onNowFinished(cb);
 
   async onInfo(cb: (i: AppInfo) => void): Promise<() => void> {
     this.listeners.add(cb);
@@ -241,16 +270,30 @@ export class MockBackend {
     return this.world.onChange(() => cb(++v));
   }
 
-  async setupItemRaw(id: string, reveal = false): Promise<RawEdit> {
-    return this.world.raw(id, reveal);
+  async setupItemRaw(id: string, reveal = false, file?: string): Promise<RawEdit> {
+    return this.world.raw(id, reveal, file);
   }
 
-  async setupValidate(id: string, text: string): Promise<Problem[]> {
-    return this.world.validate(id, text);
+  async setupValidate(id: string, text: string, file?: string): Promise<Problem[]> {
+    return this.world.validate(id, text, file);
   }
 
-  async setupSave(id: string, text: string, stamp: string, force = false): Promise<SaveReply> {
-    return this.world.save(id, text, stamp, force);
+  async setupSave(id: string, text: string, stamp: string, force = false, file?: string): Promise<SaveReply> {
+    return this.world.save(id, text, stamp, force, file);
+  }
+
+  async setupSkillFiles(id: string): Promise<SkillFile[]> {
+    return this.world.skillFiles(id);
+  }
+
+  /** What the page asked the shell to show or open (tests read it). */
+  readonly opened: { id: string; file: string | undefined; open: boolean }[] = [];
+  async setupOpenFile(id: string, file: string | undefined, open: boolean): Promise<void> {
+    this.opened.push({ id, file, open });
+  }
+
+  async setupDuplicate(id: string, name: string): Promise<DuplicateOutcome> {
+    return this.world.duplicate(id, name);
   }
 
   async setupDelete(id: string): Promise<DeleteOutcome> {

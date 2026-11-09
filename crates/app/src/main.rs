@@ -1,13 +1,17 @@
-// Release builds on Windows are a GUI app (no console window).
+﻿// Release builds on Windows are a GUI app (no console window).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
 mod history;
 mod intro;
+// Built everywhere so it stays compiled and linted; only macOS installs it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod macmenu;
 mod now;
 mod search;
 mod setup_service;
 mod state;
+mod tour;
 mod tray;
 mod update;
 mod usage;
@@ -56,8 +60,15 @@ fn main() {
         // `focus_main` leaves it alone then.)
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::focus_main(app)));
     }
+    // macOS: the standard menu bar (Atlas, Edit, View, Window, Help). Its Edit menu is what makes
+    // Cmd+C / Cmd+V work in text fields. Windows has no menu bar (the page draws its own menu).
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.menu(macmenu::build).on_menu_event(macmenu::on_event);
+    }
     let app = builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -119,12 +130,16 @@ fn main() {
             intro::splash_done,
             update::update_check,
             update::update_install,
+            tour::tour_step,
             setup_service::setup_snapshot,
             setup_service::setup_cost,
             setup_service::setup_read_source,
             setup_service::setup_reveal,
             setup_service::setup_item_raw,
             setup_service::setup_validate,
+            setup_service::setup_skill_files,
+            setup_service::setup_open_file,
+            setup_service::setup_duplicate,
             setup_service::setup_save,
             setup_service::setup_delete,
             setup_service::setup_undo,
@@ -134,14 +149,22 @@ fn main() {
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Focused(focused) => window.state::<Arc<AppState>>().usage.focus(*focused),
-            // Close-to-tray (opt-in): hide instead of quitting, but only when the icon
+            // Windows: close-to-tray (opt-in) hides instead of quitting, but only when the icon
             // exists, or the window could never be brought back.
+            // macOS: closing the window never quits (Cmd+Q does, as in every Mac app). Atlas stays
+            // in the Dock and the Dock icon brings the window back (RunEvent::Reopen); with
+            // "keep running when closed" on it also leaves the Dock and lives in the menu bar.
             WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
                 let state = window.state::<Arc<AppState>>();
-                if state.close_to_tray() && window.try_state::<tray::Tray>().is_some() {
+                let tray = window.try_state::<tray::Tray>().is_some();
+                if cfg!(target_os = "macos") || (state.close_to_tray() && tray) {
                     api.prevent_close();
                     let _ = window.hide();
                     state.usage.focus(false);
+                    #[cfg(target_os = "macos")]
+                    if state.close_to_tray() && tray {
+                        let _ = window.app_handle().set_dock_visibility(false);
+                    }
                 }
             }
             _ => {}
@@ -179,6 +202,11 @@ fn main() {
                 cfg.window_effects = None;
             }
             let mut script = format!("window.__ATLAS_BOOT__ = {boot};");
+            // The macOS proof run's screenshot tour (tour.rs). Debug builds only.
+            #[cfg(debug_assertions)]
+            if tour::folder().is_some() {
+                script.push_str("window.__ATLAS_TOUR__ = true;");
+            }
             if intro_on {
                 script.push_str("window.__ATLAS_INTRO__ = true;");
                 intro::arm(app.handle());
@@ -242,10 +270,14 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building Atlas");
 
-    app.run(move |handle, event| {
-        if let RunEvent::Exit = event {
+    app.run(move |handle, event| match event {
+        RunEvent::Exit => {
             tray::remove(handle);
             state.shutdown();
         }
+        // macOS: a click on the Dock icon (or opening Atlas again) while its window is hidden.
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { has_visible_windows: false, .. } => tray::focus_main(handle),
+        _ => {}
     });
 }

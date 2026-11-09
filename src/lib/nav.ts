@@ -41,6 +41,7 @@ export function clearPendingProject(): void {
 /** "Open this item when the Toolkit appears" (a Toolkit item id). */
 export function openToolkitItemNext(itemId: string): void {
   pendingItem = itemId;
+  wake();
 }
 
 export function peekPendingToolkitItem(): string | null {

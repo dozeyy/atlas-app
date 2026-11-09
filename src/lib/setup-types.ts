@@ -187,6 +187,23 @@ export interface RawEdit {
   folderName: string | null;
 }
 
+/** One file inside a skill's folder (SKILL.md first). */
+export interface SkillFile {
+  /** Path inside the skill folder, with `/`. */
+  rel: string;
+  size: number;
+  language: string;
+  /** SKILL.md itself. */
+  main: boolean;
+  /** Atlas can open it in the editor. */
+  editable: boolean;
+}
+
+export interface DuplicateOutcome {
+  name: string;
+  path: string;
+}
+
 export interface Problem {
   message: string;
   /** 1-based, when known. */

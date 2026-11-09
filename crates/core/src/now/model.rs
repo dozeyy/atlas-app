@@ -93,6 +93,9 @@ pub struct NowLast {
     pub project: String,
     pub model: Option<String>,
     pub ended_ms: i64,
+    /// Everything the chat used while Atlas followed it. None for a chat that was already
+    /// over when Atlas started (only the end of its transcript is read, so a total would lie).
+    pub tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
@@ -101,6 +104,8 @@ pub struct NowSnapshot {
     /// Chats written to in the last couple of minutes, in the order they were first seen.
     pub chats: Vec<NowChat>,
     pub last: Option<NowLast>,
+    /// The newest chats that are not running, newest first (`last` is the first of them).
+    pub recent: Vec<NowLast>,
     /// Atlas has a folder to watch (false: no Claude folder).
     pub watching: bool,
 }

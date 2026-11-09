@@ -461,3 +461,105 @@ fn debug_builds_refuse_delete_save_undo_and_create_against_the_real_config() {
 
     assert!(!ghost_dir.exists(), "nothing was created in the real folder");
 }
+
+// ---- a skill's other files, duplicate, safe paths -----------------------------
+
+#[test]
+fn a_skill_lists_its_files_with_skill_md_first() {
+    let fx = Fx::new();
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    let files = d.skill_files(&it.id).unwrap();
+    let rels: Vec<&str> = files.iter().map(|f| f.rel.as_str()).collect();
+    assert_eq!(rels[0], "SKILL.md");
+    assert!(files[0].main);
+    assert!(rels.contains(&"reference.md") && rels.contains(&"scripts/run.py"), "{rels:?}");
+    assert!(files.iter().filter(|f| f.main).count() == 1);
+    assert!(files.iter().all(|f| f.editable), "text files are editable");
+    // Anything that is not a skill has no file list.
+    let agent = find(&d, ItemKind::Agent, ScopeKind::User, "user-agent");
+    assert!(d.skill_files(&agent.id).unwrap().is_empty());
+}
+
+#[test]
+fn saving_a_supporting_file_backs_up_that_file_and_leaves_skill_md_alone() {
+    let fx = Fx::new();
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    let dir = fx.claude().join("skills").join("shared-skill");
+    let skill_md = fs::read(dir.join("SKILL.md")).unwrap();
+    let old = fs::read(dir.join("reference.md")).unwrap();
+    let raw = d.read_raw_file(&it.id, Some("reference.md"), true).unwrap();
+    assert_eq!(raw.language, "markdown");
+    assert!(raw.folder_name.is_none(), "the folder-name rule is for SKILL.md only");
+    let plan = d.save_plan_file(&it.id, Some("reference.md")).unwrap();
+    let out = apply_save(&plan, "# New reference\n", &raw.stamp, false, &fx.backups).unwrap();
+    assert_eq!(fs::read_to_string(dir.join("reference.md")).unwrap(), "# New reference\n");
+    assert_eq!(fs::read(dir.join("SKILL.md")).unwrap(), skill_md);
+    assert_eq!(fs::read(fx.backups.join(out.backup_id.unwrap()).join("file-before")).unwrap(), old);
+    // A stale stamp is still a conflict for a supporting file.
+    let stale = apply_save(&plan, "again\n", &raw.stamp, false, &fx.backups).unwrap_err();
+    assert!(matches!(stale, WriteError::Conflict));
+}
+
+#[test]
+fn a_skill_file_path_cannot_leave_the_skill_folder() {
+    let fx = Fx::new();
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    for bad in ["../lf-skill/SKILL.md", "..\\lf-skill\\SKILL.md", "/etc/passwd", "C:/Windows/win.ini", "", "scripts/../../x.md", "a/./b"] {
+        assert!(d.save_plan_file(&it.id, Some(bad)).is_err(), "{bad:?} must be refused");
+        assert!(d.file_target(&it.id, Some(bad)).is_err(), "{bad:?} must be refused");
+    }
+    // A file name on another item kind is refused as well.
+    let agent = find(&d, ItemKind::Agent, ScopeKind::User, "user-agent");
+    assert!(d.save_plan_file(&agent.id, Some("SKILL.md")).is_err());
+    // An id the scan never produced is refused.
+    assert!(d.file_target("not-an-id", None).is_err());
+    assert!(d.file_target(&it.id, Some("reference.md")).unwrap().ends_with("reference.md"));
+}
+
+#[test]
+fn duplicating_a_skill_copies_the_folder_and_renames_it() {
+    let fx = Fx::new();
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    let src = fx.claude().join("skills").join("shared-skill");
+    let before = snapshot(&src);
+    let out = d.duplicate_skill(&it.id, "shared-copy", &fx.claude()).unwrap();
+    assert_eq!(out.name, "shared-copy");
+    let dest = fx.claude().join("skills").join("shared-copy");
+    assert_eq!(snapshot(&src), before, "the original is untouched");
+    let copied = snapshot(&dest);
+    assert_eq!(copied.len(), before.len());
+    let md = fs::read_to_string(dest.join("SKILL.md")).unwrap();
+    assert!(md.contains("name: shared-copy"), "{md}");
+    assert!(!md.contains("name: shared-skill"));
+    // Everything else is byte for byte the same.
+    for (rel, bytes) in &before {
+        if rel != "SKILL.md" {
+            assert_eq!(copied.iter().find(|(r, _)| r == rel).map(|(_, b)| b), Some(bytes), "{rel}");
+        }
+    }
+    // No scratch folder is left behind.
+    let names: Vec<String> = fs::read_dir(fx.claude().join("skills")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert!(names.iter().all(|n| !n.starts_with(".atlas-copy")), "{names:?}");
+    // It never replaces an existing skill, and refuses names that are not names.
+    assert!(d.duplicate_skill(&it.id, "shared-copy", &fx.claude()).is_err());
+    assert!(d.duplicate_skill(&it.id, "lf-skill", &fx.claude()).is_err());
+    for bad in ["", "Has Space", "../up", "UPPER", "-lead"] {
+        assert!(d.duplicate_skill(&it.id, bad, &fx.claude()).is_err(), "{bad:?}");
+    }
+    let agent = find(&d, ItemKind::Agent, ScopeKind::User, "user-agent");
+    assert!(d.duplicate_skill(&agent.id, "nope", &fx.claude()).is_err());
+}
+
+#[test]
+fn with_skill_name_edits_only_the_frontmatter_name() {
+    use atlas_core::setup_write::with_skill_name;
+    assert_eq!(with_skill_name("---\nname: a\ndescription: x\n---\nname: a in the body\n", "b"), "---\nname: b\ndescription: x\n---\nname: a in the body\n");
+    assert_eq!(with_skill_name("---\r\nname: a\r\n---\r\nbody\r\n", "b"), "---\r\nname: b\r\n---\r\nbody\r\n");
+    assert_eq!(with_skill_name("---\ndescription: x\n---\nbody\n", "b"), "---\ndescription: x\nname: b\n---\nbody\n");
+    assert_eq!(with_skill_name("no frontmatter\n", "b"), "no frontmatter\n");
+    assert!(with_skill_name("\u{feff}---\nname: a\n---\n", "b").starts_with("\u{feff}---\nname: b\n"));
+}
