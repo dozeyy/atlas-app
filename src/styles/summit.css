@@ -270,6 +270,18 @@
   display: inline-block;
 }
 
+/* A huge glyph's text area reaches up over the kicker: the text takes no pointer, the box below does. */
+.sm-fig-text {
+  pointer-events: none;
+}
+
+/* The figure's hover and focus stop: exactly the number's box, not the unit's and not the kicker's. */
+.sm-fig-hit {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+}
+
 /* While a number counts, the final text holds the box and the live text is right-aligned over it. */
 .sm-ghost {
   visibility: hidden;

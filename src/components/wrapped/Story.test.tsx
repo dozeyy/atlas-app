@@ -116,12 +116,31 @@ describe("Story keys", () => {
   });
   it("advances once, not twice, on Space with the figure's hover stop focused", async () => {
     mount();
-    const fig = document.querySelector(".sm-fig") as HTMLElement;
+    const fig = document.querySelector(".sm-fig-hit") as HTMLElement;
     expect(fig.getAttribute("aria-label")).toBe("2026. Where it comes from.");
+    // The hover belongs to the figure alone: not the kicker above it.
+    expect(fig.getAttribute("title")).toBe("Where it comes from.");
+    expect(document.querySelector(".sm-kicker")!.closest("[title]")).toBeNull();
+    expect(document.querySelector(".sm-fig")!.hasAttribute("title")).toBe(false);
     fig.focus();
     expect(position()).toBe("1 of 3");
     await userEvent.keyboard(" ");
     expect(position()).toBe("2 of 3");
+  });
+
+  it("keeps its place inside a shorter story when the slides reload under it", () => {
+    const { rerender } = render(<Story slides={slides} />);
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    expect(position()).toBe("3 of 3");
+    rerender(<Story slides={slides.slice(0, 2)} />);
+    expect(position()).toBe("2 of 2");
+    expect(screen.getByRole("button", { name: "Replay" })).toBeInTheDocument();
+    // The stored position followed, so Back goes to the first of the two, not off the end.
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+    expect(position()).toBe("1 of 2");
+    rerender(<Story slides={[]} />);
+    expect(document.querySelector(".sm-story")).toBeNull();
   });
 
   it("leaves Space and the arrows to a focused menu item, and to any open menu", () => {

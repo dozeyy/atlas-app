@@ -20,6 +20,10 @@ import {
   spikeGraphic,
   SPIKE_DAYS,
   weekdayAverages,
+  weekdayOf,
+  weekdayTied,
+  shortDay,
+  longDay,
 } from "./wrappedModel";
 import type { Slide, WrappedData } from "./wrappedModel";
 import type { ItemUse, SessionRow, Tokens, WrappedHabits } from "./usageTypes";
@@ -152,7 +156,7 @@ function rich(over: Partial<WrappedData> = {}): WrappedData {
       { label: "Sonnet 5.5", value: 100_000_000 },
     ],
     longest: chat({ projectName: "medal michael", durationMs: (10 * 24 + 17) * 3_600_000, startedAt: new Date(2026, 6, 26, 9).getTime() }),
-    biggest: chat({ projectName: "Origin Client", tokens: tok(110_000_000) }),
+    biggest: chat({ sessionId: "s2", projectName: "Origin Client", tokens: tok(110_000_000) }),
     habits: habits({ chats: 100, chatTokens: 234_000_000, allTokens: 873_000_000, helperTokens: 300_000_000 }),
     ...over,
   });
@@ -196,10 +200,10 @@ describe("buildSlides: the Summit story", () => {
     expect(by.rhythm.figure).toBe("5 PM");
     expect(by.rhythm.line).toBe("Your busiest hour over the last 120 days.");
     expect(by.long.figure).toBe("10 d 17 h");
-    expect(by.long.line).toBe("In medal michael, Jul 26.");
+    expect(by.long.line).toBe("Started Jul 26.");
     expect(by.biggest.figure).toBe("110M");
     expect(by.biggest.unit).toBe("tokens");
-    expect(by.biggest.line).toBe("One chat in Origin Client. 47 times a usual chat.");
+    expect(by.biggest.line).toBe("That is 47 times a usual chat.");
     expect(by.project.figure).toBe("Origin Client");
     expect(by.project.line).toBe("60% of your tokens.");
     expect(by.skill.figure).toBe("away-mode");
@@ -236,6 +240,47 @@ describe("buildSlides: the Summit story", () => {
     expect(new Set(slides.map((s) => s.figure)).size).toBe(slides.length);
     expect(new Set(slides.map((s) => s.kicker)).size).toBe(slides.length);
     expect(new Set(slides.map((s) => s.line)).size).toBe(slides.length);
+  });
+
+  it("names a project on one slide only", () => {
+    const slides = buildSlides(rich());
+    const on = (name: string) => slides.filter((s) => !s.card && said(s).includes(name)).map((s) => s.id);
+    expect(on("Origin Client")).toEqual(["project"]);
+    // The chats' own projects are not named on their slides.
+    expect(on("medal michael")).toEqual([]);
+  });
+
+  it("tells one chat once when the longest and the biggest are the same chat", () => {
+    const one = chat({ sessionId: "same", projectName: "atlas", durationMs: 86_400_000, tokens: tok(110_000_000) });
+    const got = ids(rich({ longest: one, biggest: one }));
+    expect(got).toContain("long");
+    expect(got).not.toContain("biggest");
+    expect(ids(rich({ longest: one, biggest: { ...one, sessionId: "other" } }))).toContain("biggest");
+  });
+
+  it("rounds a ratio before it chooses how to write it", () => {
+    // 9.97 times a usual chat is "10", not "10.0"; 9.94 is "9.9".
+    const times = (ratio: number) =>
+      buildSlides(rich({ biggest: chat({ sessionId: "s2", tokens: tok(Math.round(ratio * 2_340_000)) }) })).find((s) => s.id === "biggest")!.strong;
+    expect(times(9.97)).toBe("10 times");
+    expect(times(9.94)).toBe("9.9 times");
+    expect(times(3.44)).toBe("3.4 times");
+  });
+
+  it("names a weekday tie even when float noise separates the averages", () => {
+    const week = [0.1 + 0.2, 0.3, 0.1, 0.1, 0.1, 0.1, 0.1];
+    expect(week[0]).not.toBe(week[1]);
+    expect(weekdayTied(week)).toEqual([0, 1]);
+    const slide = buildSlides(rich({ from: "2026-11-02", to: "2026-11-08", spanDays: 7, activeDays: 7, dayTokens: week.map((v) => v * 1e9) })).find((s) => s.id === "weekday")!;
+    expect(slide.figure).toBe("Mon and Tue");
+  });
+
+  it("says the same novel count in the line and in its hover", () => {
+    for (const tokens of [873_000_000, 23_300_000, 14_000_000, 1_400_000]) {
+      const s = buildSlides(rich({ tokens })).find((x) => x.id === "tokens")!;
+      const said = /About (.+) worth/.exec(s.line)![1].replace(/ novels?'s?$/, "").replace(/'$/, "");
+      expect(s.strongHint, String(tokens)).toContain("about " + said + ".");
+    }
   });
 
   it("skips a slide whose numbers are missing instead of filling it", () => {
@@ -282,7 +327,7 @@ describe("buildSlides: the Summit story", () => {
     // Average chat = chatTokens / chats (the chats the count covers), never the range total.
     const near = buildSlides(rich({ habits: habits({ chats: 100, chatTokens: 9_000_000_000 }) })).find((s) => s.id === "biggest")!;
     expect(near.graphic).toBeUndefined();
-    expect(near.line).toBe("One chat in Origin Client.");
+    expect(near.line).toBe("More than any other single chat.");
     expect(near.strong).toBeUndefined();
   });
 
@@ -465,6 +510,25 @@ describe("the range", () => {
   it("says only where the numbers start, and the dated range for the card", () => {
     expect(rangeLabel({ from: "2026-10-09" })).toBe("Oct 9 to today");
     expect(rangeLong({ from: "2026-07-09", to: "2026-11-09" })).toBe("Jul 9 to Nov 9, 2026");
+  });
+
+  it("gives the start its year when the history began in an earlier year", () => {
+    expect(rangeLabel({ from: "2025-12-09", to: "2027-01-05" })).toBe("Dec 9, 2025 to today");
+    expect(rangeLabel({ from: "2026-12-09", to: "2026-12-30" })).toBe("Dec 9 to today");
+    expect(rangeLong({ from: "2025-12-09", to: "2027-01-05" })).toBe("Dec 9, 2025 to Jan 5, 2027");
+    const opener = buildSlides(rich({ from: "2025-12-09", to: "2027-01-05", spanDays: 393, dayTokens: [] }))[0];
+    expect(opener.line).toBe("Dec 9, 2025 to today");
+    expect(opener.figure).toBe("2027");
+  });
+});
+
+describe("day names", () => {
+  it("names a day, short and long, and its Monday-first weekday", () => {
+    expect(shortDay("2026-11-09")).toBe("Nov 9");
+    expect(longDay("2026-11-09")).toBe("Mon, Nov 9");
+    expect(weekdayOf("2026-11-09")).toBe(0);
+    expect(weekdayOf("2026-11-15")).toBe(6);
+    expect(weekdayOf("2026-11-14")).toBe(5);
   });
 });
 

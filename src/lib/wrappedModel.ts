@@ -169,6 +169,12 @@ export function weekdayOf(day: string): number {
   return (dayDate(day).getDay() + 6) % 7;
 }
 
+/** Weekdays whose average is the top one, give or take float noise. */
+export function weekdayTied(week: number[]): number[] {
+  const best = Math.max(...week);
+  return week.map((_v, i) => i).filter((i) => week[i] >= best * (1 - 1e-9));
+}
+
 /**
  * Tokens on an average weekday, Monday first, from the per-day totals that start on `from`. Each
  * weekday's total is divided by how many of that weekday the span holds, so a span that is not a
@@ -186,17 +192,22 @@ export function weekdayAverages(from: string, dayTokens: number[]): number[] {
   return sums.map((s, w) => (seen[w] > 0 ? s / seen[w] : 0));
 }
 
-/** Stated conversion for the novels line: an estimate, never a measurement. */
 export const WORDS_PER_NOVEL = 100_000;
 
 export function novelsOf(tokens: number): number {
   return (tokens * WORDS_PER_TOKEN) / WORDS_PER_NOVEL;
 }
 
+/** The novel count as it is said: two significant figures from 10 up, a whole number below. The line and its hover both use it. */
+export function novelsRounded(tokens: number): number {
+  const novels = novelsOf(tokens);
+  return novels >= 10 ? Number(novels.toPrecision(2)) : Math.round(novels);
+}
+
 /** The conversion behind the novel count, for the phrase's hover. */
 export function novelsHint(tokens: number): string {
   return (
-    `${compact(tokens)} tokens x ${WORDS_PER_TOKEN} words per token / ${exact(WORDS_PER_NOVEL)} words per novel = about ${compact(novelsOf(tokens))}.\n` +
+    `${compact(tokens)} tokens x ${WORDS_PER_TOKEN} words per token / ${exact(WORDS_PER_NOVEL)} words per novel = about ${exact(novelsRounded(tokens))}.\n` +
     "An estimate. The count includes cache writes, so it is text that went through Claude, not words you typed."
   );
 }
@@ -467,7 +478,8 @@ const MIN_CHAT_RATIO = 1.5;
 
 /** "47" for a big ratio, "3.4" for a small one. */
 function timesText(ratio: number): string {
-  return ratio >= 10 ? exact(Math.round(ratio)) : (Math.round(ratio * 10) / 10).toFixed(1);
+  const tenth = Math.round(ratio * 10) / 10;
+  return tenth >= 10 ? exact(Math.round(ratio)) : tenth.toFixed(1);
 }
 
 /** A slide with a hero item (skill, helper or tool): its name and how often it was used. */
@@ -506,7 +518,7 @@ export function buildSlides(d: WrappedData): Slide[] {
   if (d.tokens > 0) {
     // Under one novel there is nothing to say: rounding 0.75 up to "1" would overstate it.
     const novels = novelsOf(d.tokens);
-    const rounded = novels >= 10 ? Number(novels.toPrecision(2)) : Math.round(novels);
+    const rounded = novelsRounded(d.tokens);
     const strong = novels >= 1 ? `${exact(rounded)} ${rounded === 1 ? "novel's" : "novels'"}` : undefined;
     out.push({
       id: "tokens",
@@ -549,7 +561,7 @@ export function buildSlides(d: WrappedData): Slide[] {
   if (!short && weekTotal > 0) {
     const best = Math.max(...week);
     // Days that share the top mark share the headline; three or more tied is no favorite at all.
-    const tied = WEEKDAYS.map((_n, i) => i).filter((i) => week[i] === best);
+    const tied = weekdayTied(week);
     if (tied.length <= 2) {
       const pct = `${percent(best, weekTotal)}%`;
       out.push({
@@ -579,11 +591,13 @@ export function buildSlides(d: WrappedData): Slide[] {
       id: "long",
       kicker: "Longest sitting",
       figure: formatDuration(d.longest.durationMs),
-      line: `In ${d.longest.projectName}, ${shortDay(localDayOf(d.longest.startedAt))}.`,
+      line: `Started ${shortDay(localDayOf(d.longest.startedAt))}.`,
     });
   }
 
-  if (!short && d.biggest && headline(d.biggest.tokens) > 0) {
+  // The longest and the biggest can be one chat: it is told once, on its longest slide.
+  const sameChat = !!d.longest && !!d.biggest && d.longest.sessionId === d.biggest.sessionId;
+  if (!short && d.biggest && !sameChat && headline(d.biggest.tokens) > 0) {
     const big = headline(d.biggest.tokens);
     // A usual chat is the average of the chats the count covers: that count's own tokens, never the
     // range total (which also holds chats that are gone from disk).
@@ -591,13 +605,12 @@ export function buildSlides(d: WrappedData): Slide[] {
     const avg = h && h.chats > 1 && h.chatTokens > 0 ? h.chatTokens / h.chats : 0;
     const ratio = avg > 0 ? big / avg : 0;
     const times = ratio >= MIN_CHAT_RATIO ? `${timesText(ratio)} times` : null;
-    const where = `One chat in ${d.biggest.projectName}.`;
     out.push({
       id: "biggest",
       kicker: "Your biggest chat",
       figure: compact(big),
       unit: "tokens",
-      line: times ? `${where} ${times} a usual chat.` : where,
+      line: times ? `That is ${times} a usual chat.` : "More than any other single chat.",
       strong: times ?? undefined,
       hint: `${exact(big)} tokens in one chat.`,
       graphic: times ? { kind: "circles", ratio } : undefined,
@@ -660,12 +673,19 @@ export function buildSlides(d: WrappedData): Slide[] {
   return out;
 }
 
-/** "Jul 9 to today": the span the numbers cover. */
-export function rangeLabel(d: Pick<WrappedData, "from">): string {
-  return `${shortDay(d.from)} to today`;
+/** The start day, with its year only when the history began in an earlier year than `to`. */
+function startDay(from: string, to?: string): string {
+  return to && from.slice(0, 4) !== to.slice(0, 4)
+    ? dayDate(from).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : shortDay(from);
 }
 
-/** "Jul 9 to Nov 9, 2026": the card's dated range. */
+/** "Jul 9 to today": the span the numbers cover ("Dec 9, 2025 to today" across a new year). */
+export function rangeLabel(d: Pick<WrappedData, "from"> & { to?: string }): string {
+  return `${startDay(d.from, d.to)} to today`;
+}
+
+/** "Jul 9 to Nov 9, 2026": the card's dated range ("Dec 9, 2025 to Jan 5, 2027" across a new year). */
 export function rangeLong(d: Pick<WrappedData, "from" | "to">): string {
-  return `${shortDay(d.from)} to ${shortDay(d.to)}, ${dayDate(d.to).getFullYear()}`;
+  return `${startDay(d.from, d.to)} to ${shortDay(d.to)}, ${dayDate(d.to).getFullYear()}`;
 }

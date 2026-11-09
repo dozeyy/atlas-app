@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DownloadSimple } from "@phosphor-icons/react";
 import { getBackend } from "../../lib/ipc";
 import { CARD_H, CARD_W, cardBytes, drawShareCard, loadCardFonts } from "../../lib/shareCard";
@@ -17,8 +17,9 @@ function describe(card: ShareCard): string {
 }
 
 /** Calls `onChange` when the theme under the card changes: the card is drawn from the live tokens. */
-function useThemeChange(onChange: () => void): void {
+function useThemeChange(onChange: () => void, on: boolean): void {
   useEffect(() => {
+    if (!on) return;
     const root = document.documentElement;
     const seen = new MutationObserver(onChange);
     seen.observe(root, { attributes: true, attributeFilter: ["data-theme", "class"] });
@@ -33,7 +34,7 @@ function useThemeChange(onChange: () => void): void {
       seen.disconnect();
       mq?.removeEventListener?.("change", onChange);
     };
-  }, [onChange]);
+  }, [onChange, on]);
 }
 
 /**
@@ -48,7 +49,9 @@ export function CardView({ slide, settled }: { slide: Slide; settled: boolean })
   const [drawn, setDrawn] = useState(true);
   const [redraw, setRedraw] = useState(0);
 
-  useThemeChange(() => setRedraw((n) => n + 1));
+  // The slide that is leaving (settled) is a still picture for its short fade: drawn once, not watched.
+  const again = useCallback(() => setRedraw((n) => n + 1), []);
+  useThemeChange(again, !settled);
 
   useEffect(() => {
     let live = true;
@@ -57,11 +60,11 @@ export function CardView({ slide, settled }: { slide: Slide; settled: boolean })
       if (el && live) setDrawn(drawShareCard(el, card));
     };
     paint();
-    void loadCardFonts().then(paint);
+    if (!settled) void loadCardFonts().then(paint);
     return () => {
       live = false;
     };
-  }, [card, redraw]);
+  }, [card, redraw, settled]);
 
   const save = async () => {
     const el = canvas.current;

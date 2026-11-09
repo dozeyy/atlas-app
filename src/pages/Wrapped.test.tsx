@@ -107,8 +107,10 @@ describe("Wrapped", () => {
     mount();
     await screen.findByText(OPENER);
     await userEvent.click(screen.getByRole("button", { name: /Slide \d+ of \d+: Tokens/ }));
-    const fig = frame().querySelector(".sm-fig") as HTMLElement;
+    const fig = frame().querySelector(".sm-fig-hit") as HTMLElement;
     expect(fig.getAttribute("title")).toMatch(/^[\d,]+ tokens\.$/);
+    // Only the figure has the hover: the kicker above it has none.
+    expect(frame().querySelector(".sm-kicker")!.closest("[title], [data-tip]")).toBeNull();
     const before = position();
     await userEvent.click(fig);
     expect(position()).toBe(before);
@@ -160,7 +162,7 @@ describe("Wrapped", () => {
       const tips = Array.from(frame().querySelectorAll<HTMLElement>("[title], [data-tip]"));
       for (const t of tips) {
         const ok =
-          t.matches(".sm-fig") || // the exact count
+          t.matches(".sm-fig-hit") || // the exact count
           t.matches(".sm-cell, .sm-bar") || // one day, one hour
           t.closest(".sm-line") !== null; // the source of a rounded phrase
         expect(ok).toBe(true);
@@ -168,6 +170,19 @@ describe("Wrapped", () => {
       }
       await userEvent.keyboard("{ArrowRight}");
     }
+  });
+
+  it("gives an hour a hover only when it has a number to say", async () => {
+    mount();
+    await screen.findByText(OPENER);
+    await userEvent.click(screen.getByRole("button", { name: /Slide \d+ of \d+: Your prime time/ }));
+    const bars = Array.from(frame().querySelectorAll<SVGElement>(".sm-bar"));
+    expect(bars).toHaveLength(24);
+    const tipped = bars.filter((b) => b.hasAttribute("data-tip"));
+    expect(tipped.length).toBeGreaterThan(0);
+    expect(tipped.length).toBeLessThan(24);
+    for (const b of tipped) expect(b.getAttribute("data-tip")).toMatch(/^\d+ (AM|PM)\n[\d.,]+[kMB]? tokens a day on average$/);
+    for (const b of bars.filter((x) => !x.hasAttribute("data-tip"))) expect(b.hasAttribute("title")).toBe(false);
   });
 
   it("ends on the recap card, saves the picture it shows, and draws no chat name", async () => {

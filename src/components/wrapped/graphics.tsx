@@ -4,7 +4,7 @@
 
 import { addDays, compact } from "../../lib/usage";
 import { barTop, heatLayout, ZERO_STUB } from "../../lib/chartPaths";
-import { hourLabel, longDay, WEEKDAYS_SHORT } from "../../lib/wrappedModel";
+import { hourLabel, longDay, WEEKDAYS_SHORT, weekdayTied } from "../../lib/wrappedModel";
 import type { SlideGraphic } from "../../lib/wrappedModel";
 
 /** The four-point clay spark: planted on a peak, and the trail's "you are here". Unit size 1. */
@@ -188,11 +188,12 @@ function HoursArt({ g }: { g: Extract<SlideGraphic, { kind: "hours" }> }) {
           height={b.h}
           rx={4}
           style={{ animationDelay: `${b.i * 16}ms` }}
-          data-tip={`${hourLabel(b.i)}\n${
+          // A hover only when it has a number to give: an hour with next to nothing says nothing.
+          data-tip={
             b.v / g.days >= 1
-              ? `${compact(Math.round(b.v / g.days))} tokens a day on average`
-              : "Under 1 token a day on average"
-          }`}
+              ? `${hourLabel(b.i)}\n${compact(Math.round(b.v / g.days))} tokens a day on average`
+              : undefined
+          }
         />
       ))}
       <Spark x={pk.x + w / 2} y={pk.y - 22} size={11} delay={520} />
@@ -225,6 +226,7 @@ function WeekdaysArt({
   g: Extract<SlideGraphic, { kind: "weekdays" }>;
 }) {
   const max = Math.max(...g.values, 0);
+  const tied = weekdayTied(g.values);
   const w = 64;
   const gap = 28;
   const base = 128;
@@ -243,7 +245,7 @@ function WeekdaysArt({
         <rect
           key={b.i}
           className="sm-bar"
-          data-peak={b.v === max && max > 0 ? "" : undefined}
+          data-peak={tied.includes(b.i) && max > 0 ? "" : undefined}
           data-zero={b.v > 0 ? undefined : ""}
           x={b.x}
           y={b.y}

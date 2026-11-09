@@ -90,10 +90,10 @@ function Figure({
     };
     fit();
     // The face loads after the first paint on a cold start: measure again once it is in.
-    let live = true;
-    void document.fonts?.ready.then(() => live && fit());
+    let alive = true;
+    void document.fonts?.ready.then(() => alive && fit());
     return () => {
-      live = false;
+      alive = false;
     };
   }, [max, avail, slide.figure, slide.unit]);
 
@@ -102,21 +102,31 @@ function Figure({
       ref={el}
       className="sm-fig"
       data-layout={layout}
-      title={slide.hint}
-      // The hover is the exact count; a keyboard or screen reader person gets it from the label.
-      tabIndex={slide.hint ? 0 : undefined}
-      aria-label={slide.hint ? figureLabel(slide) : undefined}
     >
       <span className="sm-fig-num">
-        {live === null ? (
-          slide.figure
-        ) : (
-          <>
-            <span className="sm-ghost">{slide.figure}</span>
-            <span className="sm-live" aria-hidden="true">
-              {live}
-            </span>
-          </>
+        <span className="sm-fig-text" aria-hidden={slide.hint ? true : undefined}>
+          {live === null ? (
+            slide.figure
+          ) : (
+            <>
+              <span className="sm-ghost">{slide.figure}</span>
+              <span className="sm-live" aria-hidden="true">
+                {live}
+              </span>
+            </>
+          )}
+        </span>
+        {/* The hover is a box the size of the figure's line and nothing more: a huge glyph's text area
+            reaches up over the kicker, so the text takes no pointer (summit.css) and this does. A
+            keyboard or screen reader person gets the exact count from the label. */}
+        {slide.hint && (
+          <span
+            className="sm-fig-hit"
+            role="img"
+            title={slide.hint}
+            tabIndex={0}
+            aria-label={figureLabel(slide)}
+          />
         )}
       </span>
       {slide.unit && <span className="sm-unit">{slide.unit}</span>}
@@ -151,9 +161,7 @@ export function SlideView({ slide, settled = false }: { slide: Slide; settled?: 
     return (
       <div className="sm-frame" data-slide={slide.id} data-layout={layout} data-settled={settled ? "" : undefined}>
         <div className="sm-center">
-          <p className="sm-year" title={slide.hint}>
-            {slide.figure}
-          </p>
+          <p className="sm-year">{slide.figure}</p>
           <h2 className="sm-title">{slide.title}</h2>
           <p className="sm-range">{slide.line}</p>
         </div>

@@ -1,5 +1,5 @@
 // A figure that counts up: reading "851M" into parts, and the text it shows at any step. Pure
-// functions; the poster's clock decides the step (see Poster.tsx).
+// functions; `useCountUp` in SlideView.tsx decides the step.
 
 const NUM = /^(\d[\d,]*(?:\.\d+)?)([kMBT]?)$/;
 

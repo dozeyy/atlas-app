@@ -51,7 +51,9 @@ export function Story({
   leave.current = onLeave;
   const [at, setAt] = useState<At>({ i: 0, prev: null, dir: "fwd", n: 0 });
   const last = slides.length - 1;
-  const { i, prev, dir, n } = at;
+  // The data can reload under the story with fewer slides: the position never reads past the end.
+  const { prev, dir, n } = at;
+  const i = Math.max(0, Math.min(at.i, last));
   const reduced = prefersReducedMotion();
 
   const move = (to: number) =>
@@ -158,6 +160,11 @@ export function Story({
     };
   }, [last]);
 
+  // ...and the stored position follows, so the keys and the buttons start from where the story is.
+  useEffect(() => {
+    setAt((c) => (last >= 0 && c.i > last ? { ...c, i: last, prev: null, n: c.n + 1 } : c));
+  }, [last]);
+
   // The slide that is leaving goes once its fade is done.
   useEffect(() => {
     if (prev === null) return;
@@ -196,8 +203,9 @@ export function Story({
     move(i + (e.clientX - box.left < box.width / 3 ? -1 : 1));
   };
 
+  if (slides.length === 0) return null;
   const slide = slides[i];
-  const outgoing = prev !== null && prev !== i ? slides[prev] : null;
+  const outgoing = prev !== null && prev !== i ? (slides[prev] ?? null) : null;
 
   return (
     <div className="sm-story">
