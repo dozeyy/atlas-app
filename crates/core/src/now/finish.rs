@@ -79,6 +79,7 @@ mod tests {
             title: Some(format!("Chat {id}")),
             project: "atlas".into(),
             model: None,
+            effort: None,
             state: state.into(),
             started_ms: None,
             worked_ms: Some(90_000),

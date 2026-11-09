@@ -5,7 +5,7 @@
 use rusqlite::Connection;
 
 /// The newest schema this build knows.
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 /// `PRAGMA user_version` of an open database.
 pub fn user_version(conn: &Connection) -> rusqlite::Result<i64> {
@@ -22,6 +22,7 @@ pub fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
             1 => m0002(&tx)?,
             2 => m0003(&tx)?,
             3 => m0004(&tx)?,
+            4 => m0005_effort(&tx)?,
             _ => unreachable!("no migration from version {v}"),
         }
         v += 1;
@@ -93,6 +94,13 @@ CREATE TABLE IF NOT EXISTS receipt_scan (
 ) WITHOUT ROWID;
 "#,
     )
+}
+
+/// The reasoning effort of each reply (`perTurnEffort`, else `effort`; NULL when the transcript
+/// has none). Additive: one nullable column. Existing caches are re-read once (PARSER_VERSION
+/// bump) so it fills in.
+fn m0005_effort(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
+    tx.execute_batch("ALTER TABLE messages ADD COLUMN effort TEXT;")
 }
 
 fn m0001(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {

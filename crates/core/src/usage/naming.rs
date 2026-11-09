@@ -145,9 +145,61 @@ pub fn agent_id_of_stem(stem: &str) -> String {
     stem.strip_prefix("agent-").unwrap_or(stem).to_string()
 }
 
+/// A model id as people say it, always with its full version: "claude-opus-5-5" -> "Opus 5.5",
+/// "claude-fable-5-2" -> "Fable 5.2", "claude-haiku-4-5-20251001" -> "Haiku 4.5", the old
+/// "claude-3-5-sonnet-20241022" -> "Sonnet 3.5". Any family works, so a model Atlas has never
+/// heard of still gets a real name ("claude-nova-9-1" -> "Nova 9.1"); whether it is priced is
+/// a separate question (`PriceTable::is_known`). Anything else (`<synthetic>`) stays as it is.
+/// The app's `modelLabel` (`src/lib/usage.ts`) follows the same rules.
+pub fn model_label(id: &str) -> String {
+    let digits = |s: &str, max: usize| !s.is_empty() && s.len() <= max && s.bytes().all(|b| b.is_ascii_digit());
+    let family = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_lowercase());
+    let cap = |s: &str| {
+        let mut c = s.chars();
+        c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+    };
+    let Some(rest) = id.strip_prefix("claude-") else { return id.to_string() };
+    let mut parts: Vec<&str> = rest.split('-').collect();
+    if parts.len() > 2 && parts.last().is_some_and(|p| p.len() == 8 && digits(p, 8)) {
+        parts.pop();
+    }
+    let version = |major: &str, minor: Option<&&str>| match minor {
+        Some(n) => format!("{major}.{n}"),
+        None => major.to_string(),
+    };
+    let minor_ok = |rest: &[&str]| rest.len() <= 1 && rest.first().is_none_or(|n| digits(n, 2));
+    match parts.as_slice() {
+        [f, maj, rest @ ..] if family(f) && digits(maj, 3) && minor_ok(rest) => format!("{} {}", cap(f), version(maj, rest.first())),
+        [maj, rest @ .., f] if family(f) && digits(maj, 3) && minor_ok(rest) => format!("{} {}", cap(f), version(maj, rest.first())),
+        _ => id.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_labels_carry_the_full_version_for_every_family() {
+        for (id, want) in [
+            ("claude-opus-5-5", "Opus 5.5"),
+            ("claude-opus-5", "Opus 5"),
+            ("claude-fable-5-2", "Fable 5.2"),
+            ("claude-mythos-5-2", "Mythos 5.2"),
+            ("claude-sonnet-5-5", "Sonnet 5.5"),
+            ("claude-haiku-5-5", "Haiku 5.5"),
+            ("claude-haiku-4-5-20251001", "Haiku 4.5"),
+            ("claude-opus-4-20250514", "Opus 4"),
+            ("claude-3-5-sonnet-20241022", "Sonnet 3.5"),
+            ("claude-3-opus-20240229", "Opus 3"),
+            ("claude-nova-9-1", "Nova 9.1"),
+            ("<synthetic>", "<synthetic>"),
+            ("gpt-5", "gpt-5"),
+            ("claude-opus", "claude-opus"),
+        ] {
+            assert_eq!(model_label(id), want, "{id}");
+        }
+    }
 
     #[test]
     fn summaries_are_one_short_clean_line() {

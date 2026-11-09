@@ -47,6 +47,8 @@ pub fn mtime_ms(meta: &std::fs::Metadata) -> i64 {
 struct Row {
     tokens: u64,
     cost: Option<f64>,
+    /// Output tokens: a later line of the same reply replaces this one only with as much or more.
+    output: u64,
 }
 
 struct Pend {
@@ -414,6 +416,7 @@ pub struct Session {
     custom_title: Option<String>,
     agent_title: Option<String>,
     model: Option<String>,
+    effort: Option<String>,
     prompt_ts: Option<i64>,
     steps: VecDeque<StepRec>,
     touched: Vec<NowFile>,
@@ -436,6 +439,7 @@ impl Session {
             custom_title: None,
             agent_title: None,
             model: None,
+            effort: None,
             prompt_ts: None,
             steps: VecDeque::new(),
             touched: Vec::new(),
@@ -586,11 +590,16 @@ impl Session {
         let mut repeated = false;
         let mut keyed = false;
         if let Some(m) = p.usage {
-            if !is_sub && !m.model.is_empty() {
+            // A reply written again later with less output (zeroed counts) is a replay: skip it.
+            let replay = !m.key.is_empty() && self.files[fi].rows.get(&m.key).is_some_and(|old| m.output < old.output);
+            if !replay && !is_sub && !m.model.is_empty() {
+                // Model and effort go together: a reply with no effort clears the old one.
                 self.model = Some(m.model.clone());
+                self.effort = m.effort.clone();
             }
-            // A helper's own model: the newest real id its lines name (not "<synthetic>").
-            if is_sub && m.model.starts_with("claude-") {
+            // A helper's own model: the newest real id its lines name (not "<synthetic>"). Its
+            // effort is the newest line that says one (above).
+            if !replay && is_sub && m.model.starts_with("claude-") {
                 self.files[fi].model = Some(m.model.clone());
             }
             keyed = !m.key.is_empty();
@@ -607,21 +616,26 @@ impl Session {
                 &Basis { model: &m.model, speed: &m.speed, geo: &m.geo, service_tier: &m.service_tier, price_tier: tier },
                 &counts,
             );
-            let row = Row { tokens: m.input + m.output + m.cw5m + m.cw1h, cost };
+            let row = Row { tokens: m.input + m.output + m.cw5m + m.cw1h, cost, output: m.output };
             let f = &mut self.files[fi];
             let key = if m.key.is_empty() { format!("#{}", f.rows.len()) } else { m.key.clone() };
-            if let Some(old) = f.rows.insert(key, Row { tokens: row.tokens, cost: row.cost }) {
+            // Same rule as the ledger: a replayed line with less output never replaces the reply.
+            if replay {
                 repeated = true;
-                f.tokens = f.tokens.saturating_sub(old.tokens);
-                match old.cost {
-                    Some(c) => f.cost = (f.cost - c).max(0.0),
-                    None => f.unpriced = f.unpriced.saturating_sub(1),
+            } else {
+                if let Some(old) = f.rows.insert(key, Row { tokens: row.tokens, cost: row.cost, output: row.output }) {
+                    repeated = true;
+                    f.tokens = f.tokens.saturating_sub(old.tokens);
+                    match old.cost {
+                        Some(c) => f.cost = (f.cost - c).max(0.0),
+                        None => f.unpriced = f.unpriced.saturating_sub(1),
+                    }
                 }
-            }
-            f.tokens += row.tokens;
-            match row.cost {
-                Some(c) => f.cost += c,
-                None => f.unpriced += 1,
+                f.tokens += row.tokens;
+                match row.cost {
+                    Some(c) => f.cost += c,
+                    None => f.unpriced += 1,
+                }
             }
         }
         let ts = p.ts_ms.unwrap_or(0);
@@ -702,6 +716,7 @@ impl Session {
             title: self.title(),
             project: self.project(),
             model: self.model.clone(),
+            effort: self.effort.clone(),
             ended_ms: self.newest_write_ms(),
             tokens: Some(self.files.iter().map(|f| f.tokens).sum()),
         }
@@ -783,6 +798,8 @@ impl Session {
         NowHelper {
             id: f.agent_id.clone(),
             name: f.name.clone().unwrap_or_else(|| "Helper".to_string()),
+            model: f.model.clone(),
+            effort: f.effort.clone(),
             doing,
             tokens: run.tokens,
             cost_usd: run.cost,
@@ -796,8 +813,6 @@ impl Session {
             phase: if run.calls == 0 { "Getting started" } else { f.phase() }.to_string(),
             last_line_ms: Some(f.last_activity_ms()).filter(|t| *t > 0),
             open_call: if done { None } else { f.open_call() },
-            model: f.model.clone(),
-            effort: f.effort.clone(),
         }
     }
 
@@ -880,6 +895,7 @@ impl Session {
             title: self.title(),
             project: self.project(),
             model: self.model.clone(),
+            effort: self.effort.clone(),
             state: if waiting { "waiting" } else { "working" }.to_string(),
             started_ms: started,
             worked_ms: worked,
@@ -1024,6 +1040,26 @@ mod tests {
         let fi = s.add_file(&p, false);
         s.read_file(fi, &Facts::new(), &PriceTable::seed(), &ReadStats::default()).unwrap();
         (dir, s)
+    }
+
+    #[test]
+    fn effort_follows_the_newest_reply_and_a_zeroed_replay_does_not_count() {
+        let reply = |out: u64, effort: &str| {
+            format!(
+                r#"{{"type":"assistant","timestamp":"2026-11-08T10:00:01.000Z","requestId":"rq"{effort},"message":{{"id":"mq","model":"claude-sonnet-5-5","stop_reason":"end_turn","content":[{{"type":"text","text":"x"}}],"usage":{{"input_tokens":3,"output_tokens":{out},"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}}}}"#
+            )
+        };
+        let (_d, s) = session(&[
+            prompt("2026-11-08T10:00:00.000Z"),
+            reply(40, r#","effort":"high","perTurnEffort":"xhigh""#),
+            reply(0, r#","effort":"high""#), // the same reply written again with zeroed counts
+        ]);
+        let c = s.chat(now_after());
+        assert_eq!(c.tokens, 3 + 40);
+        assert_eq!(c.model.as_deref(), Some("claude-sonnet-5-5"));
+        assert_eq!(c.effort.as_deref(), Some("xhigh"));
+        let (_d, s) = session(&[prompt("2026-11-08T10:00:00.000Z"), reply(5, "")]);
+        assert_eq!(s.chat(now_after()).effort, None);
     }
 
     #[test]

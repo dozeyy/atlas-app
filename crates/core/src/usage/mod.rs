@@ -40,7 +40,8 @@ use scan::Mode;
 use time::{now_ms, Tz};
 
 /// Bump to make every install re-read its transcripts once (D30).
-pub const PARSER_VERSION: &str = "3";
+/// "4": effort per reply, and a replayed reply line with zeroed counts no longer wins its key.
+pub const PARSER_VERSION: &str = "4";
 
 // ---------------------------------------------------------------- config
 

@@ -159,29 +159,25 @@ pub fn model(m: &str) -> String {
 }
 
 fn model_label(m: &str) -> String {
-    let family = |s: &str| matches!(s, "opus" | "sonnet" | "haiku" | "fable");
-    let digits = |s: &str, max: usize| !s.is_empty() && s.len() <= max && s.bytes().all(|b| b.is_ascii_digit());
-    let cap = |s: &str| {
-        let mut c = s.chars();
-        c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
-    };
-    let Some(rest) = m.strip_prefix("claude-") else { return m.to_string() };
-    let mut parts: Vec<&str> = rest.split('-').collect();
-    if parts.len() > 2 && parts.last().is_some_and(|p| p.len() == 8 && digits(p, 8)) {
-        parts.pop();
-    }
-    let version = |major: &str, minor: Option<&&str>| match minor {
-        Some(n) => format!("{major}.{n}"),
-        None => major.to_string(),
-    };
-    match parts.as_slice() {
-        [f, maj, rest @ ..] if family(f) && digits(maj, 20) && rest.len() <= 1 && rest.first().is_none_or(|n| digits(n, 2)) => {
-            format!("{} {}", cap(f), version(maj, rest.first()))
-        }
-        [maj, rest @ .., f] if family(f) && digits(maj, 20) && rest.len() <= 1 && rest.first().is_none_or(|n| digits(n, 2)) => {
-            format!("{} {}", cap(f), version(maj, rest.first()))
-        }
-        _ => m.to_string(),
+    atlas_core::usage::naming::model_label(m)
+}
+
+/// The reasoning-effort mix as the app words it: one effort is just its name ("high"); a mix
+/// is each effort's share of the replies that had one, most used first ("high 93%, medium 7%").
+/// Empty when no reply said (never a guess).
+pub fn effort_mix(e: &[atlas_core::usage::query::EffortUse]) -> String {
+    let total: u64 = e.iter().map(|x| x.replies).sum();
+    match e {
+        [] => String::new(),
+        [one] => one.effort.clone(),
+        _ => e
+            .iter()
+            .map(|x| {
+                let p = x.replies as f64 * 100.0 / total.max(1) as f64;
+                if p > 0.0 && p < 1.0 { format!("{} <1%", x.effort) } else { format!("{} {:.0}%", x.effort, p) }
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
     }
 }
 
@@ -269,9 +265,21 @@ mod tests {
         assert_eq!(model("claude-3-5-sonnet-20241022"), "Sonnet 3.5");
         assert_eq!(model("claude-3-haiku-20240307"), "Haiku 3");
         assert_eq!(model("claude-fable-5-1"), "Fable 5.1");
-        // Not a family the app names: shown as it is.
-        assert_eq!(model("claude-mystery-5-1"), "claude-mystery-5-1");
+        assert_eq!(model("claude-fable-5-2"), "Fable 5.2");
+        assert_eq!(model("claude-mythos-5-2"), "Mythos 5.2");
+        // A family Atlas has never seen still gets its full name (pricing says "not priced").
+        assert_eq!(model("claude-mystery-5-1"), "Mystery 5.1");
         assert_eq!(model("<synthetic>"), "<synthetic>");
+    }
+
+    #[test]
+    fn effort_mix_is_named_and_never_guessed() {
+        use atlas_core::usage::query::EffortUse;
+        let e = |effort: &str, replies| EffortUse { effort: effort.into(), replies };
+        assert_eq!(effort_mix(&[]), "");
+        assert_eq!(effort_mix(&[e("high", 40)]), "high");
+        assert_eq!(effort_mix(&[e("high", 93), e("medium", 7)]), "high 93%, medium 7%");
+        assert_eq!(effort_mix(&[e("high", 999), e("max", 1)]), "high 100%, max <1%");
     }
 
     #[test]

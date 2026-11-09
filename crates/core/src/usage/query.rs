@@ -101,6 +101,41 @@ pub struct ModelUse {
     pub known: bool,
     pub tokens: Tokens,
     pub cost: Cost,
+    /// Replies per reasoning effort, most used first (empty where it is not asked for, and for
+    /// replies the transcripts give no effort).
+    #[serde(default)]
+    pub efforts: Vec<EffortUse>,
+}
+
+/// How many replies ran at one reasoning effort (`low`, `medium`, `high`, `xhigh`, `max`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffortUse {
+    pub effort: String,
+    pub replies: u64,
+}
+
+/// Sort order for efforts with equal counts: the known ladder, then anything new by name.
+pub fn effort_rank(e: &str) -> (usize, &str) {
+    const LADDER: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
+    (LADDER.iter().position(|l| *l == e).unwrap_or(LADDER.len()), e)
+}
+
+/// `(key, effort, count)` rows -> each key's effort mix, most used first. Rows with no effort
+/// are not listed (absent stays absent).
+fn effort_mix<P: rusqlite::Params>(conn: &Connection, sql: &str, p: P) -> rusqlite::Result<HashMap<String, Vec<EffortUse>>> {
+    let mut out: HashMap<String, Vec<EffortUse>> = HashMap::new();
+    let mut st = conn.prepare_cached(sql)?;
+    for r in st.query_map(p, |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, u(r.get::<_, i64>(2)?))))? {
+        let (k, e, n) = r?;
+        if let Some(e) = e.filter(|e| !e.is_empty()) {
+            out.entry(k).or_default().push(EffortUse { effort: e, replies: n });
+        }
+    }
+    for v in out.values_mut() {
+        v.sort_by(|a, b| b.replies.cmp(&a.replies).then_with(|| effort_rank(&a.effort).cmp(&effort_rank(&b.effort))));
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,6 +280,12 @@ pub struct SessionRow {
     pub ended_at: i64,
     pub duration_ms: i64,
     pub models: Vec<String>,
+    /// The model of the chat itself (most of the main thread's tokens; "" when it has none).
+    #[serde(default)]
+    pub main_model: String,
+    /// The chat's own replies per reasoning effort, most used first (helpers have their own).
+    #[serde(default)]
+    pub efforts: Vec<EffortUse>,
     pub messages: u64,
     pub subagent_messages: u64,
     pub tokens: Tokens,
@@ -266,6 +307,9 @@ pub struct ByModel {
     pub model: String,
     pub tokens: Tokens,
     pub cost: Cost,
+    /// Replies per reasoning effort on this model, most used first.
+    #[serde(default)]
+    pub efforts: Vec<EffortUse>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -314,6 +358,9 @@ pub struct AgentSummary {
     /// The model that did most of the work ("" when it made no priced call).
     pub model: String,
     pub models: Vec<String>,
+    /// The helper's replies per reasoning effort, most used first.
+    #[serde(default)]
+    pub efforts: Vec<EffortUse>,
     pub messages: u64,
     pub tokens: Tokens,
     pub cost: Cost,
@@ -528,7 +575,7 @@ pub fn dashboard(conn: &Connection, ctx: &QueryCtx) -> rusqlite::Result<Dashboar
     }
     let mut by_model: Vec<ModelUse> = models
         .into_iter()
-        .map(|(m, a)| ModelUse { model: m.to_string(), known: ctx.prices.is_known(m), tokens: a.t, cost: a.cost() })
+        .map(|(m, a)| ModelUse { model: m.to_string(), known: ctx.prices.is_known(m), tokens: a.t, cost: a.cost(), efforts: Vec::new() })
         .collect();
     by_model.sort_by(|a, b| b.tokens.total.cmp(&a.tokens.total).then_with(|| a.model.cmp(&b.model)));
 
@@ -990,9 +1037,23 @@ pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlit
     }
     let mut by_model: Vec<ModelUse> = models
         .into_iter()
-        .map(|(m, a)| ModelUse { model: m.to_string(), known: ctx.prices.is_known(m), tokens: a.t, cost: a.cost() })
+        .map(|(m, a)| ModelUse { model: m.to_string(), known: ctx.prices.is_known(m), tokens: a.t, cost: a.cost(), efforts: Vec::new() })
         .collect();
     by_model.sort_by(|a, b| b.tokens.total.cmp(&a.tokens.total).then_with(|| a.model.cmp(&b.model)));
+    {
+        // Effort per model over the same hours (and project) the token rows cover.
+        let (lo, hi) = (format!("{from}T00"), format!("{}T00", add_days(to, 1)));
+        let mut efforts = effort_mix(
+            conn,
+            "SELECT m.model, m.effort, COUNT(*) FROM messages m LEFT JOIN sessions s ON s.session_id = m.session_id \
+             WHERE m.hour_local >= ?1 AND m.hour_local < ?2 AND (?3 IS NULL OR COALESCE(s.project_key,'') = ?3) \
+             AND m.effort IS NOT NULL GROUP BY 1, 2",
+            rusqlite::params![lo, hi, project],
+        )?;
+        for m in &mut by_model {
+            m.efforts = efforts.remove(&m.model).unwrap_or_default();
+        }
+    }
 
     // Chats started per bucket (the timeline's rule), in this project only when one is asked.
     let lo = day_start_ms(ctx.tz, from);
@@ -1130,6 +1191,39 @@ pub(crate) fn session_rows_for(conn: &Connection, ctx: &QueryCtx, ids: &[String]
             *e.models.entry(model).or_default() += g.t.total;
         }
     }
+    // The chat itself (no helper): its model by tokens, and its effort mix.
+    let mut main_model: HashMap<String, (String, u64)> = HashMap::new();
+    let mut efforts: HashMap<String, Vec<EffortUse>> = HashMap::new();
+    {
+        let sql = format!(
+            "SELECT session_id, model, effort, COUNT(*), SUM(input+output+cw5m+cw1h) FROM messages \
+             WHERE session_id IN ({ph}) AND agent_id IS NULL GROUP BY 1, 2, 3"
+        );
+        let mut st = conn.prepare(&sql)?;
+        let mut by_model: HashMap<(String, String), u64> = HashMap::new();
+        let mut by_effort: HashMap<(String, String), u64> = HashMap::new();
+        for r in st.query_map(params_from_iter(vals.iter()), |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, u(r.get(3)?), u(r.get(4)?)))
+        })? {
+            let (sid, model, effort, n, tok) = r?;
+            *by_model.entry((sid.clone(), model)).or_default() += tok;
+            if let Some(e) = effort.filter(|e| !e.is_empty()) {
+                *by_effort.entry((sid, e)).or_default() += n;
+            }
+        }
+        for ((sid, model), tok) in by_model {
+            let e = main_model.entry(sid).or_insert_with(|| (String::new(), 0));
+            if e.0.is_empty() || tok > e.1 || (tok == e.1 && model < e.0) {
+                *e = (model, tok);
+            }
+        }
+        for ((sid, effort), n) in by_effort {
+            efforts.entry(sid).or_default().push(EffortUse { effort, replies: n });
+        }
+        for v in efforts.values_mut() {
+            v.sort_by(|a, b| b.replies.cmp(&a.replies).then_with(|| effort_rank(&a.effort).cmp(&effort_rank(&b.effort))));
+        }
+    }
     let mut agent_counts: HashMap<String, u64> = HashMap::new();
     {
         let sql = format!("SELECT session_id, COUNT(*) FROM agents WHERE session_id IN ({ph}) GROUP BY session_id");
@@ -1173,6 +1267,8 @@ pub(crate) fn session_rows_for(conn: &Connection, ctx: &QueryCtx, ids: &[String]
         let mut models: Vec<(String, u64)> = agg.models.into_iter().collect();
         models.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         let _ = ctx;
+        let row_main_model = main_model.remove(&sid).map(|m| m.0).unwrap_or_default();
+        let row_efforts = efforts.remove(&sid).unwrap_or_default();
         by_id.insert(
             sid.clone(),
             SessionRow {
@@ -1187,6 +1283,8 @@ pub(crate) fn session_rows_for(conn: &Connection, ctx: &QueryCtx, ids: &[String]
                 ended_at: last,
                 duration_ms: (last - first).max(0),
                 models: models.into_iter().map(|m| m.0).collect(),
+                main_model: row_main_model,
+                efforts: row_efforts,
                 messages: u(msgs),
                 subagent_messages: u(sub),
                 tokens: agg.acc.t,
@@ -1401,6 +1499,12 @@ pub(crate) fn agent_summaries(conn: &Connection, id: &str) -> rusqlite::Result<V
             *e.models.entry(model).or_default() += g.t.total;
         }
     }
+    let mut agent_efforts = effort_mix(
+        conn,
+        "SELECT agent_id, effort, COUNT(*) FROM messages WHERE session_id=?1 AND agent_id IS NOT NULL \
+         AND effort IS NOT NULL GROUP BY 1, 2",
+        [id],
+    )?;
     let mut ids: Vec<String> = reg.keys().cloned().collect();
     for k in spend.keys() {
         if !reg.contains_key(k) {
@@ -1419,7 +1523,9 @@ pub(crate) fn agent_summaries(conn: &Connection, id: &str) -> rusqlite::Result<V
             );
             let mut models: Vec<(String, u64)> = s.models.into_iter().collect();
             models.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            let efforts = agent_efforts.remove(&aid).unwrap_or_default();
             AgentSummary {
+                efforts,
                 agent_id: aid,
                 name,
                 name_source: src.as_str().to_string(),
@@ -1576,8 +1682,16 @@ pub fn agent_detail(conn: &Connection, ctx: &QueryCtx, session_id: &str, agent_i
             by_model.entry(m).or_default().add(&g);
         }
     }
-    let mut by_model: Vec<ByModel> =
-        by_model.into_iter().map(|(model, a)| ByModel { model, tokens: a.t, cost: a.cost() }).collect();
+    let mut efforts = effort_mix(
+        conn,
+        "SELECT model, effort, COUNT(*) FROM messages WHERE session_id=?1 AND agent_id=?2 \
+         AND effort IS NOT NULL GROUP BY 1, 2",
+        [session_id, agent_id],
+    )?;
+    let mut by_model: Vec<ByModel> = by_model
+        .into_iter()
+        .map(|(model, a)| ByModel { efforts: efforts.remove(&model).unwrap_or_default(), model, tokens: a.t, cost: a.cost() })
+        .collect();
     by_model.sort_by(|a, b| b.tokens.total.cmp(&a.tokens.total).then_with(|| a.model.cmp(&b.model)));
 
     let mut timeline = Vec::new();
@@ -1658,8 +1772,15 @@ pub fn session_detail(conn: &Connection, ctx: &QueryCtx, id: &str) -> rusqlite::
             by_model.entry(m).or_default().add(&g);
         }
     }
-    let mut by_model: Vec<ByModel> =
-        by_model.into_iter().map(|(model, a)| ByModel { model, tokens: a.t, cost: a.cost() }).collect();
+    let mut efforts = effort_mix(
+        conn,
+        "SELECT model, effort, COUNT(*) FROM messages WHERE session_id=?1 AND effort IS NOT NULL GROUP BY 1, 2",
+        [id],
+    )?;
+    let mut by_model: Vec<ByModel> = by_model
+        .into_iter()
+        .map(|(model, a)| ByModel { efforts: efforts.remove(&model).unwrap_or_default(), model, tokens: a.t, cost: a.cost() })
+        .collect();
     by_model.sort_by(|a, b| b.tokens.total.cmp(&a.tokens.total).then_with(|| a.model.cmp(&b.model)));
 
     let mut agents: BTreeMap<Option<String>, (u64, Acc)> = BTreeMap::new();
