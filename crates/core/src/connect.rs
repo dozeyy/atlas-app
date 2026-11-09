@@ -26,7 +26,8 @@ const CLI_TIMEOUT: Duration = Duration::from_secs(25);
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectState {
-    /// connected | notConnected | moved (registered, but to a different program path)
+    /// connected | notConnected | moved (registered, but to a different copy of Atlas's own
+    /// connector) | foreign (the name `atlas` belongs to some other program: never touched)
     pub state: String,
     /// The program the registration points at.
     pub command: Option<String>,
@@ -121,12 +122,13 @@ pub fn find_claude_cli(path_var: Option<&OsStr>, home: &Path) -> Option<PathBuf>
 /// The registration as read from the file, for the Settings card.
 pub fn state(root: &ConfigRoot, server: Option<&Path>, cli: bool) -> ConnectState {
     let cj = read_cj(&root.claude_json);
-    let command = cj.as_ref().and_then(|v| v.get("mcpServers")).and_then(|m| m.get(SERVER_NAME)).and_then(|e| e.get("command")).and_then(Value::as_str).map(str::to_string);
-    let registered = cj.as_ref().and_then(|v| v.get("mcpServers")).and_then(|m| m.get(SERVER_NAME)).is_some();
-    let state = match (&command, server) {
-        (Some(c), Some(s)) if norm(c) == norm(&crate::setup::display_path(s)) => "connected",
-        (Some(_), _) => "moved",
-        (None, _) if registered => "moved",
+    let entry = cj.as_ref().and_then(|v| v.get("mcpServers")).and_then(|m| m.get(SERVER_NAME));
+    let command = entry.and_then(|e| e.get("command")).and_then(Value::as_str).map(str::to_string);
+    let state = match (entry, &command, server) {
+        (_, Some(c), Some(s)) if norm(c) == norm(&crate::setup::display_path(s)) => "connected",
+        (Some(e), _, _) if entry_is_ours(e, server) => "moved",
+        // Someone else's program under the name `atlas`: shown honestly, never touched.
+        (Some(_), _, _) => "foreign",
         _ => "notConnected",
     };
     ConnectState { state: state.into(), command, server: server.map(crate::setup::display_path), cli_found: cli, config_readable: cj.is_some() || !root.claude_json.exists() }
@@ -218,11 +220,30 @@ pub fn connect(ctx: &ConnectCtx) -> Result<ConnectOutcome, String> {
 
 /// `connect`, waiting at most `wait` for another Atlas change to finish.
 pub fn connect_waiting(ctx: &ConnectCtx, wait: Duration) -> Result<ConnectOutcome, String> {
+    let gate = |entry: Option<&Value>| entry.filter(|e| !entry_is_ours(e, Some(ctx.server))).map(|_| AutoOutcome::Foreign);
+    match connect_gated(ctx, wait, &gate)? {
+        Ok(done) => Ok(done),
+        Err(_) => Err(FOREIGN_MSG.into()),
+    }
+}
+
+const FOREIGN_MSG: &str = "A different program is already registered with Claude Code under the name \"atlas\", so Atlas left it alone. Remove that one in Claude Code first if you want Atlas to use the name.";
+
+/// The connect itself. `gate` looks at the registration once the write lock is held and right
+/// before anything is written, and can stop the whole thing with a reason (`Ok(Err(reason))`):
+/// a choice that changed while this waited for the lock, or an entry that is not Atlas's own.
+fn connect_gated(ctx: &ConnectCtx, wait: Duration, gate: &dyn Fn(Option<&Value>) -> Option<AutoOutcome>) -> Result<Result<ConnectOutcome, AutoOutcome>, String> {
     crate::fsutil::check_write_allowed(&ctx.root.claude_json).map_err(|e| e.to_string())?;
     if !ctx.server.is_file() {
         return Err("The Atlas connector program is missing from this install, so there is nothing to connect. Reinstalling Atlas puts it back.".into());
     }
     let _guard = lock(ctx, wait)?;
+    // Looked at under the lock: what was decided before waiting may no longer be true.
+    if let Ok(entry) = registered_entry(&ctx.root.claude_json)
+        && let Some(stop) = gate(entry.as_ref())
+    {
+        return Ok(Err(stop));
+    }
     let cli = ctx.cli.resolve();
     let want =crate::setup::display_path(ctx.server);
     let json = server_json(ctx);
@@ -255,7 +276,7 @@ pub fn connect_waiting(ctx: &ConnectCtx, wait: Duration) -> Result<ConnectOutcom
     if st.state != "connected" {
         return Err(format!("Atlas asked, but Claude's settings do not show it as connected (it points at {}). Please check {}.", st.command.as_deref().unwrap_or("nothing"), want));
     }
-    Ok(ConnectOutcome { state: st, via: via.into(), backup_id })
+    Ok(Ok(ConnectOutcome { state: st, via: via.into(), backup_id }))
 }
 
 /// What `auto_connect` did (or why it did nothing). Nothing here is an error the user is shown.
@@ -271,6 +292,9 @@ pub enum AutoOutcome {
     Current,
     /// An `atlas` entry that is someone else's program: left alone.
     Foreign,
+    /// Registered to another copy of Atlas's connector that still exists (an installed copy
+    /// next to a build, say): left alone, so two copies never fight over the entry.
+    OtherCopy,
     /// Registered for the first time.
     Connected,
     /// The registration pointed at a moved or old copy (or had stale arguments): pointed here.
@@ -295,12 +319,59 @@ fn entry_is_current(entry: &Value, ctx: &ConnectCtx) -> bool {
     same_cmd && entry.get("args").cloned().unwrap_or(Value::Array(vec![])) == want["args"]
 }
 
-/// Is this entry Atlas's own connector (an old or moved copy), as opposed to another program a
-/// person registered under the same name? A program that no longer exists is stale too.
-fn entry_is_ours(entry: &Value) -> bool {
+/// An absolute program path, in either spelling (`C:\x\y.exe`, `\\host\share\y.exe`, `/x/y`),
+/// whichever system this runs on. A bare name like `npx` is not one.
+fn is_absolute_command(cmd: &str) -> bool {
+    let b = cmd.as_bytes();
+    Path::new(cmd).is_absolute() || cmd.starts_with('/') || cmd.starts_with("\\\\") || (b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/'))
+}
+
+/// Is this entry Atlas's own connector (this install's, or an old or moved copy), as opposed to
+/// a program a person registered under the same name? Only an absolute path whose file is named
+/// exactly `atlas-mcp` counts (or the very program this install ships). A bare command name
+/// (`npx`, `uvx`, `node`, `docker`), a missing file with another name, or an entry that has no
+/// command at all is somebody else's and is never touched.
+fn entry_is_ours(entry: &Value, server: Option<&Path>) -> bool {
     let Some(cmd) = entry.get("command").and_then(Value::as_str) else { return false };
+    if server.is_some_and(|s| norm(cmd) == norm(&crate::setup::display_path(s))) {
+        return true;
+    }
+    if !is_absolute_command(cmd) {
+        return false;
+    }
     let stem = Path::new(&cmd.replace('\\', "/")).file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
-    stem.starts_with("atlas-mcp") || !Path::new(cmd).exists()
+    stem == "atlas-mcp"
+}
+
+/// Should Atlas register itself automatically for this launch? Never for a `--config-dir` or
+/// `--data-dir` launch (those are test and scratch runs: a real `claude` would write the folder
+/// they point at, and the data folder in the arguments makes every new scratch folder look
+/// stale). The manual switch in Settings still works there.
+pub fn auto_allowed(source: ConfigSource, data_dir_flag: Option<&Path>) -> bool {
+    matches!(source, ConfigSource::Default | ConfigSource::Env | ConfigSource::Settings) && data_dir_flag.is_none()
+}
+
+/// Is this program somewhere it will stay? An auto registration must not point at a folder that
+/// changes every launch or disappears: a macOS App Translocation copy, a mounted disk image,
+/// a temp folder, or a build output folder (`target/debug`, `target/release`).
+pub fn is_stable_install(server: &Path) -> bool {
+    let full = norm(&server.to_string_lossy());
+    let parts: Vec<&str> = full.split('/').filter(|p| !p.is_empty()).collect();
+    if parts.iter().any(|p| p.contains("apptranslocation")) {
+        return false;
+    }
+    if full.starts_with("/volumes/") || full.starts_with("/tmp/") || full.starts_with("/var/folders/") || full.starts_with("/private/var/folders/") || full.starts_with("/private/tmp/") {
+        return false;
+    }
+    if parts.windows(3).any(|w| w == ["appdata", "local", "temp"]) {
+        return false;
+    }
+    let temp = norm(&std::env::temp_dir().to_string_lossy());
+    if !temp.is_empty() && (full == temp || full.starts_with(&format!("{temp}/"))) {
+        return false;
+    }
+    let is_profile = |p: &str| p == "debug" || p == "release";
+    !parts.iter().enumerate().any(|(i, p)| *p == "target" && (parts.get(i + 1).is_some_and(|n| is_profile(n)) || parts.get(i + 2).is_some_and(|n| is_profile(n))))
 }
 
 /// Make sure Claude Code can use Atlas without anyone pressing a button. Runs after the first
@@ -309,8 +380,13 @@ fn entry_is_ours(entry: &Value) -> bool {
 /// the user turned it off, when everything is already right, or when the command is missing (a
 /// later launch tries again). Writes go through `connect`, so the backup, the lock, the debug-build
 /// guard and the quiet (no window) spawns all apply.
-pub fn auto_connect(ctx: &ConnectCtx, enabled: bool) -> AutoOutcome {
-    if !enabled {
+///
+/// `enabled` is asked again once the write lock is held, right before anything is written: a
+/// switch turned off while this waited for the lock (or for the `claude` command) wins.
+/// A registration is only repointed when its program no longer exists (or is this install's
+/// own program with other arguments), so two copies that both exist never take it from each other.
+pub fn auto_connect(ctx: &ConnectCtx, enabled: &dyn Fn() -> bool) -> AutoOutcome {
+    if !enabled() {
         return AutoOutcome::Off;
     }
     if !ctx.server.is_file() {
@@ -322,16 +398,39 @@ pub fn auto_connect(ctx: &ConnectCtx, enabled: bool) -> AutoOutcome {
     if let Err(e) = crate::fsutil::check_write_allowed(&ctx.root.claude_json) {
         return AutoOutcome::Skipped(e.to_string());
     }
-    let repair = match registered_entry(&ctx.root.claude_json) {
-        Err(e) => return AutoOutcome::Skipped(e),
-        Ok(None) => false,
-        Ok(Some(e)) if entry_is_current(&e, ctx) => return AutoOutcome::Current,
-        Ok(Some(e)) if entry_is_ours(&e) => true,
-        Ok(Some(_)) => return AutoOutcome::Foreign,
+    let repair = std::cell::Cell::new(false);
+    let gate = |entry: Option<&Value>| {
+        repair.set(false);
+        if !enabled() {
+            return Some(AutoOutcome::Off);
+        }
+        let e = entry?;
+        if entry_is_current(e, ctx) {
+            return Some(AutoOutcome::Current);
+        }
+        if !entry_is_ours(e, Some(ctx.server)) {
+            return Some(AutoOutcome::Foreign);
+        }
+        let cmd = e.get("command").and_then(Value::as_str).unwrap_or_default();
+        if norm(cmd) != norm(&crate::setup::display_path(ctx.server)) && Path::new(cmd).exists() {
+            return Some(AutoOutcome::OtherCopy);
+        }
+        repair.set(true);
+        None
     };
-    match connect_waiting(ctx, Duration::from_secs(3)) {
-        Ok(_) if repair => AutoOutcome::Repaired,
-        Ok(_) => AutoOutcome::Connected,
+    // Cheap look first, so a launch where everything is right takes no lock and starts nothing.
+    match registered_entry(&ctx.root.claude_json) {
+        Err(e) => return AutoOutcome::Skipped(e),
+        Ok(entry) => {
+            if let Some(done) = gate(entry.as_ref()) {
+                return done;
+            }
+        }
+    }
+    match connect_gated(ctx, Duration::from_secs(3), &gate) {
+        Ok(Ok(_)) if repair.get() => AutoOutcome::Repaired,
+        Ok(Ok(_)) => AutoOutcome::Connected,
+        Ok(Err(stopped)) => stopped,
         Err(e) => AutoOutcome::Skipped(e),
     }
 }
@@ -345,6 +444,12 @@ pub fn disconnect(ctx: &ConnectCtx) -> Result<ConnectOutcome, String> {
 pub fn disconnect_waiting(ctx: &ConnectCtx, wait: Duration) -> Result<ConnectOutcome, String> {
     crate::fsutil::check_write_allowed(&ctx.root.claude_json).map_err(|e| e.to_string())?;
     let _guard = lock(ctx, wait)?;
+    // Only Atlas's own entry is ever removed: a different program under the name `atlas` stays.
+    if let Ok(Some(entry)) = registered_entry(&ctx.root.claude_json)
+        && !entry_is_ours(&entry, Some(ctx.server))
+    {
+        return Err(FOREIGN_MSG.into());
+    }
     let cli = ctx.cli.resolve();
     let gone = |c: &ConnectCtx| entry_gone(&c.root.claude_json);
     let mut via = "file";

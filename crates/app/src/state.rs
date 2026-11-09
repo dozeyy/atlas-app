@@ -99,6 +99,8 @@ pub struct AppState {
     discards: Mutex<Vec<JoinHandle<()>>>,
     /// An editor in the page holds edits that are not saved: a quit asks first.
     unsaved: AtomicBool,
+    /// The launch-time connection to Claude Code has been started (a page reload must not start another).
+    auto_connect_started: AtomicBool,
 }
 
 #[derive(Serialize, Clone)]
@@ -243,7 +245,13 @@ impl AppState {
             notify: Mutex::new(None),
             discards: Mutex::new(Vec::new()),
             unsaved: AtomicBool::new(false),
+            auto_connect_started: AtomicBool::new(false),
         })
+    }
+
+    /// True the first time it is asked, false after: the launch-time Claude Code connection runs once.
+    pub fn claim_auto_connect(&self) -> bool {
+        !self.auto_connect_started.swap(true, Ordering::SeqCst)
     }
 
     /// The page reports whether an editor holds edits that are not saved.
@@ -452,6 +460,21 @@ impl AppState {
             self.persist();
         }
         self.info()
+    }
+
+    /// Save the "Let Claude Code use Atlas" choice. `Err` when it could not be written to disk:
+    /// the choice is put back as it was, so the page never promises a setting that the next
+    /// launch will not find (an off that is lost means Atlas reconnects by itself).
+    pub fn save_mcp_choice(&self, on: bool) -> Result<(), String> {
+        let before = self.mcp_auto_connect();
+        let info = self.update_settings(SettingsPatch { mcp_auto_connect: Some(on), ..Default::default() });
+        match info.settings_save_error {
+            None => Ok(()),
+            Some(_) => {
+                self.update_settings(SettingsPatch { mcp_auto_connect: Some(before), ..Default::default() });
+                Err("Atlas could not save this choice, so it left the connection to Claude Code as it was.".into())
+            }
+        }
     }
 
     /// Closing the window hides Atlas to the tray (opt-in, default off).
@@ -825,6 +848,26 @@ mod tests {
         let info = state.update_settings(SettingsPatch { mcp_auto_connect: Some(false), ..Default::default() });
         assert!(!info.settings.mcp_auto_connect);
         assert!(!settings::load(&tmp.path().join("data")).settings.mcp_auto_connect);
+    }
+
+    #[test]
+    fn an_off_choice_that_cannot_be_saved_is_refused_and_put_back() {
+        let (tmp, state) = fixture(false);
+        let blocker = tmp.path().join("data").join(settings::FILE_NAME);
+        fs::create_dir_all(&blocker).unwrap();
+        let err = state.save_mcp_choice(false).expect_err("a lost off would let Atlas reconnect");
+        assert!(err.contains("could not save"), "{err}");
+        assert!(state.mcp_auto_connect(), "the page must not show an off that the next launch will not find");
+        fs::remove_dir_all(&blocker).unwrap();
+        state.save_mcp_choice(false).expect("saves once the disk allows");
+        assert!(!settings::load(&tmp.path().join("data")).settings.mcp_auto_connect);
+    }
+
+    #[test]
+    fn the_launch_connection_is_claimed_once() {
+        let (_tmp, state) = fixture(false);
+        assert!(state.claim_auto_connect());
+        assert!(!state.claim_auto_connect(), "a page reload must not start a second one");
     }
 
     #[test]

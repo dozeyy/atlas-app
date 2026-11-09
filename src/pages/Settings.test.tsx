@@ -176,6 +176,54 @@ describe("Settings", () => {
     expect(await screen.findByText("Claude Code not found")).toBeInTheDocument();
   });
 
+  it("the switch saves its choice once, inside the connect command, not from the page too", async () => {
+    const b = mount();
+    const save = vi.spyOn(b, "updateSettings");
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
+    await userEvent.click(await screen.findByRole("switch", { name: "Let Claude Code use Atlas" }));
+    expect(await screen.findByText("Off")).toBeInTheDocument();
+    expect(save).not.toHaveBeenCalled();
+    expect(screen.getByRole("switch", { name: "Let Claude Code use Atlas" })).not.toBeChecked();
+  });
+
+  it("another program named atlas shows honestly: switch off and disabled, and nothing is ever disconnected", async () => {
+    const b = mount((m) => {
+      m.mcpStatus = async () => ({ state: "foreign", command: "npx", server: "C:/x/atlas-mcp.exe", cliFound: true, configReadable: true, sandbox: false });
+    });
+    const off = vi.spyOn(b, "mcpDisconnect");
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
+    const sw = await screen.findByRole("switch", { name: "Let Claude Code use Atlas" });
+    expect(await screen.findByText(/different program named "atlas"/)).toBeInTheDocument();
+    expect(sw).not.toBeChecked();
+    expect(sw).toBeDisabled();
+    expect(screen.queryByText(/Atlas fixes this when it starts/)).toBeNull();
+    await userEvent.click(sw);
+    expect(off).not.toHaveBeenCalled();
+  });
+
+  it("a stale registration to another copy is shown whether the switch is on or off", async () => {
+    const moved = { state: "moved", command: "C:/old/atlas-mcp.exe", server: "C:/x/atlas-mcp.exe", cliFound: true, configReadable: true, sandbox: false } as const;
+    mount((m) => {
+      m.mcpStatus = async () => moved;
+    });
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
+    expect(await screen.findByText(/Registered to a different copy of Atlas/)).toBeInTheDocument();
+    cleanup();
+    // Switched off earlier (or the disconnect failed): the card must not say a plain "Off".
+    localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "settings", mcpAutoConnect: false }));
+    const b = new MockBackend();
+    b.mcpStatus = async () => moved;
+    setBackend(b);
+    render(
+      <AtlasProvider>
+        <App />
+      </AtlasProvider>,
+    );
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
+    expect(await screen.findByText(/still registered with Claude Code/)).toBeInTheDocument();
+    expect(screen.queryByText("Off")).toBeNull();
+  });
+
   it("Claude Code section cannot change while Sandbox mode is on", async () => {
     mount((b) => {
       b.mcpStatus = async () => ({ state: "notConnected", command: null, server: "C:/x/atlas-mcp.exe", cliFound: true, configReadable: true, sandbox: true });

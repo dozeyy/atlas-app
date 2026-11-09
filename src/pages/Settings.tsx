@@ -64,7 +64,6 @@ export function Settings() {
     setCloseToTray,
     setNotifyOnFinish,
     setShowShortcuts,
-    setMcpAutoConnect,
     setHistoryKeep,
     setSandbox,
     chooseConfigDir,
@@ -141,8 +140,8 @@ export function Settings() {
   const changeMcp = async (connect: boolean) => {
     setMcpBusy(true);
     try {
-      // The choice is recorded first, so a failure below never leaves Atlas free to reconnect on its own.
-      await setMcpAutoConnect(connect);
+      // Rust saves the choice first (so a failure never leaves Atlas free to reconnect on its
+      // own), then changes the connection, and announces the new settings to the page.
       await (connect ? backend.mcpConnect() : backend.mcpDisconnect());
       pushToast({ message: connect ? "Claude Code can use Atlas now. Open a new chat to see it." : "Atlas is disconnected from Claude Code and will stay that way.", tone: "info" });
     } catch (e) {
@@ -153,23 +152,27 @@ export function Settings() {
     }
   };
   const mcpWanted = info.settings.mcpAutoConnect !== false;
+  // Another program owns the name "atlas" in Claude Code: shown as it is, never switched.
+  const mcpForeign = mcp?.state === "foreign";
   const mcpState = !mcp
     ? "Checking"
     : mcp.sandbox
       ? "Turn Sandbox mode off to change this."
       : mcp.server === null
         ? "The connector program is missing from this install. Reinstalling Atlas puts it back."
-        : !mcpWanted
-          ? mcp.state === "connected"
-            ? "Connected"
-            : "Off"
+        : mcpForeign
+          ? 'Claude Code already has a different program named "atlas". Atlas leaves it alone.'
           : mcp.state === "connected"
             ? "Connected"
-            : !mcp.cliFound
-              ? "Claude Code not found"
-              : mcp.state === "moved"
-                ? "Pointing at another copy of Atlas. Atlas fixes this when it starts."
-                : "Not connected yet";
+            : mcp.state === "moved"
+              ? mcpWanted
+                ? "Registered to a different copy of Atlas. Turn this off and on to use this one."
+                : "Off, but a different copy of Atlas is still registered with Claude Code."
+              : !mcpWanted
+                ? "Off"
+                : !mcp.cliFound
+                  ? "Claude Code not found"
+                  : "Not connected yet";
 
   // Updates (About): the same state the sidebar icon shows; the button asks right now.
   const upd = useUpdate();
@@ -310,7 +313,7 @@ export function Settings() {
             </>
           }
         >
-          <Toggle label="Let Claude Code use Atlas" checked={mcpWanted} onChange={(v) => void changeMcp(v)} disabled={mcpBusy || !mcp || mcp.sandbox || mcp.server === null} />
+          <Toggle label="Let Claude Code use Atlas" checked={mcpWanted && !mcpForeign} onChange={(v) => void changeMcp(v)} disabled={mcpBusy || !mcp || mcp.sandbox || mcp.server === null || mcpForeign} />
         </Row>
         {mcp?.server && <Row label="Connector program" hint={<Path>{mcp.server}</Path>} />}
         <Row label="Private to you" tip="The connector talks to Claude Code through a pipe on this computer. It opens no network port, and it never reads or shows Claude's sign-in files or keys.">

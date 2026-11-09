@@ -76,8 +76,9 @@ export type Unlisten = () => void;
 
 /** Claude Code connection: what Settings shows for the Atlas MCP server. */
 export interface McpStatus {
-  /** connected | notConnected | moved (registered, but to a different program path) */
-  state: "connected" | "notConnected" | "moved";
+  /** connected | notConnected | moved (registered to a different copy of Atlas's own connector)
+   *  | foreign (the name "atlas" belongs to some other program: Atlas never touches it) */
+  state: "connected" | "notConnected" | "moved" | "foreign";
   /** The program Claude's settings point at. */
   command: string | null;
   /** The connector program that ships with this Atlas (null when it is missing). */

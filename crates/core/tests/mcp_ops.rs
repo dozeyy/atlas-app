@@ -978,7 +978,7 @@ fn the_first_launch_connects_atlas_once_and_later_launches_do_nothing() {
     assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "notConnected");
 
     let ctx = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
-    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Connected);
+    assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::Connected);
     assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "connected");
     assert_eq!(a.cli.calls(), ["add-json"], "went through Claude Code's own command");
     let entry = &read_json(&a.cj)["mcpServers"]["atlas"];
@@ -994,7 +994,7 @@ fn the_first_launch_connects_atlas_once_and_later_launches_do_nothing() {
     // Launches two and three: nothing is run, nothing is written, History gets no new row.
     let before = fs::read(&a.cj).unwrap();
     for t in 2..4 {
-        assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Current);
+        assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::Current);
         scan_cj(&e, &store, 1_800_000_000_000 + t * 1000);
     }
     assert_eq!(a.cli.calls(), ["add-json"]);
@@ -1007,14 +1007,14 @@ fn nothing_reconnects_after_the_user_turned_it_off() {
     let e = env();
     let a = auto_env(&e);
     let ctx = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
-    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Connected);
+    assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::Connected);
     // The switch goes off: the app records the choice and disconnects.
     connect::disconnect(&ctx).unwrap();
     assert_eq!(read_json(&a.cj), a.without);
     let calls = a.cli.calls();
     // Every later launch sees "off" and touches nothing, however often it runs.
     for _ in 0..3 {
-        assert_eq!(connect::auto_connect(&ctx, false), AutoOutcome::Off);
+        assert_eq!(connect::auto_connect(&ctx, &|| false), AutoOutcome::Off);
     }
     assert_eq!(read_json(&a.cj), a.without);
     assert_eq!(a.cli.calls(), calls, "no command ran");
@@ -1028,7 +1028,7 @@ fn a_registration_that_points_at_a_moved_copy_or_has_stale_arguments_is_repaired
     let e = env();
     let a = auto_env(&e);
     let ctx = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
-    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Connected);
+    assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::Connected);
     let good = read_json(&a.cj);
 
     // An update moved the program: the entry names a place that is gone.
@@ -1037,7 +1037,7 @@ fn a_registration_that_points_at_a_moved_copy_or_has_stale_arguments_is_repaired
     moved["mcpServers"]["atlas"]["command"] = gone.into();
     fs::write(&a.cj, serde_json::to_vec_pretty(&moved).unwrap()).unwrap();
     assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "moved");
-    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Repaired);
+    assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::Repaired);
     assert_eq!(read_json(&a.cj), good);
     assert_eq!(a.cli.calls(), ["add-json", "remove", "add-json"], "removed the stale entry, then added the right one");
 
@@ -1045,7 +1045,7 @@ fn a_registration_that_points_at_a_moved_copy_or_has_stale_arguments_is_repaired
     let mut stale = good.clone();
     stale["mcpServers"]["atlas"]["args"] = serde_json::json!(["--config-dir", "C:/old/place"]);
     fs::write(&a.cj, serde_json::to_vec_pretty(&stale).unwrap()).unwrap();
-    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Repaired);
+    assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::Repaired);
     assert_eq!(read_json(&a.cj), good);
 
     // A different program someone registered under the name `atlas` is not ours to replace.
@@ -1055,7 +1055,7 @@ fn a_registration_that_points_at_a_moved_copy_or_has_stale_arguments_is_repaired
     foreign["mcpServers"]["atlas"]["command"] = theirs.to_string_lossy().to_string().into();
     fs::write(&a.cj, serde_json::to_vec_pretty(&foreign).unwrap()).unwrap();
     let calls = a.cli.calls().len();
-    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Foreign);
+    assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::Foreign);
     assert_eq!(read_json(&a.cj), foreign);
     assert_eq!(a.cli.calls().len(), calls);
 }
@@ -1066,17 +1066,17 @@ fn a_missing_claude_command_is_a_silent_no_op_that_a_later_launch_retries() {
     let a = auto_env(&e);
     let before = fs::read(&a.cj).unwrap();
     let missing = auto_ctx(&e, &a, CliChoice::Missing);
-    assert_eq!(connect::auto_connect(&missing, true), AutoOutcome::NoCli);
+    assert_eq!(connect::auto_connect(&missing, &|| true), AutoOutcome::NoCli);
     assert_eq!(fs::read(&a.cj).unwrap(), before, "the file was not touched");
     assert!(!a.backups.exists() || fs::read_dir(&a.backups).unwrap().next().is_none(), "no backup was made");
     assert!(a.cli.calls().is_empty());
     // A later launch where the command exists connects.
     let found = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
-    assert_eq!(connect::auto_connect(&found, true), AutoOutcome::Connected);
+    assert_eq!(connect::auto_connect(&found, &|| true), AutoOutcome::Connected);
     // A missing connector program is just as quiet.
     let nowhere = e.data.join("not-installed").join("atlas-mcp.exe");
     let ctx = ConnectCtx { root: &e.inputs.root, server: &nowhere, backups: &a.backups, data_dir_flag: None, cli: CliChoice::Path(a.cli.exe.clone()) };
-    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::NoServer);
+    assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::NoServer);
 }
 
 // Debug and test builds never write the real Claude folder, so auto-connect cannot either.
@@ -1090,10 +1090,155 @@ fn auto_connect_in_a_debug_build_refuses_the_real_claude_folder() {
     let stamp = |p: &Path| fs::metadata(p).ok().map(|m| (m.len(), m.modified().ok()));
     let before = stamp(&real.claude_json);
     let ctx = ConnectCtx { root: &real, server: &a.server, backups: &a.backups, data_dir_flag: None, cli: CliChoice::Path(a.cli.exe.clone()) };
-    match connect::auto_connect(&ctx, true) {
+    match connect::auto_connect(&ctx, &|| true) {
         AutoOutcome::Skipped(why) => assert!(why.contains("real Claude config"), "{why}"),
         other => panic!("expected the guard to refuse, got {other:?}"),
     }
     assert!(a.cli.calls().is_empty(), "no command was started");
     assert_eq!(stamp(&real.claude_json), before);
+}
+
+// ---------------------------------------------------------------- auto-connect: review fixes
+
+/// Put `entry` in `.claude.json` as the `atlas` server, everything else as it was.
+fn register_atlas(a: &Auto, entry: serde_json::Value) -> serde_json::Value {
+    let mut v = a.without.clone();
+    v["mcpServers"]["atlas"] = entry;
+    fs::write(&a.cj, serde_json::to_vec_pretty(&v).unwrap()).unwrap();
+    v
+}
+
+#[test]
+fn another_programs_atlas_entry_is_never_replaced_or_removed() {
+    let e = env();
+    let a = auto_env(&e);
+    let ctx = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
+    let gone_other = if cfg!(windows) { r"C:\Gone\their-server.exe" } else { "/opt/gone/their-server" };
+    let theirs = [
+        // A bare command name never "exists" as a file, which used to make it look stale and ours.
+        serde_json::json!({"type": "stdio", "command": "npx", "args": ["-y", "some-atlas-mcp"], "env": {}}),
+        serde_json::json!({"type": "stdio", "command": "uvx", "args": ["atlas-mcp"], "env": {}}),
+        serde_json::json!({"type": "stdio", "command": "docker", "args": ["run", "atlas"], "env": {}}),
+        serde_json::json!({"type": "stdio", "command": "atlas-mcp", "args": [], "env": {}}),
+        // An absolute path that is gone, with another name.
+        serde_json::json!({"type": "stdio", "command": gone_other, "args": [], "env": {}}),
+        // Names that merely start like ours.
+        serde_json::json!({"type": "stdio", "command": gone_other.replace("their-server", "atlas-mcp-other"), "args": [], "env": {}}),
+        // No command at all (a remote server).
+        serde_json::json!({"type": "http", "url": "https://example.test/mcp"}),
+    ];
+    for entry in theirs {
+        let file = register_atlas(&a, entry.clone());
+        let calls = a.cli.calls().len();
+        assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::Foreign, "{entry}");
+        assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "foreign", "{entry}");
+        // The manual paths refuse too: connect would replace it, disconnect would delete it.
+        let c = connect::connect(&ctx).expect_err("connect must not replace another program's entry");
+        assert!(c.contains("left it alone"), "{c}");
+        let d = connect::disconnect(&ctx).expect_err("disconnect must not delete another program's entry");
+        assert!(d.contains("left it alone"), "{d}");
+        assert_eq!(read_json(&a.cj), file, "{entry}");
+        assert_eq!(a.cli.calls().len(), calls, "no command ran for {entry}");
+    }
+}
+
+#[test]
+fn only_an_absolute_path_named_exactly_atlas_mcp_is_ours() {
+    let e = env();
+    let a = auto_env(&e);
+    let ours_gone = if cfg!(windows) { r"C:\Program Files\Atlas Old\atlas-mcp.exe" } else { "/opt/atlas-old/atlas-mcp" };
+    register_atlas(&a, serde_json::json!({"type": "stdio", "command": ours_gone, "args": [], "env": {}}));
+    assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "moved");
+    // Either spelling of an absolute path counts, whichever system this runs on.
+    register_atlas(&a, serde_json::json!({"type": "stdio", "command": "C:\\old\\Atlas-MCP.EXE", "args": [], "env": {}}));
+    assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "moved");
+    register_atlas(&a, serde_json::json!({"type": "stdio", "command": "/old/atlas-mcp", "args": [], "env": {}}));
+    assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "moved");
+    // This install's own program is "connected", never foreign.
+    let own = connect::server_json(&auto_ctx(&e, &a, CliChoice::Missing));
+    register_atlas(&a, own);
+    assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "connected");
+}
+
+#[test]
+fn a_registration_to_another_copy_that_still_exists_is_left_alone() {
+    let e = env();
+    let a = auto_env(&e);
+    let ctx = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
+    // An installed copy and a build next to it both exist: the one that launched must not take the entry.
+    let other = e.data.join("other-copy").join(a.server.file_name().unwrap());
+    fs::create_dir_all(other.parent().unwrap()).unwrap();
+    fs::write(&other, b"stand-in").unwrap();
+    let file = register_atlas(&a, serde_json::json!({"type": "stdio", "command": other.to_string_lossy(), "args": [], "env": {}}));
+    for _ in 0..3 {
+        assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::OtherCopy);
+    }
+    assert_eq!(read_json(&a.cj), file);
+    assert!(a.cli.calls().is_empty(), "no command ran");
+    // Once that copy is gone, the entry is stale and gets repaired.
+    fs::remove_file(&other).unwrap();
+    assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::Repaired);
+    assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "connected");
+}
+
+#[test]
+fn a_switch_turned_off_while_the_launch_waited_for_the_lock_wins() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let e = env();
+    let a = auto_env(&e);
+    let ctx = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
+    let on = AtomicBool::new(true);
+    // Another Atlas change holds the write lock; the launch is waiting for it.
+    let held = atlas_core::writelock::acquire(&e.data, std::time::Duration::from_secs(2)).unwrap();
+    let out = std::thread::scope(|s| {
+        let launch = s.spawn(|| connect::auto_connect(&ctx, &|| on.load(Ordering::SeqCst)));
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        on.store(false, Ordering::SeqCst); // the user flips the switch off in the meantime
+        drop(held);
+        launch.join().unwrap()
+    });
+    assert_eq!(out, AutoOutcome::Off, "the choice was read before the wait only");
+    assert_eq!(read_json(&a.cj), a.without, "nothing was registered");
+    assert!(a.cli.calls().is_empty());
+}
+
+#[test]
+fn only_a_normal_launch_connects_by_itself() {
+    use atlas_core::paths::ConfigSource::{Default, Env, Flag, Sandbox, Settings};
+    let data = Path::new("D:/scratch/data");
+    assert!(connect::auto_allowed(Default, None));
+    assert!(connect::auto_allowed(Env, None));
+    assert!(connect::auto_allowed(Settings, None));
+    assert!(!connect::auto_allowed(Flag, None), "--config-dir");
+    assert!(!connect::auto_allowed(Default, Some(data)), "--data-dir");
+    assert!(!connect::auto_allowed(Env, Some(data)), "--data-dir");
+    assert!(!connect::auto_allowed(Sandbox, None));
+}
+
+#[test]
+fn a_copy_in_a_place_that_will_not_stay_never_registers_itself() {
+    let unstable = [
+        "/private/var/folders/ab/xyz/T/AppTranslocation/6F2A-1D/d/Atlas.app/Contents/Resources/atlas-mcp",
+        "/Volumes/Atlas 1.0/Atlas.app/Contents/Resources/atlas-mcp",
+        r"C:\Users\Will\Documents\Desktop Apps\Atlas\target\debug\atlas-mcp.exe",
+        r"C:\Users\Will\Documents\Desktop Apps\Atlas\target\release\atlas-mcp.exe",
+        r"C:\code\atlas\target\x86_64-pc-windows-msvc\release\atlas-mcp.exe",
+        r"C:\Users\Will\AppData\Local\Temp\atlas-run\atlas-mcp.exe",
+        r"C:\Users\WILL~1\AppData\Local\Temp\atlas-run\atlas-mcp.exe",
+        "/tmp/atlas/atlas-mcp",
+    ];
+    for p in unstable {
+        assert!(!connect::is_stable_install(Path::new(p)), "{p}");
+    }
+    let temp = std::env::temp_dir().join("atlas-copy").join("atlas-mcp.exe");
+    assert!(!connect::is_stable_install(&temp), "{}", temp.display());
+    let stable = [
+        "/Applications/Atlas.app/Contents/Resources/atlas-mcp",
+        r"C:\Users\Will\AppData\Local\Programs\Atlas\atlas-mcp.exe",
+        r"C:\Program Files\Atlas\atlas-mcp.exe",
+        r"C:\Users\Will\targets\atlas-mcp.exe",
+    ];
+    for p in stable {
+        assert!(connect::is_stable_install(Path::new(p)), "{p}");
+    }
 }
