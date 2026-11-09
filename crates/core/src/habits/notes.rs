@@ -70,9 +70,19 @@ pub fn path(data_dir: &Path) -> PathBuf {
 }
 
 impl Notes {
-    /// The file's contents; nothing yet (or an unreadable file) is an empty record.
+    /// The file's contents. No file yet is an empty record. A file that exists but cannot be
+    /// read or parsed is treated as "offers off": a damaged record must not bring back offers
+    /// the person already answered, so Atlas stays quiet until the file is fixed.
     pub fn load(data_dir: &Path) -> Notes {
-        std::fs::read(path(data_dir)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+        match std::fs::read(path(data_dir)) {
+            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|_| Notes::unreadable()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Notes::default(),
+            Err(_) => Notes::unreadable(),
+        }
+    }
+
+    fn unreadable() -> Notes {
+        Notes { offers_off: true, ..Notes::default() }
     }
 
     /// The newest answer filed under any of `ids`.
@@ -97,10 +107,11 @@ pub fn record(data_dir: &Path, id: Option<&str>, aliases: &[String], answer: Ans
             Err(_) => {
                 // Keep the unreadable file instead of overwriting it.
                 let _ = std::fs::rename(&file, data_dir.join(format!("{FILE}.bad-{now_ms}")));
-                Notes::default()
+                Notes::unreadable()
             }
         },
-        Err(_) => Notes::default(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Notes::default(),
+        Err(_) => Notes::unreadable(),
     };
     if answer == Answer::Never {
         notes.offers_off = true;
@@ -168,6 +179,19 @@ mod tests {
         record(d.path(), Some(A), &[], Answer::Offered, None, 5).unwrap();
         assert!(Notes::load(d.path()).groups.contains_key(A));
         assert_eq!(std::fs::read(d.path().join("habits.json.bad-5")).unwrap(), b"{ not json");
+    }
+
+    #[test]
+    fn a_damaged_file_keeps_offers_off_until_it_is_fixed() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(path(d.path()), b"{ not json").unwrap();
+        assert!(Notes::load(d.path()).offers_off, "unreadable means quiet");
+        // Recording an answer over the damaged file keeps the quiet default too.
+        let n = record(d.path(), Some(A), &[], Answer::Declined, None, 7).unwrap();
+        assert!(n.offers_off);
+        // A missing file is a normal fresh start.
+        let e = tempfile::tempdir().unwrap();
+        assert!(!Notes::load(e.path()).offers_off);
     }
 
     #[test]

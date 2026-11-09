@@ -1,7 +1,8 @@
 //! The two repeated-request tools (docs/specs/skill-library.md, Unit B). A child module of
 //! `server` so the tools join the same server, in their own block.
 //!
-//! `find_repeated_requests` only reads Atlas's chat index. `note_skill_offer` writes one small
+//! `find_repeated_requests` only reads Atlas's chat index. Its answer goes into Claude's
+//! conversation, so it carries wordings only from the current project unless asked. `note_skill_offer` writes one small
 //! file in Atlas's own data folder (`habits.json`: ids and answers, never any text), so it is
 //! allowed in propose mode too: it changes nothing in the user's Claude folder.
 
@@ -29,6 +30,11 @@ pub struct FindRepeatedArgs {
     pub project: Option<String>,
     /// At most this many groups (default 8, at most 20).
     pub limit: Option<usize>,
+    /// The project this chat runs in (folder name or path). Default: the server's working folder.
+    /// Counts span every project; wordings are returned only from this project.
+    pub current_project: Option<String>,
+    /// Also return wordings typed in other projects. Only when the user asks for that.
+    pub all_projects_text: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -56,12 +62,13 @@ const NOT_READY: &str = "Atlas could not start its repeated-requests reader.";
 impl AtlasServer {
     #[tool(
         name = "find_repeated_requests",
-        description = "Find what the user keeps asking Claude for, across all their past Claude Code chats: requests typed by the user in different words that mean the same thing, counted over chats and days. Only what the user typed (never replies, helper chats, pasted logs or automatic prompts). Returns groups with a count, chats, days, projects, a representative request and a few other wordings, `meetsBar` (enough to offer a skill) and `offer` (what the user already said about it). Pass `like` with the request in front of you to ask 'has the user asked this before?'. Read-only; runs on this computer and nothing leaves it.",
+        description = "Find what the user keeps asking Claude for, across all their past Claude Code chats: requests typed by the user in different words that mean the same thing, counted over chats and days. Only what the user typed (never replies, helper chats, pasted logs or automatic prompts). Returns groups with a count, chats, days, projects, a representative request and a few other wordings, `meetsBar` (enough to offer a skill) and `offer` (what the user already said about it). Pass `like` with the request in front of you to ask 'has the user asked this before?'. Read-only and computed on this computer, but what it returns is shown to Claude like any chat text: wordings come only from the current project (counts include all projects) unless `allProjectsText` is set, which you do only when the user asks.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn find_repeated_requests(&self, Parameters(a): Parameters<FindRepeatedArgs>) -> Result<CallToolResult, ErrorData> {
         let Some(h) = self.habits.as_ref().map(Arc::clone) else { return Ok(fail(NOT_READY)) };
-        let args = FindArgs { like: a.like, days: a.days, project: a.project, limit: a.limit };
+        let here = a.current_project.or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().into_owned()));
+        let args = FindArgs { like: a.like, days: a.days, project: a.project, limit: a.limit, current_project: here, all_projects_text: a.all_projects_text.unwrap_or(false) };
         let r = tokio::task::spawn_blocking(move || h.find(&args, now_ms())).await;
         Ok(match r {
             Ok(Ok(v)) => ok(&v),

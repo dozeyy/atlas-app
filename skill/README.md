@@ -103,10 +103,17 @@ index warm in the background so the first answer is instant, and shows the same 
 
 The plugin carries a second, quiet skill. When you keep asking Claude for the same kind of
 thing - 3 or more times in one chat, or 5 times across 3 chats on 2 days - it offers once, after
-the task, to turn it into a skill. It shows the draft, built from your own wording, and saves
-nothing until you say yes. Say no and it never asks about that request again; say "stop asking"
-and it stops offering at all. The grouping is plain word matching on this computer: no AI call,
-no network, and no prompt text is stored.
+the task, to turn it into a skill. It looks only when your request says "again", "like last
+time", "as usual" or "make this a skill", or you have asked the same thing 3 times in the chat.
+It shows the draft, built from your own wording, and saves nothing until you say yes. Say no and
+it never asks about that request again; say "stop asking" and it stops offering at all.
+
+What stays where: the grouping is plain word matching on this computer (no AI call, no network
+from the program), and `habits.json` holds ids and answers, never prompt text. But what the
+program or connector returns is shown to Claude like any chat text, and so goes to Claude's
+service as part of the conversation. By default that is only wordings you typed in the current
+project (the counts include every project); wordings from other projects are returned only if
+you ask for them.
 
 It needs only this plugin. With the Atlas app and its Claude connector it uses the connector's
 tools and saves with a backup. Without them it runs the same program as `/atlas`:
@@ -116,8 +123,11 @@ atlas-usage repeats --like "<the request>" --json   # what you keep asking, as J
 atlas-usage offer-note <id> declined                # also: made, or `offer-note off`
 ```
 
-The first run reads your chats once (about a minute for a few GB) into the program's own
-index; if the Atlas app's index is there it is used instead. Answers are kept as ids in
+The program reads your chats into its own index, newest first, for at most 20 seconds per run;
+a run that cannot finish says so and the next one carries on, so it never holds up a task. If the
+Atlas app's index is there and current it is used instead. A copy of the program from before this
+feature is refused with one plain line ("too old for repeated requests") and the skill tells you
+once to update. Answers are kept as ids in
 `habits.json` in Atlas's data folder. Without the connector the skill writes the new skill to
 `~/.claude/skills/<name>/SKILL.md` (never over an existing one) after you say yes.
 

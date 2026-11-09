@@ -101,6 +101,12 @@ pub struct FindArgs {
     pub days: Option<i64>,
     pub project: Option<String>,
     pub limit: Option<usize>,
+    /// The project this chat runs in (folder name or path). Counts always span every project;
+    /// the wordings returned are only the ones typed in this project.
+    pub current_project: Option<String>,
+    /// Also return wordings typed in other projects (only when the person asks for it).
+    #[serde(default)]
+    pub all_projects_text: bool,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -130,7 +136,8 @@ fn offer_json(n: &notes::Note) -> Value {
     json!({ "answer": n.answer, "atMs": n.at_ms, "skillName": n.skill_name })
 }
 
-fn group_json(g: &Group, th: &Thresholds, notes: &Notes) -> Value {
+fn group_json(g: &Group, th: &Thresholds, notes: &Notes, project: Option<&str>, all: bool) -> Value {
+    let (representative, examples) = g.wordings_for(project, all);
     json!({
         "id": g.id,
         "count": g.count,
@@ -139,8 +146,8 @@ fn group_json(g: &Group, th: &Thresholds, notes: &Notes) -> Value {
         "projects": g.projects.iter().take(5).collect::<Vec<_>>(),
         "firstSeenMs": g.first_ms,
         "lastSeenMs": g.last_ms,
-        "representative": g.representative,
-        "examples": g.examples,
+        "representative": representative,
+        "examples": examples,
         "meetsBar": g.meets(th),
         "offer": notes.offer_for(g.ids()).map(offer_json),
     })
@@ -192,15 +199,16 @@ impl Habits {
         let limit = a.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
         let like = a.like.as_deref().map(cut_like).filter(|l| !normalize::normalize(l).is_empty());
         let matched = like.as_deref().and_then(|l| grouping.like(l, th.like_count));
+        let (project, all) = (a.current_project.as_deref().filter(|p| !p.trim().is_empty()), a.all_projects_text);
         let mut out_groups: Vec<Value> = Vec::new();
         if let Some((g, _)) = matched {
-            out_groups.push(group_json(g, &th, &notes));
+            out_groups.push(group_json(g, &th, &notes, project, all));
         }
         for g in grouping.qualifying(&th, now_ms, days, a.project.as_deref()) {
             if matched.is_some_and(|(m, _)| m.id == g.id) {
                 continue;
             }
-            out_groups.push(group_json(g, &th, &notes));
+            out_groups.push(group_json(g, &th, &notes, project, all));
         }
         out_groups.truncate(limit);
         let like_offer = like.as_deref().and_then(|l| {
@@ -214,6 +222,7 @@ impl Habits {
             "offerBar": { "count": th.count, "chats": th.sessions, "days": th.days, "windowDays": th.window_days, "thisChat": th.this_chat },
             "likeMatch": matched.map(|(g, s)| json!({ "groupId": g.id, "similarity": s })),
             "likeOffer": like_offer,
+            "wordingsFrom": if all { "all projects" } else if project.is_some() { "this project" } else { "none" },
             "groups": out_groups,
         }))
     }

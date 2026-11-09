@@ -154,3 +154,83 @@ fn the_cache_folder_may_not_sit_inside_the_claude_folder() {
     assert!(!o.status.success());
     assert!(!inside.exists(), "nothing was created inside the Claude folder");
 }
+
+fn texts(v: &Value) -> Vec<String> {
+    let g = &v["groups"][0];
+    let mut t: Vec<String> = g["representative"].as_str().map(str::to_string).into_iter().collect();
+    t.extend(g["examples"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()));
+    t
+}
+
+#[test]
+fn wordings_come_only_from_the_current_project_unless_asked() {
+    let s = Scratch::new();
+    // The test runs in the cli crate folder, which is not a project in the chats: counts, no text.
+    let v = s.json(&["repeats"]);
+    assert!(v["groups"][0]["count"].as_i64().unwrap() >= 5);
+    assert!(texts(&v).is_empty(), "{v}");
+    assert_eq!(v["wordingsFrom"], "this project");
+    let v = s.json(&["repeats", "--current-project", "notes"]);
+    assert!(!texts(&v).is_empty(), "{v}");
+    let mine = texts(&v);
+    let v = s.json(&["repeats", "--current-project", "notes", "--all-projects-text"]);
+    assert_eq!(v["wordingsFrom"], "all projects");
+    assert!(texts(&v).len() >= mine.len());
+}
+
+#[test]
+fn a_note_never_starts_a_read_and_never_needs_an_index() {
+    let s = Scratch::new();
+    let n = s.json(&["offer-note", "-", "declined", "--like", FRESH]);
+    assert_eq!(n["ok"], true, "{n}");
+    assert!(!s.cache.exists(), "recording an answer must not read the chats");
+    assert!(s.data.join("habits.json").is_file());
+}
+
+#[test]
+fn a_run_with_no_time_to_read_says_so_and_the_next_run_carries_on() {
+    let s = Scratch::new();
+    let started = std::time::Instant::now();
+    let o = Command::new(env!("CARGO_BIN_EXE_atlas-usage"))
+        .args(["repeats", "--config-dir", s.config.to_str().unwrap(), "--data-dir", s.data.to_str().unwrap(), "--cache-dir", s.cache.to_str().unwrap()])
+        .env("ATLAS_USAGE_READ_SECS", "0")
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .env_remove("ATLAS_DATA_DIR")
+        .env_remove("ATLAS_USAGE_CACHE")
+        .output()
+        .unwrap();
+    assert!(started.elapsed() < std::time::Duration::from_secs(20));
+    // Either nothing was read yet (a plain "still reading" error) or what was read, flagged partial.
+    if o.status.success() {
+        let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+        assert_eq!(v["reading"], true, "{v}");
+    } else {
+        assert!(String::from_utf8_lossy(&o.stderr).contains("still reading"), "{}", String::from_utf8_lossy(&o.stderr));
+    }
+    // A normal run finishes the job.
+    let v = s.json(&["repeats"]);
+    assert!(v["groups"][0]["meetsBar"] == true && v.get("reading").is_none(), "{v}");
+}
+
+#[test]
+fn an_app_index_older_than_the_chats_is_not_trusted() {
+    use atlas_core::paths;
+    let s = Scratch::new();
+    s.json(&["repeats"]); // builds the program's own index in the cache folder
+    // Pretend the app made this index, then went away: copy it to where the app keeps it.
+    let home = paths::home_dir().unwrap();
+    let here = std::env::current_dir().unwrap();
+    let local = paths::local_data_dir(Some(s.data.as_path()), None, &home, &here).unwrap();
+    let app_index = atlas_core::search::db::search_file(&local, &s.config.join("projects"), false);
+    fs::create_dir_all(app_index.parent().unwrap()).unwrap();
+    fs::copy(s.cache.join("search.sqlite"), &app_index).unwrap();
+    // A chat typed after the app's last pass.
+    let stamp = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
+    let line = |n: u32| format!("{{\"type\":\"user\",\"uuid\":\"late-{n}\",\"sessionId\":\"late-s\",\"timestamp\":\"{stamp}\",\"cwd\":\"C:\\\\fx\\\\notes\",\"isSidechain\":false,\"version\":\"2.1.296\",\"message\":{{\"role\":\"user\",\"content\":\"rewrite the changelog entry in a friendlier tone please\"}},\"origin\":{{\"kind\":\"human\"}}}}\n");
+    let file = s.config.join("projects").join("-fx-notes").join("late-s.jsonl");
+    fs::write(&file, format!("{}{}", line(1), line(2))).unwrap();
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(600);
+    fs::OpenOptions::new().write(true).open(&file).unwrap().set_modified(later).unwrap();
+    let v = s.json(&["repeats", "--like", "rewrite the changelog entry in a friendlier tone please"]);
+    assert!(v["likeMatch"]["groupId"].is_string(), "the new chat must be seen: {v}");
+}

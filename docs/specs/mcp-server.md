@@ -33,7 +33,7 @@ Code: `crates/mcp` (server, usage summary), `crates/core/src/{ops,pending,connec
 | `get_usage_summary` | no | Tokens, estimated cost, per model, top projects and chats for today / yesterday / 7d / 30d / month / all. |
 | `list_backups` | no | Backups, newest first, with who made them. |
 | `restore_backup` | yes | Undo from a backup; refuses to overwrite a file changed again since. |
-| `find_repeated_requests` | no | Groups what the person typed in past chats (no AI, no network). Optional `like` (the request in front of Claude), `days`, `project`, `limit`. Returns `groups` (`id`, `count`, `sessions`, `days`, `representative`, `examples`, `meetsBar`, `offer`), `likeMatch`, `likeOffer`, `offersOff`, `offerBar`. |
+| `find_repeated_requests` | no | Groups what the person typed in past chats (no AI, no network). Optional `like` (the request in front of Claude), `days`, `project`, `limit`, `currentProject` (default: the server's folder), `allProjectsText`. Returns `groups` (`id`, `count`, `sessions`, `days`, `representative`, `examples`, `meetsBar`, `offer`), `likeMatch`, `likeOffer`, `offersOff`, `offerBar`, `wordingsFrom`. The answer is shown to Claude, so wordings come only from `currentProject` unless `allProjectsText` is set (counts always span all projects). |
 | `note_skill_offer` | no (Atlas data only) | Remembers the answer to an offer to make a skill: `answer` offered, declined, made or never, with `groupId` or `like`, and `skillName` for made. Writes ids only to `habits.json`. |
 
 Inputs are camelCase (`newName`, `backupId`). A failed call returns an MCP tool error with one plain
@@ -178,8 +178,15 @@ Habits screen in the app.
   changes is still recognised), plus a global `offersOff`. It never holds prompt text.
 - Without the app: the same two operations are `atlas-usage repeats [--like TEXT] --json` and
   `atlas-usage offer-note <id|-> <made|declined|off>` in the plugin's CLI, on the same core code and
-  the same `habits.json`. The CLI reads the app's index when it is usable, else reads the transcripts
-  itself into `<cache dir>/search.sqlite`.
+  the same `habits.json`. The CLI reads the app's index when it is usable and no chat file is newer
+  than its last pass, else reads the transcripts itself into `<cache dir>/search.sqlite`, newest
+  first, for at most 20 s per run (`ATLAS_USAGE_READ_SECS`); an unfinished read answers with what it
+  has plus `"reading": true`, or one plain sentence when nothing is read yet. `offer-note` never
+  starts a read. The launcher refuses a copy of `atlas-usage` that lacks these commands (exit 4).
+- Privacy: grouping runs on this computer, but the tools' answers go into Claude's context. Wordings
+  are therefore limited to the current project by default; a damaged `habits.json` turns offers
+  off until fixed, and a bracketed harness line such as `[Request interrupted by user]` is never a
+  request.
 
 ## Console windows
 

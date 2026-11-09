@@ -3,9 +3,11 @@
 //! and its MCP server are not installed. Same core code (`atlas_core::habits`), same
 //! `habits.json`, same grouping rules and thresholds; JSON on stdout.
 //!
-//! Chat index: the Atlas app's own index is read when it exists and is current. Otherwise this
-//! program reads the transcripts itself into its own index under `<cache dir>/search.sqlite`
-//! (a first read can take a minute, later runs only read what is new). Transcripts are only
+//! Chat index: the Atlas app's own index is read when it exists and is current (no transcript
+//! newer than its last pass). Otherwise this program reads the transcripts itself into its own
+//! index under `<cache dir>/search.sqlite`, newest chats first and for at most `READ_SECS`
+//! seconds per run: a run that cannot finish answers from what it has read and says
+//! `"reading": true`, and the next run carries on where it stopped. Transcripts are only
 //! read; the one file written outside the cache folder is `habits.json` in Atlas's data folder.
 
 use std::ffi::OsString;
@@ -14,16 +16,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use atlas_core::habits::{self, FindArgs, Habits, NoteArgs};
+use atlas_core::search::db::get_meta;
 use atlas_core::search::{NullSearchSink, SearchConfig, SearchEngine, db};
 use serde_json::Value;
 
 pub const HELP: &str = "atlas-usage repeats - what you keep asking Claude for (JSON)
 
 USAGE
-  atlas-usage repeats [--like TEXT] [--days N] [--project NAME] [--limit N] [--json]
+  atlas-usage repeats [--like TEXT] [--days N] [--project NAME] [--limit N] [--all-projects-text] [--json]
   atlas-usage offer-note <id|-> <made|declined|off> [--skill NAME] [--like TEXT]
 
-repeats       groups the requests you typed in past chats (no AI, nothing leaves this computer).
+repeats       groups the requests you typed in past chats (no AI, computed on this computer).
+              The wordings it prints are shown to Claude, so by default only wordings typed in
+              the current project are printed (counts include every project);
+              --all-projects-text also prints wordings from other projects.
               --like TEXT adds the group the request in front of you belongs to.
 offer-note    remembers your answer to an offer to make a skill: made (a skill was saved),
               declined (do not offer this again) or off (stop offering at all; the id may be -).
@@ -39,6 +45,8 @@ struct Opts {
     days: Option<i64>,
     project: Option<String>,
     limit: Option<usize>,
+    all_projects_text: bool,
+    current_project: Option<String>,
     skill: Option<String>,
     config_dir: Option<PathBuf>,
     cache_dir: Option<PathBuf>,
@@ -54,6 +62,8 @@ fn parse(args: Vec<String>) -> Result<Opts, String> {
         match a.as_str() {
             "-h" | "--help" => return Err(String::new()),
             "--json" => {}
+            "--all-projects-text" => o.all_projects_text = true,
+            "--current-project" => o.current_project = Some(need(&mut it, "--current-project")?),
             "--like" => o.like = Some(need(&mut it, "--like")?),
             "--days" => o.days = Some(need(&mut it, "--days")?.parse().map_err(|_| "--days needs a number".to_string())?),
             "--limit" => o.limit = Some(need(&mut it, "--limit")?.parse().map_err(|_| "--limit needs a number".to_string())?),
@@ -93,7 +103,40 @@ pub fn run(cmd: &str, args: Vec<String>) -> Result<Option<String>, String> {
     serde_json::to_string(&out).map(Some).map_err(|e| e.to_string())
 }
 
+/// Longest one run spends reading chats itself, in seconds (`ATLAS_USAGE_READ_SECS` overrides).
+const READ_SECS: u64 = 20;
+/// The app's index is "current" when no transcript is newer than its last pass by more than this.
+const FRESH_SLACK_SECS: i64 = 90;
+
+fn read_budget() -> Duration {
+    Duration::from_secs(std::env::var("ATLAS_USAGE_READ_SECS").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(READ_SECS))
+}
+
+/// Newest modification time (Unix seconds) of any chat file: `projects/<folder>/*.jsonl`.
+fn newest_chat_secs(projects: &std::path::Path) -> Option<i64> {
+    let mut newest: Option<i64> = None;
+    for folder in std::fs::read_dir(projects).ok()?.flatten() {
+        let Ok(files) = std::fs::read_dir(folder.path()) else { continue };
+        for f in files.flatten() {
+            if f.path().extension().is_none_or(|e| e != "jsonl") {
+                continue;
+            }
+            let t = f.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64);
+            newest = newest.max(t);
+        }
+    }
+    newest
+}
+
+/// True when the index at `path` opens and covers every chat file as of its last pass.
+fn index_is_current(path: &std::path::Path, projects: &std::path::Path) -> bool {
+    let Ok(conn) = habits::open_index(path) else { return false };
+    let Some(at) = get_meta(&conn, "last_indexed_at").and_then(|v| v.parse::<i64>().ok()) else { return false };
+    newest_chat_secs(projects).is_none_or(|m| m <= at + FRESH_SLACK_SECS)
+}
+
 struct Ctx {
+    here: PathBuf,
     data_dir: PathBuf,
     index: PathBuf,
     projects_dir: PathBuf,
@@ -119,41 +162,55 @@ impl Ctx {
             return Err("the cache and data folders must not be inside the Claude config folder (it is read-only here)".into());
         }
         let index = db::search_file(&local, &root.projects_dir, root.source != ConfigSource::Flag);
-        Ok(Ctx { data_dir, index, projects_dir: root.projects_dir, config_dir: root.dir, cache_dir })
+        Ok(Ctx { here, data_dir, index, projects_dir: root.projects_dir, config_dir: root.dir, cache_dir })
     }
 
-    /// The index to read: the app's when it is there and readable, else this program's own,
-    /// brought up to date from the transcripts.
-    fn index(&self) -> Result<PathBuf, String> {
-        if habits::open_index(&self.index).is_ok() {
-            return Ok(self.index.clone());
+    /// The index to read and whether it is still being read (`true`): the app's when it is there
+    /// and current, else this program's own, brought up to date from the transcripts for at
+    /// most `read_budget()`.
+    fn index(&self) -> Result<(PathBuf, bool), String> {
+        if index_is_current(&self.index, &self.projects_dir) {
+            return Ok((self.index.clone(), false));
         }
         if !self.projects_dir.is_dir() {
             return Err(format!("no Claude Code transcripts at {} (set --config-dir or CLAUDE_CONFIG_DIR)", self.projects_dir.display()));
         }
         std::fs::create_dir_all(&self.cache_dir).map_err(|e| format!("cannot create {}: {e}", self.cache_dir.display()))?;
         let own = self.cache_dir.join("search.sqlite");
-        let first = !own.exists();
-        if first {
-            eprintln!("atlas-usage: first run, reading your Claude Code chats (read-only). This can take a minute.");
+        if !own.exists() {
+            eprintln!("atlas-usage: reading your Claude Code chats for the first time (read-only, newest first).");
         }
         let mut cfg = SearchConfig::new(self.projects_dir.clone(), self.config_dir.clone(), own.clone());
         cfg.debounce = Duration::from_millis(20);
         let engine = SearchEngine::start(cfg, Arc::new(NullSearchSink));
         let n = engine.passes();
         engine.poke();
-        let done = engine.wait_pass(n, Duration::from_secs(1800));
+        let done = engine.wait_pass(n, read_budget());
         engine.stop();
-        if !done {
-            return Err("reading the chats did not finish in 30 minutes".into());
+        Ok((own, !done))
+    }
+
+    /// An index that already exists, for a note: never starts a read.
+    fn existing_index(&self) -> PathBuf {
+        if habits::open_index(&self.index).is_ok() {
+            return self.index.clone();
         }
-        Ok(own)
+        let own = self.cache_dir.join("search.sqlite");
+        if habits::open_index(&own).is_ok() { own } else { self.index.clone() }
     }
 }
 
 fn find(ctx: &Ctx, o: &Opts) -> Result<Value, String> {
-    let h = Habits::new(ctx.index()?, ctx.data_dir.clone());
-    h.find(&FindArgs { like: o.like.clone(), days: o.days, project: o.project.clone(), limit: o.limit }, now_ms())
+    let (index, reading) = ctx.index()?;
+    let h = Habits::new(index, ctx.data_dir.clone());
+    let here = o.current_project.clone().unwrap_or_else(|| ctx.here.to_string_lossy().into_owned());
+    let args = FindArgs { like: o.like.clone(), days: o.days, project: o.project.clone(), limit: o.limit, current_project: Some(here), all_projects_text: o.all_projects_text };
+    let mut out = h.find(&args, now_ms())?;
+    if reading {
+        // Partial: the run ran out of time. What is here is the newest chats; the next run carries on.
+        out["reading"] = Value::Bool(true);
+    }
+    Ok(out)
 }
 
 fn note(ctx: &Ctx, o: &Opts) -> Result<Value, String> {
@@ -163,9 +220,9 @@ fn note(ctx: &Ctx, o: &Opts) -> Result<Value, String> {
         _ => return Err("usage: atlas-usage offer-note <id|-> <made|declined|off>".into()),
     };
     let answer = if answer.eq_ignore_ascii_case("off") { "never" } else { answer };
-    // The index only helps to find a request's sibling wordings; a note never needs it to exist.
-    let index = ctx.index().unwrap_or_else(|_| ctx.index.clone());
-    let h = Habits::new(index, ctx.data_dir.clone());
+    // The index only helps to find a request's sibling wordings; a note never starts a read and
+    // never needs an index to exist.
+    let h = Habits::new(ctx.existing_index(), ctx.data_dir.clone());
     h.note(&NoteArgs { group_id: id.map(str::to_string), like: o.like.clone(), answer: answer.to_string(), skill_name: o.skill.clone() }, now_ms())
 }
 

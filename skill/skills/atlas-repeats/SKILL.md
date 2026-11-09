@@ -1,8 +1,8 @@
 ---
 name: atlas-repeats
 description: Notices when the user keeps asking for the same kind of thing, in this chat or across their past chats, and after the task is done offers once to turn it into a reusable skill. Nothing is saved until they say yes. Works with only this plugin; the Atlas app is not needed.
-when_to_use: Invoke this skill at the end of every task that was a request the user may make again (summarize or review a file, convert or reformat something, a routine report, a build, release or deploy step, a standard cleanup), after the work is done and before the final reply. It looks quietly for earlier asks of the same kind and says nothing unless the user has asked this several times. Also invoke it when the user says "again", "like last time", "as usual", "same as before" or "make this a skill". Skip one-off questions, and skip it in the middle of a task.
-allowed-tools: mcp__atlas__find_repeated_requests, mcp__atlas__note_skill_offer, mcp__atlas__list_items, Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" repeats *), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" offer-note *)
+when_to_use: Invoke this skill when the user says "again", "like last time", "as usual", "same as before" or "make this a skill", or when they have asked for this same kind of thing 3 or more times in this chat. Use it after the work is done and before the final reply. Skip one-off requests, and skip it in the middle of a task.
+allowed-tools: mcp__atlas__find_repeated_requests, mcp__atlas__note_skill_offer, mcp__atlas__list_items, Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" repeats --like * --json), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" offer-note * offered*), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" offer-note * declined*), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" offer-note * made*), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" offer-note off)
 ---
 
 # Offer a skill for a request they keep making
@@ -19,13 +19,18 @@ alone and say nothing about the failure.
 
 - **Atlas tools** (`mcp__atlas__find_repeated_requests`, `mcp__atlas__note_skill_offer`).
 - **The plugin's program**, which needs no app and no setup. `<words>` is the request with
-  every character except letters, digits and spaces removed, at most 300 characters.
-  Run it with the Bash tool, on every system (on Windows that is Git Bash), exactly in this
-  form and not through PowerShell:
+  every character except letters, digits and spaces removed, at most 300 characters. Run it
+  with the Bash tool on every system (on Windows that is Git Bash), in exactly this form:
   `sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" repeats --like "<words>" --json`
-  It prints JSON shaped like the tool's. Use a long timeout (600000 ms): the first run
-  reads the chats once and can take a minute. If it prints an error or nothing, treat it as
-  no data.
+  Use the default timeout and never wait on it. It prints JSON shaped like the tool's. If the
+  JSON has `"reading": true` it is still reading the chats (newest first) and the answer is
+  partial: use it only if the match already meets the bar, else skip. Any other error or no
+  output: no data, say nothing. If it says it is "too old for repeated requests", tell the
+  user once in this chat: "Update the Atlas plugin or app to get skill offers." Then stop.
+
+Both only return wordings typed in this project (the counts include every project). Ask for
+other projects' wordings (`allProjectsText`, `--all-projects-text`) only if the user asks.
+What comes back is shown to you like any chat text.
 
 To record an answer, use the tool's `note_skill_offer`, or the same Bash command with
 `offer-note <id> offered|declined|made` in place of `repeats ...` (`--skill <name>` with

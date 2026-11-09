@@ -20,6 +20,8 @@ pub const ROWS: usize = 4;
 pub const JACCARD_PCT: usize = 55;
 /// Other wordings returned with a group's representative.
 pub const EXAMPLES: usize = 5;
+/// Wordings kept per project in a group (the commonest first), for `Group::wordings_for`.
+pub const WORDINGS_PER_PROJECT: usize = EXAMPLES + 1;
 /// How many member ids a group carries, so a recorded answer survives a change of leader.
 pub const MEMBER_IDS: usize = 100;
 pub const TEXT_CAP: usize = 400;
@@ -57,6 +59,13 @@ pub struct Prompt {
     pub project: Option<String>,
 }
 
+/// One wording of a request and the folder name of the project it was typed in ("" when unknown).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Wording {
+    pub project: String,
+    pub text: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Group {
     /// First 16 hex of sha256(leader's normalized text).
@@ -73,6 +82,8 @@ pub struct Group {
     pub representative: String,
     /// Other distinct wordings, newest first.
     pub examples: Vec<String>,
+    /// The commonest wordings of each project, so text can be limited to one project.
+    pub wordings: Vec<Wording>,
     /// `id16` of each distinct normalized member (leader included), commonest first.
     pub member_ids: Vec<String>,
     pub(crate) shingles: Vec<u64>,
@@ -81,6 +92,24 @@ pub struct Group {
 impl Group {
     pub fn meets(&self, th: &Thresholds) -> bool {
         self.count >= th.count && self.sessions >= th.sessions && self.days >= th.days
+    }
+
+    /// The representative wording and other wordings to show, limited to what was typed in
+    /// `project` (matched by folder name), or from every project when `all` is set. With neither,
+    /// no text is returned: counts may span all projects, wordings never leave their project
+    /// unless the person asks.
+    pub fn wordings_for(&self, project: Option<&str>, all: bool) -> (Option<String>, Vec<String>) {
+        let want = project.map(project_name).filter(|p| !p.is_empty());
+        let mut seen: Vec<&str> = Vec::new();
+        for w in &self.wordings {
+            let ok = all || want.as_deref().is_some_and(|p| !w.project.is_empty() && w.project.eq_ignore_ascii_case(p));
+            if ok && !seen.contains(&w.text.as_str()) {
+                seen.push(w.text.as_str());
+            }
+        }
+        let mut it = seen.into_iter().map(str::to_string);
+        let representative = it.next();
+        (representative, it.take(EXAMPLES).collect())
     }
 
     /// Every id a recorded answer may be filed under for this group.
@@ -110,6 +139,11 @@ impl Grouping {
 
     /// The group a request belongs to: the most similar leader at or above the overlap bar,
     /// among groups of at least `min_count` asks. Returns the similarity (0..1).
+    ///
+    /// This compares against every leader (exact overlap), while `group` only compares against
+    /// the leaders that share an LSH band, which finds a pair at the bar about 8 times in 10 and
+    /// a closer pair almost always. So a request can match a group here that it did not join
+    /// when the groups were made: `like` is the more generous of the two, never the stricter.
     pub fn like(&self, text: &str, min_count: usize) -> Option<(&Group, f64)> {
         let norm = normalize(text);
         if norm.is_empty() {
@@ -239,6 +273,7 @@ struct Acc<'a> {
     first: i64,
     last: i64,
     originals: HashMap<&'a str, (usize, i64)>,
+    by_project: HashMap<(String, &'a str), (usize, i64)>,
     /// Unique normalized strings of the group, commonest first.
     members: Vec<usize>,
 }
@@ -320,6 +355,10 @@ pub fn group(prompts: &[Prompt], tz: Tz) -> Grouping {
         let e = a.originals.entry(p.text.trim()).or_insert((0, i64::MIN));
         e.0 += 1;
         e.1 = e.1.max(p.ts);
+        let proj = p.project.as_deref().map(project_name).unwrap_or_default();
+        let e = a.by_project.entry((proj, p.text.trim())).or_insert((0, i64::MIN));
+        e.0 += 1;
+        e.1 = e.1.max(p.ts);
     }
 
     let mut groups: Vec<Group> = Vec::with_capacity(accs.len());
@@ -331,6 +370,18 @@ pub fn group(prompts: &[Prompt], tz: Tz) -> Grouping {
         let representative = cut(originals[0].0);
         let mut rest: Vec<(&str, i64)> = originals.iter().skip(1).map(|o| (o.0, o.2)).collect();
         rest.sort_by(|x, y| y.1.cmp(&x.1).then_with(|| x.0.cmp(y.0)));
+        let mut per: Vec<(&str, &str, usize, i64)> = a.by_project.iter().map(|((pr, t), (c, n))| (pr.as_str(), *t, *c, *n)).collect();
+        per.sort_by(|x, y| y.2.cmp(&x.2).then(y.3.cmp(&x.3)).then_with(|| x.0.cmp(y.0)).then_with(|| x.1.cmp(y.1)));
+        let mut taken: HashMap<&str, usize> = HashMap::new();
+        let wordings: Vec<Wording> = per
+            .into_iter()
+            .filter(|(pr, ..)| {
+                let n = taken.entry(*pr).or_insert(0);
+                *n += 1;
+                *n <= WORDINGS_PER_PROJECT
+            })
+            .map(|(pr, t, ..)| Wording { project: pr.to_string(), text: cut(t) })
+            .collect();
         let mut projects: Vec<(String, usize)> = a.projects.into_iter().collect();
         projects.sort_by(|x, y| y.1.cmp(&x.1).then_with(|| x.0.cmp(&y.0)));
         groups.push(Group {
@@ -344,6 +395,7 @@ pub fn group(prompts: &[Prompt], tz: Tz) -> Grouping {
             last_ms: a.last,
             representative,
             examples: rest.into_iter().take(EXAMPLES).map(|r| cut(r.0)).collect(),
+            wordings,
             member_ids: a.members.iter().take(MEMBER_IDS).map(|&u| id16(&uniq[u].norm)).collect(),
             shingles: std::mem::take(&mut leader_shingles[l]),
         });

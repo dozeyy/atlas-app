@@ -323,11 +323,14 @@ def main():
     ap.add_argument("--index-exe", type=Path, default=ROOT / "target" / "debug" / "examples" / "habits_index.exe")
     ap.add_argument("--real-login", action="store_true", help="use the normal Claude login; no scratch config dir, nothing copied or made")
     ap.add_argument("--budget", type=float, default=0.5, help="--max-budget-usd per run (real login)")
+    ap.add_argument("--cue", action="store_true", help="make the fresh prompt say it is a repeat ('again, like last time'), the cue the skill's when_to_use listens for")
     ap.add_argument("--force-skill", action="store_true", help="append an instruction to run the atlas-repeats skill (tests the skill itself, not whether the model picks it by itself)")
     ap.add_argument("--no-app", action="store_true", help="plugin only: no atlas MCP server, the skill uses the launcher and the CLI")
     ap.add_argument("--cli-exe", type=Path, default=ROOT / "target" / "debug" / "atlas-usage.exe")
     ap.add_argument("--scenarios", default="fresh,declined,never,oneoff")
     args = ap.parse_args()
+    if args.cue:
+        PROMPTS["fresh"] = PROMPTS["declined"] = PROMPTS["never"] = "Read the README again like last time and give a three bullet summary in plain words"
     have_auth = bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"))
     if not args.prep_only and not have_auth and not args.real_login:
         print("No CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in the environment: a scratch Claude folder is logged out.\nSet one for this run (this script never copies credentials), or use --prep-only.", file=sys.stderr)

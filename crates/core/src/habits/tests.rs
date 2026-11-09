@@ -439,3 +439,48 @@ fn the_second_call_with_no_new_rows_answers_from_memory() {
     e.stop();
     assert_eq!(h.find(&FindArgs::default(), now()).unwrap()["groups"][0]["count"], 8);
 }
+
+// ---------------------------------------------------------------- review fixes
+
+fn typed_in(b: &Built, folder: &str) -> Vec<String> {
+    prompts_of(b).into_iter().filter(|p| p.project.as_deref().is_some_and(|x| x.ends_with(folder))).map(|p| p.text.trim().to_string()).collect()
+}
+
+#[test]
+fn wordings_never_leave_their_project_unless_asked() {
+    let b = build();
+    let h = Habits::new(b.index.clone(), b.data.clone()).with_tz(Tz::Fixed(0));
+    let texts = |r: &Value| -> Vec<String> {
+        let g = &r["groups"][0];
+        let mut t: Vec<String> = g["representative"].as_str().map(str::to_string).into_iter().collect();
+        t.extend(g["examples"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()));
+        t
+    };
+    // No project given: counts only, no wording at all.
+    let r = h.find(&FindArgs::default(), now()).unwrap();
+    assert_eq!((r["groups"][0]["count"].as_u64(), r["wordingsFrom"].as_str()), (Some(7), Some("none")));
+    assert!(texts(&r).is_empty(), "{r:#}");
+    // This project: the count still spans every project, the wordings are this project's only.
+    let (notes_texts, site_texts) = (typed_in(&b, "notes"), typed_in(&b, "site"));
+    assert!(!notes_texts.is_empty() && !site_texts.is_empty());
+    let r = h.find(&args(json!({"currentProject": "C:\\fx\\notes"})), now()).unwrap();
+    assert_eq!((r["groups"][0]["count"].as_u64(), r["wordingsFrom"].as_str()), (Some(7), Some("this project")));
+    let mine = texts(&r);
+    assert!(!mine.is_empty() && mine.iter().all(|t| notes_texts.contains(t)), "{mine:?}");
+    // Asked for: every project.
+    let r = h.find(&args(json!({"currentProject": "notes", "allProjectsText": true})), now()).unwrap();
+    let all = texts(&r);
+    assert!(all.len() >= mine.len() && all.iter().all(|t| notes_texts.contains(t) || site_texts.contains(t)));
+    assert!(all.iter().any(|t| site_texts.contains(t) && !notes_texts.contains(t)), "{all:?}");
+}
+
+#[test]
+fn like_is_never_stricter_than_the_grouping() {
+    // Every wording that was grouped finds a group again through `like`, whatever LSH did.
+    let b = build();
+    let g = group(&prompts_of(&b), Tz::Fixed(0));
+    for p in prompts_of(&b) {
+        let (hit, sim) = g.like(&p.text, 1).unwrap_or_else(|| panic!("no group for {:?}", p.text));
+        assert!(sim >= 0.55, "{sim} {:?} -> {:?}", p.text, hit.representative);
+    }
+}

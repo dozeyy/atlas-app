@@ -27,6 +27,10 @@ pub fn keep(text: &str) -> bool {
     if t.lines().count() >= MAX_LINES || t.split_whitespace().count() < MIN_WORDS {
         return false;
     }
+    // A bracketed harness line: "[Request interrupted by user]", "[Image #1]", "[Pasted text #2]".
+    if t.starts_with('[') && t.ends_with(']') {
+        return false;
+    }
     let mut first = t.chars();
     match first.next() {
         // A slash command, or a path typed alone.
@@ -68,6 +72,9 @@ mod tests {
             ("masked secret", "deploy with the key *** to staging please"),
             ("log lines", "error one\nerror two\nerror three\nerror four\nerror five\nerror six"),
             ("mostly symbols", "12:01:33 [4412] 0x7ffe 8812 9921 1203 4421 5567 1111"),
+            ("interrupt marker", "[Request interrupted by user for tool use]"),
+            ("interrupt marker long", "[Request interrupted by user while the build was running in the background]"),
+            ("image marker", "[Image #1] [Image #2] [Image #3] [Image #4] [Image #5]"),
             ("a path", "C:\\work\\atlas\\src\\wrappedModel.ts 1203 3404 5605 7806 9907 1111"),
         ];
         for (why, text) in table {
@@ -76,5 +83,7 @@ mod tests {
         assert!(!keep(&"word ".repeat(100)), "over 400 characters");
         // A `<` that is not a tag stays.
         assert!(keep("<3 the new tour screen, can you make the next one the same"));
+        // A bracket in the middle of a real request stays.
+        assert!(keep("[WIP] fix the failing parser test and tell me what changed"));
     }
 }

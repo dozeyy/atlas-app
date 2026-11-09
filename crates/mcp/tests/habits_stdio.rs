@@ -372,10 +372,18 @@ fn every_plugin_skill_is_ascii_and_its_frontmatter_will_parse() {
             let tools = get("allowed-tools").unwrap();
             assert!(tools.contains("mcp__atlas__find_repeated_requests") && tools.contains("mcp__atlas__note_skill_offer"));
             assert!(!tools.contains("create_item"), "the save must ask the user first");
-            // The no-app path: the plugin's own launcher, with exactly the two subcommands.
-            for want in ["atlas-usage.sh\" repeats *", "atlas-usage.sh\" offer-note *"] {
+            // The no-app path: the plugin's own launcher, only in the forms the skill uses. A bare
+            // `repeats *` or `offer-note *` would also pre-approve --data-dir / --cache-dir to anywhere.
+            for want in ["atlas-usage.sh\" repeats --like * --json)", "offer-note * offered*)", "offer-note * declined*)", "offer-note * made*)", "offer-note off)"] {
                 assert!(tools.contains(want), "allowed-tools lacks {want}");
             }
+            for broad in ["repeats *)", "offer-note *)"] {
+                assert!(!tools.contains(broad), "allowed-tools is too wide: {broad}");
+            }
+            assert!(!tools.contains("PowerShell"), "the skill runs the launcher through Bash only");
+            // It fires only on a repeat cue, not after every task.
+            let when = get("when_to_use").unwrap();
+            assert!(when.contains("again") && when.contains("like last time") && when.contains("3 or more times"), "{when}");
             assert!(dir.join("atlas").join("bin").join("atlas-usage.sh").is_file() && dir.join("atlas").join("bin").join("atlas-usage.ps1").is_file());
             assert!(text.lines().count() <= 120, "keep the skill short");
         }
