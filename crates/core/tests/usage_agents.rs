@@ -261,8 +261,97 @@ fn wrapped_habits_split_helper_work_from_the_chats_and_find_the_busiest_crowd() 
     assert_eq!(crowd.session_id, SA);
     assert_eq!(crowd.agent_count, 5);
 
+    // The biggest chat is the one the Sessions list puts first by tokens, found without pricing.
+    let by_tokens = fx.engine.sessions_list(&SessionQuery { sort: "tokens".into(), dir: "desc".into(), limit: 1, ..Default::default() }).unwrap();
+    let big = h.biggest.expect("a chat");
+    assert_eq!(big.session_id, by_tokens.rows[0].session_id);
+    assert_eq!(big.tokens.total, 4721);
+
     // A range with nothing in it says so instead of inventing a chat.
     let none = fx.engine.wrapped_habits("2001-01-01", "2001-01-02").unwrap();
     assert_eq!((none.chats, none.all_tokens, none.helper_tokens), (0, 0, 0));
     assert!(none.most_helpers.is_none());
+    assert!(none.biggest.is_none());
+}
+
+fn rw(fx: &Fx) -> Connection {
+    Connection::open(&fx.cache).unwrap()
+}
+
+#[test]
+fn wrapped_habits_leave_out_chats_that_are_gone_from_disk() {
+    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    rw(&fx).execute("UPDATE sessions SET missing = 1 WHERE session_id = ?1", [SA]).unwrap();
+    let h = fx.engine.wrapped_habits("2000-01-01", "2100-12-31").unwrap();
+    assert_eq!(h.chats, 4, "the chat that is gone is not counted, like the lists");
+    assert_eq!(h.most_helpers.as_ref().map(|r| r.session_id.as_str()), Some(SB), "the next busiest crowd");
+    assert_ne!(h.biggest.as_ref().map(|r| r.session_id.as_str()), Some(SA), "nor can it be the biggest");
+    // Tokens are what was spent, whether or not the transcript survives.
+    assert_eq!(h.all_tokens, fx.one("SELECT SUM(input+output+cw5m+cw1h) FROM messages") as u64);
+}
+
+#[test]
+fn a_side_chain_message_counts_as_helper_work_like_the_session_counter_says() {
+    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let before = fx.engine.wrapped_habits("2000-01-01", "2100-12-31").unwrap().helper_tokens;
+    // A main-thread message with no agent id, marked as a side chain.
+    let (key, tokens): (String, i64) = fx
+        .db()
+        .query_row("SELECT msg_key, input+output+cw5m+cw1h FROM messages WHERE agent_id IS NULL AND is_sidechain = 0 LIMIT 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap();
+    assert!(tokens > 0);
+    rw(&fx).execute("UPDATE messages SET is_sidechain = 1 WHERE msg_key = ?1", [&key]).unwrap();
+    let after = fx.engine.wrapped_habits("2000-01-01", "2100-12-31").unwrap().helper_tokens;
+    assert_eq!(after, before + tokens as u64);
+}
+
+/// A chat that crosses midnight is judged by what happened inside the range being asked about.
+#[test]
+fn short_and_long_chats_follow_the_range_not_the_whole_chat() {
+    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let sid = "ffff0006-0000-4000-8000-000000000006";
+    let ms = |s: &str| chrono_ms(s);
+    {
+        let c = rw(&fx);
+        // Four hours in all: 22:00 on the 4th, then 00:30 and 02:00 on the 5th (UTC = local here).
+        let stamps = ["2026-11-04T22:00:00Z", "2026-11-05T00:30:00Z", "2026-11-05T02:00:00Z"];
+        c.execute(
+            "INSERT INTO sessions (session_id, project_key, project_path, first_ts, last_ts, messages) VALUES (?1, 'fx', '/fx', ?2, ?3, 3)",
+            rusqlite::params![sid, ms(stamps[0]), ms(stamps[2])],
+        )
+        .unwrap();
+        for (i, s) in stamps.iter().enumerate() {
+            c.execute(
+                "INSERT INTO messages (msg_key, session_id, file_id, agent_id, is_sidechain, model, ts_utc_ms, hour_local, input, output, cw5m, cw1h, cr) \
+                 VALUES (?1, ?2, 999, NULL, 0, 'claude-opus-5-5', ?3, ?4, 1, 1, 0, 0, 0)",
+                rusqlite::params![format!("late|{i}"), sid, ms(s), format!("{}T{}", &s[..10], &s[11..13])],
+            )
+            .unwrap();
+        }
+    }
+    let whole = fx.engine.wrapped_habits("2026-11-04", "2026-11-07").unwrap();
+    let on_the_4th = fx.engine.wrapped_habits("2026-11-04", "2026-11-04").unwrap();
+    let on_the_5th = fx.engine.wrapped_habits("2026-11-05", "2026-11-05").unwrap();
+    // Over the whole stretch it is one long chat (plus the five fixture chats).
+    assert_eq!((whole.chats, whole.long_chats), (6, 1));
+    // On the 4th it has one message: a short chat there, not a long one.
+    assert_eq!((on_the_4th.chats, on_the_4th.short_chats, on_the_4th.long_chats), (1, 1, 0));
+    // On the 5th it ran 90 minutes: neither short nor long. (The five fixture chats are on the
+    // 6th and 7th.)
+    assert_eq!((on_the_5th.chats, on_the_5th.short_chats, on_the_5th.long_chats), (1, 0, 0));
+}
+
+fn chrono_ms(iso: &str) -> i64 {
+    // Whole-second UTC stamps only: days since the epoch, then the clock.
+    let (d, t) = iso.trim_end_matches('Z').split_once('T').unwrap();
+    let p: Vec<i64> = d.split('-').map(|x| x.parse().unwrap()).collect();
+    let (y, m, dd) = (p[0], p[1], p[2]);
+    let (y2, m2) = if m <= 2 { (y - 1, m + 9) } else { (y, m - 3) };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let doy = (153 * m2 + 2) / 5 + dd - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    let c: Vec<i64> = t.split(':').map(|x| x.parse().unwrap()).collect();
+    ((days * 24 + c[0]) * 3600 + c[1] * 60 + c[2]) * 1000
 }
