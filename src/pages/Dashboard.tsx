@@ -266,7 +266,7 @@ export function Dashboard() {
                     {week?.delta != null && <Delta pct={week.delta} />}
                   </div>
                   <div className="my-3.5 flex items-baseline gap-2.5" title={tokenHint(weekTokens, data.week.cost)}>
-                    <CountUp value={weekTokens} format={exact} id="dash:hero" className="d d-hero text-ink" />
+                    <CountUp value={weekTokens} format={compact} id="dash:hero" className="d d-hero text-ink" />
                     <span className="text-lead font-semibold text-ink-2">tokens</span>
                   </div>
                   <div className="text-body text-ink-2">

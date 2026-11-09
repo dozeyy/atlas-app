@@ -22,7 +22,8 @@ import { prefersReducedMotion } from "../lib/motion";
 import { ago, clock } from "../lib/nowFormat";
 import type { NowChat, NowHelper, NowLast, NowStep } from "../lib/nowTypes";
 import { useClimb, useClock, useNowSnapshot } from "../lib/useNow";
-import { compact, formatDuration, formatUsd, modelLabel, plural } from "../lib/usage";
+import { compact, formatDuration, modelLabel, plural, tokenHint } from "../lib/usage";
+import type { Cost } from "../lib/usageTypes";
 import "../styles/now.css";
 
 /** More chats than this and the cards turn into a compact grid. */
@@ -112,9 +113,13 @@ function Quiet({ title, last }: { title: string; last?: NowLast | null }) {
 
 // ---- a running chat ------------------------------------------------------------------
 
+/** The live snapshot carries a dollar estimate and a flag, not a full Cost: rebuild one for the hover. */
+function nowCost(usd: number | null, unpriced: boolean): Cost {
+  return { usd, complete: !unpriced, unpricedTokens: 0 };
+}
+
 function ChatCard({ chat }: { chat: NowChat }) {
   const working = chat.state === "working";
-  const spend = useClimb(chat.costUsd ?? 0);
   const tokens = useClimb(chat.tokens);
   const name = chat.title ?? chat.project;
   const out = chat.helpers.filter((h) => !h.done).length;
@@ -152,13 +157,9 @@ function ChatCard({ chat }: { chat: NowChat }) {
         <span className={`nc-sweep${working ? " is-on" : ""}`} aria-hidden="true" />
       </section>
 
-      <section className="nc-numbers" aria-label="Spend">
-        <div className="nc-spend">
-          <p className="d nc-spend-fig">{chat.costUsd === null ? "-" : formatUsd(spend)}</p>
-          <p className="nc-cap">{chat.unpriced ? "Estimated spend, at least" : "Estimated spend"}</p>
-        </div>
-        <div className="nc-tokens">
-          <p className="d d-stat nc-tokens-fig">{compact(Math.round(tokens))}</p>
+      <section className="nc-numbers" aria-label="Tokens used">
+        <div className="nc-spend" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))}>
+          <p className="d nc-spend-fig">{compact(Math.round(tokens))}</p>
           <p className="nc-cap">Tokens</p>
         </div>
       </section>
@@ -213,7 +214,7 @@ function People({ chat }: { chat: NowChat }) {
 }
 
 function Helper({ helper }: { helper: NowHelper }) {
-  const spend = useClimb(helper.costUsd ?? 0);
+  const tokens = useClimb(helper.tokens);
   const line = helper.done ? "Done" : helper.doing ? [helper.doing.verb, helper.doing.target].filter(Boolean).join(" ") : "";
   return (
     <div className="nc-helper" data-done={helper.done || undefined}>
@@ -226,7 +227,9 @@ function Helper({ helper }: { helper: NowHelper }) {
           {line}
         </p>
       </div>
-      <p className="d d-small nc-helper-spend">{helper.costUsd === null ? "" : formatUsd(spend)}</p>
+      <p className="d d-small nc-helper-spend" title={tokenHint(helper.tokens, nowCost(helper.costUsd, false))}>
+        {compact(Math.round(tokens))}
+      </p>
     </div>
   );
 }
