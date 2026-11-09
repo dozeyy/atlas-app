@@ -147,25 +147,31 @@ fn names_in(dir: &Path) -> HashSet<OsString> {
     std::fs::read_dir(dir).map(|rd| rd.flatten().map(|e| e.file_name()).collect()).unwrap_or_default()
 }
 
-/// Files an installed Atlas owns; never touched, whatever else the rules say.
-fn is_atlas_program_file(name: &std::ffi::OsStr) -> bool {
-    ["atlas.exe", "atlas-usage.exe", "uninstall.exe"].iter().any(|n| name.eq_ignore_ascii_case(n))
+/// The only names a reading can create in the cache folder: the cache database and its side
+/// files, the pricing table, and the data-folder marker. The folder can be the one Atlas is
+/// installed in (an update), so nothing else is ever a candidate.
+fn made_names(cache_name: &std::ffi::OsStr) -> Vec<OsString> {
+    let base = cache_name.to_string_lossy().into_owned();
+    let mut v: Vec<OsString> = ["", "-wal", "-shm", "-journal", ".bak"].iter().map(|s| OsString::from(format!("{base}{s}"))).collect();
+    for fixed in ["pricing.json", "pricing.seed-hash", atlas_core::fsutil::DATA_MARKER] {
+        v.push(OsString::from(fixed));
+    }
+    v
 }
 
-/// Take back what a cancelled run made in the cache folder: the files whose names were not there
-/// before, one by one. Folders, Atlas's own program files and anything that was already there stay.
+/// Take back what a cancelled run made in the cache folder: the cache files, by exact name, that
+/// were not there before, one by one. Nothing else is deleted, whatever its name or age: not a
+/// folder, not a program file, not anything that was already there.
 /// The folder itself goes only when this run made it and nothing at all is left in it (a plain
 /// `remove_dir`, which fails on anything else).
-fn remove_made(dir: &Path, before: &HashSet<OsString>, created_dir: bool) {
-    if let Ok(rd) = std::fs::read_dir(dir) {
-        for e in rd.flatten() {
-            let name = e.file_name();
-            if before.contains(&name) || is_atlas_program_file(&name) {
-                continue;
-            }
-            if e.file_type().is_ok_and(|t| t.is_file()) {
-                let _ = std::fs::remove_file(e.path());
-            }
+fn remove_made(dir: &Path, before: &HashSet<OsString>, created_dir: bool, cache_name: &std::ffi::OsStr) {
+    for name in made_names(cache_name) {
+        if before.contains(&name) {
+            continue;
+        }
+        let p = dir.join(&name);
+        if std::fs::symlink_metadata(&p).is_ok_and(|m| m.is_file()) {
+            let _ = std::fs::remove_file(&p);
         }
     }
     if created_dir {
@@ -178,6 +184,8 @@ impl Indexer {
     pub fn start(plan: &Plan) -> Indexer {
         let created_dir = !plan.local_dir.exists();
         let before = names_in(&plan.local_dir);
+        // The folder is about to hold Atlas's cache: mark it Atlas's while it is new or empty.
+        atlas_core::fsutil::mark_data_dir(&plan.local_dir);
         let counts = Arc::new(Counts::default());
         let mut cfg = UsageConfig::new(
             plan.projects_dir.clone(),
@@ -253,8 +261,9 @@ impl Indexer {
     /// never deleted with anything in it.
     pub fn stop_and_clean(self) {
         let (dir, before, created) = (self.local_dir.clone(), self.before.clone(), self.created_dir);
+        let cache_name = self.cache_db.file_name().map(OsString::from).unwrap_or_else(|| OsString::from("cache.sqlite"));
         self.stop();
-        remove_made(&dir, &before, created);
+        remove_made(&dir, &before, created, &cache_name);
     }
 }
 
@@ -468,25 +477,41 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("d");
         std::fs::create_dir_all(&dir).unwrap();
+        let name = std::ffi::OsStr::new("cache.sqlite");
         std::fs::write(dir.join("old.txt"), "old").unwrap();
+        std::fs::write(dir.join("pricing.json"), "was here").unwrap();
         let before = names_in(&dir);
-        std::fs::write(dir.join("new.sqlite"), "n").unwrap();
-        std::fs::write(dir.join("new.sqlite-wal"), "n").unwrap();
-        remove_made(&dir, &before, false);
+        for n in ["cache.sqlite", "cache.sqlite-wal", "cache.sqlite-shm", "cache.sqlite-journal"] {
+            std::fs::write(dir.join(n), "n").unwrap();
+        }
+        // New files that are not cache files are never taken: an update's other files, a
+        // program, a folder.
+        for n in ["new-update-file.dll", "setup.log", "atlas.exe", "Uninstall Atlas.exe", "other.sqlite"] {
+            std::fs::write(dir.join(n), "keep").unwrap();
+        }
+        std::fs::create_dir_all(dir.join("resources")).unwrap();
+        remove_made(&dir, &before, false, name);
         assert!(dir.join("old.txt").is_file());
-        assert!(!dir.join("new.sqlite").exists() && !dir.join("new.sqlite-wal").exists());
+        assert!(dir.join("pricing.json").is_file(), "a cache file that was already there stays");
+        for n in ["cache.sqlite", "cache.sqlite-wal", "cache.sqlite-shm", "cache.sqlite-journal"] {
+            assert!(!dir.join(n).exists(), "{n}");
+        }
+        for n in ["new-update-file.dll", "setup.log", "atlas.exe", "Uninstall Atlas.exe", "other.sqlite"] {
+            assert!(dir.join(n).is_file(), "{n} is not a cache file and stays");
+        }
+        assert!(dir.join("resources").is_dir());
         assert!(dir.is_dir(), "a folder that was there stays");
 
         // A folder this run made: removed only when nothing is left in it.
         let made = root.path().join("made");
         std::fs::create_dir_all(&made).unwrap();
-        std::fs::write(made.join("x.sqlite"), "n").unwrap();
-        remove_made(&made, &HashSet::new(), true);
+        std::fs::write(made.join("cache.sqlite"), "n").unwrap();
+        remove_made(&made, &HashSet::new(), true, name);
         assert!(!made.exists(), "empty after the cache files went, and setup made it");
         let busy = root.path().join("busy");
         std::fs::create_dir_all(&busy).unwrap();
         std::fs::write(busy.join("atlas.exe"), "p").unwrap();
-        remove_made(&busy, &HashSet::new(), true);
+        remove_made(&busy, &HashSet::new(), true, name);
         assert!(busy.join("atlas.exe").is_file(), "anything left in it keeps the folder");
     }
 }

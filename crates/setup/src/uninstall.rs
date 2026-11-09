@@ -351,9 +351,28 @@ fn remove_tree(p: &Path) {
     }
 }
 
+/// Whether any of Atlas's named files or folders is in `dir` (a link counts: it is there).
+fn has_named_data(dir: &Path) -> bool {
+    DATA_FILES.iter().chain(DATA_DIRS).any(|n| std::fs::symlink_metadata(dir.join(n)).is_ok())
+}
+
+/// What a removal did.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct DataResult {
+    /// How many entries were removed.
+    pub removed: usize,
+    /// A folder held Atlas-looking data but carries no marker from Atlas, so it was left whole
+    /// (an install from before the marker, or a folder some other program shares).
+    pub kept: bool,
+}
+
 /// Take Atlas's named files and folders out of `dir`, then the folder itself if that left it empty.
-/// Returns how many entries were removed.
-pub fn remove_named_data(dir: &Path) -> usize {
+/// Only where Atlas has put its marker: an unmarked folder is never entered, and the result says
+/// something was kept. The marker goes last, so an interrupted pass can be run again.
+pub fn remove_named_data(dir: &Path) -> DataResult {
+    if !atlas_core::fsutil::is_marked_data_dir(dir) {
+        return DataResult { removed: 0, kept: has_named_data(dir) };
+    }
     let mut removed = 0;
     for name in DATA_FILES {
         let p = dir.join(name);
@@ -370,24 +389,31 @@ pub fn remove_named_data(dir: &Path) -> usize {
             }
         }
     }
+    let marker = dir.join(atlas_core::fsutil::DATA_MARKER);
+    if is_plain_file(&marker) {
+        let _ = std::fs::remove_file(&marker);
+    }
     let _ = std::fs::remove_dir(dir);
-    removed
+    DataResult { removed, kept: false }
 }
 
 /// Remove the saved data a plan names. The browser profile folders go whole (they hold nothing
-/// but the window's own browser files); Atlas's data folders only by name.
-pub fn remove_data(plan: &DataPlan) -> usize {
-    let mut removed = 0;
+/// but the window's own browser files, under a name only Atlas's bundle id makes); Atlas's data
+/// folders only by name and only where marked.
+pub fn remove_data(plan: &DataPlan) -> DataResult {
+    let mut total = DataResult::default();
     for dir in &plan.atlas_dirs {
-        removed += remove_named_data(dir);
+        let r = remove_named_data(dir);
+        total.removed += r.removed;
+        total.kept |= r.kept;
     }
     for dir in &plan.profile_dirs {
         if std::fs::symlink_metadata(dir).is_ok() {
             remove_tree(dir);
-            removed += 1;
+            total.removed += 1;
         }
     }
-    removed
+    total
 }
 
 #[cfg(test)]
@@ -449,16 +475,63 @@ mod tests {
         std::fs::write(dir.join("settings.json"), "{}").unwrap();
         std::fs::write(dir.join("mine.txt"), "not Atlas's").unwrap();
         std::fs::create_dir_all(dir.join("my-folder")).unwrap();
-        let n = remove_named_data(&dir);
-        assert_eq!(n, 4, "three files and the history folder");
+        mark(&dir);
+        let r = remove_named_data(&dir);
+        assert_eq!(r, DataResult { removed: 4, kept: false }, "three files and the history folder");
         assert!(dir.join("mine.txt").is_file(), "a file Atlas does not know is never touched");
         assert!(dir.join("my-folder").is_dir());
         assert!(!dir.join("cache.sqlite").exists() && !dir.join("history").exists());
+        assert!(!dir.join(atlas_core::fsutil::DATA_MARKER).exists(), "the marker goes with the data");
         assert!(dir.is_dir(), "the folder stays while anything else is in it");
         std::fs::remove_file(dir.join("mine.txt")).unwrap();
         std::fs::remove_dir(dir.join("my-folder")).unwrap();
-        assert_eq!(remove_named_data(&dir), 0);
+        std::fs::create_dir_all(&dir).unwrap();
+        mark(&dir);
+        assert_eq!(remove_named_data(&dir).removed, 0);
         assert!(!dir.exists(), "an emptied folder goes");
+    }
+
+    fn mark(dir: &Path) {
+        std::fs::write(dir.join(atlas_core::fsutil::DATA_MARKER), "x").unwrap();
+    }
+
+    /// The fix for a shared folder (`%APPDATA%\atlas` could be another program's): without
+    /// Atlas's marker nothing in it is touched, however much it looks like Atlas's.
+    #[test]
+    fn a_folder_without_the_marker_is_never_entered_and_the_result_says_so() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path().join("shared");
+        std::fs::create_dir_all(dir.join("history").join("deep")).unwrap();
+        std::fs::write(dir.join("history").join("deep").join("note.txt"), "theirs").unwrap();
+        std::fs::write(dir.join("settings.json"), "{\"theirs\":1}").unwrap();
+        std::fs::write(dir.join("cache.sqlite"), "c").unwrap();
+        let r = remove_named_data(&dir);
+        assert_eq!(r, DataResult { removed: 0, kept: true });
+        assert!(dir.join("settings.json").is_file() && dir.join("cache.sqlite").is_file());
+        assert!(dir.join("history").join("deep").join("note.txt").is_file());
+        // An unmarked folder with nothing of Atlas's name in it has nothing to keep.
+        let empty = t.path().join("other");
+        std::fs::create_dir_all(&empty).unwrap();
+        std::fs::write(empty.join("readme.txt"), "x").unwrap();
+        assert_eq!(remove_named_data(&empty), DataResult { removed: 0, kept: false });
+        assert!(empty.join("readme.txt").is_file());
+        // A missing folder is fine too.
+        assert_eq!(remove_named_data(&t.path().join("gone")), DataResult::default());
+    }
+
+    #[test]
+    fn remove_data_keeps_an_unmarked_folder_while_taking_a_marked_one() {
+        let t = tempfile::tempdir().unwrap();
+        let (a, b) = (t.path().join("a"), t.path().join("b"));
+        for d in [&a, &b] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("settings.json"), "{}").unwrap();
+        }
+        mark(&a);
+        let plan = DataPlan { atlas_dirs: vec![a.clone(), b.clone()], profile_dirs: vec![] };
+        let r = remove_data(&plan);
+        assert_eq!(r, DataResult { removed: 1, kept: true });
+        assert!(!a.exists() && b.join("settings.json").is_file());
     }
 
     /// A link inside the data folder is taken away as a link: what it points at is never entered.
@@ -475,6 +548,7 @@ mod tests {
         let made = Command::new("cmd").args(["/C", "mklink", "/J"]).arg(dir.join("history")).arg(&precious).output().unwrap();
         assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stdout));
         assert!(is_link(&dir.join("history")));
+        mark(&dir);
         remove_named_data(&dir);
         assert!(!dir.join("history").exists(), "the link is gone");
         assert_eq!(std::fs::read_to_string(precious.join("keep.txt")).unwrap(), "mine", "what it pointed at is untouched");

@@ -29,6 +29,8 @@ export interface Snapshot {
   error: string | null;
   reading: Reading;
   reduceMotion: boolean;
+  /** Uninstalled with "remove saved data" ticked, but a folder without Atlas's marker was left whole. */
+  dataKept: boolean;
 }
 
 export const EMPTY_SNAPSHOT: Snapshot = {
@@ -39,6 +41,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   error: null,
   reading: { available: true, done: 0, total: 0, tokens: 0, finished: false, failed: false, waiting: false },
   reduceMotion: false,
+  dataKept: false,
 };
 
 /** 0..1, how much of the chats have been read. Nothing to read, or a failed read, counts as 0:
@@ -111,7 +114,11 @@ export function screenFor(s: Snapshot, removeData = false): Screen {
       }
       case "done":
         return {
-          line: removeData ? "Atlas is removed." : "Atlas is removed.\nYour saved data is kept.",
+          line: !removeData
+            ? "Atlas is removed.\nYour saved data is kept."
+            : s.dataKept
+              ? "Atlas is removed.\nSome saved data is kept."
+              : "Atlas is removed.",
           primary: { label: "Close", action: "close" },
           dataBox: false,
           closable: true,

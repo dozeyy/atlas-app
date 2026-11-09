@@ -129,6 +129,8 @@ describe("the remover screen", () => {
     expect(kept.line).toBe("Atlas is removed.\nYour saved data is kept.");
     expect(kept.primary).toEqual({ label: "Close", action: "close" });
     expect(screenFor(out({ phase: "done" }), true).line).toBe("Atlas is removed.");
+    // Removal was asked for, but a folder without Atlas's marker was left whole.
+    expect(screenFor(out({ phase: "done", dataKept: true }), true).line).toBe("Atlas is removed.\nSome saved data is kept.");
   });
 
   it("puts a failure in plain words with Retry", () => {
