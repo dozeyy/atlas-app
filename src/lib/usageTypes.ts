@@ -237,7 +237,7 @@ export interface SessionDetail {
   claudeCodeCostUsd: number | null;
 }
 
-// ---- where the money went (one chat's receipt) --------------------------------
+// ---- where it went (one chat's receipt) ---------------------------------------
 
 /** Dollars by what was bought. `input` is fresh, uncached input. */
 export interface ReceiptKinds {
@@ -246,6 +246,14 @@ export interface ReceiptKinds {
   cacheRead: number;
   input: number;
   web: number;
+}
+
+/** Tokens by what they were. The first three add up to the headline; cache reads sit apart. */
+export interface ReceiptTokenKinds {
+  output: number;
+  cacheWrite: number;
+  input: number;
+  cacheRead: number;
 }
 
 export interface ReceiptModel {
@@ -302,6 +310,7 @@ export interface ReceiptThread {
   durationMs: number;
   toolCalls: number;
   kinds: ReceiptKinds;
+  tokenKinds: ReceiptTokenKinds;
   models: ReceiptModel[];
   outcome: Outcome | null;
   items: ReceiptItem[];
@@ -324,6 +333,9 @@ export interface Receipt {
   modelsOtherUsd: number;
   kinds: ReceiptKinds;
   kindsOtherUsd: number;
+  /** The chat's headline tokens (input + output + cache writes), and its tokens by kind. */
+  totalTokens: number;
+  tokenKinds: ReceiptTokenKinds;
   items: ReceiptItem[];
   itemsOtherUsd: number;
   flags: ReceiptFlag[];

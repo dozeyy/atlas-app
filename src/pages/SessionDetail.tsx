@@ -372,7 +372,7 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
   };
 
   const tabs: { value: Tab; label: string }[] = [
-    { value: "receipt", label: "Receipt" },
+    { value: "receipt", label: "Tokens" },
     ...(hasHelpers ? [{ value: "helpers" as const, label: "Helpers" }] : []),
     { value: "messages", label: "Messages" },
     { value: "details", label: "Details" },

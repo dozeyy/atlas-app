@@ -127,7 +127,7 @@ describe("Sessions: search inside chats", () => {
     expect(screen.getByText(/^1 of [\d,]+ chats$/)).toBeInTheDocument();
     // Clicking the row opens that session.
     await userEvent.click(screen.getByRole("button", { name: /tokens/ }));
-    expect(await screen.findByRole("region", { name: "Who spent it" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
   });
 
   it("asks the engine only for 2+ characters and lets the newest query win", async () => {

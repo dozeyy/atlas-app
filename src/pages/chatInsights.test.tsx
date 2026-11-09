@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
@@ -47,12 +47,21 @@ describe("Chat receipt and helper map", () => {
     const backend = sessionsBackend();
     const { row } = await chatWithHelpers(backend);
     mountDetail(backend, row.sessionId);
-    expect(await screen.findByRole("region", { name: "Who spent it" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "What it bought" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "What it used" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Biggest line items" })).toBeInTheDocument();
     expect(screen.getAllByText(/All figures are estimates/)).toHaveLength(1);
     // Each list ends in a total, so the sum is visible.
-    expect(within(screen.getByRole("region", { name: "Who spent it" })).getByText("Total")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Who used it" })).getByText("Total")).toBeInTheDocument();
+    // Tokens are the figure everywhere; dollars live only in hover text.
+    for (const name of ["Who used it", "What it used", "Biggest line items"]) {
+      const region = screen.getByRole("region", { name });
+      expect(region.textContent).not.toMatch(/\$/);
+      expect(region.textContent).toMatch(/\d(k|M|B)?\b/);
+    }
+    expect(within(screen.getByRole("region", { name: "Who used it" })).getByText(/tokens$/)).toBeInTheDocument();
+    const titled = Array.from(document.querySelectorAll("[title]")).map((e) => e.getAttribute("title") ?? "");
+    expect(titled.some((t) => /about \$/.test(t))).toBe(true);
   });
 
   it("offers the Helpers tab only when helpers ran", async () => {
@@ -60,8 +69,8 @@ describe("Chat receipt and helper map", () => {
     const page = await backend.sessionsList({ limit: 200 });
     const none = page.rows.find((r) => r.agentCount === 0)!;
     mountDetail(backend, none.sessionId);
-    await screen.findByRole("region", { name: "Who spent it" });
-    expect(screen.getByRole("radio", { name: "Receipt" })).toBeInTheDocument();
+    await screen.findByRole("region", { name: "Who used it" });
+    expect(screen.getByRole("radio", { name: "Tokens" })).toBeInTheDocument();
     expect(screen.queryByRole("radio", { name: "Helpers" })).not.toBeInTheDocument();
   });
 
@@ -81,6 +90,35 @@ describe("Chat receipt and helper map", () => {
     const slice = screen.getByRole("complementary", { name: `Slice: ${target.name}` });
     expect(within(slice).getByRole("button", { name: /Open helper/ })).toBeInTheDocument();
     expect(within(slice).getByText(/of the chat/)).toBeInTheDocument();
+  });
+
+  it("shows a name only on a plate when a bubble is pointed at or focused, never inside the bubble", async () => {
+    const backend = sessionsBackend();
+    const { row, detail } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
+    const map = await screen.findByRole("group", { name: /^Helper map/ });
+    // Nothing but the main chat's label is written on the picture until a bubble is pointed at.
+    expect(map.querySelector(".map-plate")).toBeNull();
+    const writing = Array.from(map.querySelectorAll("text")).map((t) => t.textContent);
+    expect(writing.filter((t) => t && !/^\+\d+$/.test(t))).toEqual(["Main chat"]);
+
+    const a = detail.agents[0];
+    const node = within(map).getByRole("button", { name: new RegExp(`^${esc(a.name)}, `) });
+    expect(node.getAttribute("aria-label")).toMatch(/ tokens/);
+    expect(node.getAttribute("aria-label")).not.toMatch(/\$/);
+    await userEvent.hover(node);
+    const plate = map.querySelector(".map-plate");
+    expect(plate).not.toBeNull();
+    expect((plate?.textContent ?? "").replace(/\s+/g, "")).toContain(a.name.replace(/\s+/g, ""));
+    expect(plate?.querySelector(".map-plate-detail")?.textContent).toMatch(/ tokens/);
+    await userEvent.unhover(node);
+    expect(map.querySelector(".map-plate")).toBeNull();
+    // The keyboard gets the same plate.
+    act(() => node.focus());
+    expect(map.querySelector(".map-plate")).not.toBeNull();
+    act(() => node.blur());
+    expect(map.querySelector(".map-plate")).toBeNull();
   });
 
   it("selects a node from the keyboard and opens the helper from its slice", async () => {
@@ -104,7 +142,7 @@ describe("Chat receipt and helper map", () => {
     const receipt = (await backend.sessionReceipt(row.sessionId))!;
     const top = receipt.threads.filter((t) => t.agentId).sort((a, b) => b.usd - a.usd)[0];
     mountDetail(backend, row.sessionId);
-    const who = await screen.findByRole("region", { name: "Who spent it" });
+    const who = await screen.findByRole("region", { name: "Who used it" });
     await userEvent.click(within(who).getByRole("button", { name: new RegExp(`^${esc(top.name)}, `) }));
     expect(await screen.findByRole("group", { name: /^Helper map/ })).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: `Slice: ${top.name}` })).toBeInTheDocument();
@@ -129,10 +167,10 @@ describe("Chat receipt and helper map", () => {
     mountDetail(backend, row.sessionId);
     expect(await screen.findByText("The chat file could not be read")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByRole("region", { name: "Who spent it" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
   });
 
-  it("folds a huge crowd of helpers into a +N node and still draws every dollar", async () => {
+  it("folds a huge crowd of helpers into a +N node and still draws every helper", async () => {
     const backend = sessionsBackend();
     const { row } = await chatWithHelpers(backend);
     const tokens = (n: number): Tokens => ({ input: n, output: n, cacheWrite5m: n, cacheWrite1h: 0, cacheRead: n * 4, webSearch: 0, webFetch: 0, total: n * 3 });
@@ -160,7 +198,7 @@ describe("Chat receipt and helper map", () => {
     await userEvent.click(more);
     const slice = screen.getByRole("complementary", { name: /^Slice: \d+ more helpers$/ });
     expect(within(slice).getByText("Folded in")).toBeInTheDocument();
-    // What the dots carry is what the chat spent in its threads.
+    // Every helper is a node or sits inside the +N node.
     const shown = nodes.length - 1 - 1;
     const folded = Number(/^(\d+) more/.exec(more.getAttribute("aria-label") ?? "")?.[1]);
     expect(shown + folded).toBe(56);

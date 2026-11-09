@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { MockBackend } from "./mock";
-import { byModel, fitColumn, flagText, itemDetail, itemTitle, whatItBought, whoSpent } from "./receiptView";
+import { byModel, fitColumn, flagText, itemDetail, itemTitle, lineTitle, whatItUsed, whoUsed } from "./receiptView";
 import { layoutMap } from "./helperMap";
 import type { Receipt, ReceiptFlag, ReceiptItem } from "./types";
 
-const sum = (lines: { usd: number }[]) => lines.reduce((s, l) => s + l.usd, 0);
+const sum = (lines: { tokens: number }[]) => lines.reduce((s, l) => s + l.tokens, 0);
+const sumUsd = (lines: { usd: number }[]) => lines.reduce((s, l) => s + l.usd, 0);
 
 /** Every chat the stand-in backend has, as the receipt the screen would get. */
 async function receipts(): Promise<Receipt[]> {
@@ -19,15 +20,30 @@ async function receipts(): Promise<Receipt[]> {
 }
 
 describe("receipt: every list adds up to the chat", () => {
-  it("who spent it, what it bought and the models each sum to the total, in every chat", async () => {
+  it("who used it, what it used and the models each sum to the chat's tokens, in every chat", async () => {
     const all = await receipts();
     expect(all.length).toBeGreaterThan(5);
     for (const r of all) {
-      const total = r.totalUsd ?? 0;
-      expect(sum(whoSpent(r))).toBeCloseTo(total, 6);
-      expect(sum(whatItBought(r))).toBeCloseTo(total, 6);
-      expect(sum(byModel(r))).toBeCloseTo(total, 6);
+      expect(r.totalTokens).toBeGreaterThan(0);
+      expect(sum(whoUsed(r))).toBe(r.totalTokens);
+      expect(sum(whatItUsed(r))).toBe(r.totalTokens);
+      expect(sum(byModel(r))).toBe(r.totalTokens);
     }
+  });
+
+  it("lists cache reads apart: the kinds add up to the headline without them", async () => {
+    for (const r of await receipts()) {
+      const k = r.tokenKinds;
+      expect(k.output + k.cacheWrite + k.input).toBe(r.totalTokens);
+      expect(whatItUsed(r).some((l) => l.key === "cacheRead")).toBe(false);
+    }
+  });
+
+  it("keeps the dollars in the hover text, not the figure", async () => {
+    const [r] = await receipts();
+    const line = whoUsed(r)[0];
+    expect(lineTitle(line)).toMatch(/tokens/);
+    expect(lineTitle(line)).toMatch(/about \$/);
   });
 
   it("folds the small spenders into one line without losing a cent", async () => {
@@ -35,26 +51,30 @@ describe("receipt: every list adds up to the chat", () => {
     const big = [...all].sort((a, b) => b.threads.length - a.threads.length)[0];
     expect(big.threads.length).toBeGreaterThan(3);
     expect(big).toBeDefined();
-    const lines = whoSpent(big, 3);
+    const lines = whoUsed(big, 3);
     expect(lines.filter((l) => l.kind === "helper")).toHaveLength(2);
     expect(lines.find((l) => l.kind === "more")?.label).toMatch(/^\d+ other helpers?$/);
-    expect(sum(lines)).toBeCloseTo(big.totalUsd ?? 0, 6);
+    expect(sum(lines)).toBe(big.totalTokens);
     // Main chat first, then the biggest helpers in order.
     expect(lines[0].kind).toBe("main");
-    const helpers = lines.filter((l) => l.kind === "helper").map((l) => l.usd);
+    const helpers = lines.filter((l) => l.kind === "helper").map((l) => l.tokens);
     expect([...helpers].sort((a, b) => b - a)).toEqual(helpers);
   });
 
-  it("leaves out a kind that cost nothing, and a remainder that is only rounding", async () => {
+  it("leaves out a kind with no tokens, and shows what no line explains as everything else", async () => {
     const [r] = await receipts();
-    const lines = whatItBought({ ...r, kinds: { output: 1, cacheWrite: 0, cacheRead: 0, input: 0, web: 0 }, kindsOtherUsd: 0.001 });
-    expect(lines.map((l) => l.key)).toEqual(["output"]);
+    const only = { ...r, totalTokens: 100, tokenKinds: { output: 100, cacheWrite: 0, input: 0, cacheRead: 5 } };
+    expect(whatItUsed(only).map((l) => l.key)).toEqual(["output"]);
+    const short = whatItUsed({ ...only, totalTokens: 130 });
+    expect(short.map((l) => l.key)).toEqual(["output", "other"]);
+    expect(sum(short)).toBe(130);
   });
 
   it("the helper map's nodes carry exactly the chat's spend", async () => {
     for (const r of await receipts()) {
-      const m = layoutMap(r.threads, { width: 800, height: 500 });
-      expect(sum(m.nodes)).toBeCloseTo(sum(r.threads), 9);
+      const m = layoutMap(r.threads, { width: 800, height: 500 }, undefined, "tokens");
+      expect(sum(m.nodes)).toBe(sum(r.threads));
+      expect(sumUsd(m.nodes)).toBeCloseTo(sumUsd(r.threads), 9);
     }
   });
 });
@@ -89,24 +109,28 @@ describe("receipt: wording", () => {
 
   it("names a line by the file or tool and says what makes it big, with an estimate mark on the money", () => {
     expect(itemTitle(read)).toBe("Read docs/tech.md");
-    expect(itemDetail(read)).toBe("14 times, ~2.1M tokens");
+    expect(itemDetail(read)).toBe("14 times");
     expect(itemTitle(bash)).toBe("One Bash output");
-    expect(itemDetail(bash)).toBe("~180k tokens");
+    expect(itemDetail(bash)).toBe("");
   });
 
   it("writes each flag from its fields", () => {
     const base: ReceiptFlag = { kind: "repeat_read", label: "docs/tech.md", agentId: null, count: 14, tokens: 2_100_000, usd: 3.1, minutes: null, model: null, tools: [] };
-    expect(flagText(base)).toEqual({ kicker: "Same file, again and again", name: "docs/tech.md", detail: "read 14 times, ~2.1M tokens, ~$3.10" });
-    expect(flagText({ ...base, kind: "huge_output", label: "Bash", tokens: 180_000, usd: 3 }).detail).toBe("~180k tokens in one go, ~$3.00");
+    const again = flagText(base);
+    expect(again).toMatchObject({ kicker: "Same file, again and again", name: "docs/tech.md", detail: "read 14 times, about 2.1M tokens" });
+    expect(again.title).toContain("about $3.10");
+    expect(flagText({ ...base, kind: "huge_output", label: "Bash", tokens: 180_000, usd: 3 }).detail).toBe("about 180k tokens in one go");
     const heavy = flagText({ ...base, kind: "heavy_helper", label: "Find the config", model: "claude-opus-4-1", tools: ["Read", "Grep"], usd: 0.9 });
     expect(heavy.kicker).toBe("Big model, small job");
-    expect(heavy.detail).toBe("Opus 4.1, only Read, Grep, ~$0.90");
-    const cold = flagText({ ...base, kind: "cache_miss", label: "Main chat", minutes: 31.4, usd: 0.4 });
-    expect(cold.detail).toBe("after 31 min away, ~$0.40 extra");
+    expect(heavy.detail).toBe("Opus 4.1, only Read, Grep, about 2.1M tokens");
+    const cold = flagText({ ...base, kind: "cache_miss", label: "Main chat", minutes: 31.4, usd: 0.4, tokens: 90_000 });
+    expect(cold.detail).toBe("after 31 min away, about 90k tokens re-cached");
+    expect(cold.title).toContain("about $0.40 extra");
   });
 
-  it("never shows a flag's money when it is crumbs", () => {
+  it("never shows a flag's dollars when they are crumbs", () => {
     const f: ReceiptFlag = { kind: "huge_output", label: "Bash", agentId: null, count: 1, tokens: 50_000, usd: 0.001, minutes: null, model: null, tools: [] };
-    expect(flagText(f).detail).toBe("~50k tokens in one go");
+    expect(flagText(f).detail).toBe("about 50k tokens in one go");
+    expect(flagText(f).title).not.toContain("$");
   });
 });

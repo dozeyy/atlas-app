@@ -74,6 +74,36 @@ impl Kinds {
     }
 }
 
+/// Tokens by what they were. The first three are the headline (input + output + cache writes);
+/// cache reads are listed apart, as everywhere else in the app.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenKinds {
+    pub output: u64,
+    pub cache_write: u64,
+    pub input: u64,
+    pub cache_read: u64,
+}
+
+impl TokenKinds {
+    fn add_counts(&mut self, c: &Counts) {
+        self.output += c.output;
+        self.cache_write += c.cw5m + c.cw1h;
+        self.input += c.input;
+        self.cache_read += c.cr;
+    }
+    fn add(&mut self, o: &TokenKinds) {
+        self.output += o.output;
+        self.cache_write += o.cache_write;
+        self.input += o.input;
+        self.cache_read += o.cache_read;
+    }
+    /// input + output + cache writes: the figure the app headlines.
+    pub fn headline(&self) -> u64 {
+        self.output + self.cache_write + self.input
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelLine {
@@ -134,6 +164,7 @@ pub struct Thread {
     pub duration_ms: i64,
     pub tool_calls: u64,
     pub kinds: Kinds,
+    pub token_kinds: TokenKinds,
     pub models: Vec<ModelLine>,
     /// `finished`, `errored` or `stopped`, only where the transcript says. Never set for the main chat.
     pub outcome: Option<String>,
@@ -161,6 +192,9 @@ pub struct Receipt {
     pub models_other_usd: f64,
     pub kinds: Kinds,
     pub kinds_other_usd: f64,
+    /// The chat's headline tokens (input + output + cache writes) and its tokens by kind.
+    pub total_tokens: u64,
+    pub token_kinds: TokenKinds,
     pub items: Vec<ItemLine>,
     pub items_other_usd: f64,
     pub flags: Vec<Flag>,
@@ -222,6 +256,7 @@ fn kinds_for(p: &PriceTable, b: &Basis, c: &Counts) -> Option<Kinds> {
 #[derive(Default)]
 struct Acc {
     kinds: Kinds,
+    token_kinds: TokenKinds,
     models: BTreeMap<String, (f64, u64)>,
     tokens: u64,
     cache_read: u64,
@@ -493,6 +528,7 @@ pub fn build(conn: &Connection, ctx: &QueryCtx, id: &str, scan: Option<&Scan>) -
         let total = b.c.input + b.c.output + b.c.cw5m + b.c.cw1h;
         a.tokens += total;
         a.cache_read += b.c.cr;
+        a.token_kinds.add_counts(&b.c);
         a.output += b.c.output;
         a.messages += b.messages;
         let basis = Basis { model: &b.model, speed: &b.speed, geo: &b.geo, service_tier: &b.tier, price_tier: b.price_tier };
@@ -525,7 +561,9 @@ pub fn build(conn: &Connection, ctx: &QueryCtx, id: &str, scan: Option<&Scan>) -
     let mix = tool_mix(conn, id)?;
 
     // Threads: the main chat, then each helper in start order.
-    let mut roster: Vec<(Option<String>, String, Option<String>, i64, i64, u64, String)> = Vec::new();
+    // agent id, name, started by, spawn depth, duration ms, tool calls, model
+    type Row = (Option<String>, String, Option<String>, i64, i64, u64, String);
+    let mut roster: Vec<Row> = Vec::new();
     roster.push((None, "Main chat".into(), None, 0, 0, 0, String::new()));
     for a in &agents {
         roster.push((
@@ -549,6 +587,7 @@ pub fn build(conn: &Connection, ctx: &QueryCtx, id: &str, scan: Option<&Scan>) -
     let mut all_items: Vec<(Option<String>, RawItem)> = Vec::new();
     let mut huge_all: Vec<(Option<String>, ResultScan, Option<f64>)> = Vec::new();
     let mut kinds_total = Kinds::default();
+    let mut token_kinds_total = TokenKinds::default();
     let mut models_total: BTreeMap<String, (f64, u64)> = BTreeMap::new();
 
     for (agent, name, parent, depth, duration, tool_calls, summary_model) in roster {
@@ -557,6 +596,7 @@ pub fn build(conn: &Connection, ctx: &QueryCtx, id: &str, scan: Option<&Scan>) -
         let model = models.first().map(|m| m.model.clone()).filter(|m| !m.is_empty()).unwrap_or(summary_model);
         let usd = acc.kinds.sum();
         kinds_total.add(&acc.kinds);
+        token_kinds_total.add(&acc.token_kinds);
         for (m, (c, t)) in &acc.models {
             let e = models_total.entry(m.clone()).or_default();
             e.0 += c;
@@ -632,6 +672,7 @@ pub fn build(conn: &Connection, ctx: &QueryCtx, id: &str, scan: Option<&Scan>) -
             messages: acc.messages,
             duration_ms: duration,
             kinds: acc.kinds,
+            token_kinds: acc.token_kinds,
             models,
             outcome,
             items,
@@ -711,6 +752,8 @@ pub fn build(conn: &Connection, ctx: &QueryCtx, id: &str, scan: Option<&Scan>) -
         models_other_usd: remainder(models_sum),
         kinds: kinds_total,
         kinds_other_usd: remainder(kinds_total.sum()),
+        total_tokens: row.tokens.total,
+        token_kinds: token_kinds_total,
         items,
         items_other_usd: items_other,
         flags,

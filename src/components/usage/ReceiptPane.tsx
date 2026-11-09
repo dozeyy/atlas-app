@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Warning } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { Skeleton } from "./StateBlocks";
 import { modelTone } from "./helperKit";
 import { useIntro } from "../../lib/motion";
-import { barWidth, byModel, fitColumn, flagText, guess, itemDetail, itemTitle, whatItBought, whoSpent, type SpendLine } from "../../lib/receiptView";
-import { formatUsd, percent, plural, share } from "../../lib/usage";
+import { barWidth, byModel, cacheReads, fitColumn, flagText, guess, itemDetail, itemTitleFull, itemTitle, lineTitle, tokensText, whatItUsed, whoUsed, type SpendLine } from "../../lib/receiptView";
+import { compact, percent, plural, share } from "../../lib/usage";
 import type { Receipt } from "../../lib/types";
 
 const FLAGS_SHOWN = 3;
@@ -41,18 +42,18 @@ function tint(line: SpendLine): string {
 }
 
 function Line({ line, total, index, onOpen }: { line: SpendLine; total: number; index: number; onOpen?: (agentId: string | null) => void }) {
-  const frac = share(line.usd, total);
+  const frac = share(line.tokens, total);
   const body = (
     <>
-      <span className="flex items-baseline justify-between gap-3">
+      <span className="flex items-baseline justify-between gap-3" title={lineTitle(line)}>
         <span className={`min-w-0 truncate text-body ${line.kind === "other" || line.kind === "more" ? "text-ink-2" : "text-ink"}`}>{line.label}</span>
         <span className="flex shrink-0 items-baseline gap-2 tabular-nums">
-          <span className="text-body text-ink">{formatUsd(line.usd)}</span>
+          <span className="text-body text-ink">{compact(line.tokens)}</span>
           <span className="w-9 text-right text-caption text-ink-2">{percent(frac)}</span>
         </span>
       </span>
       <span className="share-bar rcpt-bar mt-1 block" role="img" aria-label={`${percent(frac)} of the chat`}>
-        <i style={{ width: `${barWidth(line.usd, total)}%`, ["--bar" as string]: tint(line), ["--i" as string]: Math.min(index, 12) }} />
+        <i style={{ width: `${barWidth(line.tokens, total)}%`, ["--bar" as string]: tint(line), ["--i" as string]: Math.min(index, 12) }} />
       </span>
     </>
   );
@@ -60,7 +61,7 @@ function Line({ line, total, index, onOpen }: { line: SpendLine; total: number; 
   return (
     <li>
       {open ? (
-        <button type="button" className="rcpt-line rcpt-line-btn" onClick={() => onOpen(line.agentId)} aria-label={`${line.label}, ${formatUsd(line.usd)}. Show in the helper map`}>
+        <button type="button" className="rcpt-line rcpt-line-btn" onClick={() => onOpen(line.agentId)} aria-label={`${line.label}, ${tokensText(line.tokens)}. Show in the helper map`} title={lineTitle(line)}>
           {body}
         </button>
       ) : (
@@ -70,7 +71,7 @@ function Line({ line, total, index, onOpen }: { line: SpendLine; total: number; 
   );
 }
 
-function Lines({ lines, total, label, onOpen }: { lines: SpendLine[]; total: number; label: string; onOpen?: (agentId: string | null) => void }) {
+function Lines({ lines, total, label, onOpen, children }: { lines: SpendLine[]; total: number; label: string; onOpen?: (agentId: string | null) => void; children?: ReactNode }) {
   return (
     <section aria-label={label} className="min-w-0">
       <h3 className="rcpt-head">{label}</h3>
@@ -81,8 +82,9 @@ function Lines({ lines, total, label, onOpen }: { lines: SpendLine[]; total: num
       </ul>
       <div className="rcpt-total">
         <span>Total</span>
-        <span className="tabular-nums text-ink">{formatUsd(total)}</span>
+        <span className="tabular-nums text-ink">{tokensText(total)}</span>
       </div>
+      {children}
     </section>
   );
 }
@@ -110,9 +112,10 @@ export interface ReceiptState {
 }
 
 /**
- * Where the money went: who spent it, what it bought, which line items were biggest, and
- * anything worth a look. Every list adds up to the chat's cost; what no line explains is
- * "Everything else". The items and flags are estimates read from the transcript, marked "~".
+ * Where the chat's tokens went: who used them, what they were, which line items were biggest,
+ * and anything worth a look. Every list adds up to the chat's tokens; what no line explains is
+ * "Everything else". Dollars are only estimates and show up in the hover text. The items and
+ * flags are estimates read from the transcript, marked "about" or "~".
  */
 export function ReceiptPane({ state, sessionId, onOpenHelper }: { state: ReceiptState; sessionId: string; onOpenHelper: (agentId: string | null) => void }) {
   const intro = useIntro(`receipt:${sessionId}`);
@@ -132,24 +135,32 @@ export function ReceiptPane({ state, sessionId, onOpenHelper }: { state: Receipt
     return <p className="text-body text-ink-2">This chat is not in the usage cache any more.</p>;
   }
 
-  const total = r.totalUsd ?? 0;
+  const total = r.totalTokens;
+  const reads = cacheReads(r);
   // Three columns side by side: size the third to the room it has so nothing needs a scrollbar.
   // Narrower, it sits under the others and the pane scrolls if it must.
   const wide = box.w >= WIDE_PX && box.h > 0;
   const fit = wide ? fitColumn(box.h - FOOTER_PX, r.flags.length, Math.min(8, r.items.length)) : null;
   const flags = r.flags.slice(0, fit ? fit.flags : FLAGS_SHOWN);
   const itemLimit = fit ? fit.items : flags.length > 0 ? 6 : 8;
-  const items = r.items.slice(0, itemLimit);
-  const itemsOther = r.itemsOtherUsd + r.items.slice(itemLimit).reduce((s, i) => s + (i.usd ?? 0), 0);
+  // The figure is tokens, so the biggest in tokens comes first.
+  const items = [...r.items].sort((a, b) => b.tokens - a.tokens).slice(0, itemLimit);
+  const itemsOther = Math.max(0, total - items.reduce((s, i) => s + i.tokens, 0));
   const itemRest = r.items.length - items.length;
 
   return (
     <div ref={boxRef} className={`flex h-full min-h-0 flex-col ${intro ? "intro" : ""}`}>
-      <div className="grid min-h-0 flex-1 content-start gap-x-8 gap-y-6 @xl:grid-cols-2 @4xl:grid-cols-3">
-        <Lines label="Who spent it" lines={whoSpent(r)} total={total} onOpen={r.threads.length > 1 ? onOpenHelper : undefined} />
+      <div className="rcpt-scroll grid min-h-0 flex-1 content-start gap-x-8 gap-y-6 @xl:grid-cols-2 @4xl:grid-cols-3">
+        <Lines label="Who used it" lines={whoUsed(r)} total={total} onOpen={r.threads.length > 1 ? onOpenHelper : undefined} />
 
         <div className="min-w-0 space-y-6">
-          <Lines label="What it bought" lines={whatItBought(r)} total={total} />
+          <Lines label="What it used" lines={whatItUsed(r)} total={total}>
+            {reads.tokens > 0 && (
+              <p className="mt-1 text-caption text-ink-2" title={`Cache reads: ${tokensText(reads.tokens)}, ${guess(reads.usd)}`}>
+                {`Plus ${compact(reads.tokens)} cache reads, listed apart`}
+              </p>
+            )}
+          </Lines>
           {r.models.length > 1 && <Lines label="By model" lines={byModel(r)} total={total} />}
         </div>
 
@@ -165,10 +176,12 @@ export function ReceiptPane({ state, sessionId, onOpenHelper }: { state: Receipt
                       <Warning size={14} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
                       <div className="min-w-0">
                         <div className="text-caption text-warning">{t.kicker}</div>
-                        <div className="truncate text-body text-ink" title={t.name}>
+                        <div className="truncate text-body text-ink" title={t.title}>
                           {t.name}
                         </div>
-                        <div className="truncate text-caption text-ink-2">{t.detail}</div>
+                        <div className="truncate text-caption text-ink-2" title={t.title}>
+                          {t.detail}
+                        </div>
                       </div>
                     </li>
                   );
@@ -187,33 +200,33 @@ export function ReceiptPane({ state, sessionId, onOpenHelper }: { state: Receipt
             <>
             <ul>
               {items.map((i, n) => (
-                <li key={`${i.kind}:${i.tool}:${i.path ?? ""}:${i.thread ?? ""}:${n}`} className="rcpt-item">
+                <li key={`${i.kind}:${i.tool}:${i.path ?? ""}:${i.thread ?? ""}:${n}`} className="rcpt-item" title={itemTitleFull(i)}>
                   <div className="min-w-0">
                     <div className="truncate text-body text-ink" title={itemTitle(i)}>
                       {itemTitle(i)}
                     </div>
                     <div className="truncate text-caption text-ink-2">{[itemDetail(i), i.thread].filter(Boolean).join(", ")}</div>
                   </div>
-                  <span className="shrink-0 text-body tabular-nums text-ink">{guess(i.usd)}</span>
+                  <span className="shrink-0 text-body tabular-nums text-ink">{`~${compact(i.tokens)}`}</span>
                 </li>
               ))}
-              {(itemsOther >= 0.005 || itemRest > 0) && (
+              {(itemsOther >= 1 || itemRest > 0) && (
                 <li className="rcpt-item">
                   <span className="text-body text-ink-2">Everything else</span>
-                  <span className="shrink-0 text-body tabular-nums text-ink-2">{formatUsd(Math.max(0, itemsOther))}</span>
+                  <span className="shrink-0 text-body tabular-nums text-ink-2">{compact(itemsOther)}</span>
                 </li>
               )}
             </ul>
             <div className="rcpt-total">
               <span>Total</span>
-              <span className="tabular-nums text-ink">{formatUsd(total)}</span>
+              <span className="tabular-nums text-ink">{tokensText(total)}</span>
             </div>
             </>
           )}
         </section>
       </div>
 
-      <p className="mt-4 shrink-0 text-caption text-ink-2">{r.complete ? "All figures are estimates." : "All figures are estimates. Some tokens had no price, so the total is a floor."}</p>
+      <p className="mt-4 shrink-0 text-caption text-ink-2">All figures are estimates.</p>
     </div>
   );
 }

@@ -298,7 +298,7 @@ fn scan_one(file: &ScanFile, stats: &ReadStats, notices: &mut Vec<Notice>) -> Op
         true
     });
     if t.results.len() > KEEP_MAX {
-        t.results.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+        t.results.sort_by_key(|r| std::cmp::Reverse(r.tokens));
         t.results.truncate(KEEP_MAX);
     }
     Some(t)

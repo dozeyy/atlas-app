@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { fold, layoutMap, MAIN_ID, MAP_LIMIT, pathTo, startedBy } from "./helperMap";
+import { fold, layoutMap, MAIN_ID, MAP_LIMIT, MIN_ZOOM, NODE_GAP, pathTo, placePlate, plateSize, rectHitsCircle, startedBy, wrapName, zoomFor, type MapLayout } from "./helperMap";
+import { modelFamily } from "./modelFamily";
 import type { ReceiptThread } from "./types";
 
 const KINDS = { output: 0, cacheWrite: 0, cacheRead: 0, input: 0, web: 0 };
+const TOKEN_KINDS = { output: 0, cacheWrite: 0, input: 0, cacheRead: 0 };
 
 function thread(agentId: string | null, parent: string | null, usd: number, extra: Partial<ReceiptThread> = {}): ReceiptThread {
   return {
@@ -18,6 +20,7 @@ function thread(agentId: string | null, parent: string | null, usd: number, extr
     durationMs: 1000,
     toolCalls: 2,
     kinds: KINDS,
+    tokenKinds: TOKEN_KINDS,
     models: [],
     outcome: agentId ? "finished" : null,
     items: [],
@@ -187,17 +190,138 @@ describe("helper map: one helper, none, and many", () => {
   });
 });
 
-describe("helper map: picture", () => {
-  it("keeps every node inside the frame", () => {
-    for (const size of [{ width: 520, height: 360 }, { width: 900, height: 560 }, { width: 1400, height: 700 }]) {
-      const m = layoutMap(many(30), size);
-      for (const n of m.nodes) {
-        expect(n.x - n.r).toBeGreaterThanOrEqual(0);
-        expect(n.x + n.r).toBeLessThanOrEqual(size.width);
-        expect(n.y - n.r).toBeGreaterThanOrEqual(0);
-        expect(n.y + n.r).toBeLessThanOrEqual(size.height);
+describe("helper map: tokens", () => {
+  it("sizes and folds by tokens when asked, and carries each node's own tokens", () => {
+    const ts = [thread(null, null, 1), thread("cheap-but-big", null, 0.01, { tokens: 900_000 }), thread("dear-but-small", null, 9, { tokens: 10 })];
+    const m = layoutMap(ts, SIZE, undefined, "tokens");
+    const big = m.nodes.find((n) => n.id === "cheap-but-big");
+    const small = m.nodes.find((n) => n.id === "dear-but-small");
+    expect(big?.tokens).toBe(900_000);
+    expect(big?.r ?? 0).toBeGreaterThan(small?.r ?? 99);
+    const byMoney = layoutMap(ts, SIZE);
+    expect(byMoney.nodes.find((n) => n.id === "dear-but-small")?.r ?? 0).toBeGreaterThan(byMoney.nodes.find((n) => n.id === "cheap-but-big")?.r ?? 99);
+    // The fold keeps the biggest by tokens.
+    const hs = Array.from({ length: 6 }, (_, i) => thread(`h${i}`, null, 6 - i, { tokens: (i + 1) * 100 }));
+    const { kept } = fold(hs, startedBy(hs), 3, "tokens");
+    // Two kept and one "+N" node make the limit of three.
+    expect([...kept].sort()).toEqual(["h4", "h5"]);
+  });
+});
+
+describe("helper map: names", () => {
+  it("wraps a name without ever dropping a character", () => {
+    for (const name of ["Find the config", "x".repeat(70), "Review the migration of the usage cache schema and the receipt scan", "a b  c\td", ""]) {
+      const lines = wrapName(name);
+      expect(lines.join("").replace(/\s+/g, "")).toBe(name.replace(/\s+/g, ""));
+      for (const l of lines) expect(l.length).toBeLessThanOrEqual(26);
+    }
+  });
+
+  it("finds every node a plate that covers no bubble and stays on the canvas, in every kind of tree", () => {
+    const named = (ts: ReceiptThread[]) => ts.map((t, i) => (i % 3 === 0 ? { ...t, name: `${t.name} - read the whole usage module and report what it does` } : t));
+    const sets: ReceiptThread[][] = [nested(), many(1), many(6), many(12), named(many(30)), named(many(MAP_LIMIT)), named(many(90))];
+    for (const ts of sets) {
+      for (const size of [{ width: 900, height: 560 }, { width: 1280, height: 640 }]) {
+        const m: MapLayout = layoutMap(ts, size, undefined, "tokens");
+        for (const n of m.nodes) {
+          const p = placePlate(m, n.id, "12.4M tokens, finished");
+          expect(p).not.toBeNull();
+          if (!p) continue;
+          for (const o of m.nodes) expect(rectHitsCircle(p, o)).toBe(false);
+          expect(p.x).toBeGreaterThanOrEqual(0);
+          expect(p.y).toBeGreaterThanOrEqual(0);
+          expect(p.x + p.w).toBeLessThanOrEqual(m.width);
+          expect(p.y + p.h).toBeLessThanOrEqual(m.height);
+          // The plate holds the whole name.
+          expect(p.lines.join("").replace(/\s+/g, "")).toBe(n.name.replace(/\s+/g, ""));
+          expect(p.w).toBeGreaterThanOrEqual(plateSize(n.name, "").w);
+        }
       }
     }
+  });
+});
+
+describe("model families", () => {
+  it("tells the families apart by name, and calls the rest other", () => {
+    expect(modelFamily("claude-opus-5-5")).toBe("opus");
+    expect(modelFamily("claude-sonnet-5-5")).toBe("sonnet");
+    expect(modelFamily("claude-haiku-5-5")).toBe("haiku");
+    expect(modelFamily("claude-fable-5-1")).toBe("fable");
+    expect(modelFamily("gpt-whatever")).toBe("other");
+    expect(modelFamily("")).toBe("other");
+    expect(modelFamily(null)).toBe("other");
+  });
+});
+
+describe("helper map: picture", () => {
+  it("keeps every node inside the canvas, and the canvas is never smaller than the pane", () => {
+    for (const size of [{ width: 520, height: 360 }, { width: 900, height: 560 }, { width: 1400, height: 700 }]) {
+      for (const n of [1, 5, 30, 40, 90]) {
+        const m = layoutMap(many(n), size);
+        expect(m.width).toBeGreaterThanOrEqual(size.width);
+        expect(m.height).toBeGreaterThanOrEqual(size.height);
+        for (const node of m.nodes) {
+          expect(node.x - node.r).toBeGreaterThanOrEqual(0);
+          expect(node.x + node.r).toBeLessThanOrEqual(m.width);
+          expect(node.y - node.r).toBeGreaterThanOrEqual(0);
+          expect(node.y + node.r).toBeLessThanOrEqual(m.height);
+        }
+      }
+    }
+  });
+
+  it("never lets two bubbles touch: every pair keeps the gap, from one helper to a folded crowd", () => {
+    const sets: ReceiptThread[][] = [nested(), many(1), many(2), many(3), many(8), many(9), many(17), many(30), many(MAP_LIMIT), many(90)];
+    // Equal helpers are the tightest case: every bubble is as big as it gets.
+    sets.push([thread(null, null, 1), ...Array.from({ length: 24 }, (_, i) => thread(`e${i}`, null, 1))]);
+    for (const ts of sets) {
+      for (const size of [{ width: 900, height: 560 }, { width: 1280, height: 640 }]) {
+        const m = layoutMap(ts, size);
+        for (let i = 0; i < m.nodes.length; i++) {
+          for (let j = i + 1; j < m.nodes.length; j++) {
+            const a = m.nodes[i];
+            const b = m.nodes[j];
+            const gap = Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r;
+            expect(gap).toBeGreaterThanOrEqual(NODE_GAP - 0.5);
+          }
+        }
+      }
+    }
+  });
+
+  it("puts a plate inside what the pane shows when a bubble sits at the edge of the view", () => {
+    const m = layoutMap(many(MAP_LIMIT), { width: 738, height: 551 }, undefined, "tokens");
+    // A pane showing the middle of a canvas bigger than itself.
+    const view = { x: (m.width - 738) / 2, y: (m.height - 551) / 2, w: 738, h: 551 };
+    const inView = (n: { x: number; y: number }) => n.x > view.x && n.x < view.x + view.w && n.y > view.y + 20 && n.y < view.y + view.h - 20;
+    let checked = 0;
+    for (const n of m.nodes.filter(inView)) {
+      const p = placePlate(m, n.id, "12.4M tokens, finished", view);
+      expect(p).not.toBeNull();
+      if (!p) continue;
+      for (const o of m.nodes) expect(rectHitsCircle(p, o)).toBe(false);
+      // Every bubble in view has a plate in view, top edge included.
+      expect(p.y).toBeGreaterThanOrEqual(view.y);
+      expect(p.y + p.h).toBeLessThanOrEqual(view.y + view.h);
+      expect(p.x).toBeGreaterThanOrEqual(view.x);
+      expect(p.x + p.w).toBeLessThanOrEqual(view.x + view.w);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(10);
+  });
+
+  it("zooms a big tree out a little, never below the floor, and a plate then takes more canvas so it reads at full size", () => {
+    const pane = { width: 410, height: 369 };
+    const m = layoutMap(many(MAP_LIMIT), pane, undefined, "tokens");
+    const z = zoomFor(m, pane);
+    expect(z).toBe(MIN_ZOOM);
+    expect(zoomFor({ width: 300, height: 200 }, pane)).toBe(1);
+    const node = m.nodes.find((n) => n.kind === "helper");
+    expect(node).toBeDefined();
+    const at1 = placePlate(m, node!.id, "12.4M tokens, finished");
+    const atZ = placePlate(m, node!.id, "12.4M tokens, finished", undefined, z);
+    expect(atZ!.w).toBeCloseTo(at1!.w / z, 5);
+    for (const o of m.nodes) expect(rectHitsCircle(atZ!, o)).toBe(false);
   });
 
   it("draws a link path from its parent to its child", () => {

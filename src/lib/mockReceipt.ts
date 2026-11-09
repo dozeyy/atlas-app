@@ -10,6 +10,7 @@ import type {
   ReceiptKinds,
   ReceiptModel,
   ReceiptThread,
+  ReceiptTokenKinds,
   Tokens,
 } from "./types";
 
@@ -48,6 +49,13 @@ export function mockKinds(model: string, t: Tokens, rates: MockRates): ReceiptKi
     web: 0,
   };
 }
+
+export const mockTokenKinds = (t: Tokens): ReceiptTokenKinds => ({
+  output: t.output,
+  cacheWrite: t.cacheWrite5m + t.cacheWrite1h,
+  input: t.input,
+  cacheRead: t.cacheRead,
+});
 
 const sumKinds = (k: ReceiptKinds) => k.output + k.cacheWrite + k.cacheRead + k.input + k.web;
 
@@ -105,6 +113,7 @@ export function buildMockReceipt(sessionId: string, totalUsd: number, main: Mock
       durationMs: t.durationMs,
       toolCalls: t.toolCalls,
       kinds,
+      tokenKinds: mockTokenKinds(t.tokens),
       models: [{ model: t.model, usd, tokens: t.tokens.total }],
       outcome: k === 0 ? null : OUTCOMES[(k - 1) % OUTCOMES.length],
       items,
@@ -159,6 +168,11 @@ export function buildMockReceipt(sessionId: string, totalUsd: number, main: Mock
     modelsOtherUsd: totalUsd - models.reduce((s, m) => s + m.usd, 0),
     kinds,
     kindsOtherUsd: totalUsd - sumKinds(kinds),
+    totalTokens: threads.reduce((s, t) => s + t.tokens, 0),
+    tokenKinds: threads.reduce(
+      (k, t) => ({ output: k.output + t.tokenKinds.output, cacheWrite: k.cacheWrite + t.tokenKinds.cacheWrite, input: k.input + t.tokenKinds.input, cacheRead: k.cacheRead + t.tokenKinds.cacheRead }),
+      { output: 0, cacheWrite: 0, input: 0, cacheRead: 0 },
+    ),
     items,
     itemsOtherUsd: totalUsd - items.reduce((s, i) => s + (i.usd ?? 0), 0),
     flags,

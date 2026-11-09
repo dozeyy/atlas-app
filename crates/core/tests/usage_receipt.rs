@@ -258,6 +258,15 @@ fn every_view_of_the_receipt_adds_up_to_the_chats_cost() {
         near(t.models.iter().map(|m| m.usd).sum::<f64>(), t.usd);
         near(t.items.iter().filter_map(|i| i.usd).sum::<f64>() + t.items_other_usd, t.usd);
     }
+    // Tokens add up the same way: by thread, and by kind (cache reads listed apart).
+    assert_eq!(r.total_tokens, d.row.tokens.total);
+    assert_eq!(r.threads.iter().map(|t| t.tokens).sum::<u64>(), r.total_tokens);
+    assert_eq!(r.token_kinds.headline(), r.total_tokens);
+    assert_eq!(r.token_kinds.cache_read, d.row.tokens.cache_read);
+    for t in &r.threads {
+        assert_eq!(t.token_kinds.headline(), t.tokens);
+        assert_eq!(t.token_kinds.cache_read, t.cache_read_tokens);
+    }
     // By model: the same figures the detail page shows.
     for m in &d.by_model {
         let line = r.models.iter().find(|x| x.model == m.model).unwrap();
@@ -400,7 +409,7 @@ fn the_cache_table_migrates_in_from_an_older_ledger() {
     let (_cfg, fx) = chat_fx();
     let c = rusqlite::Connection::open(&fx.cache).unwrap();
     assert_eq!(c.query_row::<i64, _, _>("PRAGMA user_version", [], |r| r.get(0)).unwrap(), atlas_core::cache::SCHEMA_VERSION);
-    assert!(atlas_core::cache::SCHEMA_VERSION >= 4);
+    const _: () = assert!(atlas_core::cache::SCHEMA_VERSION >= 4);
     // A version-3 ledger gains the table and keeps working.
     drop(c);
     let data = tempfile::tempdir().unwrap();
