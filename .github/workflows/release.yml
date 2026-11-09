@@ -1,11 +1,13 @@
 name: release
 
-# A tag `vX.Y.Z` builds every download and publishes the GitHub Release. Run by hand
-# (workflow_dispatch), or from a tag that is not on main's history, it builds everything with a
-# throwaway signing key and keeps the files as workflow artifacts, but publishes nothing and never
-# sees the real key (the `gate` job decides).
+# A tag `vX.Y.Z` builds every download and publishes the GitHub Release. Every build job uses a
+# throwaway signing key made on the runner and sees no secret at all, so a branch with an edited
+# workflow has nothing to read. Only the `publish` job (official release only: see the `gate`
+# job) runs in the `release` environment, re-signs the two update bundles with the real key and
+# makes the Release. A manual run, or a tag not on main's history, publishes nothing.
 #
-# Secrets (set once, see docs/releasing.md):
+# Secrets live in the `release` environment, not in the repository (set once, see
+# docs/releasing.md; the environment only accepts `v*` tags):
 #   TAURI_SIGNING_PRIVATE_KEY           the in-app update signing key (content of atlas-updater.key)
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (empty: the key has none)
 #
@@ -117,20 +119,16 @@ jobs:
       # installer inside. tools/build-setup.ps1 is the same chain anyone runs locally.
       - name: Build installer and Atlas Setup
         shell: pwsh
-        env:
-          # The real key only on an official release (see the gate job); empty otherwise.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.gate.outputs.official == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.gate.outputs.official == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        # No secret here. Tauri wants some key to build the update bundle; this one lives for
+        # this run only. The `publish` job signs the real bundles.
         run: |
-          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
-            $key = Join-Path $env:RUNNER_TEMP 'throwaway-update.key'
-            $pw = (New-Guid).ToString('N') + (New-Guid).ToString('N')
-            npx tauri signer generate --ci -f -p $pw -w $key | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'could not make the throwaway key' }
-            $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $pw
-            $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $key -Raw
-            Remove-Item $key, "$key.pub" -Force
-          }
+          $key = Join-Path $env:RUNNER_TEMP 'throwaway-update.key'
+          $pw = (New-Guid).ToString('N') + (New-Guid).ToString('N')
+          npx tauri signer generate --ci -f -p $pw -w $key | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'could not make the throwaway key' }
+          $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $pw
+          $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $key -Raw
+          Remove-Item $key, "$key.pub" -Force
           ./tools/build-setup.ps1 -OutDir out
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -182,22 +180,18 @@ jobs:
 
       - name: Build app, dmg and update bundle
         env:
-          # The real key only on an official release (see the gate job); empty otherwise.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.gate.outputs.official == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.gate.outputs.official == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
           # GitHub sets CI=true, and Tauri then skips the Finder step that lays the icons out on
           # the dmg background (no .DS_Store). The runner allows Finder scripting, so keep it.
           TAURI_BUNDLER_DMG_IGNORE_CI: "true"
+        # No secret here. A throwaway key for this run only; the `publish` job signs the real bundle.
         run: |
-          if [ "${{ needs.gate.outputs.official }}" != "true" ]; then
-            key="$RUNNER_TEMP/throwaway-update.key"
-            TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$(openssl rand -hex 24)
-            export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-            npx tauri signer generate --ci -f -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" -w "$key" >/dev/null
-            TAURI_SIGNING_PRIVATE_KEY=$(cat "$key")
-            export TAURI_SIGNING_PRIVATE_KEY
-            rm -f "$key" "$key.pub"
-          fi
+          key="$RUNNER_TEMP/throwaway-update.key"
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$(openssl rand -hex 24)
+          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          npx tauri signer generate --ci -f -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" -w "$key" >/dev/null
+          TAURI_SIGNING_PRIVATE_KEY=$(cat "$key")
+          export TAURI_SIGNING_PRIVATE_KEY
+          rm -f "$key" "$key.pub"
           npx tauri build --target universal-apple-darwin
 
       - name: Build atlas-usage
@@ -258,6 +252,9 @@ jobs:
     if: needs.gate.outputs.official == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The only job that holds the real signing key. The key is a secret of the `release`
+    # environment, which only accepts `v*` tags (docs/releasing.md has the commands that make it).
+    environment: release
     # The only job that writes: it makes the Release and commits the pinned skill checksums.
     permissions:
       contents: write
@@ -267,6 +264,14 @@ jobs:
       TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install the Tauri signer
+        run: npm ci --ignore-scripts
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -282,6 +287,24 @@ jobs:
                    Atlas-macOS.dmg Atlas.app.tar.gz Atlas.app.tar.gz.sig \
                    atlas-usage-windows-x64.exe atlas-usage-macos-universal atlas-usage-linux-x64; do
             [ -s "dist/$f" ] || { echo "::error::dist/$f is missing or empty."; exit 1; }
+          done
+          ls -l dist
+
+      # The build jobs signed with a key that no longer exists. These two files are what the in-app
+      # updater checks against the public key in tauri.conf.json: sign them with the real one.
+      - name: Sign the update bundles
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "::error::The release environment has no TAURI_SIGNING_PRIVATE_KEY secret."; exit 1; }
+          for f in "dist/Atlas_${VERSION}_x64-setup.exe" dist/Atlas.app.tar.gz; do
+            rm -f "$f.sig"
+            # -p given explicitly: an empty password is a real value, not a missing one.
+            npx tauri signer sign -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$f" >/dev/null
+            [ -s "$f.sig" ] || { echo "::error::$f.sig was not written."; exit 1; }
           done
           ls -l dist
 

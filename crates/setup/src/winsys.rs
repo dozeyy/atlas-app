@@ -50,14 +50,15 @@ pub fn is_elevated() -> bool {
     }
 }
 
-/// From now on this process loads libraries only from System32 (never the folder it runs from
-/// or the current folder). Call it first thing in `main`. Failure is harmless: the link-time
-/// `/DEPENDENTLOADFLAG` already covers the DLLs the program imports.
-pub fn search_only_system32() {
-    use windows_sys::Win32::System::LibraryLoader::{LOAD_LIBRARY_SEARCH_SYSTEM32, SetDefaultDllDirectories};
+/// From now on a library loaded by name is searched for only in this program's own folder,
+/// System32 and folders added on purpose (WebView2's loader needs its neighbours found), never
+/// the current folder or PATH. Call it first thing in `main`. Failure is harmless: the link-time
+/// `/DEPENDENTLOADFLAG` already restricts the DLLs the program imports to System32.
+pub fn search_safe_dirs_only() {
+    use windows_sys::Win32::System::LibraryLoader::{LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, SetDefaultDllDirectories};
     // SAFETY: a plain flag call with no pointers.
     unsafe {
-        SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+        SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
     }
 }
 

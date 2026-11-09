@@ -102,8 +102,11 @@ pub fn raw_tail(cmdline: &str) -> &str {
 
 /// Run the installer's uninstaller with the same switches this program got, and return its code.
 pub fn pass_on(exe: &Path, cmdline: &str) -> i32 {
-    let Some(dir) = exe.parent() else { return 1 };
-    let mut cmd = Command::new(nsis_uninstaller(dir));
+    // The installer's uninstaller of the recorded install, or of the folder an installed remover
+    // sits in. Never "the folder this file runs from": `Setup.exe --uninstall /S` out of Downloads
+    // must not run whatever `uninstall.exe` happens to lie beside it.
+    let Some(dir) = remove_target(exe) else { return 1 };
+    let mut cmd = Command::new(nsis_uninstaller(&dir));
     cmd.current_dir(install::neutral_dir());
     #[cfg(windows)]
     {
@@ -113,7 +116,7 @@ pub fn pass_on(exe: &Path, cmdline: &str) -> i32 {
     }
     let code = cmd.status().ok().and_then(|s| s.code()).unwrap_or(1);
     if code == 0 && is_plain_silent_uninstall(raw_tail(cmdline)) {
-        erase_installed_remover(exe);
+        erase_installed_remover(&dir);
     }
     code
 }
@@ -121,20 +124,22 @@ pub fn pass_on(exe: &Path, cmdline: &str) -> i32 {
 /// `/S` alone: someone removing Atlas without a window. An update passes more (`/UPDATE`,
 /// `/P`, `/R`, `_?=`) and keeps this file, which the new installer replaces.
 pub fn is_plain_silent_uninstall(tail: &str) -> bool {
-    let words: Vec<String> = tail.split_whitespace().map(str::to_ascii_lowercase).collect();
+    // `--uninstall` is only how a Setup file asks to be the remover; it is not an installer switch.
+    let words: Vec<String> = tail.split_whitespace().map(str::to_ascii_lowercase).filter(|w| w != "--uninstall").collect();
     words.iter().any(|w| w == "/s") && words.iter().all(|w| w == "/s")
 }
 
-/// The installer's uninstaller cannot delete this file while it runs, so a plain silent
-/// uninstall would leave it (and its folder) behind. A hidden shell waits for this program to
-/// exit and the installer's own cleanup to finish, deletes only this one file, then removes
-/// the folder if it is empty.
-fn erase_installed_remover(exe: &Path) {
-    let (Some(dir), Some(name)) = (exe.parent(), exe.file_name()) else { return };
-    if !name.eq_ignore_ascii_case(REMOVER_NAME) {
+/// The installer's uninstaller does not know the remover file this program put in the install
+/// folder, and cannot delete it while it runs, so a plain silent uninstall would leave it (and
+/// the folder) behind. A hidden shell waits for this program and the installer's own cleanup to
+/// finish, deletes only that one file, then removes the folder if it is empty. The folder is the
+/// resolved install folder, whichever file started this run.
+fn erase_installed_remover(dir: &Path) {
+    let file = dir.join(REMOVER_NAME);
+    if !is_plain_file(&file) {
         return;
     }
-    let (f, d) = (exe.display().to_string(), dir.display().to_string());
+    let (f, d) = (file.display().to_string(), dir.display().to_string());
     if !cmd_safe(&f) || !cmd_safe(&d) {
         return;
     }
@@ -453,6 +458,13 @@ pub fn remove_named_data(dir: &Path) -> DataResult {
 /// folders only by name and only where marked.
 pub fn remove_data(plan: &DataPlan) -> DataResult {
     let mut total = DataResult::default();
+    // Before any marker goes: an older Atlas kept only `settings.json` in the roaming folder, and
+    // that is Atlas's when the other data folder is marked.
+    for dir in &plan.atlas_dirs {
+        if let Some(sibling) = plan.atlas_dirs.iter().find(|d| !same_path(d, dir) && atlas_core::fsutil::is_marked_data_dir(d)) {
+            atlas_core::fsutil::mark_settings_only_dir(dir, sibling);
+        }
+    }
     for dir in &plan.atlas_dirs {
         let r = remove_named_data(dir);
         total.removed += r.removed;
@@ -502,7 +514,8 @@ mod tests {
     fn only_a_bare_silent_uninstall_erases_the_remover_an_update_keeps_it() {
         assert!(is_plain_silent_uninstall("/S"));
         assert!(is_plain_silent_uninstall("/s"));
-        for t in ["", "/S _?=C:\\Atlas", "/S /UPDATE", "/P", "/S /P /R", "/UPDATE"] {
+        assert!(is_plain_silent_uninstall("--uninstall /S"), "a Setup file asked to remove, silently");
+        for t in ["", "/S _?=C:\\Atlas", "/S /UPDATE", "/P", "/S /P /R", "/UPDATE", "--uninstall", "--uninstall /S /P"] {
             assert!(!is_plain_silent_uninstall(t), "{t}");
         }
     }
@@ -578,11 +591,39 @@ mod tests {
             std::fs::create_dir_all(d).unwrap();
             std::fs::write(d.join("settings.json"), "{}").unwrap();
         }
+        // More than the settings file: nothing there proves it is Atlas's.
+        std::fs::write(b.join("cache.sqlite"), "x").unwrap();
         mark(&a);
         let plan = DataPlan { atlas_dirs: vec![a.clone(), b.clone()], profile_dirs: vec![] };
         let r = remove_data(&plan);
         assert_eq!(r, DataResult { removed: 1, kept: true });
         assert!(!a.exists() && b.join("settings.json").is_file());
+    }
+
+    /// An older Atlas kept only `settings.json` in the roaming folder; it goes with the marked
+    /// local folder instead of being left behind with "some data is kept".
+    #[test]
+    fn an_old_roaming_folder_with_only_settings_goes_when_the_local_folder_is_marked() {
+        let t = tempfile::tempdir().unwrap();
+        let (roaming, local) = (t.path().join("roaming"), t.path().join("local"));
+        for d in [&roaming, &local] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("settings.json"), "{}").unwrap();
+        }
+        mark(&local);
+        let plan = DataPlan { atlas_dirs: vec![roaming.clone(), local.clone()], profile_dirs: vec![] };
+        let r = remove_data(&plan);
+        assert_eq!(r, DataResult { removed: 2, kept: false });
+        assert!(!roaming.exists() && !local.exists());
+        // With no marked sibling the same folder is left alone and reported.
+        let (lone, other) = (t.path().join("lone"), t.path().join("other"));
+        for d in [&lone, &other] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("settings.json"), "{}").unwrap();
+        }
+        let r = remove_data(&DataPlan { atlas_dirs: vec![lone.clone(), other.clone()], profile_dirs: vec![] });
+        assert_eq!(r, DataResult { removed: 0, kept: true });
+        assert!(lone.join("settings.json").is_file() && other.join("settings.json").is_file());
     }
 
     /// A link inside the data folder is taken away as a link: what it points at is never entered.
