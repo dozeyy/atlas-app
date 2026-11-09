@@ -56,7 +56,7 @@ function Delta({ pct }: { pct: number }) {
 }
 
 /** Things worth knowing about how the numbers were made, only when there are any. */
-function Notes({ data, status }: { data: DashboardData; status: UsageStatus | null }) {
+function Notes({ data, status }: { data: DashboardData; status: UsageStatus | null }): string[] {
   const notes: string[] = [];
   if (data.warnings.unknownModels.length > 0) {
     notes.push(
@@ -77,34 +77,33 @@ function Notes({ data, status }: { data: DashboardData; status: UsageStatus | nu
   if (status && status.filesMissing > 0) {
     notes.push(`${plural(status.filesMissing, "session file")} are no longer on disk. Their numbers are kept.`);
   }
-  if (notes.length === 0) return null;
-  return (
-    <ul aria-label="About these numbers" className="mt-8 space-y-2">
-      {notes.map((n) => (
-        <li key={n} className="flex items-start gap-2 text-caption text-ink-2">
-          <Info size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
-          <span>{n}</span>
-        </li>
-      ))}
-    </ul>
-  );
+  return notes;
 }
 
-function PriceFootnote() {
+/**
+ * One quiet line under the page: an info mark whose hover holds every note about how the
+ * numbers were made (no explanation sentences on the page, no page scroll), and the price list.
+ */
+function AboutNumbers({ data, status }: { data: DashboardData; status: UsageStatus | null }) {
   const backend = getBackend();
   const price = useFetched(() => backend.pricingGet(), []);
   const info = price.data;
+  const notes = [
+    `Dollar figures in hovers are estimates from a price list${info ? ` (updated ${info.table.updated})` : ""}, not a bill.`,
+    ...(info?.newerSeedAvailable ? ["Atlas ships newer prices, but your edited price file was kept."] : []),
+    ...Notes({ data, status }),
+  ];
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-ink-2">
-      <span>
-        Dollar figures in hovers are estimates from a price list{info ? ` (updated ${info.table.updated})` : ""}, not a bill.
+    <div className="mt-3 flex items-center gap-x-3 text-caption text-ink-2">
+      <span tabIndex={0} title={notes.join("\n")} aria-label="About these numbers" className="inline-flex cursor-help items-center gap-1">
+        <Info size={14} aria-hidden="true" />
+        About these numbers
       </span>
       {info?.error && (
         <span role="status" className="text-warning">
           The price file could not be read, so the last good prices are in use.
         </span>
       )}
-      {info?.newerSeedAvailable && <span>Atlas ships newer prices, but your edited price file was kept.</span>}
       {info && (
         <button
           type="button"
@@ -458,8 +457,7 @@ export function Dashboard() {
         </div>
       )}
 
-      {data && !nothing && <Notes data={data} status={status} />}
-      {data && !nothing && <PriceFootnote />}
+      {data && !nothing && <AboutNumbers data={data} status={status} />}
     </div>
   );
 }

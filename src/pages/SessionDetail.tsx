@@ -395,8 +395,13 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
           </div>
         </div>
         <div className="shrink-0 text-right">
-          <TokenFigure tokens={row.tokens.total} cost={row.cost} id={`session:${id}:tokens`} className="d d-stat text-ink" />
-          {claudeCodeCostUsd !== null && <div className="text-caption text-ink-2">{`Claude Code showed ${formatUsd(claudeCodeCostUsd)}`}</div>}
+          <TokenFigure
+            tokens={row.tokens.total}
+            cost={row.cost}
+            id={`session:${id}:tokens`}
+            note={claudeCodeCostUsd !== null ? `Claude Code showed ${formatUsd(claudeCodeCostUsd)}.` : undefined}
+            className="d d-stat text-ink"
+          />
         </div>
       </div>
 

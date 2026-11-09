@@ -310,6 +310,21 @@ describe("helper map: picture", () => {
     expect(checked).toBeGreaterThan(10);
   });
 
+  it("keeps every plate inside a zoomed-out pane, right edge included (101-helper chat)", () => {
+    const pane = { width: 738, height: 551 };
+    const m = layoutMap(many(101), pane, undefined, "tokens");
+    const z = zoomFor(m, pane);
+    const view = { x: 0, y: 0, w: pane.width / z, h: pane.height / z };
+    for (const n of m.nodes) {
+      if (n.x > view.x + view.w || n.y > view.y + view.h) continue;
+      const p = placePlate(m, n.id, "12.4M tokens, finished", view, z)!;
+      expect(p.x).toBeGreaterThanOrEqual(view.x);
+      expect(p.y).toBeGreaterThanOrEqual(view.y);
+      expect(p.x + p.w).toBeLessThanOrEqual(view.x + view.w + 0.01);
+      expect(p.y + p.h).toBeLessThanOrEqual(view.y + view.h + 0.01);
+    }
+  });
+
   it("zooms a big tree out a little, never below the floor, and a plate then takes more canvas so it reads at full size", () => {
     const pane = { width: 410, height: 369 };
     const m = layoutMap(many(MAP_LIMIT), pane, undefined, "tokens");

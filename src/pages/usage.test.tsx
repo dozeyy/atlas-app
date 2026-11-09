@@ -46,7 +46,9 @@ describe("Dashboard", () => {
   it("labels costs as estimates and keeps cache reads apart", async () => {
     mount();
     await screen.findByText("Last 7 days");
-    expect(screen.getByText(/Dollar figures in hovers are estimates from a price list/)).toBeInTheDocument();
+    // The note lives in the hover of one quiet "About these numbers" mark, not on the page.
+    expect(screen.queryByText(/Dollar figures in hovers/)).toBeNull();
+    expect(await screen.findByLabelText("About these numbers")).toHaveAttribute("title", expect.stringMatching(/Dollar figures in hovers are estimates from a price list/));
     expect(screen.getAllByText(/cache reads/).length).toBeGreaterThan(0);
   });
 

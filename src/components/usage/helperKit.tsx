@@ -102,10 +102,10 @@ export function AgentAvatar({ type, size = 40 }: { type: string | null; size?: n
  * tokens everywhere, money on hover). The hover holds the exact count and the API-price
  * estimate; screen readers get the final figure and the estimate as words, never the ticks.
  */
-export function TokenFigure({ tokens, cost, id, className = "" }: { tokens: number; cost: Cost; id: string; className?: string }) {
+export function TokenFigure({ tokens, cost, id, note, className = "" }: { tokens: number; cost: Cost; id: string; note?: string; className?: string }) {
   const v = costView(cost);
   return (
-    <span className="tabular-nums" title={tokenHint(tokens, cost)}>
+    <span className="tabular-nums" title={note ? `${tokenHint(tokens, cost)}\n${note}` : tokenHint(tokens, cost)}>
       <CountUp value={tokens} id={id} format={(n) => `${compact(Math.round(n))} tokens`} className={className} />
       {!v.none && <span className="sr-only">{`, about ${formatUsd(cost.usd ?? 0)} at API prices, estimated${v.partial ? ", incomplete" : ""}`}</span>}
     </span>

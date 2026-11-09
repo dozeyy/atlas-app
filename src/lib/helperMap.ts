@@ -441,10 +441,19 @@ export function placePlate(layout: MapLayout, id: string, detail: string, view?:
       for (const o of others) if (rectHitsCircle(rect, o, 6)) hits++;
       const outside = rect.x < 4 || rect.y < 4 || rect.x + w > layout.width - 4 || rect.y + h > layout.height - 4;
       const unseen = !!view && view.w > 0 && view.h > 0 && (rect.x < view.x + 4 || rect.y < view.y + 4 || rect.x + w > view.x + view.w - 4 || rect.y + h > view.y + view.h - 4);
-      const score = hits * 1000 + (outside ? 500 : 0) + (unseen ? 300 : 0) + d + Math.abs(step) * 6;
+      // A plate cut off by the pane edge cannot be read at all, so that is the worst outcome
+      // (Will saw a right-edge bubble's name clipped); covering a bubble comes next.
+      const score = hits * 1000 + (outside ? 500 : 0) + (unseen ? 5000 : 0) + d + Math.abs(step) * 6;
       if (!best || score < best.score) best = { plate: { ...rect, lines, detail }, score };
       if (score < 200) return best.plate;
     }
   }
-  return best ? best.plate : null;
+  if (!best) return null;
+  // Last guard: whatever won stays inside what the pane shows.
+  const p = best.plate;
+  if (view && view.w > w + 8 && view.h > h + 8) {
+    p.x = Math.min(Math.max(p.x, view.x + 4), view.x + view.w - 4 - w);
+    p.y = Math.min(Math.max(p.y, view.y + 4), view.y + view.h - 4 - h);
+  }
+  return p;
 }
