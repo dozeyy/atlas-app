@@ -14,6 +14,7 @@ pub mod launch;
 pub mod layout;
 pub mod now;
 pub mod paths;
+pub mod quit_signal;
 pub mod readout;
 pub mod redact;
 pub mod sandbox;

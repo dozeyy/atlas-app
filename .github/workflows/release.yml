@@ -92,9 +92,12 @@ jobs:
 
       - name: Collect files
         shell: bash
+        # Through the environment, never pasted into the script text.
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
         run: |
           set -euo pipefail
-          v="${{ needs.versions.outputs.version }}"
+          v="$VERSION"
           nsis="target/release/bundle/nsis/Atlas_${v}_x64-setup.exe"
           for f in "$nsis" "$nsis.sig" out/Atlas-Setup-Windows-x64.exe target/release/atlas-usage.exe; do
             [ -f "$f" ] || { echo "::error::Missing $f. A release without it would break updates or downloads."; exit 1; }
@@ -229,8 +232,11 @@ jobs:
         run: |
           set -euo pipefail
           base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          # Notes belong to one version: docs/release-notes/<version>.md. A release without a file
+          # of its own reads "Atlas <version>"; an older release's notes are never reused.
           notes="Atlas ${VERSION}"
-          if [ -f RELEASE_NOTES.md ]; then notes="$(cat RELEASE_NOTES.md)"; fi
+          notes_file="docs/release-notes/${VERSION}.md"
+          if [ -s "$notes_file" ]; then notes="$(cat "$notes_file")"; fi
           jq -n \
             --arg v "$VERSION" \
             --arg notes "$notes" \
@@ -266,25 +272,41 @@ jobs:
           gh release create "$TAG" dist/* --verify-tag --title "Atlas ${VERSION}" --generate-notes
 
       # The skill downloads atlas-usage and checks it against skill/skills/atlas/bin/checksums.txt;
-      # pin the three binaries of THIS release there. tools/pin-skill-checksums.ps1 arrives with the
-      # skill branch: without it the release still stands, and the step says so.
+      # pin the three binaries of THIS release there. This step writes to main, so it only does so
+      # when that is safe, and otherwise says why it did not (the release itself already stands):
+      #  - the tag's commit must be part of main's history (a tag cut from a branch never pins);
+      #  - the pin script runs as it is on main, not as the tag carries it;
+      #  - main must still be on this version, and no newer version may be pinned already.
       - name: Pin skill checksums
         shell: bash
         run: |
           set -euo pipefail
-          if [ ! -f tools/pin-skill-checksums.ps1 ]; then
-            echo "::warning::tools/pin-skill-checksums.ps1 does not exist in this tag, so the skill checksums were not pinned."
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --no-tags --unshallow origin
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::warning::Tag $TAG ($GITHUB_SHA) is not on main's history, so the skill checksums were not pinned."
             exit 0
           fi
-          mkdir pin
-          cp dist/atlas-usage-windows-x64.exe dist/atlas-usage-macos-universal dist/atlas-usage-linux-x64 pin/
-          pwsh tools/pin-skill-checksums.ps1 -Dir pin -Version "$VERSION"
-          cp skill/skills/atlas/bin/checksums.txt "$RUNNER_TEMP/checksums.txt"
-          git checkout -- .
-          git fetch origin main
+          # From here on every file is main's, the pin script included.
           git switch -C main origin/main
-          cp "$RUNNER_TEMP/checksums.txt" skill/skills/atlas/bin/checksums.txt
-          git add skill/skills/atlas/bin/checksums.txt
+          plugin="$(jq -r .version skill/.claude-plugin/plugin.json)"
+          if [ "$plugin" != "$VERSION" ]; then
+            echo "::warning::main is at plugin version $plugin, not $VERSION, so the skill checksums of $VERSION were not pinned."
+            exit 0
+          fi
+          sums=skill/skills/atlas/bin/checksums.txt
+          pinned="$(awk '!/^[[:space:]]*#/ && NF >= 3 { print $1 }' "$sums" | sort -V | tail -n 1)"
+          if [ -n "$pinned" ] && [ "$(printf '%s\n%s\n' "$pinned" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then
+            echo "::warning::$pinned is already pinned, which is newer than $VERSION, so nothing was pinned."
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/pin"
+          cp dist/atlas-usage-windows-x64.exe dist/atlas-usage-macos-universal dist/atlas-usage-linux-x64 "$RUNNER_TEMP/pin/"
+          # Never -Force: a version that is pinned with other hashes stops here, loudly.
+          pwsh tools/pin-skill-checksums.ps1 -Dir "$RUNNER_TEMP/pin" -Version "$VERSION"
+          git add "$sums"
           if git diff --cached --quiet; then
             echo "checksums.txt already matches v${VERSION}."
             exit 0
@@ -292,4 +314,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Pin skill checksums for v${VERSION}"
-          git push origin HEAD:main
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch --no-tags origin main
+            git rebase origin/main
+          done
+          echo "::error::Could not push the pinned checksums to main."
+          exit 1
