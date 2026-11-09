@@ -265,6 +265,23 @@ const tauriBackend: Backend = {
   onUpdateProgress: (cb) => listen<UpdateProgress>(UPDATE_PROGRESS_EVENT, (e) => cb(e.payload)),
 };
 
+/** macOS menu bar (crates/app/src/macmenu.rs): the id of the picked Atlas item. */
+export const MENU_EVENT = "atlas://menu";
+
+/**
+ * Calls `cb` with the id of each macOS menu bar item the user picks ("settings", "about" and the
+ * Help sheet ids). Other platforms and the browser never send one.
+ */
+export async function onNativeMenu(cb: (id: string) => void): Promise<Unlisten> {
+  if (!inTauri()) return () => {};
+  return listen<string>(MENU_EVENT, (e) => cb(e.payload));
+}
+
+/** The macOS proof run's screenshot tour (crates/app/src/tour.rs). Debug builds only. */
+export function tourStep(action: "size" | "capture" | "log" | "done", arg = ""): Promise<void> {
+  return invoke<void>("tour_step", { action, arg });
+}
+
 let backend: Backend | null = null;
 
 export function getBackend(): Backend {

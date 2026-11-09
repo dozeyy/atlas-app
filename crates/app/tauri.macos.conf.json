@@ -20,5 +20,17 @@
         "windowEffects": { "effects": ["sidebar"], "state": "followsWindowActiveState" }
       }
     ]
+  },
+  "bundle": {
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": "-",
+      "dmg": {
+        "background": "icons/dmg-background.png",
+        "windowSize": { "width": 660, "height": 400 },
+        "appPosition": { "x": 180, "y": 170 },
+        "applicationFolderPosition": { "x": 480, "y": 170 }
+      }
+    }
   }
 }

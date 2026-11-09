@@ -1,0 +1,124 @@
+name: mac-check
+
+# The macOS proof run: Rust lint and tests on macOS, the universal app and its dmg, the real app
+# launched against made-up Claude data (pictures of every page from the system's screencapture),
+# the same pages in WebKit through the browser preview, and atlas-usage on the made-up data.
+# Pictures and logs are uploaded as the "mac-check" artifact. Re-run any time from the Actions tab;
+# the same checks run on any Mac with tools/mac-check.sh (see its header).
+#
+# Lean on purpose (macOS minutes count 10x): one job, cargo cache, no matrix. Release builds here
+# use thin codegen settings to build faster; the shipped profile is release.yml's.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, mac-check]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Faster release builds for the check (behaviour is the same; the release workflow keeps lto).
+  CARGO_PROFILE_RELEASE_LTO: "false"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+
+jobs:
+  mac:
+    name: macOS check
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1 (the toolchain itself is pinned by the input below)
+        with:
+          toolchain: 1.97.1
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          components: clippy
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: mac-check
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # The Tauri app's build reads dist/, so the frontend is built first.
+      - name: Build the frontend
+        run: npx vite build
+
+      # The tour app: a debug build (the only kind with the screenshot tour in it).
+      - name: Build the tour app (debug)
+        run: npx tauri build --debug --bundles app
+
+      # The app as it ships: universal, ad-hoc signed, with the dmg. Update bundles only when the
+      # signing key is there (a fork or a fresh repo has none).
+      - name: Build the universal app and dmg
+        id: universal
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "ATLAS_EXPECT_UPDATER=1" >> "$GITHUB_ENV"
+            npx tauri build --target universal-apple-darwin --bundles app,dmg
+          else
+            echo "No update signing key: building without update bundles."
+            npx tauri build --target universal-apple-darwin --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          fi
+
+      - name: Build atlas-usage (universal)
+        run: |
+          cargo build -p atlas-cli --release --target aarch64-apple-darwin --target x86_64-apple-darwin
+          lipo -create -output target/atlas-usage-universal target/aarch64-apple-darwin/release/atlas-usage target/x86_64-apple-darwin/release/atlas-usage
+
+      - name: Install WebKit for Playwright
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.64.1
+          npx playwright install webkit
+
+      - name: WebKit pictures of every page (browser preview, mock data)
+        if: ${{ !cancelled() }}
+        run: node tools/webkit-shots.mjs mac-check-out/webkit
+
+      - name: Real app checks and pictures
+        if: ${{ !cancelled() && steps.universal.outcome == 'success' }}
+        run: bash tools/mac-check.sh mac-check-out
+
+      # Lint and tests last, so a lint slip never costs the pictures.
+      - name: cargo clippy (macOS)
+        if: ${{ !cancelled() }}
+        run: cargo clippy --workspace --exclude atlas-setup --all-targets -- -D warnings
+
+      - name: cargo test (macOS)
+        if: ${{ !cancelled() }}
+        run: cargo test --workspace --exclude atlas-setup
+
+      - name: Summary
+        if: always()
+        run: |
+          [ -f mac-check-out/summary.txt ] && { echo '```'; cat mac-check-out/summary.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload pictures and logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mac-check
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            mac-check-out/
+            target/universal-apple-darwin/release/bundle/dmg/*.dmg

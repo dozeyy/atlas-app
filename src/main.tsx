@@ -4,7 +4,7 @@ import "@fontsource-variable/recursive/casl.css";
 import "./styles/index.css";
 import { App } from "./App";
 import { AtlasProvider } from "./state/AtlasProvider";
-import { getBackend } from "./lib/ipc";
+import { getBackend, inTauri } from "./lib/ipc";
 import { applyBoot } from "./lib/theme";
 import { armIntro, installIntroReveal } from "./lib/intro";
 import { startSetup } from "./state/setupStore";
@@ -27,6 +27,12 @@ createRoot(document.getElementById("root")!).render(
 
 // Start reading the Claude toolkit now, so the Toolkit page is already full when it is opened.
 startSetup();
+
+// The screenshot tour (src/lib/shotTour.ts): only a debug build started for it, or the browser
+// preview with `?tour`. Loaded on demand, so a normal start never fetches it.
+if (window.__ATLAS_TOUR__ || (!inTauri() && new URLSearchParams(window.location.search).has("tour"))) {
+  void import("./lib/shotTour").then((m) => m.startTour());
+}
 
 // Give the display face a moment to arrive (it is bundled, so this is a few ms) so the first
 // frame never shows the numbers in a fallback face and then swaps. Never wait more than 150 ms.

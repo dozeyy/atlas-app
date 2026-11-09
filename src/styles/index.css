@@ -65,8 +65,10 @@ button {
   outline-offset: 2px;
 }
 
-/* The page container is only focused by code (route change, scroll keys), never tabbed to. */
-main[tabindex="-1"]:focus-visible {
+/* The page container and page headings are only focused by code (route change, scroll keys,
+   opening a list), never tabbed to. WebKit (macOS) counts that focus as visible after a key
+   press, which drew a ring round the Toolkit list title. */
+:is(main, h1, h2)[tabindex="-1"]:focus-visible {
   outline: none;
 }
 
