@@ -385,6 +385,21 @@ export function DetailSheet({
     return () => before?.focus?.({ preventScroll: true });
   }, []);
 
+  // Escape must not depend on where focus is: a question that closes can leave it on the page.
+  // Keys from inside the panel (or a dialog over it) are handled there and never reach the window.
+  const closeRef = useRef(tryClose);
+  closeRef.current = tryClose;
+  useEffect(() => {
+    const onWindowKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (panel.current?.contains(document.activeElement)) return;
+      if (document.querySelectorAll('[aria-modal="true"]').length > 1) return; // another question is open
+      closeRef.current();
+    };
+    window.addEventListener("keydown", onWindowKey);
+    return () => window.removeEventListener("keydown", onWindowKey);
+  }, []);
+
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       e.stopPropagation();
