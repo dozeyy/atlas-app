@@ -62,12 +62,14 @@ jobs:
 
       # The tour app: a debug build (the only kind with the screenshot tour in it).
       - name: Build the tour app (debug)
-        run: npx tauri build --debug --bundles app
+        id: debug
+        run: npx tauri build --debug --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       # The app as it ships: universal, ad-hoc signed, with the dmg. Update bundles only when the
       # signing key is there (a fork or a fresh repo has none).
       - name: Build the universal app and dmg
         id: universal
+        if: ${{ !cancelled() }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -81,17 +83,20 @@ jobs:
           fi
 
       - name: Build atlas-usage (universal)
+        if: ${{ !cancelled() }}
         run: |
           cargo build -p atlas-cli --release --target aarch64-apple-darwin --target x86_64-apple-darwin
           lipo -create -output target/atlas-usage-universal target/aarch64-apple-darwin/release/atlas-usage target/x86_64-apple-darwin/release/atlas-usage
 
       - name: Install WebKit for Playwright
+        id: playwright
+        if: ${{ !cancelled() }}
         run: |
           npm install --no-save --no-audit --no-fund playwright@1.64.1
           npx playwright install webkit
 
       - name: WebKit pictures of every page (browser preview, mock data)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.playwright.outcome == 'success' }}
         run: node tools/webkit-shots.mjs mac-check-out/webkit
 
       - name: Real app checks and pictures
