@@ -191,7 +191,12 @@ pub fn hand_on(exe: &Path, dir: &Path) -> std::io::Result<()> {
     let copy = tmp.join(REMOVER_NAME);
     // The copy starts in the Windows folder, not in whatever folder started this program (Atlas
     // starts the remover from inside the install folder, and a working folder is held open).
-    let start = |c: &Path| Command::new(c).arg(REMOVE_FROM).arg(dir).current_dir(install::neutral_dir()).spawn().map(|_| ());
+    let start = |c: &Path| {
+        let mut cmd = Command::new(c);
+        cmd.arg(REMOVE_FROM).arg(dir).current_dir(install::neutral_dir());
+        atlas_core::proc::quiet(&mut cmd);
+        cmd.spawn().map(|_| ())
+    };
     if let Err(e) = install::copy_bytes(exe, &copy).and_then(|()| start(&copy)) {
         let _ = std::fs::remove_file(&copy);
         let _ = std::fs::remove_dir(&tmp);

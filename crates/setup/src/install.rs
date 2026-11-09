@@ -240,7 +240,8 @@ pub fn launch(dir: &Path) -> std::io::Result<Launched> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0000_0008 | 0x0000_0200); // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: no console at all, so no window.
+        cmd.creation_flags(0x0000_0008 | 0x0000_0200);
     }
     cmd.spawn().map(|_| Launched::Started)
 }

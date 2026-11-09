@@ -51,6 +51,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # The Claude Code connector (atlas-mcp) rides inside the app: tauri.macos-bundle.conf.json
+      # bundles this universal binary as a resource (Contents/Resources/atlas-mcp).
+      - name: Build atlas-mcp (universal)
+        if: runner.os == 'macOS'
+        run: |
+          cargo build -p atlas-mcp --release --target aarch64-apple-darwin --target x86_64-apple-darwin
+          lipo -create -output target/atlas-mcp-universal target/aarch64-apple-darwin/release/atlas-mcp target/x86_64-apple-darwin/release/atlas-mcp
+
       # 1. Build the installers (this also builds the frontend). Windows: atlas-usage, the NSIS
       #    installer with it inside, and Atlas Setup with that installer inside (the same script the
       #    release uses). There is no update signing key here, so no update bundles are made.
@@ -60,7 +68,7 @@ jobs:
         run: ./tools/build-setup.ps1 -OutDir dist-setup
       - name: Build installers (macOS)
         if: runner.os == 'macOS'
-        run: npx tauri build ${{ matrix.tauri_args }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: npx tauri build ${{ matrix.tauri_args }} --config crates/app/tauri.macos-bundle.conf.json --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       # 2. Rust tests: core (unit + fixtures + sandbox) and the app crate. Atlas Setup is Windows-only.
       - name: cargo test

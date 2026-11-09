@@ -13,6 +13,7 @@
 
 pub mod diff;
 pub mod import;
+pub mod marks;
 pub mod query;
 pub mod scan;
 pub mod store;

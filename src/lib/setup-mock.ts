@@ -413,7 +413,7 @@ export class MockSetupWorld {
     this.items.push(r.item);
     this.texts.set(r.item.id, r.text);
     this.changed();
-    return { name: r.item.name, kind: r.item.kind };
+    return { name: r.item.name, kind: r.item.kind, backupId: null };
   }
 
   draft(kind: CreateKind, name: string, event?: string): Draft {

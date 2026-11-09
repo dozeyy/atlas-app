@@ -226,6 +226,8 @@ export interface DeleteOutcome {
 export interface UndoOutcome {
   name: string;
   kind: string;
+  /** The backup the undo was made from (set by the connector; the app ignores it). */
+  backupId?: string | null;
 }
 
 export type CreateKind = "instructions" | "skill" | "agent" | "command" | "rule" | "outputStyle" | "hook" | "mcpServer";

@@ -138,7 +138,10 @@ impl HistoryHost {
         let tracked = tracked_from(&disc.snapshot);
         let now = now_ms();
         let cj = cfg.claude_json.is_file().then_some(cfg.claude_json.as_path());
-        let report = match scan::scan(&store, &tracked, cj, now) {
+        // Changes Claude made through the Atlas MCP server or the assistant carry a tag in their
+        // backup; the scan uses it so those rows say "edited by Claude".
+        let marks = atlas_core::history::marks::Marks::from_backups(&state.data_dir.join("setup-backups"), &cfg.claude_json, now);
+        let report = match scan::scan_marked(&store, &tracked, cj, now, &marks) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("[atlas] history: {e}");

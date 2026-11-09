@@ -73,6 +73,26 @@ export const QUIT_ASK_EVENT = "atlas://quit-ask";
 export const UPDATE_PROGRESS_EVENT = "atlas://update/progress";
 
 export type Unlisten = () => void;
+
+/** Claude Code connection: what Settings shows for the Atlas MCP server. */
+export interface McpStatus {
+  /** connected | notConnected | moved (registered, but to a different program path) */
+  state: "connected" | "notConnected" | "moved";
+  /** The program Claude's settings point at. */
+  command: string | null;
+  /** The connector program that ships with this Atlas (null when it is missing). */
+  server: string | null;
+  /** Claude Code's command was found on this computer. */
+  cliFound: boolean;
+  configReadable: boolean;
+  /** Sandbox Mode is on: Connect is off. */
+  sandbox: boolean;
+}
+export interface McpOutcome {
+  state: Omit<McpStatus, "sandbox">;
+  via: "cli" | "file" | "none";
+  backupId: string | null;
+}
 export const SETUP_EVENT = "atlas://setup-changed";
 export const HISTORY_EVENT = "atlas://history/changed";
 
@@ -105,6 +125,10 @@ export interface Backend {
   openDataDir(): Promise<void>;
   /** Whether an uninstaller sits beside this Atlas (a real Windows install, not a dev run). */
   uninstallAvailable(): Promise<boolean>;
+  /** Reads the connection to Claude Code from Claude's own settings file. */
+  mcpStatus(): Promise<McpStatus>;
+  mcpConnect(): Promise<McpOutcome>;
+  mcpDisconnect(): Promise<McpOutcome>;
   /** Starts the uninstaller on its own; it asks Atlas to quit once the person says yes there. */
   uninstallAtlas(): Promise<void>;
   frontendReady(): Promise<void>;
@@ -224,6 +248,9 @@ const tauriBackend: Backend = {
   openDataDir: () => invoke<void>("open_data_dir"),
   uninstallAvailable: () => invoke<boolean>("uninstall_available"),
   uninstallAtlas: () => invoke<void>("uninstall_atlas"),
+  mcpStatus: () => invoke<McpStatus>("mcp_status"),
+  mcpConnect: () => invoke<McpOutcome>("mcp_connect"),
+  mcpDisconnect: () => invoke<McpOutcome>("mcp_disconnect"),
   frontendReady: async () => {
     await invoke("frontend_ready");
   },

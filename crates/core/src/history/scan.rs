@@ -14,6 +14,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use super::diff;
+use super::marks::Marks;
 use super::store::{self, source, ItemState, NewEvent, NewVersion, Store};
 use super::{Tracked, MCP_KEY};
 use crate::setup::secrets;
@@ -155,6 +156,12 @@ fn text_of(bytes: &Option<Vec<u8>>) -> Option<String> {
 
 /// One pass. `claude_json` is the global state file, read only for its MCP part.
 pub fn scan(store: &Store, tracked: &[Tracked], claude_json: Option<&Path>, now_ms: i64) -> Result<ScanReport, String> {
+    scan_marked(store, tracked, claude_json, now_ms, &Marks::default())
+}
+
+/// `scan`, with `marks` saying which changes Claude made through the MCP server or the
+/// assistant, so their rows say so.
+pub fn scan_marked(store: &Store, tracked: &[Tracked], claude_json: Option<&Path>, now_ms: i64, marks: &Marks) -> Result<ScanReport, String> {
     let known = store.items()?;
     let baseline = store.meta("baseline_at").is_none();
     let mut report = ScanReport { baseline, ..Default::default() };
@@ -229,9 +236,12 @@ pub fn scan(store: &Store, tracked: &[Tracked], claude_json: Option<&Path>, now_
             let first_time = prev.is_none();
             let came_back = prev.is_some_and(|p| p.gone_at.is_some());
             let old_text = prev.and_then(|p| p.last_sha.as_deref()).and_then(|sha| store.read_blob(sha)).map(|b| String::from_utf8_lossy(&b).into_owned());
+            // A change Claude made through Atlas's own server says so; the baseline never does.
+            let by = if baseline { None } else { marks.version(&t.key, &s.sha) };
+            let src = by.unwrap_or(source::SNAPSHOT);
             let vid = store::add_version(
                 tx,
-                &NewVersion { item_key: &t.key, sha: Some(&s.sha), bytes: s.size, captured_at: now_ms, observed_mtime: s.mtime, source: source::SNAPSHOT, origin_ref: None, session_id: None, agent_id: None },
+                &NewVersion { item_key: &t.key, sha: Some(&s.sha), bytes: s.size, captured_at: now_ms, observed_mtime: s.mtime, source: src, origin_ref: None, session_id: None, agent_id: None },
             )?;
             store::set_stat(tx, &t.key, Some(&s.sha), s.size, s.mtime)?;
             let to = vid;
@@ -247,10 +257,10 @@ pub fn scan(store: &Store, tracked: &[Tracked], claude_json: Option<&Path>, now_
                     renamed_from.insert(m.item_key.clone());
                     store::set_gone(tx, &m.item_key, now_ms)?;
                     let summary = format!("Renamed from {}.", m.name);
-                    store::add_event(tx, &NewEvent { item_key: &t.key, at: now_ms, kind: "renamed", from_version: m.last_version, to_version: to, source: source::SNAPSHOT, summary: &summary })?;
+                    store::add_event(tx, &NewEvent { item_key: &t.key, at: now_ms, kind: "renamed", from_version: m.last_version, to_version: to, source: src, summary: &summary })?;
                     report.renamed += 1;
                 } else {
-                    store::add_event(tx, &NewEvent { item_key: &t.key, at: at_of(s.mtime), kind: "added", from_version: None, to_version: to, source: source::SNAPSHOT, summary: "New." })?;
+                    store::add_event(tx, &NewEvent { item_key: &t.key, at: at_of(s.mtime), kind: "added", from_version: None, to_version: to, source: src, summary: "New." })?;
                     report.added += 1;
                 }
                 report.items += 1;
@@ -261,7 +271,7 @@ pub fn scan(store: &Store, tracked: &[Tracked], claude_json: Option<&Path>, now_
                 (Some(o), Some(n)) => diff::one_line(&t.path.to_string_lossy(), Some(o), n),
                 _ => "Changed.".to_string(),
             };
-            store::add_event(tx, &NewEvent { item_key: &t.key, at: at_of(s.mtime), kind: "changed", from_version: prev.and_then(|p| p.last_version), to_version: to, source: source::SNAPSHOT, summary: &summary })?;
+            store::add_event(tx, &NewEvent { item_key: &t.key, at: at_of(s.mtime), kind: "changed", from_version: prev.and_then(|p| p.last_version), to_version: to, source: src, summary: &summary })?;
             report.changed += 1;
         }
         for g in &gone {
@@ -269,11 +279,12 @@ pub fn scan(store: &Store, tracked: &[Tracked], claude_json: Option<&Path>, now_
                 continue;
             }
             store::set_gone(tx, &g.item_key, now_ms)?;
-            store::add_event(tx, &NewEvent { item_key: &g.item_key, at: now_ms, kind: "removed", from_version: g.last_version, to_version: None, source: source::SNAPSHOT, summary: "Removed." })?;
+            let src = marks.removal(&g.item_key).unwrap_or(source::SNAPSHOT);
+            store::add_event(tx, &NewEvent { item_key: &g.item_key, at: now_ms, kind: "removed", from_version: g.last_version, to_version: None, source: src, summary: "Removed." })?;
             report.removed += 1;
         }
         if let Some(m) = &mcp {
-            mcp_write(tx, store, &known, m, now_ms, baseline, &mut report)?;
+            mcp_write(tx, store, &known, m, now_ms, baseline, marks, &mut report)?;
         }
         if baseline {
             tx.execute("INSERT INTO meta(key,value) VALUES('baseline_at',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [now_ms.to_string()])?;
@@ -318,16 +329,18 @@ fn mcp_pass(store: &Store, known: &HashMap<String, ItemState>, claude_json: Opti
     Ok(Some(McpSeen { text, sha, size, mtime, stat_only: same }))
 }
 
-fn mcp_write(tx: &rusqlite::Transaction, store: &Store, known: &HashMap<String, ItemState>, m: &McpSeen, now: i64, baseline: bool, report: &mut ScanReport) -> rusqlite::Result<()> {
+#[allow(clippy::too_many_arguments)]
+fn mcp_write(tx: &rusqlite::Transaction, store: &Store, known: &HashMap<String, ItemState>, m: &McpSeen, now: i64, baseline: bool, marks: &Marks, report: &mut ScanReport) -> rusqlite::Result<()> {
     if m.stat_only {
         return store::set_stat(tx, MCP_KEY, Some(&m.sha), m.size, m.mtime);
     }
     store::upsert_item(tx, MCP_KEY, "mcpServer", "user", None, "MCP servers", "", now)?;
     let prev = known.get(MCP_KEY);
     let old_text = prev.and_then(|p| p.last_sha.as_deref()).and_then(|s| store.read_blob(s)).map(|b| String::from_utf8_lossy(&b).into_owned());
+    let src = if baseline { source::SNAPSHOT } else { marks.claude_json_recent(now).unwrap_or(source::SNAPSHOT) };
     let vid = store::add_version(
         tx,
-        &NewVersion { item_key: MCP_KEY, sha: Some(&m.sha), bytes: m.text.len() as i64, captured_at: now, observed_mtime: m.mtime, source: source::SNAPSHOT, origin_ref: None, session_id: None, agent_id: None },
+        &NewVersion { item_key: MCP_KEY, sha: Some(&m.sha), bytes: m.text.len() as i64, captured_at: now, observed_mtime: m.mtime, source: src, origin_ref: None, session_id: None, agent_id: None },
     )?;
     store::set_stat(tx, MCP_KEY, Some(&m.sha), m.size, m.mtime)?;
     let at = if m.mtime > 0 && m.mtime <= now { m.mtime } else { now };
@@ -337,7 +350,7 @@ fn mcp_write(tx: &rusqlite::Transaction, store: &Store, known: &HashMap<String, 
             report.items += 1;
         }
         None => {
-            store::add_event(tx, &NewEvent { item_key: MCP_KEY, at: now, kind: "added", from_version: None, to_version: vid, source: source::SNAPSHOT, summary: "New." })?;
+            store::add_event(tx, &NewEvent { item_key: MCP_KEY, at: now, kind: "added", from_version: None, to_version: vid, source: src, summary: "New." })?;
             report.added += 1;
         }
         Some(p) => {
@@ -345,7 +358,7 @@ fn mcp_write(tx: &rusqlite::Transaction, store: &Store, known: &HashMap<String, 
                 Some(o) => diff::one_line("mcp.json", Some(o), &m.text),
                 None => "Changed.".to_string(),
             };
-            store::add_event(tx, &NewEvent { item_key: MCP_KEY, at: now, kind: "changed", from_version: p.last_version, to_version: vid, source: source::SNAPSHOT, summary: &summary })?;
+            store::add_event(tx, &NewEvent { item_key: MCP_KEY, at: now, kind: "changed", from_version: p.last_version, to_version: vid, source: src, summary: &summary })?;
             report.changed += 1;
         }
     }

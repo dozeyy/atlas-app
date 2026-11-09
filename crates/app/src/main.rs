@@ -7,6 +7,7 @@ mod intro;
 // Built everywhere so it stays compiled and linted; only macOS installs it.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod macmenu;
+mod mcp_service;
 mod now;
 mod search;
 mod setup_service;
@@ -136,6 +137,9 @@ fn main() {
             update::update_check,
             update::update_install,
             tour::tour_step,
+            mcp_service::mcp_status,
+            mcp_service::mcp_connect,
+            mcp_service::mcp_disconnect,
             setup_service::setup_snapshot,
             setup_service::setup_cost,
             setup_service::setup_read_source,

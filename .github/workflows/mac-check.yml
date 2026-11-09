@@ -56,6 +56,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # The Claude Code connector (atlas-mcp) rides inside the app: tauri.macos-bundle.conf.json
+      # bundles this universal binary as a resource (Contents/Resources/atlas-mcp).
+      - name: Build atlas-mcp (universal)
+        run: |
+          cargo build -p atlas-mcp --release --target aarch64-apple-darwin --target x86_64-apple-darwin
+          lipo -create -output target/atlas-mcp-universal target/aarch64-apple-darwin/release/atlas-mcp target/x86_64-apple-darwin/release/atlas-mcp
+
       # The browser-preview copy of the frontend, with the screenshot tour built in
       # (VITE_ATLAS_TOUR=1; vite.config.ts). Its own folder: `tauri build` rebuilds dist/ itself.
       - name: Build the frontend with the tour (browser preview)
@@ -69,7 +76,7 @@ jobs:
         id: debug
         env:
           VITE_ATLAS_TOUR: "1"
-        run: npx tauri build --debug --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: npx tauri build --debug --bundles app --config crates/app/tauri.macos-bundle.conf.json --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       # The app as it ships: universal, ad-hoc signed, with the dmg, and its frontend built without
       # the tour. The real update-signing key lives only in release.yml: this proof signs the update
@@ -90,7 +97,7 @@ jobs:
           export TAURI_SIGNING_PRIVATE_KEY
           rm -f "$key" "$key.pub"
           echo "ATLAS_EXPECT_UPDATER=1" >> "$GITHUB_ENV"
-          npx tauri build --target universal-apple-darwin --bundles app,dmg
+          npx tauri build --target universal-apple-darwin --bundles app,dmg --config crates/app/tauri.macos-bundle.conf.json
 
       - name: Build atlas-usage (universal)
         if: ${{ !cancelled() }}

@@ -1,7 +1,7 @@
 ﻿// In-memory stand-in for the Rust side: used in a plain browser and in tests.
 // Settings persist in localStorage only so a browser reload keeps your choices.
 
-import type { Backend, SettingsPatch } from "./ipc";
+import type { Backend, McpOutcome, McpStatus, SettingsPatch } from "./ipc";
 import type { AppInfo, ConfigView, Platform, Settings } from "./types";
 import type {
   CostReport,
@@ -180,6 +180,28 @@ export class MockBackend {
     return false;
   }
   async uninstallAtlas(): Promise<void> {}
+
+  private mcpOn = false;
+  async mcpStatus(): Promise<McpStatus> {
+    return {
+      state: this.mcpOn ? "connected" : "notConnected",
+      command: this.mcpOn ? "C:/Program Files/Atlas/atlas-mcp.exe" : null,
+      server: "C:/Program Files/Atlas/atlas-mcp.exe",
+      cliFound: true,
+      configReadable: true,
+      sandbox: this.info.sandbox.enabled,
+    };
+  }
+  async mcpConnect(): Promise<McpOutcome> {
+    this.mcpOn = true;
+    const { sandbox: _s, ...state } = await this.mcpStatus();
+    return { state, via: "cli", backupId: null };
+  }
+  async mcpDisconnect(): Promise<McpOutcome> {
+    this.mcpOn = false;
+    const { sandbox: _s, ...state } = await this.mcpStatus();
+    return { state, via: "cli", backupId: null };
+  }
 
   async frontendReady(): Promise<void> {}
   async windowControl(_action: "minimize" | "toggle-maximize" | "close"): Promise<void> {}

@@ -124,7 +124,9 @@ pub fn uninstall_atlas() -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0000_0008 | 0x0000_0200); // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: no console at all, so no window (Windows
+        // ignores CREATE_NO_WINDOW next to DETACHED_PROCESS; the remover is a windowed program).
+        cmd.creation_flags(0x0000_0008 | 0x0000_0200);
     }
     cmd.spawn().map(|_| ()).map_err(|e| format!("Could not start the uninstaller: {e}"))
 }
@@ -167,7 +169,7 @@ pub(crate) fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> 
     let mut cmd = std::process::Command::new("xdg-open");
     // explorer reports exit code 1 even when it opened the folder, so only a failure to
     // start it counts as an error.
-    cmd.arg(dir).spawn().map(|_| ()).map_err(|e| format!("Could not open the folder: {e}"))
+    atlas_core::proc::quiet(cmd.arg(dir)).spawn().map(|_| ()).map_err(|e| format!("Could not open the folder: {e}"))
 }
 
 /// The title bar is drawn by the page (it runs under the content, like the Claude app), so the

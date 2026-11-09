@@ -37,7 +37,7 @@ const VERB: Record<ChangeKind, string> = {
 
 /** First line of a row: "Skill added". */
 export function whatHappened(e: Pick<HistoryEvent, "kind" | "item" | "source">): string {
-  if (e.source === "claude_edit") return `${noun(e.item.kind)} edited by Claude`;
+  if (e.source === "claude_edit" || e.source === "atlas_mcp") return `${noun(e.item.kind)} edited by Claude`;
   return `${noun(e.item.kind)} ${VERB[e.kind]}`;
 }
 
@@ -53,6 +53,10 @@ export function sourceNote(e: Pick<HistoryEvent, "source">): string | null {
   switch (e.source) {
     case "claude_edit":
       return "Kept by Claude Code while it worked";
+    case "atlas_mcp":
+      return "Made by Claude through Atlas's connector";
+    case "atlas_assistant":
+      return "Made by Atlas's assistant after you approved it";
     case "claude_backup":
       return "From a Claude Code backup";
     default:

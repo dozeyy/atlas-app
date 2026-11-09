@@ -710,8 +710,9 @@ fn the_wire_format_matches_the_front_end_key_list() {
         let backups = tempfile::tempdir().unwrap();
         let out = sw::apply_delete(&d.delete_plan(&it.id).unwrap(), backups.path()).unwrap();
         keys(&mut got, "deleteOutcome", &serde_json::to_value(&out).unwrap());
-        keys(&mut got, "undoOutcome", &serde_json::to_value(sw::restore(backups.path(), &out.backup_id).unwrap()).unwrap());
         let (root, cj) = (fx.home.join(".claude"), fx.inputs().root.claude_json);
+        let confine = sw::Confine::from_discovery(&root, &cj, &d);
+        keys(&mut got, "undoOutcome", &serde_json::to_value(sw::restore(backups.path(), &out.backup_id, &confine).unwrap()).unwrap());
         let draft = sw::create_draft("skill", "wire-check", None, &sw::CreateCtx { root: &root, claude_json: &cj }).unwrap();
         keys(&mut got, "draft", &serde_json::to_value(&draft).unwrap());
     }
