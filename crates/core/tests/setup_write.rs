@@ -251,6 +251,76 @@ fn a_failed_backup_check_deletes_nothing() {
     assert!(p.exists(), "the item is still there");
 }
 
+#[test]
+fn deleting_a_hook_refuses_when_another_hook_now_sits_at_its_position() {
+    let fx = Fx::new();
+    let sp = fx.claude().join("settings.json");
+    let d = fx.discover();
+    let it = d.snapshot.items.iter().find(|i| i.kind == ItemKind::Hook && i.scope == ScopeKind::User && i.path.as_deref().is_some_and(|p| p.ends_with("settings.json")) && i.chips.first().is_some_and(|c| c == "PreToolUse")).unwrap();
+    let plan = d.delete_plan(&it.id).unwrap();
+    // Claude Code (or the user) adds a group in front, so the picked hook's index now holds another one.
+    let mut v: serde_json::Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    let other = serde_json::json!({ "matcher": "Edit", "hooks": [{ "type": "command", "command": "echo someone else" }] });
+    v["hooks"]["PreToolUse"].as_array_mut().unwrap().insert(0, other);
+    let changed = serde_json::to_vec_pretty(&v).unwrap();
+    fs::write(&sp, &changed).unwrap();
+
+    let err = apply_delete(&plan, &fx.backups).unwrap_err();
+    assert!(matches!(&err, WriteError::Refused(m) if m.contains("changed")), "{err:?}");
+    assert_eq!(fs::read(&sp).unwrap(), changed, "neither hook was removed");
+}
+
+#[test]
+fn deleting_a_hook_that_has_not_moved_still_works_after_an_unrelated_edit() {
+    let fx = Fx::new();
+    let sp = fx.claude().join("settings.json");
+    let d = fx.discover();
+    let it = d.snapshot.items.iter().find(|i| i.kind == ItemKind::Hook && i.scope == ScopeKind::User && i.path.as_deref().is_some_and(|p| p.ends_with("settings.json")) && i.chips.first().is_some_and(|c| c == "Stop")).unwrap();
+    let plan = d.delete_plan(&it.id).unwrap();
+    let mut v: serde_json::Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    v["outputStyle"] = serde_json::json!("Other");
+    fs::write(&sp, serde_json::to_vec_pretty(&v).unwrap()).unwrap();
+    apply_delete(&plan, &fx.backups).unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    assert!(v["hooks"].get("Stop").is_none(), "the picked hook is gone");
+    assert!(v["hooks"]["PreToolUse"].is_array(), "the other hook stays");
+}
+
+#[cfg(unix)]
+#[test]
+fn deleting_and_undoing_a_skill_keeps_file_modes() {
+    use std::os::unix::fs::PermissionsExt;
+    let fx = Fx::new();
+    let dir = fx.claude().join("skills").join("shared-skill");
+    let script = dir.join("scripts").join("run.sh");
+    fs::write(&script, "#!/bin/sh\necho hi\n").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(dir.join("reference.md"), fs::Permissions::from_mode(0o600)).unwrap();
+    let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o7777;
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    let out = apply_delete(&d.delete_plan(&it.id).unwrap(), &fx.backups).unwrap();
+    let payload = fx.backups.join(&out.backup_id).join("payload").join("shared-skill");
+    assert_eq!(mode(&payload.join("scripts").join("run.sh")), 0o755, "the backup keeps +x");
+    restore(&fx.backups, &out.backup_id).unwrap();
+    assert_eq!(mode(&script), 0o755, "the script is executable again after Undo");
+    assert_eq!(mode(&dir.join("reference.md")), 0o600);
+}
+
+#[cfg(unix)]
+#[test]
+fn deleting_and_undoing_a_single_file_keeps_its_mode() {
+    use std::os::unix::fs::PermissionsExt;
+    let fx = Fx::new();
+    let p = fx.claude().join("agents").join("user-agent.md");
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o750)).unwrap();
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Agent, ScopeKind::User, "user-agent");
+    let out = apply_delete(&d.delete_plan(&it.id).unwrap(), &fx.backups).unwrap();
+    restore(&fx.backups, &out.backup_id).unwrap();
+    assert_eq!(fs::metadata(&p).unwrap().permissions().mode() & 0o7777, 0o750);
+}
+
 // ---- save --------------------------------------------------------------------
 
 fn save_plan(d: &Discovery, kind: ItemKind, scope: ScopeKind, name: &str) -> (SavePlan, String) {
@@ -294,6 +364,71 @@ fn save_keeps_a_files_crlf_endings_and_bom() {
     apply_save(&plan, "# Always\n\n- one\n- two\n", &raw.stamp, false, &fx.backups).unwrap();
     let mut want = vec![0xEF, 0xBB, 0xBF];
     want.extend_from_slice(b"# Always\r\n\r\n- one\r\n- two\r\n");
+    assert_eq!(fs::read(&p).unwrap(), want);
+}
+
+#[test]
+fn a_file_that_is_not_utf8_opens_read_only_and_is_never_rewritten() {
+    let fx = Fx::new();
+    let p = fx.claude().join("agents").join("user-agent.md");
+    let mut bytes = fs::read(&p).unwrap();
+    bytes.extend_from_slice(b"caf\xe9 in Latin-1\n");
+    fs::write(&p, &bytes).unwrap();
+    let d = fx.discover();
+    let (plan, id) = save_plan(&d, ItemKind::Agent, ScopeKind::User, "user-agent");
+    let err = d.read_raw(&id, true).unwrap_err();
+    assert!(matches!(&err, WriteError::Refused(m) if m.contains("UTF-8")), "{err:?}");
+    // Even a forced save cannot turn the odd byte into U+FFFD.
+    assert!(apply_save(&plan, "replaced\n", "0", true, &fx.backups).is_err());
+    assert_eq!(fs::read(&p).unwrap(), bytes);
+}
+
+#[test]
+fn changing_an_entry_in_a_json_file_that_is_not_utf8_changes_nothing() {
+    let fx = Fx::new();
+    let cj = fx.cj();
+    let text = fs::read(&cj).unwrap();
+    let d = fx.discover();
+    let it = find(&d, ItemKind::McpServer, ScopeKind::User, "shared-srv");
+    let (del, save) = (d.delete_plan(&it.id).unwrap(), d.save_plan(&it.id).unwrap());
+    // A stray Latin-1 byte inside another value.
+    let at = text.iter().position(|&b| b == b'{').unwrap() + 1;
+    let mut bytes = text[..at].to_vec();
+    bytes.extend_from_slice(b"\n  \"note\": \"caf\xe9\",");
+    bytes.extend_from_slice(&text[at..]);
+    fs::write(&cj, &bytes).unwrap();
+    assert!(apply_delete(&del, &fx.backups).is_err());
+    assert!(apply_save(&save, "{\"command\": \"node\"}", "0", true, &fx.backups).is_err());
+    assert_eq!(fs::read(&cj).unwrap(), bytes);
+}
+
+#[test]
+fn save_keeps_each_untouched_lines_ending_in_a_file_with_mixed_endings() {
+    let fx = Fx::new();
+    let p = fx.claude().join("rules").join("always.md");
+    fs::write(&p, b"one\r\ntwo\nthree\r\nfour\r\nfive\n").unwrap();
+    let d = fx.discover();
+    let (plan, id) = save_plan(&d, ItemKind::Rule, ScopeKind::User, "always");
+    let raw = d.read_raw(&id, true).unwrap();
+    assert_eq!(raw.text, "one\ntwo\nthree\nfour\nfive\n");
+    apply_save(&plan, "one\ntwo\nTHREE\nfour\nfive\nsix\n", &raw.stamp, false, &fx.backups).unwrap();
+    // Unchanged lines keep their own ending; edited and new lines take the one most of the file uses (CRLF here).
+    assert_eq!(fs::read(&p).unwrap(), b"one\r\ntwo\nTHREE\r\nfour\r\nfive\nsix\r\n");
+}
+
+#[test]
+fn save_in_a_mostly_lf_file_keeps_its_one_crlf_line_and_uses_lf_for_new_lines() {
+    let fx = Fx::new();
+    let p = fx.claude().join("rules").join("always.md");
+    let mut b = vec![0xEF, 0xBB, 0xBF];
+    b.extend_from_slice(b"# Rule\nintro\nkeep me\r\nlast line");
+    fs::write(&p, &b).unwrap();
+    let d = fx.discover();
+    let (plan, id) = save_plan(&d, ItemKind::Rule, ScopeKind::User, "always");
+    let raw = d.read_raw(&id, true).unwrap();
+    apply_save(&plan, "# Rule\nintro\nadded\nkeep me\nlast line", &raw.stamp, false, &fx.backups).unwrap();
+    let mut want = vec![0xEF, 0xBB, 0xBF];
+    want.extend_from_slice(b"# Rule\nintro\nadded\nkeep me\r\nlast line");
     assert_eq!(fs::read(&p).unwrap(), want);
 }
 
@@ -429,9 +564,9 @@ fn debug_builds_refuse_delete_save_undo_and_create_against_the_real_config() {
     let ghost_json = home.join(".claude.json");
 
     let plans = [
-        DeletePlan { id: "x".into(), name: "ghost".into(), kind: ItemKind::Skill, unit: Unit::Path { path: ghost_dir.clone(), is_dir: true } },
-        DeletePlan { id: "x".into(), name: "ghost".into(), kind: ItemKind::Agent, unit: Unit::Path { path: real.join("agents").join("atlas-guard-test.md"), is_dir: false } },
-        DeletePlan { id: "x".into(), name: "ghost".into(), kind: ItemKind::McpServer, unit: Unit::Entry { file: ghost_json.clone(), pointer: vec!["mcpServers".into(), "atlas-guard-test".into()] } },
+        DeletePlan { id: "x".into(), name: "ghost".into(), kind: ItemKind::Skill, unit: Unit::Path { path: ghost_dir.clone(), is_dir: true }, expect: None },
+        DeletePlan { id: "x".into(), name: "ghost".into(), kind: ItemKind::Agent, unit: Unit::Path { path: real.join("agents").join("atlas-guard-test.md"), is_dir: false }, expect: None },
+        DeletePlan { id: "x".into(), name: "ghost".into(), kind: ItemKind::McpServer, unit: Unit::Entry { file: ghost_json.clone(), pointer: vec!["mcpServers".into(), "atlas-guard-test".into()] }, expect: None },
     ];
     for p in &plans {
         let err = apply_delete(p, backups.path()).unwrap_err();

@@ -83,6 +83,9 @@ pub enum SourceRef {
 pub struct Discovery {
     pub snapshot: SetupSnapshot,
     pub(crate) sources: HashMap<String, SourceRef>,
+    /// Entries addressed by position (hooks): their JSON value as this scan saw it,
+    /// so a write can check the same entry is still at that position.
+    pub(crate) entry_values: HashMap<String, Value>,
     pub(crate) root_dir: PathBuf,
     /// Folders to watch: project folders that were scanned.
     pub(crate) watched_projects: Vec<PathBuf>,
@@ -124,6 +127,7 @@ pub(crate) struct Build<'a> {
     pub cache: &'a mut Cache,
     pub items: Vec<SetupItem>,
     pub sources: HashMap<String, SourceRef>,
+    pub entry_values: HashMap<String, Value>,
     pub seen: HashSet<String>,
     pub root_key: String,
     pub cj: Option<Arc<CjView>>,
@@ -229,6 +233,7 @@ pub fn discover(inputs: &DiscoveryInputs, cache: &mut Cache) -> Discovery {
         cache,
         items: Vec::new(),
         sources: HashMap::new(),
+        entry_values: HashMap::new(),
         seen: HashSet::new(),
         root_key: projects::norm_key(&root.dir.to_string_lossy()),
         cj,
@@ -255,6 +260,7 @@ pub fn discover(inputs: &DiscoveryInputs, cache: &mut Cache) -> Discovery {
     let mut d = Discovery {
         snapshot,
         sources: std::mem::take(&mut b.sources),
+        entry_values: std::mem::take(&mut b.entry_values),
         root_dir: root.dir.clone(),
         watched_projects: std::mem::take(&mut b.watched_projects),
     };

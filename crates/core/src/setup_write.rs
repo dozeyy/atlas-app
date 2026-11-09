@@ -62,6 +62,7 @@ fn strip_bom_and_eol(s: &str) -> (String, bool, bool) {
 }
 
 const EDIT_CAP: u64 = 1024 * 1024;
+const NOT_UTF8: &str = "This file is not plain UTF-8 text, so Atlas shows it read only: saving it here could change bytes you did not touch.";
 
 // ---------------------------------------------------------------------------
 // Errors and outcomes
@@ -73,6 +74,9 @@ pub enum WriteError {
     Refused(String),
     /// The file changed on disk since the editor opened it.
     Conflict,
+    /// The change did not fully go through after the disk was already touched. The
+    /// backup is kept and listed with the others, so Undo can still put things back.
+    Kept { backup_id: String, message: String },
     Io(io::Error),
 }
 
@@ -91,6 +95,7 @@ impl WriteError {
         match self {
             WriteError::Refused(m) => m.clone(),
             WriteError::Conflict => "This changed on disk since you opened it.".into(),
+            WriteError::Kept { message, .. } => message.clone(),
             WriteError::Io(e) => format!("Atlas could not finish: {e}"),
         }
     }
@@ -152,6 +157,9 @@ pub struct DeletePlan {
     pub name: String,
     pub kind: ItemKind,
     pub unit: Unit,
+    /// For an entry addressed by its position (a hook): its value when the scan saw
+    /// it. The delete is refused if something else sits at that position now.
+    pub expect: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,7 +198,7 @@ impl Discovery {
             (_, SourceRef::JsonEntry { file, pointer }) => Unit::Entry { file: file.clone(), pointer: pointer.clone() },
             _ => return refuse("Atlas does not remove this kind of item."),
         };
-        Ok(DeletePlan { id: id.to_string(), name: item.name.clone(), kind: item.kind, unit })
+        Ok(DeletePlan { id: id.to_string(), name: item.name.clone(), kind: item.kind, unit, expect: self.entry_values.get(id).cloned() })
     }
 
     pub fn save_plan(&self, id: &str) -> Res<SavePlan> {
@@ -279,8 +287,10 @@ fn read_unit_text(u: &Unit) -> Result<RawText, String> {
             if bytes.iter().take(8192).any(|&b| b == 0) {
                 return Err("This is a binary file.".into());
             }
+            // Saving lossy text would turn every byte that is not UTF-8 into U+FFFD.
+            let s = std::str::from_utf8(&bytes).map_err(|_| NOT_UTF8.to_string())?;
             let stamp = stamp_of(&bytes);
-            let (text, bom, crlf) = strip_bom_and_eol(&String::from_utf8_lossy(&bytes));
+            let (text, bom, crlf) = strip_bom_and_eol(s);
             let language = language_of_path(path);
             let has_secrets = if language == "json" { !secrets::mask_json(&text).ranges.is_empty() } else { !secrets::mask_plain(&text).ranges.is_empty() };
             Ok(RawText { text, bom, crlf, stamp, has_secrets })
@@ -331,7 +341,8 @@ fn detect_style(bytes: &[u8]) -> Style {
 }
 
 fn parse_json_bytes(bytes: &[u8]) -> Result<Value, String> {
-    let s = String::from_utf8_lossy(bytes);
+    // Not lossy: writing the file back would replace every byte that is not UTF-8.
+    let s = std::str::from_utf8(bytes).map_err(|e| format!("not UTF-8 text at byte {}", e.valid_up_to()))?;
     serde_json::from_str(s.trim_start_matches('\u{feff}')).map_err(|e| format!("line {}, column {}", e.line(), e.column()))
 }
 
@@ -485,6 +496,9 @@ struct Manifest {
     /// entry: the whole file as it was (`file-before`)
     #[serde(skip_serializing_if = "Option::is_none")]
     has_file_before: Option<bool>,
+    /// path: the delete stopped partway, so part of the folder may still be there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    incomplete: Option<bool>,
 }
 
 fn now_ms() -> u64 {
@@ -544,6 +558,10 @@ fn copy_tree(src: &Path, dst: &Path, depth: usize) -> io::Result<()> {
             && let Ok(f) = fs::OpenOptions::new().write(true).open(dst) {
                 let _ = f.set_modified(t);
             }
+        // Keep the mode bits (last, so a read-only mode cannot block the line above),
+        // so a script stays executable after a backup and an undo.
+        #[cfg(unix)]
+        fs::set_permissions(dst, md.permissions())?;
     }
     Ok(())
 }
@@ -593,44 +611,47 @@ pub fn apply_delete(plan: &DeletePlan, backups: &Path) -> Res<DeleteOutcome> {
             let payload = dir.join("payload");
             fs::create_dir(&payload)?;
             let copy = payload.join(payload_name(path));
+            let mut manifest = Manifest {
+                version: 1,
+                backup_id: id.clone(),
+                created_ms: now_ms(),
+                action: "delete".into(),
+                kind: plan.kind.as_str().into(),
+                name: plan.name.clone(),
+                unit: "path".into(),
+                path: Some(path.to_string_lossy().into_owned()),
+                is_dir: Some(*is_dir),
+                file: None,
+                removed: None,
+                after_stamp: None,
+                has_file_before: None,
+                incomplete: None,
+            };
             let result = (|| -> Res<()> {
                 copy_tree(path, &copy, 0)?;
                 // The copy must match before anything is removed.
                 if tree_digest(path)? != tree_digest(&copy)? {
                     return refuse("The backup did not match the original, so nothing was deleted.");
                 }
-                write_manifest(
-                    &dir,
-                    &Manifest {
-                        version: 1,
-                        backup_id: id.clone(),
-                        created_ms: now_ms(),
-                        action: "delete".into(),
-                        kind: plan.kind.as_str().into(),
-                        name: plan.name.clone(),
-                        unit: "path".into(),
-                        path: Some(path.to_string_lossy().into_owned()),
-                        is_dir: Some(*is_dir),
-                        file: None,
-                        removed: None,
-                        after_stamp: None,
-                        has_file_before: None,
-                    },
-                )?;
+                write_manifest(&dir, &manifest)?;
                 Ok(())
             })();
             if let Err(e) = result {
                 let _ = fs::remove_dir_all(&dir);
                 return Err(e);
             }
-            let removal = if md.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) };
-            if let Err(e) = removal {
-                // Partly removed folders are put back from the backup.
-                if md.is_dir() && path.exists() {
-                    let _ = restore_path(&copy, path, true);
-                }
-                let _ = fs::remove_dir_all(&dir);
-                return Err(e.into());
+            if let Err(e) = remove_unit(path, md.is_dir()) {
+                // Something may already be gone, and the backup may hold the only copy of it:
+                // keep the backup whatever happens next, marked so Undo can put back what is missing.
+                let put_back = md.is_dir() && path.exists() && put_back_missing(&copy, path).is_ok();
+                manifest.incomplete = Some(true);
+                let _ = write_manifest(&dir, &manifest);
+                let message = if put_back || !md.is_dir() {
+                    format!("Atlas could not remove {} ({e}). Nothing is lost: it is still there, and the backup is kept in History.", plan.name)
+                } else {
+                    format!("Atlas could not remove all of {} ({e}) and could not put everything back. The backup is kept in History: Undo puts back what is missing.", plan.name)
+                };
+                return Err(WriteError::Kept { backup_id: id, message });
             }
             Ok(DeleteOutcome { backup_id: id, name: plan.name.clone(), kind: plan.kind.as_str().into(), note: None })
         }
@@ -639,6 +660,11 @@ pub fn apply_delete(plan: &DeletePlan, backups: &Path) -> Res<DeleteOutcome> {
             let before = fs::read(file).map_err(|_| WriteError::Refused("The file is gone.".into()))?;
             let style = detect_style(&before);
             let mut v = parse_json_bytes(&before).map_err(|e| WriteError::Refused(format!("The file can't be read as JSON ({e}), so nothing was changed.")))?;
+            // A hook is addressed by its position: the one there now must be the one picked.
+            if let Some(want) = &plan.expect
+                && navigate(&v, pointer) != Some(want) {
+                    return refuse("This changed in the file since Atlas last looked, so nothing was deleted. Refresh the page and try again.");
+                }
             let reformatted = render_json(&v, &style) != before;
             let removed = remove_entry(&mut v, pointer).ok_or_else(|| WriteError::Refused("This entry is already gone.".into()))?;
             let after = render_json(&v, &style);
@@ -661,6 +687,7 @@ pub fn apply_delete(plan: &DeletePlan, backups: &Path) -> Res<DeleteOutcome> {
                         removed: Some(removed),
                         after_stamp: Some(stamp_of(&after)),
                         has_file_before: Some(true),
+                        incomplete: None,
                     },
                 )?;
                 Ok(())
@@ -686,6 +713,63 @@ pub fn apply_delete(plan: &DeletePlan, backups: &Path) -> Res<DeleteOutcome> {
     }
 }
 
+fn remove_unit(path: &Path, is_dir: bool) -> io::Result<()> {
+    #[cfg(test)]
+    if let Some(fail) = tests::FAIL_REMOVE.with(std::cell::Cell::get) {
+        return fail(path);
+    }
+    if is_dir { fs::remove_dir_all(path) } else { fs::remove_file(path) }
+}
+
+/// Copy back every file of the backup that is missing from a partly removed folder
+/// (never over a file that is there), then check the folder matches the backup.
+/// Changes nothing unless every file still in the folder is the backup's own copy.
+fn put_back_missing(payload_copy: &Path, dest: &Path) -> io::Result<()> {
+    fn leftover_of(dest: &Path, backup: &Path, depth: usize) -> io::Result<bool> {
+        if depth > 24 {
+            return Ok(false);
+        }
+        for e in fs::read_dir(dest)? {
+            let e = e?;
+            let (ft, theirs) = (e.file_type()?, backup.join(e.file_name()));
+            let ok = if ft.is_dir() {
+                theirs.is_dir() && leftover_of(&e.path(), &theirs, depth + 1)?
+            } else {
+                theirs.is_file() && fs::read(e.path()).ok() == fs::read(&theirs).ok()
+            };
+            if !ok {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+    fn walk(src: &Path, dst: &Path, depth: usize) -> io::Result<()> {
+        if depth > 24 {
+            return Err(io::Error::other("folder is nested too deeply"));
+        }
+        fs::create_dir_all(dst)?;
+        for e in fs::read_dir(src)? {
+            let e = e?;
+            let to = dst.join(e.file_name());
+            if e.file_type()?.is_dir() {
+                walk(&e.path(), &to, depth + 1)?;
+            } else if fs::symlink_metadata(&to).is_err() {
+                copy_tree(&e.path(), &to, depth + 1)?;
+            }
+        }
+        Ok(())
+    }
+    check_write_allowed(dest)?;
+    if !leftover_of(dest, payload_copy, 0)? {
+        return Err(io::Error::other("something else is in the folder now"));
+    }
+    walk(payload_copy, dest, 0)?;
+    if tree_digest(payload_copy)? != tree_digest(dest)? {
+        return Err(io::Error::other("the folder does not match its backup"));
+    }
+    Ok(())
+}
+
 fn restore_path(payload_copy: &Path, dest: &Path, is_dir: bool) -> Res<()> {
     check_write_allowed(dest)?;
     if is_dir {
@@ -709,6 +793,8 @@ fn restore_path(payload_copy: &Path, dest: &Path, is_dir: bool) -> Res<()> {
             && let Ok(f) = fs::OpenOptions::new().write(true).open(dest) {
                 let _ = f.set_modified(t);
             }
+        #[cfg(unix)]
+        fs::set_permissions(dest, fs::metadata(payload_copy)?.permissions())?;
     }
     Ok(())
 }
@@ -724,11 +810,17 @@ pub fn restore(backups: &Path, backup_id: &str) -> Res<UndoOutcome> {
         "path" => {
             let dest = PathBuf::from(m.path.clone().unwrap_or_default());
             check_write_allowed(&dest)?;
+            let copy = dir.join("payload").join(payload_name(&dest));
+            let is_dir = m.is_dir.unwrap_or(false);
+            if m.incomplete == Some(true) && is_dir && fs::symlink_metadata(&dest).is_ok_and(|md| md.is_dir()) {
+                // A delete that stopped partway: put back only what is missing.
+                put_back_missing(&copy, &dest).map_err(|e| WriteError::Refused(format!("Could not put everything back: {e}. The backup is kept in Atlas's backups.")))?;
+                return Ok(UndoOutcome { name: m.name, kind: m.kind });
+            }
             if fs::symlink_metadata(&dest).is_ok() {
                 return refuse("Something new is already there, so Atlas did not put the old one back over it.");
             }
-            let copy = dir.join("payload").join(payload_name(&dest));
-            restore_path(&copy, &dest, m.is_dir.unwrap_or(false))?;
+            restore_path(&copy, &dest, is_dir)?;
         }
         "entry" => {
             let file = PathBuf::from(m.file.clone().unwrap_or_default());
@@ -841,14 +933,19 @@ pub fn apply_save(plan: &SavePlan, text: &str, expected_stamp: &str, force: bool
         return Err(WriteError::Conflict);
     }
     let (id, dir) = new_backup(backups, &format!("save-{}", plan.name))?;
+    // Set once the file on disk has been replaced: from then on the backup holds the only
+    // copy of the previous version and is kept, whatever the check after it says.
+    let mut replaced = false;
     let outcome = (|| -> Res<SaveOutcome> {
         match &plan.unit {
             Unit::Path { path, .. } => {
                 let old = fs::read(path)?;
                 fs::write(dir.join("file-before"), &old)?;
-                let bytes = encode_like(text, current.bom, current.crlf);
+                let bytes = encode_keeping_endings(text, &old, current.bom, current.crlf);
                 write_manifest(&dir, &save_manifest(&id, plan, path))?;
                 atomic_write(path, &bytes)?;
+                replaced = true;
+                after_write(path);
                 let back = fs::read(path)?;
                 if back != bytes {
                     return refuse("The file on disk is not what Atlas just wrote. Something else changed it at the same time.");
@@ -868,6 +965,8 @@ pub fn apply_save(plan: &SavePlan, text: &str, expected_stamp: &str, force: bool
                     return refuse("The file changed while Atlas was getting ready. Nothing was saved; please try again.");
                 }
                 atomic_write(file, &after)?;
+                replaced = true;
+                after_write(file);
                 if fs::read(file)? != after {
                     return refuse("Claude changed the file at the same moment, so the save may not have stuck. Please check and try again.");
                 }
@@ -876,11 +975,26 @@ pub fn apply_save(plan: &SavePlan, text: &str, expected_stamp: &str, force: bool
             }
         }
     })();
-    if outcome.is_err() {
-        // Nothing was changed on failure; the half-made backup is only clutter.
-        let _ = fs::remove_dir_all(&dir);
+    match outcome {
+        Err(e) if replaced => Err(WriteError::Kept {
+            backup_id: id,
+            message: format!("{} The version from before this save is kept in History.", e.message()),
+        }),
+        Err(e) => {
+            // Nothing was changed; the half-made backup is only clutter.
+            let _ = fs::remove_dir_all(&dir);
+            Err(e)
+        }
+        ok => ok,
     }
-    outcome
+}
+
+/// Test seam: runs right after a save replaced the file (a test plays "Claude wrote at the same moment").
+fn after_write(_path: &Path) {
+    #[cfg(test)]
+    if let Some(f) = tests::AFTER_WRITE.with(std::cell::Cell::get) {
+        f(_path);
+    }
 }
 
 fn save_manifest(id: &str, plan: &SavePlan, file: &Path) -> Manifest {
@@ -898,7 +1012,59 @@ fn save_manifest(id: &str, plan: &SavePlan, file: &Path) -> Manifest {
         removed: None,
         after_stamp: None,
         has_file_before: Some(true),
+        incomplete: None,
     }
+}
+
+/// Like `encode_like`, but a file that mixes CRLF and LF keeps each unchanged line's own
+/// ending; only added or edited lines take the ending most of the file uses. `old` is the
+/// file as it is on disk now.
+fn encode_keeping_endings(text: &str, old: &[u8], bom: bool, crlf: bool) -> Vec<u8> {
+    let Ok(old) = std::str::from_utf8(old) else { return encode_like(text, bom, crlf) };
+    let old = old.strip_prefix('\u{feff}').unwrap_or(old);
+    // (line without its ending, ending)
+    let split = |s: &str| -> Vec<(String, &'static str)> {
+        s.split_inclusive('\n')
+            .map(|l| match l.strip_suffix("\r\n") {
+                Some(c) => (c.to_string(), "\r\n"),
+                None => match l.strip_suffix('\n') {
+                    Some(c) => (c.to_string(), "\n"),
+                    None => (l.to_string(), ""),
+                },
+            })
+            .collect()
+    };
+    let old_lines = split(old);
+    let n_crlf = old_lines.iter().filter(|l| l.1 == "\r\n").count();
+    let n_lf = old_lines.iter().filter(|l| l.1 == "\n").count();
+    if n_crlf == 0 || n_lf == 0 {
+        return encode_like(text, bom, crlf);
+    }
+    let dominant = if n_crlf >= n_lf { "\r\n" } else { "\n" };
+    let new_lines = split(&text.replace("\r\n", "\n"));
+    let old_c: Vec<&str> = old_lines.iter().map(|l| l.0.as_str()).collect();
+    let new_c: Vec<&str> = new_lines.iter().map(|l| l.0.as_str()).collect();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    let mut ending: Vec<&str> = new_lines.iter().map(|l| if l.1.is_empty() { "" } else { dominant }).collect();
+    for op in similar::capture_diff_slices_deadline(similar::Algorithm::Myers, &old_c, &new_c, Some(deadline)) {
+        if let similar::DiffOp::Equal { old_index, new_index, len } = op {
+            for k in 0..len {
+                let (o, n) = (old_lines[old_index + k].1, &mut ending[new_index + k]);
+                if !n.is_empty() && !o.is_empty() {
+                    *n = o;
+                }
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(text.len() + n_crlf + 3);
+    if bom {
+        out.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+    }
+    for (l, e) in new_lines.iter().zip(ending) {
+        out.extend_from_slice(l.0.as_bytes());
+        out.extend_from_slice(e.as_bytes());
+    }
+    out
 }
 
 /// The editor works in LF without a BOM; the file keeps its own line endings and BOM.
@@ -1081,7 +1247,7 @@ pub fn create_apply(kind: &str, name: &str, event: Option<&str>, text: &str, ctx
         if let Some(b) = &before {
             fs::write(dir.join("file-before"), b)?;
         }
-        write_manifest(&dir, &Manifest { version: 1, backup_id: id.clone(), created_ms: now_ms(), action: "create".into(), kind: kind.into(), name: d.name.clone(), unit: "path".into(), path: Some(d.path.clone()), is_dir: Some(false), file: None, removed: None, after_stamp: None, has_file_before: Some(before.is_some()) })?;
+        write_manifest(&dir, &Manifest { version: 1, backup_id: id.clone(), created_ms: now_ms(), action: "create".into(), kind: kind.into(), name: d.name.clone(), unit: "path".into(), path: Some(d.path.clone()), is_dir: Some(false), file: None, removed: None, after_stamp: None, has_file_before: Some(before.is_some()), incomplete: None })?;
         if fs::read(&target).ok() != before {
             let _ = fs::remove_dir_all(&dir);
             return refuse("The file changed while Atlas was getting ready. Nothing was added; please try again.");
@@ -1096,7 +1262,7 @@ pub fn create_apply(kind: &str, name: &str, event: Option<&str>, text: &str, ctx
             return refuse("Something is already there, so Atlas did not overwrite it.");
         }
         let (id, dir) = new_backup(backups, &format!("create-{kind}-{name}"))?;
-        write_manifest(&dir, &Manifest { version: 1, backup_id: id.clone(), created_ms: now_ms(), action: "create".into(), kind: kind.into(), name: d.name.clone(), unit: "path".into(), path: Some(d.path.clone()), is_dir: Some(false), file: None, removed: None, after_stamp: None, has_file_before: Some(false) })?;
+        write_manifest(&dir, &Manifest { version: 1, backup_id: id.clone(), created_ms: now_ms(), action: "create".into(), kind: kind.into(), name: d.name.clone(), unit: "path".into(), path: Some(d.path.clone()), is_dir: Some(false), file: None, removed: None, after_stamp: None, has_file_before: Some(false), incomplete: None })?;
         atomic_write(&target, &encode_like(text, false, false))?;
         id
     };
@@ -1115,4 +1281,151 @@ pub fn list_backups(backups: &Path) -> Vec<(String, String, String, String)> {
     }
     out.sort_by(|a, b| b.0.cmp(&a.0));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    type Remove = fn(&Path) -> io::Result<()>;
+
+    thread_local! {
+        /// Stands in for the folder or file removal in `apply_delete`.
+        pub(super) static FAIL_REMOVE: Cell<Option<Remove>> = const { Cell::new(None) };
+        /// Runs right after a save replaced the file.
+        pub(super) static AFTER_WRITE: Cell<Option<fn(&Path)>> = const { Cell::new(None) };
+    }
+
+    fn files(p: &Path) -> Vec<(String, Vec<u8>)> {
+        fn walk(base: &Path, p: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+            if p.is_dir() {
+                for e in fs::read_dir(p).unwrap() {
+                    walk(base, &e.unwrap().path(), out);
+                }
+            } else {
+                out.push((p.strip_prefix(base).unwrap().to_string_lossy().replace('\\', "/"), fs::read(p).unwrap()));
+            }
+        }
+        let mut out = Vec::new();
+        walk(p, p, &mut out);
+        out.sort();
+        out
+    }
+
+    fn skill_folder(root: &Path) -> PathBuf {
+        let dir = root.join("skills").join("demo");
+        fs::create_dir_all(dir.join("scripts")).unwrap();
+        fs::write(dir.join("SKILL.md"), "---\nname: demo\n---\nbody\n").unwrap();
+        fs::write(dir.join("notes.md"), "notes\n").unwrap();
+        fs::write(dir.join("scripts").join("run.sh"), "#!/bin/sh\necho hi\n").unwrap();
+        dir
+    }
+
+    fn delete_plan(dir: &Path) -> DeletePlan {
+        DeletePlan { id: "x".into(), name: "demo".into(), kind: ItemKind::Skill, unit: Unit::Path { path: dir.to_path_buf(), is_dir: true }, expect: None }
+    }
+
+    #[test]
+    fn a_folder_delete_that_stops_partway_puts_back_what_went_and_keeps_the_backup() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = skill_folder(&t.path().join("claude"));
+        let backups = t.path().join("backups");
+        let before = files(&dir);
+        // Two files go, then the removal fails (a file held open on Windows does this).
+        FAIL_REMOVE.with(|c| {
+            c.set(Some(|p: &Path| {
+                fs::remove_file(p.join("notes.md"))?;
+                fs::remove_file(p.join("scripts").join("run.sh"))?;
+                Err(io::Error::other("a file is in use"))
+            }))
+        });
+        let r = apply_delete(&delete_plan(&dir), &backups);
+        FAIL_REMOVE.with(|c| c.set(None));
+        assert!(r.is_err());
+        assert_eq!(files(&dir), before, "what was removed is back");
+        let kept = list_backups(&backups);
+        assert_eq!(kept.len(), 1, "the backup is kept and listed");
+        assert_eq!(files(&backups.join(&kept[0].0).join("payload").join("demo")), before);
+        // Undo finds nothing missing and changes nothing.
+        restore(&backups, &kept[0].0).unwrap();
+        assert_eq!(files(&dir), before);
+    }
+
+    #[test]
+    fn a_folder_delete_that_fails_after_removing_everything_keeps_the_backup_for_undo() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = skill_folder(&t.path().join("claude"));
+        let backups = t.path().join("backups");
+        let before = files(&dir);
+        FAIL_REMOVE.with(|c| {
+            c.set(Some(|p: &Path| {
+                fs::remove_dir_all(p)?;
+                Err(io::Error::other("reported late"))
+            }))
+        });
+        let r = apply_delete(&delete_plan(&dir), &backups);
+        FAIL_REMOVE.with(|c| c.set(None));
+        assert!(r.is_err());
+        let kept = list_backups(&backups);
+        assert_eq!(kept.len(), 1, "the backup is the only copy left and must stay");
+        restore(&backups, &kept[0].0).unwrap();
+        assert_eq!(files(&dir), before, "Undo puts the folder back byte for byte");
+    }
+
+    #[test]
+    fn a_folder_delete_that_could_not_be_put_back_says_so_and_undo_finishes_the_job() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = skill_folder(&t.path().join("claude"));
+        let backups = t.path().join("backups");
+        let before = files(&dir);
+        FAIL_REMOVE.with(|c| {
+            c.set(Some(|p: &Path| {
+                fs::remove_file(p.join("notes.md"))?;
+                // Something now sits where the file has to go back, so putting back fails.
+                fs::create_dir(p.join("notes.md"))?;
+                Err(io::Error::other("a file is in use"))
+            }))
+        });
+        let err = apply_delete(&delete_plan(&dir), &backups).unwrap_err();
+        FAIL_REMOVE.with(|c| c.set(None));
+        let WriteError::Kept { backup_id, message } = err else { panic!("{err:?}") };
+        assert!(message.contains("Undo"), "{message}");
+        // While something else sits in the folder, Undo refuses and adds nothing.
+        let partial = files(&dir);
+        assert!(restore(&backups, &backup_id).is_err());
+        assert_eq!(files(&dir), partial);
+        // Once the obstacle is gone, Undo puts back only what is missing.
+        fs::remove_dir(dir.join("notes.md")).unwrap();
+        restore(&backups, &backup_id).unwrap();
+        assert_eq!(files(&dir), before);
+    }
+
+    fn save_plan(path: &Path) -> SavePlan {
+        SavePlan { id: "x".into(), name: "a".into(), kind: ItemKind::Agent, unit: Unit::Path { path: path.to_path_buf(), is_dir: false }, folder_name: None, language: "markdown".into() }
+    }
+
+    fn agent_file(root: &Path, text: &str) -> PathBuf {
+        let p = root.join("claude").join("agents").join("a.md");
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(&p, text).unwrap();
+        p
+    }
+
+    #[test]
+    fn a_save_whose_check_fails_after_the_file_was_replaced_keeps_the_backup() {
+        let t = tempfile::tempdir().unwrap();
+        let p = agent_file(t.path(), "the old version\n");
+        let backups = t.path().join("backups");
+        let plan = save_plan(&p);
+        let stamp = read_unit_text(&plan.unit).unwrap().stamp;
+        // Something else writes the file between Atlas's write and its read-back.
+        AFTER_WRITE.with(|c| c.set(Some(|p: &Path| fs::write(p, "someone else\n").unwrap())));
+        let r = apply_save(&plan, "my edit\n", &stamp, false, &backups);
+        AFTER_WRITE.with(|c| c.set(None));
+        assert!(r.is_err(), "the failed check is reported");
+        let kept = list_backups(&backups);
+        assert_eq!(kept.len(), 1, "the version from before the save is kept and listed");
+        assert_eq!(fs::read(backups.join(&kept[0].0).join("file-before")).unwrap(), b"the old version\n");
+    }
 }

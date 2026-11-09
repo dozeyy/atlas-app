@@ -207,7 +207,13 @@ impl Build<'_> {
                     } else {
                         SourceRef::File { path: file.to_path_buf() }
                     };
-                    if let Some(i) = self.add(it, scope, file, &ptr, src)
+                    let added = self.add(it, scope, file, &ptr, src);
+                    if let Some(i) = added
+                        && in_json {
+                            // A hook is addressed by its position; remember which one sat there.
+                            self.entry_values.insert(self.items[i].id.clone(), hd.clone());
+                        }
+                    if let Some(i) = added
                         && let Some(c) = cmd {
                             let id = self.items[i].id.clone();
                             let missing = self.note_scripts(c, scope, &id);
