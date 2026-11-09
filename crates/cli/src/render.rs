@@ -117,7 +117,7 @@ pub fn range(v: &RangeView) -> String {
     }
 
     if !v.top_chats.is_empty() {
-        s.push_str("| Biggest chats active in this range | Project | Tokens (whole chat) |\n|---|---|--:|\n");
+        s.push_str("| Biggest chats | Project | Tokens |\n|---|---|--:|\n");
         for c in v.top_chats {
             let name = c.name.as_deref().unwrap_or("(untitled)");
             let _ = writeln!(s, "| {} | {} | {} |", cell(name, 48), cell(&c.project_name, 28), compact(c.tokens.total));

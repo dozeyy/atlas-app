@@ -322,33 +322,26 @@ fn range(ctx: &Ctx, o: &Opts) -> Result<String, String> {
     let project = if o.project { Some(resolve_project(ctx, o.project_name.as_deref())?) } else { None };
     let key = project.as_ref().map(|p| p.0.clone());
 
-    let report_for = |s: &scope::Span| {
+    let report_for = |s: &scope::Span, top: usize| {
         ctx.engine.scope_report(&ScopeArgs {
             from: scope::ymd(s.from),
             to: scope::ymd(s.to),
             project_key: key.clone(),
             bucket: scope::bucket_for(s.days()).to_string(),
+            top,
         })
     };
-    let report = report_for(&span)?;
+    let report = report_for(&span, o.top)?;
     let compare = match &o.vs {
         Some(w) => {
             let s = scope::parse(w, ctx.today, ctx.sunday, first)?;
-            let r = report_for(&s)?;
+            let r = report_for(&s, 0)?;
             Some((s, r))
         }
         None => None,
     };
-    let q: SessionQuery = serde_json::from_value(json!({
-        "from": scope::ymd(span.from),
-        "to": scope::ymd(span.to),
-        "projects": key.iter().collect::<Vec<_>>(),
-        "sort": "tokens",
-        "dir": "desc",
-        "limit": o.top,
-    }))
-    .map_err(|e| e.to_string())?;
-    let top_chats = ctx.engine.sessions_list(&q)?.rows;
+    // Each chat's usage inside the range only (a chat that spills over counts its part).
+    let top_chats = &report.chats;
 
     if o.json {
         let v = json!({
@@ -370,7 +363,7 @@ fn range(ctx: &Ctx, o: &Opts) -> Result<String, String> {
         today: ctx.today,
         report: &report,
         project: proj_name,
-        top_chats: &top_chats,
+        top_chats,
         compare: compare.as_ref().map(|(s, r)| (s, r)),
         top: o.top,
     }))
