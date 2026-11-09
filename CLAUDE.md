@@ -192,7 +192,7 @@ via a CI-built `.dmg` that dad (or Will on a Mac) installs and runs.
 - Terracotta accent kept; icon chosen (see Design Identity); the source repo is private
   `dozeyy/atlas-app`. The PUBLIC repo `dozeyy/atlas` (local folder `Documents\Desktop Apps\Atlas-public`)
   holds the downloads, the plugin marketplace and the docs, never source (Will, 2026-11-09). The
-  release workflow publishes Releases and syncs `skill/` there (`docs/releasing.md`); its README
+  release workflow stages the release in the private repo and `tools/publish-public.ps1` (run on Will's PC with gh) verifies and publishes it there (`docs/releasing.md`); its README
   and `docs/` are edited by hand in that repo.
 
 ### Open questions

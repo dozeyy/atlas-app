@@ -6,18 +6,18 @@ name: release
 # job) runs in the `release` environment, re-signs the two update bundles with the real key and
 # makes the Release. A manual run, or a tag not on main's history, publishes nothing.
 #
-# This repository (dozeyy/atlas-app) is private and holds the source. The Release goes to the
-# PUBLIC repository dozeyy/atlas, because nobody but the owner can download from a private repo:
-# the installers, latest.json (the in-app updater reads it there), the atlas-usage binaries for
-# the skill launcher, and SHA256SUMS.txt. The same job then copies the plugin folder (skill/,
-# with the pinned checksums) and .claude-plugin/marketplace.json into the public repo's main
-# branch, so `/plugin marketplace add dozeyy/atlas` serves the version the Release carries.
+# This repository (dozeyy/atlas-app) is private and holds the source. The workflow makes the
+# finished release here as a PRERELEASE (the staging copy: the installers, latest.json, the
+# atlas-usage binaries and SHA256SUMS.txt) with the default job token, and pins the skill
+# checksums on main. It never writes to any other repository and holds no cross-repo secret.
+# The public repository dozeyy/atlas gets the release from Will's own PC afterwards:
+# `tools/publish-public.ps1 -Version X.Y.Z` (docs/releasing.md). latest.json already carries the
+# final dozeyy/atlas URLs, so it works unchanged once the files are copied there.
 #
 # Secrets live in the `release` environment, not in the repository (set once, see
 # docs/releasing.md; the environment only accepts `v*` tags):
 #   TAURI_SIGNING_PRIVATE_KEY           the in-app update signing key (content of atlas-updater.key)
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (empty: the key has none)
-#   PUBLIC_REPO_TOKEN                   fine-grained token, contents:write on dozeyy/atlas ONLY
 #
 # Release assets (stable names, linked from the public README and the skill):
 #   Atlas-Setup-Windows-x64.exe  Atlas-macOS.dmg  atlas-usage-windows-x64.exe
@@ -270,30 +270,19 @@ jobs:
     # The only job that holds the real signing key. The key is a secret of the `release`
     # environment, which only accepts `v*` tags (docs/releasing.md has the commands that make it).
     environment: release
-    # The only job that writes: it commits the pinned skill checksums to this repo's main (the job
-    # token) and makes the Release and syncs the plugin in the public repo (PUBLIC_REPO_TOKEN).
+    # The only job that writes, and only to this repository: the staging prerelease and the pinned
+    # skill checksums on main (the job token).
     permissions:
       contents: write
     env:
-      # The public repository that holds the Release, the plugin and the docs.
+      GH_TOKEN: ${{ github.token }}
+      # Where the finished release is published later (tools/publish-public.ps1). Only used to
+      # write the download URLs into latest.json.
       PUBLIC_REPO: dozeyy/atlas
       VERSION: ${{ needs.versions.outputs.version }}
       TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      # Fail before anything is signed or published if the public repo cannot be written.
-      - name: Check the public repo token
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          [ -n "$GH_TOKEN" ] || { echo "::error::The release environment has no PUBLIC_REPO_TOKEN secret (docs/releasing.md says how to make it)."; exit 1; }
-          vis="$(gh api "repos/${PUBLIC_REPO}" --jq .visibility)"
-          push="$(gh api "repos/${PUBLIC_REPO}" --jq .permissions.push)"
-          [ "$vis" = "public" ] || { echo "::error::${PUBLIC_REPO} is $vis, not public: nobody could download the release."; exit 1; }
-          [ "$push" = "true" ] || { echo "::error::PUBLIC_REPO_TOKEN cannot write to ${PUBLIC_REPO}."; exit 1; }
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -343,7 +332,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The Release lives in the public repo, not in this (private) one.
+          # The files are published at the public repo's release of the same tag (a later, manual step).
           base="https://github.com/${PUBLIC_REPO}/releases/download/${TAG}"
           # Notes belong to one version: docs/release-notes/<version>.md. A release without a file
           # of its own reads "Atlas <version>"; an older release's notes are never reused.
@@ -378,13 +367,11 @@ jobs:
           sha256sum $(ls | grep -v '^SHA256SUMS.txt$' | sort) > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      # In the public repo. The tag does not exist there yet, so GitHub makes it on public main.
-      # Notes: this version's file, else one line (generated notes would list the public repo's
-      # commits, which say nothing about the app).
-      - name: Create the Release (public repo)
+      # The staging copy, in this private repo: a prerelease (never "latest"), so nothing public
+      # points at it. tools/publish-public.ps1 downloads it, verifies it and copies it to the public
+      # repo. Notes: this version's file, else one line.
+      - name: Create the staging release (private repo)
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
           set -euo pipefail
           notes="$RUNNER_TEMP/release-notes.md"
@@ -393,7 +380,7 @@ jobs:
           else
             echo "Atlas ${VERSION}" > "$notes"
           fi
-          gh release create "$TAG" dist/* --repo "$PUBLIC_REPO" --target main --title "Atlas ${VERSION}" --notes-file "$notes"
+          gh release create "$TAG" dist/* --verify-tag --prerelease --title "Atlas ${VERSION} (staging)" --notes-file "$notes"
 
       # The skill downloads atlas-usage and checks it against skill/skills/atlas/bin/checksums.txt;
       # pin the three binaries of THIS release there. This step writes to main, so it only does so
@@ -401,10 +388,8 @@ jobs:
       #  - the tag's commit must be part of main's history (a tag cut from a branch never pins);
       #  - the pin script runs as it is on main, not as the tag carries it;
       #  - main must still be on this version, and no newer version may be pinned already.
-      # The step sets the output `pinned=true` only when main now carries this version's pins
-      # (just committed, or already there); the plugin is synced to the public repo only then.
+      # publish-public.ps1 reads the pins from main and refuses a version that is not pinned there.
       - name: Pin skill checksums
-        id: pin
         shell: bash
         run: |
           set -euo pipefail
@@ -436,63 +421,15 @@ jobs:
           git add "$sums"
           if git diff --cached --quiet; then
             echo "checksums.txt already matches v${VERSION}."
-            echo "pinned=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Pin skill checksums for v${VERSION}"
           for attempt in 1 2 3; do
-            if git push origin HEAD:main; then
-              echo "pinned=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+            if git push origin HEAD:main; then exit 0; fi
             git fetch --no-tags origin main
             git rebase origin/main
           done
           echo "::error::Could not push the pinned checksums to main."
-          exit 1
-
-      # Copies the plugin as it is on main now (pins included) into the public repo, plus this
-      # version's notes at the top of its CHANGELOG.md. Only skill/, .claude-plugin/marketplace.json
-      # and the changelog entry are touched; the README and docs/ there are written by hand.
-      # The launcher still trusts only skill/skills/atlas/bin/checksums.txt, now the public copy.
-      - name: Sync the plugin to the public repo
-        if: steps.pin.outputs.pinned == 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          gh auth setup-git
-          work="$RUNNER_TEMP/public"
-          git clone --depth 1 "https://github.com/${PUBLIC_REPO}.git" "$work"
-          rm -rf "$work/skill"
-          cp -r skill "$work/skill"
-          mkdir -p "$work/.claude-plugin"
-          cp .claude-plugin/marketplace.json "$work/.claude-plugin/marketplace.json"
-          if [ -f "$work/CHANGELOG.md" ] && ! grep -q "^## ${VERSION} " "$work/CHANGELOG.md"; then
-            entry="$RUNNER_TEMP/changelog-entry.md"
-            {
-              echo
-              echo "## ${VERSION} - $(date -u +%Y-%m-%d)"
-              echo
-              if [ -s "docs/release-notes/${VERSION}.md" ]; then cat "docs/release-notes/${VERSION}.md"; else echo "Atlas ${VERSION}."; fi
-            } > "$entry"
-            sed -i "/<!-- releases -->/r $entry" "$work/CHANGELOG.md"
-          fi
-          cd "$work"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "The public repo already matches v${VERSION}."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Atlas ${VERSION}: plugin and changelog"
-          for attempt in 1 2 3; do
-            if git push origin HEAD:main; then exit 0; fi
-            git pull --rebase origin main
-          done
-          echo "::error::Could not push the plugin to ${PUBLIC_REPO} main (the Release itself is out)."
           exit 1

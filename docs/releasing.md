@@ -21,31 +21,38 @@
      ```
   4. Required: also ask for your approval before each release job starts. Get your id with `gh api user --jq .id`, then `'{"reviewers":[{"type":"User","id":<id>}],"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' | gh api -X PUT repos/dozeyy/atlas-app/environments/release --input -` (the same PUT again; it keeps the tag rule).
   5. Check: `gh api repos/dozeyy/atlas-app/environments/release --jq '.deployment_branch_policy'` and `gh api repos/dozeyy/atlas-app/environments/release/deployment-branch-policies --jq '.branch_policies[] | [.name,.type]'` should show `v*` / `tag`; `gh secret list --env release --repo dozeyy/atlas-app` shows the key.
-  6. **The public-repo token** (`PUBLIC_REPO_TOKEN`), needed because the Release is made in `dozeyy/atlas`, not here (the job token cannot write to another repository):
-     1. Open https://github.com/settings/personal-access-tokens/new (Settings, Developer settings, Personal access tokens, Fine-grained tokens, Generate new token).
-     2. Name: `atlas-release`. Expiration: 1 year (put the renewal date in your calendar; an expired token fails the Publish job at its first step, before anything is signed or published).
-     3. Resource owner: `dozeyy`. Repository access: **Only select repositories**, then pick only `dozeyy/atlas` (the public one, not `atlas-app`).
-     4. Repository permissions: **Contents: Read and write**. Leave everything else on No access (Metadata: Read-only is added by itself).
-     5. Generate, copy the token (starts with `github_pat_`), then paste it when the command asks (never into a file or chat):
-        ```
-        gh secret set PUBLIC_REPO_TOKEN --env release --repo dozeyy/atlas-app
-        ```
-     6. Check: `gh secret list --env release --repo dozeyy/atlas-app` lists both TAURI_* names and `PUBLIC_REPO_TOKEN`. The first release's "Check the public repo token" step also proves it can write.
-     If `dozeyy/atlas` has a branch rule on `main` that blocks pushes, let this token bypass it, or the plugin sync fails (the Release itself still stands).
 - Update address: `https://github.com/dozeyy/atlas/releases/latest/download/latest.json`, built from the one constant `REPO` in `crates/app/src/update.rs` (change it there if the repository moves). It is the PUBLIC repo, so installed copies of any user can reach it; this source repo (`dozeyy/atlas-app`) is private.
+- Publishing to the public repo needs no secret in GitHub: `tools/publish-public.ps1` runs on your PC with the `gh` sign-in you already have (check with `gh auth status`; it needs push access to `dozeyy/atlas`). Nothing else to set up.
 
 ## Two repositories
-- `dozeyy/atlas-app` (private): the source, this workflow and its secrets. Tags `vX.Y.Z` are cut here.
-- `dozeyy/atlas` (public; local folder `Documents\Desktop Apps\Atlas-public`): the Releases (installers, `latest.json`, `atlas-usage-*`, `SHA256SUMS.txt`), the plugin marketplace (`.claude-plugin/marketplace.json` and `skill/`), and the README and `docs/` people read. No source code, secrets or personal data ever goes there.
-- The Publish job makes the Release in the public repo, pins `skill/skills/atlas/bin/checksums.txt` on this repo's `main`, then copies `skill/` (pins included), `.claude-plugin/marketplace.json` and a `CHANGELOG.md` entry (from `docs/release-notes/X.Y.Z.md`) into the public repo's `main`. The sync only runs if the pin step succeeded; otherwise the Release stands, the public plugin keeps its older version and pin, and you pin and copy by hand.
-- Trust model is unchanged: the launcher downloads `atlas-usage-*` from the release tagged `v<plugin version>` and runs it only if its SHA-256 equals the line pinned in the plugin's own `checksums.txt`. That file is now served from the public repo, written only by this workflow.
-- The README and `docs/` in the public repo are edited by hand there (push to its `main`). Never edit `skill/` there: the next release overwrites it from this repo. Edit `skill/` here.
-- The tag `vX.Y.Z` exists in both repos: here on the release commit, there on the public `main` of that moment. Only the public tag's name matters (the launcher and `latest.json` use it for asset URLs).
+- `dozeyy/atlas-app` (private): the source, this workflow and its secrets. Tags `vX.Y.Z` are cut here. CI builds, signs and pins, then makes the release **here** as a prerelease titled "Atlas X.Y.Z (staging)", with the default job token. The staging release is never "latest" and nothing public points at it.
+- `dozeyy/atlas` (public; local folder `Documents\Desktop Apps\Atlas-public`): the Releases (installers, `latest.json`, `atlas-usage-*`, `SHA256SUMS.txt`), the plugin marketplace (`.claude-plugin/marketplace.json` and `skill/`), and the README and `docs/` people read. No source code, secrets or personal data ever goes there. The workflow never writes to it.
+- The README and `docs/` in the public repo are edited by hand there (push to its `main`). Never edit `skill/` there: the next publish overwrites it from this repo. Edit `skill/` here.
+- Trust model: the launcher downloads `atlas-usage-*` from the release tagged `v<plugin version>` and runs it only if its SHA-256 equals the line pinned in the plugin's own `checksums.txt`. The publish script re-checks exactly that before anything goes public.
+
+## Publish to the public repo (after the workflow finishes)
+1. Wait for the release workflow to go green, and for its last step to push `Pin skill checksums for vX.Y.Z` to `main` (the step prints a warning instead if it could not; then pin by hand with `tools/pin-skill-checksums.ps1` and push).
+2. From the repo root, on your PC:
+   ```
+   powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish-public.ps1 -Version X.Y.Z -DryRun
+   powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish-public.ps1 -Version X.Y.Z
+   ```
+   `-DryRun` downloads and verifies, then only says what it would do (it writes nothing anywhere).
+3. What the script does, in order: downloads the staging assets from `dozeyy/atlas-app`; reads `skill/`, `marketplace.json`, `tauri.conf.json` and the notes as committed on `origin/main` (never your working tree); then **refuses on any mismatch** of:
+   - a required asset missing, empty, or an unexpected file present;
+   - the three `atlas-usage-*` hashes against the pinned lines in `checksums.txt`;
+   - `SHA256SUMS.txt` against every asset;
+   - `latest.json`: version, the four platform entries, each URL equal to `https://github.com/dozeyy/atlas/releases/download/vX.Y.Z/<file>`, each signature equal to its `.sig` file, and each `.sig` made by the key whose public half is in `tauri.conf.json` (a CI throwaway key is refused). The script compares key ids; the app itself checks the signature cryptographically when it updates.
+   Then: creates the `vX.Y.Z` release in `dozeyy/atlas` as a **draft** and uploads the assets; clones `dozeyy/atlas` `main` fresh, replaces `skill/` and `.claude-plugin/marketplace.json`, adds the `CHANGELOG.md` entry (notes from `docs/release-notes/X.Y.Z.md`), commits and pushes; and **publishes the release last**, so `latest.json` never points at assets that are not there yet.
+4. Rerun is safe: an existing draft is reused, only missing assets are uploaded (none is replaced), a plugin already in `main` makes no commit, and a published release is only topped up with a missing asset.
+5. If it refuses, nothing was published; fix the cause (usually a missing pin or a wrong key) and rerun.
+6. The script prints no secrets, handles none, and opens no windows beyond its own console. It leaves no files behind (the temp folder is removed).
+7. Test hooks, for trying the script without a real release: `-AssetsDir <folder>` and `-SourceTree <folder>` replace the download and the `origin/main` read.
 
 ## Cut a release
 1. Set the same version in `crates/app/tauri.conf.json`, `crates/app/Cargo.toml` (and the workspace crates) and `skill/.claude-plugin/plugin.json`. The workflow refuses a tag that disagrees with either file.
 2. Optional: put the release notes in `docs/release-notes/X.Y.Z.md` (plain sentences; it becomes the tooltip text on the update icon). Each version has its own file, so an older release's notes never carry over; without a file for this version the notes read "Atlas X.Y.Z".
-3. `git tag vX.Y.Z` on a commit that is on `main`, and push the tag. `.github/workflows/release.yml` builds Windows, macOS and the command-line tool, then publishes the Release and pins the skill checksums on `main`.
+3. `git tag vX.Y.Z` on a commit that is on `main`, and push the tag. `.github/workflows/release.yml` builds Windows, macOS and the command-line tool, then makes the staging prerelease in this repo and pins the skill checksums on `main`. Then run `tools/publish-public.ps1` (section above) to publish it to `dozeyy/atlas`.
 
 ## Who gets the signing key, and what publishes
 The `gate` job in `release.yml` decides once whether a run is official: a push of a `v*` tag whose commit is in `main`'s history. Only then does the Publish job run. The Windows and macOS jobs never see a secret: they always sign with a throwaway update key made on the runner. The Publish job is the only one in the `release` environment; it signs the two update bundles (`Atlas_X.Y.Z_x64-setup.exe`, `Atlas.app.tar.gz`) again with the real key, replacing the throwaway `.sig` files, before it writes `latest.json`. A manual run (`workflow_dispatch`) on any branch, or a tag cut from a branch, still builds everything and publishes nothing, and a branch workflow cannot read the key because the environment accepts only `v*` tags.
