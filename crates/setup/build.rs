@@ -20,6 +20,13 @@ fn main() {
         println!("cargo:rustc-env=ATLAS_PAYLOAD_PATH=");
     }
 
+    // A setup program is run from Downloads, next to whatever is in there: its own DLLs are all
+    // Windows's, so the loader looks only in System32 for them (also set at run time, first thing
+    // in `main`, for the DLLs loaded by name).
+    if std::env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|e| e == "msvc") {
+        println!("cargo:rustc-link-arg-bins=/DEPENDENTLOADFLAG:0x800");
+    }
+
     tauri_build::build();
 }
 

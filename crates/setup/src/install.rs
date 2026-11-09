@@ -48,6 +48,25 @@ pub fn install_dir() -> PathBuf {
         .unwrap_or_else(|| std::env::temp_dir().join("Atlas"))
 }
 
+/// The folder every program Setup starts gets as its working folder. A process keeps its working
+/// folder open, so one that inherited the install folder would stop that folder from being
+/// removed. The Windows folder is never one a removal could touch.
+pub fn neutral_dir() -> PathBuf {
+    std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir())
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+/// Leave the install folder (or anything under it) as this process's own working folder.
+pub fn leave_folder(dir: &Path) {
+    if let Ok(cwd) = std::env::current_dir()
+        && (cwd.starts_with(dir) || cwd.to_string_lossy().to_lowercase().starts_with(&dir.to_string_lossy().to_lowercase()))
+    {
+        let _ = std::env::set_current_dir(neutral_dir());
+    }
+}
+
 pub fn atlas_exe(dir: &Path) -> PathBuf {
     dir.join("atlas.exe")
 }
@@ -142,7 +161,7 @@ pub fn unpack() -> Result<Unpacked, InstallError> {
 pub fn run_silent(exe: &Path, mut on_progress: impl FnMut(f32)) -> Result<(), InstallError> {
     let dir = install_dir();
     let mut cmd = Command::new(exe);
-    cmd.args(silent_args()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.args(silent_args()).current_dir(neutral_dir()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -199,16 +218,31 @@ pub fn place_remover(dir: &Path) -> std::io::Result<PathBuf> {
     Ok(to)
 }
 
-/// Start Atlas on its own, so closing Setup does not close it.
-pub fn launch(dir: &Path) -> std::io::Result<()> {
+/// What `launch` did.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Launched {
+    Started,
+    /// Setup runs as administrator: Atlas would inherit that token, and a chat reader has no
+    /// business running elevated. It is left for the person to open from the Start menu.
+    SkippedElevated,
+}
+
+/// Start Atlas on its own, so closing Setup does not close it. Never from an elevated Setup.
+pub fn launch(dir: &Path) -> std::io::Result<Launched> {
+    #[cfg(windows)]
+    if crate::winsys::is_elevated() {
+        return Ok(Launched::SkippedElevated);
+    }
     let mut cmd = Command::new(atlas_exe(dir));
-    cmd.current_dir(dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    // Not the install folder: Atlas starts the remover later, and anything started from Atlas
+    // would inherit this folder and hold it open past the removal.
+    cmd.current_dir(neutral_dir()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0000_0008 | 0x0000_0200); // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     }
-    cmd.spawn().map(|_| ())
+    cmd.spawn().map(|_| Launched::Started)
 }
 
 /// Wait for a condition, polling; true when it held before the limit.

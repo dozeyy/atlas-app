@@ -252,10 +252,101 @@ pub fn vet_open_path(path: &Path) -> Result<PathBuf, String> {
     Ok(real)
 }
 
+/// The file Atlas leaves in a data folder it owns. The uninstaller's "also remove Atlas's saved
+/// data" only touches a folder that has it: the folder names (`atlas`) are generic and could be
+/// another program's, or a shared folder chosen with `ATLAS_DATA_DIR`.
+pub const DATA_MARKER: &str = ".atlas-data";
+
+const DATA_MARKER_TEXT: &str = "This folder holds Atlas's saved data. Atlas's uninstaller removes it only when this file is here.\n";
+
+/// Atlas's own files by a name no other program is likely to use: the pricing table's hash, the
+/// search index, or a saved version under `history\<folder>\history.sqlite`.
+fn has_atlas_files(dir: &Path) -> bool {
+    if ["pricing.seed-hash", "search.sqlite"].iter().any(|n| dir.join(n).is_file()) {
+        return true;
+    }
+    fs::read_dir(dir.join("history"))
+        .map(|rd| rd.flatten().any(|e| e.path().join("history.sqlite").is_file()))
+        .unwrap_or(false)
+}
+
+/// Claim `dir` as Atlas's data folder by writing the marker, when it is safe to say so: the folder
+/// is new or empty (Atlas is about to fill it), or it already holds files only Atlas makes (an
+/// install from before the marker existed). A folder that has other things in it and none of
+/// Atlas's is never claimed, and a link is never followed. Returns whether the marker is there.
+pub fn mark_data_dir(dir: &Path) -> bool {
+    let marker = dir.join(DATA_MARKER);
+    if fs::symlink_metadata(&marker).is_ok_and(|m| m.is_file()) {
+        return true;
+    }
+    match fs::symlink_metadata(dir) {
+        Ok(m) if m.is_dir() && !m.file_type().is_symlink() => {}
+        Ok(_) => return false, // a file, or a link to somewhere else
+        Err(_) => {
+            if fs::create_dir_all(dir).is_err() {
+                return false;
+            }
+        }
+    }
+    // Windows junctions are directories that report as links through file attributes.
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if fs::symlink_metadata(dir).is_ok_and(|m| m.file_attributes() & 0x400 != 0) {
+            return false;
+        }
+    }
+    let empty = fs::read_dir(dir).map(|mut rd| rd.next().is_none()).unwrap_or(false);
+    if !(empty || has_atlas_files(dir)) {
+        return false;
+    }
+    fs::write(&marker, DATA_MARKER_TEXT).is_ok()
+}
+
+/// True when `dir` carries the marker (and is not a link).
+pub fn is_marked_data_dir(dir: &Path) -> bool {
+    let plain_dir = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink());
+    #[cfg(windows)]
+    let linked = {
+        use std::os::windows::fs::MetadataExt;
+        fs::symlink_metadata(dir).is_ok_and(|m| m.file_attributes() & 0x400 != 0)
+    };
+    #[cfg(not(windows))]
+    let linked = false;
+    plain_dir(dir) && !linked && fs::symlink_metadata(dir.join(DATA_MARKER)).is_ok_and(|m| m.is_file())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn a_data_folder_is_marked_when_new_empty_or_clearly_atlas_and_never_otherwise() {
+        let t = tempdir().unwrap();
+        let fresh = t.path().join("new");
+        assert!(mark_data_dir(&fresh) && is_marked_data_dir(&fresh), "a folder that did not exist");
+        let empty = t.path().join("empty");
+        fs::create_dir_all(&empty).unwrap();
+        assert!(mark_data_dir(&empty));
+        let old = t.path().join("old");
+        fs::create_dir_all(&old).unwrap();
+        fs::write(old.join("pricing.seed-hash"), "h").unwrap();
+        fs::write(old.join("settings.json"), "{}").unwrap();
+        assert!(mark_data_dir(&old), "an Atlas folder from before the marker");
+        let hist = t.path().join("hist");
+        fs::create_dir_all(hist.join("history").join("abc")).unwrap();
+        fs::write(hist.join("history").join("abc").join("history.sqlite"), "h").unwrap();
+        assert!(mark_data_dir(&hist));
+        let other = t.path().join("other");
+        fs::create_dir_all(other.join("history")).unwrap();
+        fs::write(other.join("settings.json"), "{\"someone\":\"else\"}").unwrap();
+        assert!(!mark_data_dir(&other) && !is_marked_data_dir(&other), "another program's folder");
+        assert!(!other.join(DATA_MARKER).exists());
+        let file = t.path().join("afile");
+        fs::write(&file, "x").unwrap();
+        assert!(!mark_data_dir(&file));
+    }
 
     #[test]
     fn vet_open_path_refuses_relative_unc_verbatim_and_dash_paths() {

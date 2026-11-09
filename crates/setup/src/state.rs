@@ -108,6 +108,8 @@ pub struct Snapshot {
     pub error: Option<String>,
     pub reading: Reading,
     pub reduce_motion: bool,
+    /// Uninstall, done: removal of saved data was asked for but some folder was left whole.
+    pub data_kept: bool,
 }
 
 /// The one piece of work the window asked for.
@@ -131,6 +133,8 @@ struct Inner {
     settled: Option<Reading>,
     /// Nothing to read ahead of time (no chats yet, or a private copy in use).
     nothing_to_read: bool,
+    /// Uninstall: saved data was asked to go but a folder without Atlas's marker was left whole.
+    data_kept: bool,
     busy: bool,
     closed: bool,
     /// An older Atlas is running, so the reading has not started: the cache is the one thing it
@@ -168,6 +172,7 @@ impl Setup {
                 starting: false,
                 settled: None,
                 nothing_to_read: false,
+                data_kept: false,
                 busy: false,
                 closed: false,
                 waiting_atlas: false,
@@ -317,6 +322,7 @@ impl Setup {
             error: g.error.clone(),
             reading,
             reduce_motion: std::env::var_os(REDUCE_ENV).is_some(),
+            data_kept: g.data_kept,
         }
     }
 
@@ -491,10 +497,11 @@ impl Setup {
             Ok(_) => self.log("install: remover placed"),
             Err(e) => self.log(&format!("install: remover not placed ({e})")),
         }
-        if install::launch(&dir).is_err() {
-            return self.fail("Atlas is installed but would not start. Open it from the Start menu.");
+        match install::launch(&dir) {
+            Err(_) => return self.fail("Atlas is installed but would not start. Open it from the Start menu."),
+            Ok(install::Launched::Started) => self.log("install: atlas started"),
+            Ok(install::Launched::SkippedElevated) => self.log("install: atlas not started (Setup runs as administrator); open it from the Start menu"),
         }
-        self.log("install: atlas started");
         self.update(|g| {
             g.phase = Phase::Done;
             g.stage = "";
@@ -527,6 +534,7 @@ impl Setup {
             g.stage = "closing";
             g.install = 0.05;
             g.error = None;
+            g.data_kept = false;
         });
         self.log(&format!("uninstall: start (remove saved data: {remove_data})"));
         let running = crate::winsys::processes_running(&exe);
@@ -550,8 +558,11 @@ impl Setup {
             });
             let env = Env::from_process();
             let plan = uninstall::data_plan(&env, std::env::var_os("APPDATA").as_deref(), std::env::var_os("LOCALAPPDATA").as_deref());
-            let n = uninstall::remove_data(&plan);
-            self.log(&format!("uninstall: saved data removed ({n} entries)"));
+            let r = uninstall::remove_data(&plan);
+            self.log(&format!("uninstall: saved data removed ({} entries, kept a folder without a marker: {})", r.removed, r.kept));
+            if r.kept {
+                self.update(|g| g.data_kept = true);
+            }
         }
         uninstall::tidy(&dir);
         self.update(|g| {
@@ -569,7 +580,9 @@ impl Setup {
             && !self.cleaned_up.swap(true, Ordering::SeqCst)
             && let Ok(me) = std::env::current_exe()
         {
-            uninstall::erase_my_copy_later(&me);
+            // The Atlas folder is tried again afterwards only when the removal finished.
+            let finished = self.lock().phase == Phase::Done;
+            uninstall::erase_my_copy_later(&me, finished.then_some(self.dir.as_path()));
         }
     }
 
