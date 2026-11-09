@@ -92,6 +92,22 @@ fn plan(inputs: &DiscoveryInputs, d: &Discovery) -> Vec<(PathBuf, RecursiveMode)
     out
 }
 
+/// Map an event path back onto the folder it was watched under. macOS FSEvents reports
+/// resolved paths (`/private/var/...` for a watched `/var/...`, or a symlinked
+/// `~/.claude`'s target), which would miss the root and `.claude.json` checks.
+/// `bases` holds (configured, resolved) pairs, most specific first.
+fn localize(bases: &[(PathBuf, PathBuf)], p: &Path) -> PathBuf {
+    for (b, c) in bases {
+        if p.starts_with(b) {
+            return p.to_path_buf();
+        }
+        if let Ok(rest) = p.strip_prefix(c) {
+            return b.join(rest);
+        }
+    }
+    p.to_path_buf()
+}
+
 fn key_of(p: &(PathBuf, RecursiveMode)) -> String {
     format!("{:?}|{}", p.1, p.0.to_string_lossy())
 }
@@ -115,6 +131,14 @@ impl LiveSetup {
             let mut watched: Vec<(PathBuf, RecursiveMode)> = Vec::new();
             let mut last_cj = claude_json::relevant_hash(&inputs.root.claude_json);
             let cj_key = norm_key(&inputs.root.claude_json.to_string_lossy());
+            let bases: Vec<(PathBuf, PathBuf)> = [Some(inputs.root.dir.clone()), inputs.root.claude_json.parent().map(Path::to_path_buf)]
+                .into_iter()
+                .flatten()
+                .map(|b| {
+                    let c = crate::usage::watch::canon_root(&b);
+                    (b, c)
+                })
+                .collect();
             let sync = |deb: &mut Option<notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>>, watched: &mut Vec<(PathBuf, RecursiveMode)>, d: &Discovery| {
                 let Some(deb) = deb.as_mut() else { return };
                 let want = plan(&inputs, d);
@@ -146,13 +170,14 @@ impl LiveSetup {
                     }
                     Msg::Fs(Err(_)) => true,
                     Msg::Fs(Ok(events)) => events.iter().any(|e| {
-                        if norm_key(&e.path.to_string_lossy()) == cj_key {
+                        let path = localize(&bases, &e.path);
+                        if norm_key(&path.to_string_lossy()) == cj_key {
                             let h = claude_json::relevant_hash(&inputs.root.claude_json);
                             let changed = h != last_cj;
                             last_cj = h;
                             changed
                         } else {
-                            is_relevant(&e.path, &inputs.root.dir)
+                            is_relevant(&path, &inputs.root.dir)
                         }
                     }),
                 };
@@ -230,6 +255,22 @@ mod tests {
         assert!(is_relevant(Path::new("/w/app/.mcp.json"), root));
         assert!(is_relevant(Path::new("/w/app/.claude/skills/s/SKILL.md"), root));
         assert!(is_relevant(Path::new("/w/app/.claude"), root));
+    }
+
+    #[test]
+    fn resolved_event_paths_map_back_onto_the_watched_folders() {
+        let bases = vec![
+            (PathBuf::from("/var/t/h/.claude"), PathBuf::from("/private/var/t/h/.claude")),
+            (PathBuf::from("/var/t/h"), PathBuf::from("/private/var/t/h")),
+        ];
+        let root = Path::new("/var/t/h/.claude");
+        let tr = localize(&bases, Path::new("/private/var/t/h/.claude/projects/p1/a.jsonl"));
+        assert_eq!(tr, PathBuf::from("/var/t/h/.claude/projects/p1/a.jsonl"));
+        assert!(!is_relevant(&tr, root), "a resolved transcript path is still a transcript");
+        let cj = localize(&bases, Path::new("/private/var/t/h/.claude.json"));
+        assert_eq!(cj, PathBuf::from("/var/t/h/.claude.json"));
+        assert_eq!(localize(&bases, Path::new("/var/t/h/.claude/x.md")), PathBuf::from("/var/t/h/.claude/x.md"));
+        assert_eq!(localize(&bases, Path::new("/w/app/CLAUDE.md")), PathBuf::from("/w/app/CLAUDE.md"));
     }
 
     #[test]
