@@ -12,7 +12,7 @@ import { reloadSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
 
 const FIELD_INPUT =
-  "h-8 w-full min-w-0 rounded-control border border-line-strong bg-surface px-2.5 text-body text-ink outline-none focus:border-accent disabled:cursor-default disabled:text-ink-2";
+  "h-8 w-full min-w-0 rounded-control border border-line-strong bg-surface px-2.5 text-body text-ink outline-none focus:border-ink-2 disabled:cursor-default disabled:text-ink-2";
 
 /** The header's name and description as fields; they read and change the same text the editor holds. */
 function HeaderFields({ item, text, setText }: { item: SetupItem; text: string; setText: (next: string) => void }) {

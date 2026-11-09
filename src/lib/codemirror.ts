@@ -30,9 +30,13 @@ const highlight = HighlightStyle.define([
 
 const theme = EditorView.theme({
   "&": { color: "var(--ink)", backgroundColor: "transparent", fontSize: "12px", height: "100%" },
-  "&.cm-focused": { outline: "2px solid var(--accent-text)", outlineOffset: "-2px" },
+  // No accent box: the caret shows where you type. A keyboard walk (Tab) gets the app's neutral ring.
+  "&.cm-focused": { outline: "none" },
+  'html[data-input="keyboard"] &.cm-focused': { outline: "2px solid var(--focus-ring)", outlineOffset: "-2px" },
   ".cm-scroller": { fontFamily: "var(--font-code)", lineHeight: "19px", overflow: "auto" },
-  ".cm-content": { padding: "10px 0", caretColor: "var(--ink)" },
+  // The typing surface is a contenteditable: the browser's own focus ring (a dark line inside the edge)
+  // would otherwise show on every click, so the editor box above decides, for the keyboard only.
+  ".cm-content": { padding: "10px 0", caretColor: "var(--ink)", outline: "none" },
   ".cm-line": { padding: "0 14px 0 6px" },
   ".cm-gutters": { backgroundColor: "transparent", color: "var(--ink-2)", border: "none", opacity: "0.75" },
   ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 14px", minWidth: "36px" },

@@ -45,11 +45,15 @@ function ToastCard({ toast }: { toast: Toast }) {
   );
 }
 
-/** Mounted once in App. Sits above the page and the detail sheet. */
+/**
+ * Mounted once in App. Sits above the page and the detail sheet. While a side sheet is open it
+ * sets --toast-inset (the width the sheet leaves free), so toasts centre inside the sheet and
+ * never straddle its edge.
+ */
 export function ToastHost() {
   const toasts = useToasts();
   return (
-    <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-5 z-[70] flex flex-col items-center gap-2 px-4">
+    <div aria-live="polite" className="pointer-events-none fixed bottom-5 left-[var(--toast-inset,0px)] right-0 z-[70] flex flex-col items-center gap-2 px-4">
       {toasts.map((t) => (
         <ToastCard key={t.id} toast={t} />
       ))}

@@ -670,6 +670,23 @@ describe("Setup page: a skill's files and actions", () => {
     await waitFor(() => expect(within(dialog).getByRole("button", { name: /^Save/ })).toBeDisabled());
   });
 
+  it("shows the name and description once, with no raw lowercase rows and no explaining line", async () => {
+    const dialog = await openSkill(/skill deep-research/);
+    expect(within(dialog).getAllByText("Research a topic across sources and write it up.")).toHaveLength(1);
+    expect(within(dialog).queryByText("name", { exact: true })).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("description", { exact: true })).not.toBeInTheDocument();
+    expect(dialog.textContent).not.toMatch(/knows it exists/);
+  });
+
+  it("keeps toasts inside the sheet while it is open and frees them when it closes", async () => {
+    const root = document.documentElement;
+    const dialog = await openSkill(/skill deep-research/);
+    expect(root.style.getPropertyValue("--toast-inset")).toContain("100vw");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(root.style.getPropertyValue("--toast-inset")).toBe("");
+  });
+
   it("shows the description as a field that edits the file's header", async () => {
     const dialog = await openSkill(/skill deep-research/);
     const ta = await edit(dialog);
