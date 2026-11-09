@@ -102,6 +102,19 @@ export function Settings() {
     };
   }, [backend, reloadOverview]);
 
+  // Uninstall (About): offered only when an uninstaller sits beside this Atlas.
+  const [canUninstall, setCanUninstall] = useState(false);
+  useEffect(() => {
+    let dead = false;
+    backend
+      .uninstallAvailable()
+      .then((yes) => !dead && setCanUninstall(yes))
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [backend]);
+
   // Updates (About): the same state the sidebar icon shows; the button asks right now.
   const upd = useUpdate();
   const [checking, setChecking] = useState(false);
@@ -342,6 +355,17 @@ export function Settings() {
           <span className="text-body text-ink-2">{info.firstPaintMs === null ? "Not measured" : `${info.firstPaintMs} ms`}</span>
         </Row>
         <Row label="Privacy" hint="Atlas never sends your data anywhere. Everything it shows is read from files on this computer. The only thing it asks the internet is whether a newer version exists." />
+        {canUninstall && (
+          <Row label="Uninstall" hint="Opens the uninstaller. It closes Atlas and asks whether to keep or remove Atlas's saved data. Your Claude Code chats are never touched.">
+            <Button
+              onClick={() =>
+                void backend.uninstallAtlas().catch((e: unknown) => pushToast({ message: typeof e === "string" ? e : "Could not start the uninstaller.", tone: "error" }))
+              }
+            >
+              Uninstall Atlas...
+            </Button>
+          </Row>
+        )}
       </>
     ),
   };

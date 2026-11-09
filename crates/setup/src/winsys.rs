@@ -8,9 +8,10 @@ use windows_sys::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, HWND, INVALID_H
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
+use windows_sys::Win32::System::Environment::GetCommandLineW;
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_32KEY, RRF_RT_REG_SZ, RegCloseKey, RegGetValueW,
-    RegOpenKeyExW,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE, KEY_WOW64_32KEY, REG_SZ, RRF_RT_REG_SZ,
+    RegCloseKey, RegGetValueW, RegOpenKeyExW, RegSetValueExW,
 };
 use windows_sys::Win32::System::Threading::{
     OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
@@ -70,6 +71,44 @@ pub fn reg_string(hive: Hive, key: &str, value: &str, wow32: bool) -> Option<Str
     }
 }
 
+/// Change one existing text value of a key in the current user's registry. Never creates the
+/// key: if it is not there (Windows does not list Atlas), nothing is written. True when written.
+pub fn reg_set_string(hive: Hive, key: &str, value: &str, data: &str) -> bool {
+    let root: HKEY = match hive {
+        Hive::CurrentUser => HKEY_CURRENT_USER,
+        Hive::LocalMachine => return false, // Setup installs for the current user only
+    };
+    let mut opened: HKEY = std::ptr::null_mut();
+    let text = wide(data);
+    // SAFETY: a key opened for writing values and closed on every path; the data is a
+    // NUL-terminated UTF-16 buffer whose byte length is passed.
+    unsafe {
+        if RegOpenKeyExW(root, wide(key).as_ptr(), 0, KEY_SET_VALUE, &mut opened) != ERROR_SUCCESS {
+            return false;
+        }
+        let ok = RegSetValueExW(opened, wide(value).as_ptr(), 0, REG_SZ, text.as_ptr().cast(), (text.len() * 2) as u32) == ERROR_SUCCESS;
+        RegCloseKey(opened);
+        ok
+    }
+}
+
+/// This program's own command line, as Windows received it (nothing re-quoted).
+pub fn command_line() -> String {
+    // SAFETY: the pointer is the process's own NUL-terminated command line, valid for the
+    // life of the process; it is only read, up to its terminator.
+    unsafe {
+        let p = GetCommandLineW();
+        if p.is_null() {
+            return String::new();
+        }
+        let mut n = 0;
+        while *p.add(n) != 0 {
+            n += 1;
+        }
+        String::from_utf16_lossy(std::slice::from_raw_parts(p, n))
+    }
+}
+
 /// The processes called `exe_name` (case-insensitive) whose file is `exe_path`.
 /// Returns their ids.
 pub fn processes_running(exe_path: &Path) -> Vec<u32> {
@@ -117,6 +156,18 @@ fn image_path(pid: u32) -> Option<PathBuf> {
 
 fn norm(p: &Path) -> String {
     p.to_string_lossy().replace('/', "\\").trim_end_matches('\\').to_lowercase()
+}
+
+/// Ask these Atlas processes to quit through the program's own quit signal (`atlas_core::
+/// quit_signal`), which works with close-to-tray on. True when at least one running Atlas
+/// received it; false when none listens (an older Atlas) or no process could be read.
+pub fn request_quit(pids: &[u32]) -> bool {
+    let mut any = false;
+    for path in pids.iter().filter_map(|pid| image_path(*pid)) {
+        // Every one is asked (no early exit): two copies of the same program share one event name.
+        any |= atlas_core::quit_signal::request(&path);
+    }
+    any
 }
 
 /// Ask the windows of these processes to close, the same as the X button. Nothing is

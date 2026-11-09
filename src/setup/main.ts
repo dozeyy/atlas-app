@@ -23,7 +23,9 @@ import {
   splitNumbers,
   trailPath,
   trailProgress,
+  isOwnPress,
   type Action,
+  type KeyPress,
   type Snapshot,
 } from "./view";
 
@@ -46,6 +48,9 @@ let celebrated = false;
 let dotCenter = { x: 0, y: 0 };
 let ringCenter = { x: 0, y: 0 };
 let current: Snapshot = EMPTY_SNAPSHOT;
+/** Resolves once the opening animation has played (the finish waits for it on a quick install). */
+let openingDone: () => void = () => undefined;
+const openingPlayed = new Promise<void>((res) => (openingDone = res));
 
 // ------------------------------------------------------------------ the map
 
@@ -133,8 +138,14 @@ function fade(el: Element, from: number, to: number, ms: number, delay = 0): Ani
   return el.animate([{ opacity: from }, { opacity: to }], { duration: ms, delay, easing: EASE_OUT, fill: "both" });
 }
 
-/** The opening: the mark draws itself, the rings ripple out, then the trail and words arrive. */
-function opening() {
+/** The opening: the mark draws itself, the rings ripple out, then the trail and words arrive.
+ *  Resolves when it has played, so the finish never cuts it short on a quick install. */
+function opening(): Promise<void> {
+  playOpening();
+  return new Promise((done) => window.setTimeout(done, reduce ? 320 : 2000));
+}
+
+function playOpening() {
   const spark = $<SVGUseElement>("mark-spark");
   const dot = $<SVGUseElement>("mark-dot");
   const rings = [...$("rings").children];
@@ -248,8 +259,7 @@ function leave(): Promise<void> {
 
 // ------------------------------------------------------------------ the words
 
-const optShortcut = $<HTMLInputElement>("opt-shortcut");
-const optOpen = $<HTMLInputElement>("opt-open");
+const optData = $<HTMLInputElement>("opt-data");
 let lastLine = "";
 let lastBad = false;
 
@@ -281,47 +291,42 @@ function renderButton(id: string, spec: { label: string; action: Action } | null
 
 function render(s: Snapshot) {
   current = s;
-  const screen = screenFor(s, optOpen.checked);
+  const screen = screenFor(s, optData.checked);
   renderLine(screen.line, s.phase === "error");
   renderButton("primary", screen.primary);
-  renderButton("secondary", screen.secondary);
-  $<HTMLElement>("opts").hidden = !screen.options;
+  $<HTMLElement>("databox").hidden = !screen.dataBox;
   $<HTMLButtonElement>("x").disabled = !screen.closable;
-  // The trail only ever climbs: a read that restarts must not walk it backward.
-  shown = Math.max(shown, trailProgress(s));
+  // The trail only ever climbs: a read that restarts must not walk it backward. (Once a
+  // person retries, it starts over from the foot.)
+  shown = s.phase === "installing" && s.install <= 0.05 ? trailProgress(s) : Math.max(shown, trailProgress(s));
   setTrail(shown);
+  // Installing finishes by itself: Atlas is already starting, so pop the spark and ease out.
   // (In a browser, `?spark=` holds the celebration back so designFrame can stop it mid-flight.)
-  if (s.phase === "done" && !celebrated && (inTauri || !new URLSearchParams(location.search).has("spark"))) {
+  if (s.phase === "done" && s.mode === "install" && !celebrated && (inTauri || !new URLSearchParams(location.search).has("spark"))) {
     celebrated = true;
     void finishUp();
   }
 }
 
-/** Everything is installed: pop the spark, start Atlas (if asked), ease out. */
+/** Everything is installed and Atlas is starting: pop the spark, ease out, end. */
 async function finishUp() {
   setTrail(1);
+  await openingPlayed;
   await spark();
-  if (optOpen.checked) {
-    await call("handoff", { open: true });
-    await leave();
-    await call("finish");
-  }
-  // Open Atlas is off: the Done screen's two buttons take over (see act()).
+  await leave();
+  await call("finish");
 }
 
 async function act(action: Action) {
   switch (action) {
-    case "install":
+    case "uninstall":
+      await call("begin_uninstall", { removeData: optData.checked });
+      break;
     case "retry":
-      await call("begin_install", { options: { desktopShortcut: optShortcut.checked, openWhenDone: optOpen.checked } });
+      await call("retry");
       break;
     case "closeAtlas":
       await call("close_atlas_and_continue");
-      break;
-    case "openAtlas":
-      await call("handoff", { open: true });
-      await leave();
-      await call("finish");
       break;
     case "close":
       await leave();
@@ -331,19 +336,31 @@ async function act(action: Action) {
 }
 
 function wire() {
-  for (const id of ["primary", "secondary"]) {
-    $<HTMLButtonElement>(id).addEventListener("click", () => void act($<HTMLButtonElement>(id).dataset.action as Action));
-  }
+  // The action buttons (Install, Close Atlas and continue, Retry, Open Atlas) act only on a
+  // person's own press: a real mouse click, or a real Enter / Space keydown on that button. A click
+  // that nothing human is behind (a script's .click(), a keyup with no keydown in this window)
+  // does nothing, so Setup can never start installing by itself.
+  let keyPress: KeyPress | null = null;
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      const id = (e.target as HTMLElement | null)?.id ?? "";
+      keyPress = e.isTrusted && (e.key === "Enter" || e.key === " ") && !e.repeat ? { id, at: e.timeStamp } : null;
+    },
+    true,
+  );
+  window.addEventListener("blur", () => (keyPress = null));
+  $<HTMLButtonElement>("primary").addEventListener("click", (e) => {
+    if (!isOwnPress(e, "primary", keyPress)) return;
+    keyPress = null;
+    void act($<HTMLButtonElement>("primary").dataset.action as Action);
+  });
   $<HTMLButtonElement>("x").addEventListener("click", () => {
     if (current.phase === "done") void act("close");
     else void call("cancel");
   });
-  const toggle = $<HTMLButtonElement>("opt-toggle");
-  toggle.addEventListener("click", () => {
-    const open = toggle.getAttribute("aria-expanded") !== "true";
-    toggle.setAttribute("aria-expanded", String(open));
-    $<HTMLElement>("opt-body").hidden = !open;
-  });
+  // The box changes what the Done line says, so the line follows it.
+  optData.addEventListener("change", () => render(current));
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$<HTMLButtonElement>("x").disabled) $<HTMLButtonElement>("x").click();
   });
@@ -355,24 +372,25 @@ function wire() {
 function devMock(): Promise<Snapshot> {
   const base = { ...EMPTY_SNAPSHOT };
   const q = new URLSearchParams(location.search).get("mock");
-  const reading = (done: number) => ({ available: true, done, total: 1881, tokens: done * 14_500, finished: done >= 1881, failed: false });
+  const reading = (done: number) => ({ available: true, done, total: 1881, tokens: done * 14_500, finished: done >= 1881, failed: false, waiting: false });
+  const work = { ...base, phase: "installing" as const };
+  const out = { ...base, mode: "uninstall" as const };
   const frames: Record<string, Snapshot> = {
-    ready: { ...base, reading: reading(1204) },
-    looking: { ...base, reading: { ...reading(0), total: 0 } },
-    longready: { ...base, reading: reading(1881) },
-    unpack: { ...base, phase: "installing", stage: "unpack", install: 0.04, reading: reading(1500) },
-    installing: { ...base, phase: "installing", stage: "install", install: 0.6, reading: reading(1500) },
-    finishing: { ...base, phase: "installing", stage: "reading", install: 1, reading: reading(1740) },
-    // Reading at fixed points, and Install pressed in the middle of it.
-    read0: { ...base, reading: reading(0) },
-    read50: { ...base, reading: reading(940) },
-    read100: { ...base, reading: reading(1881) },
-    midinstall: { ...base, phase: "installing", stage: "install", install: 0.6, reading: reading(940) },
-    done: { ...base, phase: "done", install: 1, reading: reading(1881) },
+    // Installing starts by itself: these are the frames of the one window it ever shows.
+    unpack: { ...work, stage: "unpack", install: 0.04, reading: reading(300) },
+    installing: { ...work, stage: "install", install: 0.6, reading: reading(940) },
+    opening: { ...work, stage: "opening", install: 1, reading: reading(1500) },
+    done: { ...base, phase: "done", install: 1, reading: reading(1500) },
     error: { ...base, phase: "error", error: "The installer stopped before it finished (code 2). Close other programs and try again.", reading: reading(1881) },
     close: { ...base, phase: "closeAtlas", reading: reading(1881) },
+    // The remover.
+    remove: { ...out },
+    removing: { ...out, phase: "installing", stage: "removing", install: 0.5 },
+    removedata: { ...out, phase: "installing", stage: "data", install: 0.9 },
+    removed: { ...out, phase: "done", install: 1 },
+    removeerror: { ...out, phase: "error", error: "The remover stopped before it finished (code 5). Close other programs and try again." },
   };
-  return Promise.resolve(frames[q ?? "ready"] ?? frames.ready);
+  return Promise.resolve(frames[q ?? "installing"] ?? frames.installing);
 }
 
 async function start() {
@@ -389,15 +407,14 @@ async function start() {
   $("sheet").classList.add("show");
   await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
   await call("setup_ready");
-  opening();
+  void opening().then(openingDone);
   if (!inTauri) designFrame();
 }
 
 /** Browser-only design aid (never runs in the real program): `?t=900` stops every animation at
- *  that time so a frame can be looked at, and `?open=1` opens the options. */
+ *  that time so a frame can be looked at. */
 function designFrame() {
   const q = new URLSearchParams(location.search);
-  if (q.get("open")) $<HTMLButtonElement>("opt-toggle").click();
   const t = q.get("t");
   const sparkAt = q.get("spark");
   if (sparkAt !== null && current.phase === "done") {

@@ -12,12 +12,19 @@ export interface Reading {
   tokens: number;
   finished: boolean;
   failed: boolean;
+  /** An older Atlas is running, so the reading has not started; it begins when Atlas closes. */
+  waiting: boolean;
 }
 
+/** What the window is for: putting Atlas on (it starts by itself), or taking it off. */
+export type Mode = "install" | "uninstall";
+
 export interface Snapshot {
+  mode: Mode;
   phase: Phase;
-  stage: "" | "unpack" | "install" | "reading";
-  /** 0..1, how far the installer is. */
+  /** Installing: unpack, install, opening. Uninstalling: closing, removing, data. */
+  stage: "" | "unpack" | "install" | "opening" | "closing" | "removing" | "data";
+  /** 0..1, how far the installer (or the remover) is. */
   install: number;
   error: string | null;
   reading: Reading;
@@ -25,11 +32,12 @@ export interface Snapshot {
 }
 
 export const EMPTY_SNAPSHOT: Snapshot = {
+  mode: "install",
   phase: "ready",
   stage: "",
   install: 0,
   error: null,
-  reading: { available: true, done: 0, total: 0, tokens: 0, finished: false, failed: false },
+  reading: { available: true, done: 0, total: 0, tokens: 0, finished: false, failed: false, waiting: false },
   reduceMotion: false,
 };
 
@@ -42,13 +50,14 @@ export function readingFraction(r: Reading): number {
   return Math.min(1, r.done / r.total);
 }
 
-/** How far up the trail the walker is, 0..1: exactly how far the chats have been read, so it
- *  stands at the mark when the reading is done. The install does not move it (it has its own
- *  words in the label); only the finished setup carries it the rest of the way when there was
- *  nothing to follow. */
+/** How far up the trail the walker is, 0..1. Installing: whichever is further, the installer or
+ *  the reading of the chats (so it never waits on a slow read, and never walks back). Removing:
+ *  the remover's own progress. Done is the summit. */
 export function trailProgress(s: Snapshot): number {
   if (s.phase === "done") return 1;
-  return readingFraction(s.reading);
+  if (s.phase === "ready" && s.mode === "uninstall") return 0;
+  if (s.mode === "uninstall") return Math.min(1, Math.max(0, s.install));
+  return Math.max(Math.min(1, Math.max(0, s.install)), readingFraction(s.reading));
 }
 
 /** Whether the reading is still going: it has a count and has not ended. */
@@ -56,74 +65,79 @@ export function stillReading(r: Reading): boolean {
   return r.available && !r.failed && !r.finished && r.total > 0;
 }
 
-/** The live line about the reading. */
-export function readingLine(r: Reading): string {
-  if (!r.available) return "No chats found yet.";
-  if (r.failed) return "Could not read ahead. Atlas will read your chats when it opens.";
-  if (r.finished) {
-    if (r.total <= 0) return "No chats found yet.";
-    return `Read ${compact(r.total)} ${r.total === 1 ? "chat" : "chats"}, ${compact(r.tokens)} tokens`;
-  }
-  if (r.total <= 0) return "Looking for your chats";
-  return `Already reading your chats: ${compact(r.done)} of ${compact(r.total)}, ${compact(r.tokens)} tokens`;
+/** A real Enter or Space keydown on a button: which one, and when (event time stamp, ms). */
+export interface KeyPress {
+  id: string;
+  at: number;
 }
 
-export type Action = "install" | "closeAtlas" | "retry" | "openAtlas" | "close";
+/** How long after the keydown a keyboard click still counts (Space clicks on release). */
+export const KEY_WINDOW_MS = 5000;
+
+/** Whether a click on button `id` is a person's own, so a button that changes what is done to the
+ *  computer (Install, Close Atlas) never fires from anything else. A click made by a script
+ *  (`isTrusted` false) never counts; a mouse click (`detail` above 0) counts; a click with no
+ *  mouse behind it counts only right after a real Enter or Space keydown on that same button. */
+export function isOwnPress(click: { isTrusted: boolean; detail: number; timeStamp: number }, id: string, key: KeyPress | null): boolean {
+  if (!click.isTrusted) return false;
+  if (click.detail > 0) return true;
+  if (!key || key.id !== id) return false;
+  const age = click.timeStamp - key.at;
+  return age >= 0 && age < KEY_WINDOW_MS;
+}
+
+export type Action = "uninstall" | "closeAtlas" | "retry" | "close";
 
 export interface Screen {
   line: string;
   primary: { label: string; action: Action } | null;
-  secondary: { label: string; action: Action } | null;
-  /** The quiet Options disclosure is offered. */
-  options: boolean;
-  /** The X works (never in the middle of an install). */
+  /** The saved-data box (and its one-line promise) is offered: only when asking to remove Atlas. */
+  dataBox: boolean;
+  /** The X works (never in the middle of the work). */
   closable: boolean;
 }
 
-/** What each phase puts on the sheet. No headers, no paragraphs: one line and at most two buttons. */
-export function screenFor(s: Snapshot, openWhenDone: boolean): Screen {
+/** Whether the remover's data box was ticked; only the uninstall screens use it. */
+export function screenFor(s: Snapshot, removeData = false): Screen {
+  const none = { primary: null, dataBox: false };
+  if (s.mode === "uninstall") {
+    switch (s.phase) {
+      case "ready":
+        return { line: "Remove Atlas from this computer?", primary: { label: "Uninstall", action: "uninstall" }, dataBox: true, closable: true };
+      case "closeAtlas":
+      case "installing": {
+        const line = s.stage === "closing" ? "Closing Atlas" : s.stage === "data" ? "Removing saved data" : "Removing Atlas";
+        return { line, ...none, closable: false };
+      }
+      case "done":
+        return {
+          line: removeData ? "Atlas is removed." : "Atlas is removed.\nYour saved data is kept.",
+          primary: { label: "Close", action: "close" },
+          dataBox: false,
+          closable: true,
+        };
+      case "error":
+        return { line: s.error ?? "Something went wrong.", primary: { label: "Retry", action: "retry" }, dataBox: false, closable: true };
+    }
+  }
   switch (s.phase) {
+    // Installing starts by itself; "ready" is only the instant before the first report.
     case "ready":
-      return { line: readingLine(s.reading), primary: { label: "Install", action: "install" }, secondary: null, options: true, closable: true };
+      return { line: "Getting ready", ...none, closable: false };
     case "closeAtlas":
-      return {
-        line: "Atlas is open.",
-        primary: { label: "Close Atlas and continue", action: "closeAtlas" },
-        secondary: null,
-        options: false,
-        closable: true,
-      };
+      return { line: "Atlas is open.", primary: { label: "Close Atlas and continue", action: "closeAtlas" }, dataBox: false, closable: true };
     case "installing": {
-      // The install's own step is the line; when the chats are still being read (Install was
-      // pressed early) the count rides along, so both are always visible.
-      const counts = `${compact(s.reading.done)} of ${compact(s.reading.total)}`;
+      // The install's own step is the line; the chats being read ride along under it.
       const reading = stillReading(s.reading);
-      const line =
-        s.stage === "reading"
-          ? reading
-            ? `Finishing your chats: ${counts}`
-            : "Finishing up"
-          : `${s.stage === "unpack" ? "Unpacking" : "Installing Atlas"}${reading ? `\nStill reading your chats: ${counts}` : ""}`;
-      return { line, primary: null, secondary: null, options: false, closable: false };
+      const counts = `Reading your chats: ${compact(s.reading.done)} of ${compact(s.reading.total)}`;
+      const step = s.stage === "unpack" ? "Unpacking" : s.stage === "opening" ? "Opening Atlas" : "Installing Atlas";
+      return { line: `${step}${reading && s.stage !== "opening" ? `\n${counts}` : ""}`, ...none, closable: false };
     }
     case "done":
-      return openWhenDone
-        ? { line: "All set.", primary: null, secondary: null, options: false, closable: false }
-        : {
-            line: "All set.",
-            primary: { label: "Open Atlas", action: "openAtlas" },
-            secondary: { label: "Close", action: "close" },
-            options: false,
-            closable: true,
-          };
+      // The window plays its spark and eases out on its own as Atlas opens.
+      return { line: "All set.", ...none, closable: false };
     case "error":
-      return {
-        line: s.error ?? "Something went wrong.",
-        primary: { label: "Retry", action: "retry" },
-        secondary: null,
-        options: false,
-        closable: true,
-      };
+      return { line: s.error ?? "Something went wrong.", primary: { label: "Retry", action: "retry" }, dataBox: false, closable: true };
   }
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
@@ -61,6 +61,27 @@ describe("Settings", () => {
     await userEvent.click(screen.getByRole("button", { name: "Check for updates" }));
     expect(await screen.findByText("Version 0.2.0 is ready.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Update and restart" })).toBeInTheDocument();
+  });
+
+  it("About offers Uninstall Atlas only where an uninstaller sits beside it, and starts it on a click", async () => {
+    // A dev run or a copy with no uninstaller: no row.
+    mount();
+    let rail = await screen.findByRole("navigation", { name: "Settings sections" });
+    await userEvent.click(within(rail).getByRole("button", { name: "About" }));
+    expect(await screen.findByText("Version")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Uninstall Atlas..." })).not.toBeInTheDocument();
+    cleanup();
+
+    const started = vi.fn(async () => {});
+    mount((b) => {
+      b.uninstallAvailable = async () => true;
+      b.uninstallAtlas = started;
+    });
+    rail = await screen.findByRole("navigation", { name: "Settings sections" });
+    await userEvent.click(within(rail).getByRole("button", { name: "About" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Uninstall Atlas..." }));
+    expect(started).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Your Claude Code chats are never touched.", { exact: false })).toBeInTheDocument();
   });
 
   it("turns Keep running when closed on and off", async () => {

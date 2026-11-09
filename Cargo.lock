@@ -265,6 +265,7 @@ name = "atlas-setup"
 version = "0.1.0"
 dependencies = [
  "atlas-core",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",

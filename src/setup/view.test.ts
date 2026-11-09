@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   COPY_MAX,
   EDGE_CLEAR,
+  KEY_WINDOW_MS,
+  isOwnPress,
   EMPTY_SNAPSHOT,
   RING_COUNT,
   SHEET,
@@ -9,7 +11,6 @@ import {
   TRAIL_CURVES,
   distanceToLoop,
   readingFraction,
-  readingLine,
   ringPath,
   ringPoints,
   screenFor,
@@ -24,116 +25,123 @@ import {
 const reading = (p: Partial<Reading>): Reading => ({ ...EMPTY_SNAPSHOT.reading, ...p });
 const snap = (p: Partial<Snapshot>): Snapshot => ({ ...EMPTY_SNAPSHOT, ...p });
 
-describe("the live reading line", () => {
-  it("uses the app's compact numbers", () => {
-    expect(readingLine(reading({ done: 1204, total: 1881, tokens: 27_400_000 }))).toBe(
-      "Already reading your chats: 1.2k of 1.9k, 27M tokens",
-    );
-    expect(readingLine(reading({ done: 7, total: 40, tokens: 950 }))).toBe("Already reading your chats: 7 of 40, 950 tokens");
+describe("which clicks count as a person's own press", () => {
+  const click = (o: Partial<{ isTrusted: boolean; detail: number; timeStamp: number }> = {}) => ({ isTrusted: true, detail: 1, timeStamp: 1000, ...o });
+
+  it("counts a real mouse click and refuses a script's click", () => {
+    expect(isOwnPress(click(), "primary", null)).toBe(true);
+    expect(isOwnPress(click({ isTrusted: false }), "primary", null)).toBe(false);
+    expect(isOwnPress(click({ isTrusted: false, detail: 0 }), "primary", { id: "primary", at: 990 })).toBe(false);
   });
 
-  it("says what it is doing before it knows how many", () => {
-    expect(readingLine(reading({ total: 0 }))).toBe("Looking for your chats");
-  });
-
-  it("settles into a plain result", () => {
-    expect(readingLine(reading({ done: 1881, total: 1881, tokens: 7_300_000, finished: true }))).toBe("Read 1.9k chats, 7.3M tokens");
-    expect(readingLine(reading({ done: 1, total: 1, tokens: 12, finished: true }))).toBe("Read 1 chat, 12 tokens");
-  });
-
-  it("is honest when there is nothing to read or reading failed, without jokes", () => {
-    expect(readingLine(reading({ available: false }))).toBe("No chats found yet.");
-    expect(readingLine(reading({ failed: true }))).toContain("Atlas will read your chats when it opens");
-  });
-
-  it("never uses an exclamation mark or a dollar sign", () => {
-    for (const r of [reading({}), reading({ done: 3, total: 9, tokens: 5 }), reading({ finished: true, total: 3 }), reading({ failed: true }), reading({ available: false })]) {
-      expect(readingLine(r)).not.toMatch(/[!$]/);
-    }
+  it("counts a keyboard click only right after Enter or Space went down on that same button", () => {
+    const kb = click({ detail: 0, timeStamp: 1500 });
+    expect(isOwnPress(kb, "primary", null)).toBe(false); // a stray keyup or a focus-driven click
+    expect(isOwnPress(kb, "primary", { id: "secondary", at: 1400 })).toBe(false);
+    expect(isOwnPress(kb, "primary", { id: "primary", at: 1400 })).toBe(true);
+    expect(isOwnPress(kb, "primary", { id: "primary", at: 1500 - KEY_WINDOW_MS - 1 })).toBe(false);
+    expect(isOwnPress(kb, "primary", { id: "primary", at: 1600 })).toBe(false); // keydown from the future
   });
 });
 
-describe("the trail follows the reading", () => {
-  it("is exactly how far the chats have been read, before Install is pressed", () => {
-    expect(trailProgress(snap({ reading: reading({ done: 0, total: 100 }) }))).toBe(0);
-    expect(trailProgress(snap({ reading: reading({ done: 50, total: 100 }) }))).toBe(0.5);
-    expect(trailProgress(snap({ reading: reading({ done: 100, total: 100, finished: true }) }))).toBe(1);
-  });
-
-  it("is not moved by the installer: Install pressed mid-read keeps following the reading", () => {
-    const mid = reading({ done: 30, total: 100 });
-    for (const install of [0, 0.15, 0.6, 1]) {
-      expect(trailProgress(snap({ phase: "installing", install, reading: mid }))).toBe(0.3);
-    }
-  });
-
-  it("stands at the mark exactly when the reading is done", () => {
-    const done = reading({ finished: true, done: 9, total: 9 });
-    expect(trailProgress(snap({ phase: "installing", install: 0.2, reading: done }))).toBe(1);
-    expect(trailProgress(snap({ reading: reading({ done: 8, total: 9 }) }))).toBeLessThan(1);
-  });
-
-  it("has nothing to follow when there is nothing to read or the read failed", () => {
-    expect(readingFraction(reading({ failed: true }))).toBe(0);
-    expect(trailProgress(snap({ reading: reading({ available: false }) }))).toBe(0);
-    // ...and the finished setup still carries it to the summit.
-    expect(trailProgress(snap({ phase: "done", reading: reading({ available: false }) }))).toBe(1);
-  });
-
-  it("never claims more than 1 or less than 0", () => {
+describe("the trail", () => {
+  it("climbs with whichever is further, the installer or the reading, and never claims more than 1", () => {
+    const r = reading({ done: 50, total: 100 });
+    expect(trailProgress(snap({ phase: "installing", install: 0.04, reading: r }))).toBe(0.5);
+    expect(trailProgress(snap({ phase: "installing", install: 0.85, reading: r }))).toBe(0.85);
+    expect(trailProgress(snap({ phase: "installing", install: 0.2, reading: reading({ done: 100, total: 100, finished: true }) }))).toBe(1);
     expect(readingFraction(reading({ done: 120, total: 100 }))).toBe(1);
     expect(readingFraction(reading({ done: 0, total: 0 }))).toBe(0);
   });
+
+  it("has nothing to follow in the reading when there is nothing to read or it failed", () => {
+    expect(readingFraction(reading({ failed: true }))).toBe(0);
+    expect(trailProgress(snap({ phase: "installing", install: 0.3, reading: reading({ available: false }) }))).toBe(0.3);
+    expect(trailProgress(snap({ phase: "done", reading: reading({ available: false }) }))).toBe(1);
+  });
+
+  it("follows only the remover while removing, and starts at the foot before the yes", () => {
+    const r = reading({ done: 90, total: 100 });
+    expect(trailProgress(snap({ mode: "uninstall", phase: "ready", reading: r }))).toBe(0);
+    expect(trailProgress(snap({ mode: "uninstall", phase: "installing", install: 0.35, reading: r }))).toBe(0.35);
+    expect(trailProgress(snap({ mode: "uninstall", phase: "done", install: 1 }))).toBe(1);
+  });
 });
 
-describe("the screens", () => {
-  it("offers one Install button and the options on Ready", () => {
-    const s = screenFor(snap({}), true);
-    expect(s.primary).toEqual({ label: "Install", action: "install" });
-    expect(s.options && s.closable).toBe(true);
-  });
-
-  it("offers Install while the chats are still being read, not only after", () => {
-    const s = screenFor(snap({ reading: reading({ done: 10, total: 100 }) }), true);
-    expect(s.primary).toEqual({ label: "Install", action: "install" });
-  });
-
-  it("cannot be closed while installing, and has no button", () => {
-    const s = screenFor(snap({ phase: "installing", stage: "install", reading: reading({ finished: true, total: 3, done: 3 }) }), true);
+describe("the install screens (it starts by itself, so there is no Install button)", () => {
+  it("shows the step, the reading under it, and nothing to press or close", () => {
+    const early = reading({ done: 300, total: 1000 });
+    const s = screenFor(snap({ phase: "installing", stage: "unpack", reading: early }));
+    expect(s.line).toBe("Unpacking\nReading your chats: 300 of 1k");
     expect(s.primary).toBeNull();
     expect(s.closable).toBe(false);
-    expect(s.line).toBe("Installing Atlas");
+    expect(screenFor(snap({ phase: "installing", stage: "install", reading: early })).line).toBe("Installing Atlas\nReading your chats: 300 of 1k");
   });
 
-  it("keeps the reading count in the line when Install was pressed early", () => {
-    const early = reading({ done: 300, total: 1000 });
-    expect(screenFor(snap({ phase: "installing", stage: "unpack", reading: early }), true).line).toBe(
-      "Unpacking\nStill reading your chats: 300 of 1k",
-    );
-    expect(screenFor(snap({ phase: "installing", stage: "install", reading: early }), true).line).toBe(
-      "Installing Atlas\nStill reading your chats: 300 of 1k",
-    );
+  it("says only 'Installing Atlas' when there is no reading to report", () => {
+    expect(screenFor(snap({ phase: "installing", stage: "install", reading: reading({ finished: true, total: 3, done: 3 }) })).line).toBe("Installing Atlas");
   });
 
-  it("shows the reading while it finishes after the install", () => {
-    const s = screenFor(snap({ phase: "installing", stage: "reading", reading: reading({ done: 800, total: 1000 }) }), true);
-    expect(s.line).toBe("Finishing your chats: 800 of 1k");
+  it("says 'Opening Atlas' at the hand-off, and 'All set.' with no buttons when done", () => {
+    expect(screenFor(snap({ phase: "installing", stage: "opening", reading: reading({ done: 5, total: 9 }) })).line).toBe("Opening Atlas");
+    const d = screenFor(snap({ phase: "done" }));
+    expect(d.line).toBe("All set.");
+    expect(d.primary).toBeNull();
+    expect(d.closable).toBe(false);
   });
 
-  it("asks before installing over a running Atlas", () => {
-    const s = screenFor(snap({ phase: "closeAtlas" }), true);
-    expect(s.primary?.label).toBe("Close Atlas and continue");
+  it("never offers the saved-data box while installing", () => {
+    for (const phase of ["ready", "closeAtlas", "installing", "done", "error"] as const) expect(screenFor(snap({ phase })).dataBox).toBe(false);
   });
 
-  it("puts the error in plain words with Retry", () => {
-    const s = screenFor(snap({ phase: "error", error: "The installer stopped before it finished (code 2)." }), true);
-    expect(s.line).toContain("code 2");
-    expect(s.primary?.action).toBe("retry");
+  it("asks before closing a running Atlas, and puts an error in plain words with Retry", () => {
+    expect(screenFor(snap({ phase: "closeAtlas" })).primary?.label).toBe("Close Atlas and continue");
+    const e = screenFor(snap({ phase: "error", error: "The installer stopped before it finished (code 2)." }));
+    expect(e.line).toContain("code 2");
+    expect(e.primary?.action).toBe("retry");
+  });
+});
+
+describe("the remover screen", () => {
+  const out = (p: Partial<Snapshot>) => snap({ mode: "uninstall", ...p });
+
+  it("asks once, with one primary button and the saved-data box", () => {
+    const s = screenFor(out({}));
+    expect(s.line).toBe("Remove Atlas from this computer?");
+    expect(s.primary).toEqual({ label: "Uninstall", action: "uninstall" });
+    expect(s.dataBox && s.closable).toBe(true);
   });
 
-  it("hands off by itself when Open Atlas is on, and asks when it is off", () => {
-    expect(screenFor(snap({ phase: "done" }), true).primary).toBeNull();
-    expect(screenFor(snap({ phase: "done" }), false).primary?.action).toBe("openAtlas");
+  it("names what it is doing, and cannot be closed meanwhile", () => {
+    const lines = (stage: Snapshot["stage"]) => screenFor(out({ phase: "installing", stage }));
+    expect(lines("closing").line).toBe("Closing Atlas");
+    expect(lines("removing").line).toBe("Removing Atlas");
+    expect(lines("data").line).toBe("Removing saved data");
+    for (const st of ["closing", "removing", "data"] as const) {
+      expect(lines(st).closable).toBe(false);
+      expect(lines(st).primary).toBeNull();
+      expect(lines(st).dataBox).toBe(false);
+    }
+  });
+
+  it("ends with Close, and says plainly whether saved data was kept", () => {
+    const kept = screenFor(out({ phase: "done" }), false);
+    expect(kept.line).toBe("Atlas is removed.\nYour saved data is kept.");
+    expect(kept.primary).toEqual({ label: "Close", action: "close" });
+    expect(screenFor(out({ phase: "done" }), true).line).toBe("Atlas is removed.");
+  });
+
+  it("puts a failure in plain words with Retry", () => {
+    const e = screenFor(out({ phase: "error", error: "Atlas is still there." }));
+    expect(e.primary?.action).toBe("retry");
+    expect(e.line).toBe("Atlas is still there.");
+  });
+
+  it("promises nothing about the chats on the screen that the words do not keep", () => {
+    // The promise lives in setup.html as a fixed line; the screen text never mentions deleting chats.
+    for (const phase of ["ready", "installing", "done", "error"] as const) {
+      expect(screenFor(out({ phase, stage: "removing", error: "x" })).line).not.toMatch(/delete.*chat/i);
+    }
   });
 });
 

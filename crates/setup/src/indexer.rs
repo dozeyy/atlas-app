@@ -6,6 +6,7 @@
 //! chats are only ever read. Setup is the only writer of the cache until `stop` returns;
 //! Atlas is launched after that, never while this still has the file open.
 
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -99,6 +100,8 @@ pub struct Reading {
     pub finished: bool,
     /// The cache could not be written; Atlas will read the chats itself when it opens.
     pub failed: bool,
+    /// An Atlas is running, so the reading has not started yet; it begins when Atlas closes.
+    pub waiting: bool,
 }
 
 #[derive(Default)]
@@ -132,14 +135,49 @@ pub struct Indexer {
     counts: Arc<Counts>,
     local_dir: PathBuf,
     cache_db: PathBuf,
-    /// True when this run made the folder (so cancel may remove it again).
+    /// True when this run made the folder (so cancel may remove it again, if it ends up empty).
     created_dir: bool,
+    /// What was in the folder before this run wrote anything. The cache folder can be the very
+    /// folder Atlas is installed in, so cancel removes only names that are not in this list.
+    before: HashSet<OsString>,
+}
+
+/// File names in `dir`, empty when it does not exist.
+fn names_in(dir: &Path) -> HashSet<OsString> {
+    std::fs::read_dir(dir).map(|rd| rd.flatten().map(|e| e.file_name()).collect()).unwrap_or_default()
+}
+
+/// Files an installed Atlas owns; never touched, whatever else the rules say.
+fn is_atlas_program_file(name: &std::ffi::OsStr) -> bool {
+    ["atlas.exe", "atlas-usage.exe", "uninstall.exe"].iter().any(|n| name.eq_ignore_ascii_case(n))
+}
+
+/// Take back what a cancelled run made in the cache folder: the files whose names were not there
+/// before, one by one. Folders, Atlas's own program files and anything that was already there stay.
+/// The folder itself goes only when this run made it and nothing at all is left in it (a plain
+/// `remove_dir`, which fails on anything else).
+fn remove_made(dir: &Path, before: &HashSet<OsString>, created_dir: bool) {
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let name = e.file_name();
+            if before.contains(&name) || is_atlas_program_file(&name) {
+                continue;
+            }
+            if e.file_type().is_ok_and(|t| t.is_file()) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    if created_dir {
+        let _ = std::fs::remove_dir(dir);
+    }
 }
 
 impl Indexer {
     /// Start reading in the background and return at once.
     pub fn start(plan: &Plan) -> Indexer {
         let created_dir = !plan.local_dir.exists();
+        let before = names_in(&plan.local_dir);
         let counts = Arc::new(Counts::default());
         let mut cfg = UsageConfig::new(
             plan.projects_dir.clone(),
@@ -151,7 +189,7 @@ impl Indexer {
         cfg.watch = false;
         cfg.week_starts_sunday = atlas_core::usage::time::week_starts_sunday();
         let engine = UsageEngine::start(cfg, Arc::new(Sink { counts: Arc::clone(&counts) }));
-        Indexer { engine, counts, local_dir: plan.local_dir.clone(), cache_db: plan.cache_db.clone(), created_dir }
+        Indexer { engine, counts, local_dir: plan.local_dir.clone(), cache_db: plan.cache_db.clone(), created_dir, before }
     }
 
     pub fn finished(&self) -> bool {
@@ -177,6 +215,7 @@ impl Indexer {
             tokens: self.engine.tokens_so_far(),
             finished,
             failed,
+            waiting: false,
         }
     }
 
@@ -195,20 +234,27 @@ impl Indexer {
     /// nothing is left open (no -wal or -shm file stays behind). After this returns the
     /// installed Atlas may open the same file.
     pub fn stop(self) {
-        self.engine.stop();
-        let db = self.cache_db.clone();
-        drop(self); // closes the engine's read connections
-        atlas_core::cache::checkpoint_and_close(&db);
+        self.stop_logged(&|_| {});
     }
 
-    /// Stop, and take away the folder when this run made it. A folder that was already
-    /// there, or that holds an Atlas program (a half-finished install), is left alone.
+    /// `stop`, saying how long each step took (the hand-off is on the clock the person watches).
+    pub fn stop_logged(self, say: &dyn Fn(&str)) {
+        let t = std::time::Instant::now();
+        self.engine.stop();
+        say(&format!("reader: engine stopped after {} ms", t.elapsed().as_millis()));
+        let db = self.cache_db.clone();
+        drop(self); // closes the engine's read connections
+        say(&format!("reader: connections dropped after {} ms", t.elapsed().as_millis()));
+        atlas_core::cache::checkpoint_and_close(&db);
+        say(&format!("reader: cache checkpointed after {} ms", t.elapsed().as_millis()));
+    }
+
+    /// Stop, and take back the cache files this run made (see `remove_made`). The folder is
+    /// never deleted with anything in it.
     pub fn stop_and_clean(self) {
-        let (dir, created) = (self.local_dir.clone(), self.created_dir);
+        let (dir, before, created) = (self.local_dir.clone(), self.before.clone(), self.created_dir);
         self.stop();
-        if created && !dir.join("atlas.exe").exists() && !dir.join("uninstall.exe").exists() {
-            let _ = std::fs::remove_dir_all(&dir);
-        }
+        remove_made(&dir, &before, created);
     }
 }
 
@@ -328,5 +374,119 @@ mod tests {
         ix.wait_finished(Duration::from_secs(60));
         ix.stop_and_clean();
         assert!(data.join("keep.txt").is_file(), "a folder that was already there stays");
+        assert!(!data.join("cache.sqlite").exists(), "but the cache setup wrote is taken back");
+    }
+
+    #[test]
+    fn cancel_never_touches_atlas_programs_even_when_the_cache_folder_is_the_install_folder() {
+        // On Windows %LOCALAPPDATA%\atlas (cache) and %LOCALAPPDATA%\Atlas (install) are one folder.
+        let (_root, env, data) = fixture();
+        let p = plan(&env).unwrap();
+        let ix = Indexer::start(&p);
+        ix.wait_finished(Duration::from_secs(60));
+        // The installer (a stray one, or an earlier install) puts its files in the same folder.
+        std::fs::write(data.join("atlas.exe"), "program").unwrap();
+        std::fs::write(data.join("uninstall.exe"), "remover").unwrap();
+        std::fs::create_dir_all(data.join("history")).unwrap();
+        std::fs::write(data.join("history").join("kept.json"), "{}").unwrap();
+        ix.stop_and_clean();
+        assert_eq!(std::fs::read_to_string(data.join("atlas.exe")).unwrap(), "program");
+        assert!(data.join("uninstall.exe").is_file());
+        assert!(data.join("history").join("kept.json").is_file(), "folders are never removed");
+        assert!(!data.join("cache.sqlite").exists());
+        assert!(!data.join("cache.sqlite-wal").exists());
+        assert!(!data.join("cache.sqlite-shm").exists());
+    }
+
+    /// Every table's name and row count, and the database's own integrity verdict.
+    fn cache_shape(db: &Path) -> (Vec<(String, i64)>, String) {
+        let conn = rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        let names: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .flatten()
+            .collect();
+        let counts = names
+            .into_iter()
+            .map(|n| {
+                let c: i64 = conn.query_row(&format!("SELECT count(*) FROM \"{n}\""), [], |r| r.get(0)).unwrap();
+                (n, c)
+            })
+            .collect();
+        let verdict: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
+        (counts, verdict)
+    }
+
+    /// The hand-off stops Setup's reading wherever it is and Atlas carries on from the same cache.
+    /// However early or late the stop comes, the second engine must end with exactly what an
+    /// uninterrupted read holds (no chat counted twice, none lost) in an intact database.
+    #[test]
+    fn a_read_stopped_part_way_is_continued_without_double_counting() {
+        let (root, env, _) = fixture();
+        let proj = root.path().join("claude").join("projects").join("demo");
+        for i in 0..300 {
+            std::fs::write(proj.join(format!("c{i}.jsonl")), format!("{}\n", line(&format!("c{i}"), 10 + i, 2))).unwrap();
+        }
+        let expected_tokens: u64 = (100 + 20 + 300 + 40 + 1000 + 200) + (0..300u64).map(|i| 10 + i + 2).sum::<u64>();
+
+        // Baseline: one uninterrupted read into its own data folder.
+        let mut base_env = Env { atlas_data: Some(root.path().join("base-data").into_os_string()), ..Env::from_process() };
+        base_env.claude_config = env.claude_config.clone();
+        let bp = plan(&base_env).unwrap();
+        let ix = Indexer::start(&bp);
+        assert!(ix.wait_finished(Duration::from_secs(120)));
+        assert_eq!(ix.reading().tokens, expected_tokens);
+        ix.stop();
+        let baseline = cache_shape(&bp.cache_db);
+        assert_eq!(baseline.1, "ok");
+
+        for (round, stop_after_ms) in [0u64, 3, 15, 60].into_iter().enumerate() {
+            let mut e = Env { atlas_data: Some(root.path().join(format!("cut-{round}")).into_os_string()), ..Env::from_process() };
+            e.claude_config = env.claude_config.clone();
+            let p = plan(&e).unwrap();
+            let first = Indexer::start(&p);
+            std::thread::sleep(Duration::from_millis(stop_after_ms));
+            first.stop();
+            assert!(!p.local_dir.join("cache.sqlite-wal").exists(), "closed cleanly at the hand-off (stop after {stop_after_ms} ms)");
+            // Atlas, later: the same engine over the same cache, to the end.
+            let second = Indexer::start(&p);
+            assert!(second.wait_finished(Duration::from_secs(120)));
+            let r = second.reading();
+            assert!(!r.failed, "stop after {stop_after_ms} ms");
+            assert_eq!(r.tokens, expected_tokens, "no double count, none lost (stop after {stop_after_ms} ms)");
+            second.stop();
+            let shape = cache_shape(&p.cache_db);
+            assert_eq!(shape.1, "ok", "database intact (stop after {stop_after_ms} ms)");
+            assert_eq!(shape.0, baseline.0, "same rows as an uninterrupted read (stop after {stop_after_ms} ms)");
+        }
+    }
+
+    #[test]
+    fn remove_made_takes_only_new_files_and_an_empty_folder_it_made() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("d");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("old.txt"), "old").unwrap();
+        let before = names_in(&dir);
+        std::fs::write(dir.join("new.sqlite"), "n").unwrap();
+        std::fs::write(dir.join("new.sqlite-wal"), "n").unwrap();
+        remove_made(&dir, &before, false);
+        assert!(dir.join("old.txt").is_file());
+        assert!(!dir.join("new.sqlite").exists() && !dir.join("new.sqlite-wal").exists());
+        assert!(dir.is_dir(), "a folder that was there stays");
+
+        // A folder this run made: removed only when nothing is left in it.
+        let made = root.path().join("made");
+        std::fs::create_dir_all(&made).unwrap();
+        std::fs::write(made.join("x.sqlite"), "n").unwrap();
+        remove_made(&made, &HashSet::new(), true);
+        assert!(!made.exists(), "empty after the cache files went, and setup made it");
+        let busy = root.path().join("busy");
+        std::fs::create_dir_all(&busy).unwrap();
+        std::fs::write(busy.join("atlas.exe"), "p").unwrap();
+        remove_made(&busy, &HashSet::new(), true);
+        assert!(busy.join("atlas.exe").is_file(), "anything left in it keeps the folder");
     }
 }
