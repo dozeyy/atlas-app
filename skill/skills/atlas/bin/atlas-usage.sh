@@ -115,7 +115,7 @@ if [ -f "$scriptdir/checksums.txt" ]; then
   want=$(LC_ALL=C awk -v v="$version" -v f="$asset" '
     NR == 1 && substr($0, 1, 3) == "\357\273\277" { $0 = substr($0, 4) }
     { sub(/\r$/, "") }
-    $1 == v && $2 == f && $3 ~ /^[0-9A-Fa-f]+$/ && length($3) == 64 { print tolower($3); exit }
+    ($1 "") == (v "") && ($2 "") == (f "") && $3 ~ /^[0-9A-Fa-f]+$/ && length($3) == 64 { print tolower($3); exit }
   ' "$scriptdir/checksums.txt")
 fi
 [ -n "$want" ] || fail "this plugin version ($version) has no pinned build yet; update the plugin, or put atlas-usage on PATH."
@@ -139,6 +139,27 @@ sha256_of() {
   fi
 }
 
+# Only the numeric dotted start of a version counts ("0.2.0-beta" -> 0.2.0); true when $1 is
+# strictly older than $2. Anything without such a start is "not older", so it is never pruned.
+ver_older() {
+  vo_a=${1%%[!0-9.]*}
+  vo_b=${2%%[!0-9.]*}
+  [ -n "$vo_a" ] && [ -n "$vo_b" ] || return 1
+  while [ -n "$vo_a" ] || [ -n "$vo_b" ]; do
+    vo_ah=${vo_a%%.*}
+    vo_bh=${vo_b%%.*}
+    case $vo_a in *.*) vo_a=${vo_a#*.} ;; *) vo_a= ;; esac
+    case $vo_b in *.*) vo_b=${vo_b#*.} ;; *) vo_b= ;; esac
+    vo_ah=${vo_ah:-0}
+    vo_bh=${vo_bh:-0}
+    if [ "$vo_ah" -lt "$vo_bh" ] 2>/dev/null; then return 0; fi
+    if [ "$vo_ah" -gt "$vo_bh" ] 2>/dev/null; then return 1; fi
+  done
+  return 1
+}
+
+# curl is preferred: --proto-redir keeps every redirect on https. wget's --https-only does not
+# cover redirects on every build, so wget is only a fallback and the hash pin is the guard there.
 fetch() { # url dest secure(1=https only)
   if command -v curl >/dev/null 2>&1; then
     if [ "$3" = 1 ]; then
@@ -192,9 +213,11 @@ chmod +x "$work/$asset" 2>/dev/null
 mkdir -p "$verdir" 2>/dev/null
 mv -f "$work/$asset" "$cached" 2>/dev/null || [ -f "$cached" ] || fail "cannot save the program to $bindir. $hint"
 
-# A new version folder now exists: drop the older ones (work folders start with a dot).
+# Drop only versions OLDER than this one (compared as versions, not strings): another plugin
+# version sharing this folder keeps its own copy. Work folders start with a dot and are skipped.
 for d in "$cacheroot"/*; do
-  [ -d "$d" ] && [ "${d##*/}" != "$version" ] && rm -rf "$d"
+  [ -d "$d" ] || continue
+  if ver_older "${d##*/}" "$version"; then rm -rf "$d"; fi
 done
 rm -rf "$work"
 trap - EXIT HUP INT TERM

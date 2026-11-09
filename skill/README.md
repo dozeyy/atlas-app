@@ -43,9 +43,9 @@ these it finds:
    the shell has one, else inside the plugin's own folder).
 3. The Atlas app's copy, next to `atlas.exe` in its install folder (by default
    `%LOCALAPPDATA%\Atlas\atlas-usage.exe`, Windows).
-4. Otherwise it downloads the right build for your computer from the release tagged
-   `v<plugin version>` of `dozeyy/atlas` (with `gh` if you are signed in to it, else plain
-   HTTPS only). The plugin ships `skill/skills/atlas/bin/checksums.txt`, a list of
+4. Otherwise it downloads the right build for your computer, once, after the first release
+   exists: from the release tagged `v<plugin version>` of `dozeyy/atlas` (with `gh` if you are
+   signed in to it, else HTTPS only). The plugin ships `skill/skills/atlas/bin/checksums.txt`, a list of
    `<version> <file> <sha256>` lines fixed when that version was released. The download runs
    only if its SHA-256 equals the pinned line; otherwise it is deleted and never run. A plugin
    version with no pinned line downloads nothing: the launcher says to update the plugin.
@@ -63,9 +63,11 @@ plugin fetches the matching build by itself and removes the older folder.
   version to download, so the launcher uses the program on PATH (or the Atlas app's copy).
   `claude --plugin-dir <this repo>/skill` tries the plugin without installing it.
 
-**Releasing** (maintainers): after the release assets and `SHA256SUMS.txt` exist, run
-`pwsh tools/pin-skill-checksums.ps1 -Sums SHA256SUMS.txt -Version <version>` and commit the
-updated `skill/skills/atlas/bin/checksums.txt` with the plugin version set to the same number.
+**Releasing** (maintainers): with the built `atlas-usage-*` files from the same CI run in a
+folder, run `pwsh tools/pin-skill-checksums.ps1 -Dir <folder> -Version <version>` and commit
+the updated `skill/skills/atlas/bin/checksums.txt`. `-Version` must equal the version in
+`skill/.claude-plugin/plugin.json`; the script hashes the files itself and refuses to change
+the hashes of an already pinned version unless `-Force`.
 
 When Claude picks the skill up from a plain question it uses the Skill tool; if your
 permission mode asks, allow it once or add `Skill(atlas)` to `permissions.allow`. Typing

@@ -30,6 +30,24 @@ $rest = @($args)
 $binDir = $env:CLAUDE_PLUGIN_DATA
 if (-not $binDir) { $binDir = $PSScriptRoot }
 
+# True when version $a is strictly older than $b. Only the numeric dotted start counts
+# ("0.2.0-beta" -> 0.2.0); a name without one is "not older", so it is never pruned.
+function Test-VersionOlder([string]$a, [string]$b) {
+    if ($a -notmatch '^([0-9]+(\.[0-9]+)*)') { return $false }
+    $ca = $Matches[1].Split('.')
+    if ($b -notmatch '^([0-9]+(\.[0-9]+)*)') { return $false }
+    $cb = $Matches[1].Split('.')
+    $n = [Math]::Max($ca.Count, $cb.Count)
+    for ($i = 0; $i -lt $n; $i++) {
+        $x = [decimal]0; $y = [decimal]0
+        if ($i -lt $ca.Count) { $x = [decimal]$ca[$i] }
+        if ($i -lt $cb.Count) { $y = [decimal]$cb[$i] }
+        if ($x -lt $y) { return $true }
+        if ($x -gt $y) { return $false }
+    }
+    return $false
+}
+
 function Use-Program([string]$path, [string]$why) {
     if ($env:ATLAS_USAGE_LAUNCHER_VERBOSE) { [Console]::Error.WriteLine("atlas-usage launcher: $why $path") }
     try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }  # bars are UTF-8
@@ -80,7 +98,7 @@ if (Test-Path -LiteralPath $pins -PathType Leaf) {
     foreach ($line in [IO.File]::ReadAllLines($pins)) {
         $line = $line.TrimStart([char]0xFEFF)
         $f = @($line -split '\s+' | Where-Object { $_ })
-        if ($f.Count -ge 3 -and $f[0] -ceq $version -and $f[1] -ceq $Asset -and $f[2] -match '^[0-9A-Fa-f]{64}$') {
+        if ($f.Count -ge 3 -and [string]$f[0] -ceq [string]$version -and $f[1] -ceq $Asset -and $f[2] -match '^[0-9A-Fa-f]{64}$') {
             $want = $f[2].ToLowerInvariant(); break
         }
     }
@@ -126,12 +144,45 @@ try {
             }
         }
         if (-not $got) {
+            # curl.exe (ships with Windows 10+) first: --proto-redir keeps every redirect on https.
+            $curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($curl) {
+                if ($loopback) { $protoArgs = @('--proto', '=http', '--proto-redir', '=http') }
+                else { $protoArgs = @('--proto', '=https', '--proto-redir', '=https') }
+                & $curl.Source -fsSL @protoArgs --retry 2 --connect-timeout 20 --max-time 300 -o $file "$base/$Asset" *> $null
+                $got = ($LASTEXITCODE -eq 0) -and (Test-Path -LiteralPath $file -PathType Leaf)
+            }
+        }
+        if (-not $got) {
+            # Fallback without curl.exe. Windows PowerShell 5.1's own redirect following (Invoke-WebRequest)
+            # will follow https->http, and with -MaximumRedirection 0 it throws without a response, so
+            # this uses HttpWebRequest with auto-redirect off: each redirect is read here and must stay
+            # on https (the loopback test address stays on http). The pinned hash is checked afterwards.
             try {
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-                $maxRedir = 5
-                if ($loopback) { $maxRedir = 0 }
-                Invoke-WebRequest -UseBasicParsing -TimeoutSec 300 -MaximumRedirection $maxRedir -Uri "$base/$Asset" -OutFile $file -ErrorAction Stop
-                $got = $true
+                $url = "$base/$Asset"
+                for ($hop = 0; $hop -lt 6 -and -not $got; $hop++) {
+                    if ($loopback) { $schemeOk = $url -match '^http://' } else { $schemeOk = $url -match '^https://' }
+                    if (-not $schemeOk) { break }
+                    $req = [Net.HttpWebRequest]::Create($url)
+                    $req.AllowAutoRedirect = $false
+                    $req.Timeout = 300000
+                    $req.ReadWriteTimeout = 300000
+                    $req.UserAgent = 'atlas-usage-launcher'
+                    try { $resp = $req.GetResponse() }
+                    catch { $resp = $_.Exception.InnerException.Response; if ($null -eq $resp) { $resp = $_.Exception.Response } }
+                    if ($null -eq $resp) { break }
+                    try {
+                        $code = [int]$resp.StatusCode
+                        if ($code -ge 200 -and $code -lt 300) {
+                            $fs = [IO.File]::Create($file)
+                            try { $resp.GetResponseStream().CopyTo($fs) } finally { $fs.Dispose() }
+                            $got = $true
+                        } elseif ($code -ge 300 -and $code -lt 400 -and $resp.Headers['Location']) {
+                            $url = ([Uri]::new([Uri]$url, [string]$resp.Headers['Location'])).AbsoluteUri
+                        } else { break }
+                    } finally { $resp.Close() }
+                }
             } catch { }
         }
     }
@@ -150,9 +201,10 @@ try {
     try { Move-Item -LiteralPath $file -Destination $cached -ErrorAction Stop }
     catch { if (-not (Test-Path -LiteralPath $cached -PathType Leaf)) { Fail "cannot save the program to $binDir. $Hint" } }
 
-    # A new version folder now exists: drop the older ones (work folders start with a dot).
+    # Drop only versions OLDER than this one (compared as versions, not strings): another plugin
+    # version sharing this folder keeps its own copy. Work folders start with a dot and are skipped.
     Get-ChildItem -LiteralPath $cacheRoot -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -ne $version -and -not $_.Name.StartsWith('.') } |
+        Where-Object { Test-VersionOlder $_.Name $version } |
         ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 }
 finally {

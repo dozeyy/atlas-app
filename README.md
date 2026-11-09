@@ -27,8 +27,8 @@ numbers come from the same engine as the app.
 2. Install the skill: `/plugin install atlas@atlas`
 
 There is nothing else to set up. The first time you use `/atlas` it finds the `atlas-usage`
-program that comes with the app, or downloads it once and checks it against a checksum fixed
-inside the plugin.
+program that comes with the app, or downloads it once (after the first release) and checks it
+against a checksum fixed inside the plugin.
 
 It works in Claude Code (the terminal, the desktop app's Code tab, and the IDE extensions),
 not in claude.ai web chat.
