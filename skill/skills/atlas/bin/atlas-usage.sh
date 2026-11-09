@@ -1,15 +1,19 @@
 #!/bin/sh
 # Atlas launcher for macOS, Linux (and Git Bash on Windows): finds or fetches the
 # atlas-usage program, then runs it with the arguments unchanged.
-#   usage: sh atlas-usage.sh [--bin-dir=<folder>] <atlas-usage arguments>
-# Order: (a) atlas-usage on PATH, (b) a copy cached in <folder>/atlas-usage/<plugin version>/
-# (<folder> = the plugin data folder the skill passes in, else this script's own folder; older
-# version folders are removed when a new one is made), (c) Windows only: the Atlas app's
-# install folder, (d) download from the latest GitHub Release of dozeyy/atlas, checked
-# against SHA256SUMS.txt.
+#   usage: sh atlas-usage.sh <atlas-usage arguments>
+# Order: (a) atlas-usage on PATH, (b) a copy cached under <data>/cache/<plugin version>/
+# (<data> = $CLAUDE_PLUGIN_DATA when the shell has it, else this script's own folder, which
+# changes with every plugin version and goes away with the plugin), (c) Windows only: the Atlas
+# app's install folder, (d) download tag v<plugin version> of dozeyy/atlas.
+# A file sitting loose next to this script is never run: only PATH, the app and the verified cache.
+# The download is trusted ONLY if its SHA-256 equals the line "<version> <asset> <sha256>" in
+# checksums.txt next to this script (pinned when the plugin was released). Nothing the release
+# itself says is trusted. No pinned line = no download.
 # Exit code 3 = the launcher itself failed (one plain line on stderr).
 # Test aid: ATLAS_USAGE_TEST_SOURCE = a local folder, or an http://127.0.0.1 / localhost
-# address, that stands in for the release. ATLAS_USAGE_LAUNCHER_VERBOSE=1 names the copy used.
+# address, that stands in for the release (the pinned hash still applies).
+# ATLAS_USAGE_LAUNCHER_VERBOSE=1 names the copy used.
 
 REPO="dozeyy/atlas"
 
@@ -22,21 +26,30 @@ say() { # verbose-only note
   [ -n "$ATLAS_USAGE_LAUNCHER_VERBOSE" ] && printf 'atlas-usage launcher: %s %s\n' "$1" "$2" >&2
 }
 
-# --- the launcher's own option (everything after it goes to atlas-usage untouched) ---
-bindir=""
-case $1 in
-  --bin-dir=*)
-    bindir=${1#--bin-dir=}
-    shift
-    ;;
-esac
-# An unexpanded ${CLAUDE_PLUGIN_DATA} (skill installed by hand, not as a plugin) is empty or literal.
-case $bindir in *'${'*) bindir="" ;; esac
-if [ -z "$bindir" ]; then
-  bindir=$CLAUDE_PLUGIN_DATA
-  case $bindir in *'${'*) bindir="" ;; esac
-fi
+# Strictly http://127.0.0.1 or http://localhost, optional :port, then / or the end.
+loopback_ok() {
+  lrest=
+  case $1 in
+    http://127.0.0.1*) lrest=${1#http://127.0.0.1} ;;
+    http://localhost*) lrest=${1#http://localhost} ;;
+    *) return 1 ;;
+  esac
+  case $lrest in
+    :*)
+      lrest=${lrest#:}
+      ldigits=${lrest%%[!0-9]*}
+      [ -n "$ldigits" ] || return 1
+      lrest=${lrest#"$ldigits"}
+      ;;
+  esac
+  case $lrest in
+    '' | /*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 scriptdir=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || fail "cannot find the skill folder."
+bindir=$CLAUDE_PLUGIN_DATA
 [ -n "$bindir" ] || bindir=$scriptdir
 
 os=$(uname -s 2>/dev/null)
@@ -52,18 +65,23 @@ if [ -n "$onpath" ] && [ -f "$onpath" ]; then
   exec "$onpath" "$@"
 fi
 
-# (b) cached copy, keyed by the plugin version: <folder>/atlas-usage/<version>/atlas-usage.
-# A plugin update changes the version, so the next run fetches a fresh copy by itself.
-version=unknown
+# The plugin version (= the release tag without its v), read from the plugin's own manifest.
+# Anything that is not digits, letters, dot, dash or underscore, starting with a digit, is no version.
+version=
 pj=$scriptdir/../../../.claude-plugin/plugin.json
 if [ -f "$pj" ]; then
-  v=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pj" | head -n 1 | tr -c 'A-Za-z0-9._\n-' '_')
-  [ -n "$v" ] && version=$v
+  version=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pj" | head -n 1)
+  case $version in
+    [0-9]*) case $version in *[!A-Za-z0-9._-]*) version= ;; esac ;;
+    *) version= ;;
+  esac
 fi
-cacheroot=$bindir/atlas-usage
+cacheroot=$bindir/cache
 verdir=$cacheroot/$version
 cached=$verdir/$exe
-if [ -f "$cached" ]; then
+
+# (b) cached copy, keyed by the plugin version
+if [ -n "$version" ] && [ -f "$cached" ]; then
   say "cache:" "$cached"
   exec "$cached" "$@"
 fi
@@ -74,7 +92,8 @@ if [ "$exe" = "atlas-usage.exe" ] && [ -n "$LOCALAPPDATA" ] && [ -f "$LOCALAPPDA
   exec "$LOCALAPPDATA/Atlas/$exe" "$@"
 fi
 
-# (d) download, verify, cache
+# (d) download, verify against the pinned hash, cache
+hint="Install the Atlas app from github.com/$REPO/releases, or put atlas-usage on PATH."
 arch=$(uname -m 2>/dev/null)
 case $os in
   Darwin) asset=atlas-usage-macos-universal ;;
@@ -87,9 +106,23 @@ case $os in
   MINGW* | MSYS* | CYGWIN*) asset=atlas-usage-windows-x64.exe ;;
   *) fail "there is no ready-made build for $os. Build it from the Atlas repo with: cargo install --path crates/cli" ;;
 esac
-hint="Install the Atlas app from github.com/$REPO/releases, or put atlas-usage on PATH."
+
+[ -n "$version" ] || fail "this copy of the skill has no version, so it cannot fetch the program. Put atlas-usage on PATH, or install the plugin: /plugin marketplace add $REPO"
+
+# The pinned hash: "<version> <asset> <sha256>", tolerant of a BOM and CRLF.
+want=
+if [ -f "$scriptdir/checksums.txt" ]; then
+  want=$(LC_ALL=C awk -v v="$version" -v f="$asset" '
+    NR == 1 && substr($0, 1, 3) == "\357\273\277" { $0 = substr($0, 4) }
+    { sub(/\r$/, "") }
+    $1 == v && $2 == f && $3 ~ /^[0-9A-Fa-f]+$/ && length($3) == 64 { print tolower($3); exit }
+  ' "$scriptdir/checksums.txt")
+fi
+[ -n "$want" ] || fail "this plugin version ($version) has no pinned build yet; update the plugin, or put atlas-usage on PATH."
 
 mkdir -p "$cacheroot" 2>/dev/null || fail "cannot write to $bindir. $hint"
+# Work folders of runs that were killed mid-download: remove the ones older than an hour.
+find "$cacheroot" -maxdepth 1 -type d -name '.dl*' -mmin +60 -exec rm -rf {} + >/dev/null 2>&1
 # A private work folder per run: two runs at once never share a half-written file.
 work=$(mktemp -d "$cacheroot/.dl.XXXXXX" 2>/dev/null) || fail "cannot write to $bindir. $hint"
 trap 'rm -rf "$work"' EXIT HUP INT TERM
@@ -106,11 +139,19 @@ sha256_of() {
   fi
 }
 
-fetch() { # url dest
+fetch() { # url dest secure(1=https only)
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --retry 2 --connect-timeout 20 --max-time 300 -o "$2" "$1" >/dev/null 2>&1
+    if [ "$3" = 1 ]; then
+      curl -fsSL --proto =https --proto-redir =https --retry 2 --connect-timeout 20 --max-time 300 -o "$2" "$1" >/dev/null 2>&1
+    else
+      curl -fsSL --proto =http --proto-redir =http --retry 2 --connect-timeout 20 --max-time 300 -o "$2" "$1" >/dev/null 2>&1
+    fi
   elif command -v wget >/dev/null 2>&1; then
-    wget -q -T 60 -O "$2" "$1" >/dev/null 2>&1
+    if [ "$3" = 1 ]; then
+      wget -q --https-only -T 60 -O "$2" "$1" >/dev/null 2>&1
+    else
+      wget -q -T 60 -O "$2" "$1" >/dev/null 2>&1
+    fi
   else
     return 1
   fi
@@ -120,35 +161,30 @@ printf 'atlas-usage: first use, downloading the program (one time)...\n' >&2
 got=0
 src=$ATLAS_USAGE_TEST_SOURCE
 if [ -n "$src" ] && [ -d "$src" ]; then
-  cp "$src/$asset" "$work/$asset" 2>/dev/null && cp "$src/SHA256SUMS.txt" "$work/SHA256SUMS.txt" 2>/dev/null && got=1
+  cp "$src/$asset" "$work/$asset" 2>/dev/null && got=1
+elif [ -n "$src" ] && loopback_ok "$src"; then
+  fetch "${src%/}/$asset" "$work/$asset" 0 && got=1
 else
-  base="https://github.com/$REPO/releases/latest/download"
-  loopback=0
-  case $src in
-    http://127.0.0.1* | http://localhost*) base=${src%/}; loopback=1 ;;
-  esac
   # The repo can be private: the signed-in GitHub CLI is the only thing that can reach it.
-  if [ "$loopback" = 0 ] && command -v gh >/dev/null 2>&1; then
+  if command -v gh >/dev/null 2>&1; then
     export GH_PROMPT_DISABLED=1
     if gh auth status >/dev/null 2>&1; then
-      if gh release download --repo "$REPO" --pattern "$asset" --pattern SHA256SUMS.txt --dir "$work" --clobber >/dev/null 2>&1 \
-        && [ -f "$work/$asset" ] && [ -f "$work/SHA256SUMS.txt" ]; then
+      if gh release download "v$version" --repo "$REPO" --pattern "$asset" --dir "$work" --clobber >/dev/null 2>&1 \
+        && [ -f "$work/$asset" ]; then
         got=1
       fi
     fi
   fi
   if [ "$got" = 0 ]; then
-    fetch "$base/SHA256SUMS.txt" "$work/SHA256SUMS.txt" && fetch "$base/$asset" "$work/$asset" && got=1
+    fetch "https://github.com/$REPO/releases/download/v$version/$asset" "$work/$asset" 1 && got=1
   fi
 fi
-[ "$got" = 1 ] || fail "could not download the program from github.com/$REPO/releases. Check the internet connection (if the repo is private, sign in with 'gh auth login'), then try again. $hint"
+[ "$got" = 1 ] || fail "could not download the program (release v$version of github.com/$REPO). Check the internet connection (if the repo is private, sign in with 'gh auth login'), then try again. $hint"
 
-# SHA-256 must match the line for this file in SHA256SUMS.txt.
-want=$(tr -d '\r' <"$work/SHA256SUMS.txt" | awk -v f="$asset" '{ n = $2; sub(/^\*/, "", n); if (n == f) { print tolower($1); exit } }')
 have=$(sha256_of "$work/$asset") || fail "no tool to check the download (need sha256sum, shasum or openssl)."
-if [ -z "$want" ] || [ "$want" != "$have" ]; then
+if [ "$want" != "$have" ]; then
   rm -f "$work/$asset"
-  fail "the downloaded program did not match its published checksum, so it was deleted and not run. Try again later, or install the Atlas app from github.com/$REPO/releases."
+  fail "the downloaded program did not match the checksum pinned in this plugin, so it was deleted and not run. Try again later, or update the plugin."
 fi
 
 # Atomic rename into place. If another run got there first, its copy is just as good.

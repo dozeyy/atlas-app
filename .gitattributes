@@ -6,3 +6,4 @@ fixtures/** -text
 *.icns binary
 # Launcher scripts run on other people's machines: the shell one must stay LF.
 *.sh text eol=lf
+skill/skills/atlas/bin/checksums.txt text eol=lf

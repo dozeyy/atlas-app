@@ -43,16 +43,14 @@ Always pass this chat's id so "this chat" and the defaults are exact. The launch
 
 Windows (PowerShell):
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/bin/atlas-usage.ps1" '--bin-dir=${CLAUDE_PLUGIN_DATA}' <words> --session ${CLAUDE_SESSION_ID}
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/bin/atlas-usage.ps1" <words> --session ${CLAUDE_SESSION_ID}
 ```
 
 macOS / Linux (Bash; also works in Git Bash on Windows):
 ```
-sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" '--bin-dir=${CLAUDE_PLUGIN_DATA}' <words> --session ${CLAUDE_SESSION_ID}
+sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" <words> --session ${CLAUDE_SESSION_ID}
 ```
 
-- Keep the `--bin-dir=` argument exactly as written, single quotes included. If its value
-  is empty or looks like an unfilled placeholder, that is fine: the launcher ignores it.
 - Use a long timeout (600000 ms). The first run downloads the program and indexes every
   transcript and can take a minute; later runs take under a second.
 - Never read transcript files yourself and never compute usage numbers by hand: the

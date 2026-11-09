@@ -39,26 +39,33 @@ Then type `/atlas`. There is no binary to set up: the plugin's launcher uses the
 these it finds:
 
 1. `atlas-usage` on your PATH.
-2. A copy it saved earlier in the plugin's own data folder, kept per plugin version.
+2. A copy it saved earlier (in `cache/<plugin version>/`, in the plugin's data folder when
+   the shell has one, else inside the plugin's own folder).
 3. The Atlas app's copy, next to `atlas.exe` in its install folder (by default
    `%LOCALAPPDATA%\Atlas\atlas-usage.exe`, Windows).
-4. Otherwise it downloads the right build for your computer from the latest release of
-   `dozeyy/atlas` (with `gh` if you are signed in to it, else plain HTTPS), checks its
-   SHA-256 against the release's `SHA256SUMS.txt`, and saves it. A file that fails the check
-   is deleted and never run.
+4. Otherwise it downloads the right build for your computer from the release tagged
+   `v<plugin version>` of `dozeyy/atlas` (with `gh` if you are signed in to it, else plain
+   HTTPS only). The plugin ships `skill/skills/atlas/bin/checksums.txt`, a list of
+   `<version> <file> <sha256>` lines fixed when that version was released. The download runs
+   only if its SHA-256 equals the pinned line; otherwise it is deleted and never run. A plugin
+   version with no pinned line downloads nothing: the launcher says to update the plugin.
 
 If the download cannot work (offline, or the repo is private and `gh` is not signed in), the
-launcher prints one line saying what to do. The saved copy lives in a folder named after the
-plugin version, so updating the plugin fetches the matching build by itself and removes the
-older folder.
+launcher prints one line saying what to do. The plugin version, the app version and the
+release tag are one number. The saved copy lives in a folder named after it, so updating the
+plugin fetches the matching build by itself and removes the older folder.
 
 **Fallback, by hand** (no plugin):
 
 - Build the program: `cargo install --path crates/cli` from this repo (it lands on PATH via
   `~/.cargo/bin`), or take a prebuilt one from the release and put it on PATH.
-- Copy `skill/skills/atlas/` to `~/.claude/skills/atlas/`. The same launcher finds the
-  program on PATH, or downloads it as above. (`claude --plugin-dir <this repo>/skill`
-  tries the plugin without installing it.)
+- Copy `skill/skills/atlas/` to `~/.claude/skills/atlas/`. Without the plugin there is no
+  version to download, so the launcher uses the program on PATH (or the Atlas app's copy).
+  `claude --plugin-dir <this repo>/skill` tries the plugin without installing it.
+
+**Releasing** (maintainers): after the release assets and `SHA256SUMS.txt` exist, run
+`pwsh tools/pin-skill-checksums.ps1 -Sums SHA256SUMS.txt -Version <version>` and commit the
+updated `skill/skills/atlas/bin/checksums.txt` with the plugin version set to the same number.
 
 When Claude picks the skill up from a plain question it uses the Skill tool; if your
 permission mode asks, allow it once or add `Skill(atlas)` to `permissions.allow`. Typing

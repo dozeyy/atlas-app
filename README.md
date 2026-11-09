@@ -1,23 +1,36 @@
+<div align="center">
+
+<img src="assets/brand/atlas-icon-1024.png" alt="Atlas" width="96" height="96">
+
 # Atlas
+
+**See where your Claude Code usage goes.**
+
+<a href="https://github.com/dozeyy/atlas/releases/latest"><img src="assets/readme/download.svg" alt="Download Atlas" width="280" height="60"></a>
+
+[Windows](https://github.com/dozeyy/atlas/releases/latest/download/Atlas-Setup-Windows-x64.exe) &nbsp;|&nbsp; [macOS](https://github.com/dozeyy/atlas/releases/latest/download/Atlas-macOS.dmg)
+
+</div>
 
 A desktop companion for Claude Code: a usage dashboard, a safe manager for the files in your
 Claude Code setup, and a tray readout. It only reads what Claude Code already keeps on your
 computer.
 
-## Atlas for Claude Code
+## Add the /atlas skill to Claude Code
 
-See your usage right in a Claude Code chat: type `/atlas`, or ask "what's my usage this
-week". The numbers come from the same engine as the app.
+Type `/atlas` in a chat to see your usage, or just ask "what's my usage this week". The
+numbers come from the same engine as the app.
 
-1. **Get Atlas.** Download `Atlas-Setup-<version>.exe` from the
-   [Releases page](https://github.com/dozeyy/atlas/releases) and run it (Windows).
-2. **Add the skill.** In Claude Code, run:
+1. Add this repo as a marketplace. In Claude Code run
+   `/plugin marketplace add https://github.com/dozeyy/atlas`
+   (or paste that link into the plugin "Add marketplace" box in the desktop app).
+2. Install the skill: `/plugin install atlas@atlas`
 
-   ```
-   /plugin marketplace add dozeyy/atlas
-   /plugin install atlas@atlas
-   ```
+There is nothing else to set up. The first time you use `/atlas` it finds the `atlas-usage`
+program that comes with the app, or downloads it once and checks it against a checksum fixed
+inside the plugin.
 
-That is all. The first time you use `/atlas`, it finds the `atlas-usage` program that comes
-with the app, or downloads it once and checks it against the published checksum. Nothing
-else to set up. More in [skill/README.md](skill/README.md).
+It works in Claude Code (the terminal, the desktop app's Code tab, and the IDE extensions),
+not in claude.ai web chat.
+
+More in [skill/README.md](skill/README.md).

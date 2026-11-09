@@ -15,5 +15,5 @@ crates/app/gen/
 skill/bin/
 skill/skills/atlas/bin/atlas-usage
 skill/skills/atlas/bin/atlas-usage.exe
-skill/skills/atlas/bin/.dl*
+skill/skills/atlas/bin/cache/
 dist-cli/
