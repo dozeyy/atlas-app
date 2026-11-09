@@ -19,6 +19,25 @@ export function smoothPath(pts: Pt[]): string {
   t[0] = m[0];
   t[n - 1] = m[n - 2];
   for (let i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2;
+  // Fritsch-Carlson limit: averaged tangents alone can be more than 3x a segment's slope,
+  // and then the curve overshoots its end point (a steep drop into a zero day dipped below
+  // the baseline). Scaling each segment's pair back inside the radius-3 circle keeps every
+  // segment between its two end values.
+  for (let i = 0; i < n - 1; i++) {
+    if (m[i] === 0) {
+      t[i] = 0;
+      t[i + 1] = 0;
+      continue;
+    }
+    const a = t[i] / m[i];
+    const b = t[i + 1] / m[i];
+    const s = a * a + b * b;
+    if (s > 9) {
+      const tau = 3 / Math.sqrt(s);
+      t[i] = tau * a * m[i];
+      t[i + 1] = tau * b * m[i];
+    }
+  }
   let d = `M${r2(pts[0][0])},${r2(pts[0][1])}`;
   for (let i = 0; i < n - 1; i++) {
     const h = dx[i] / 3;

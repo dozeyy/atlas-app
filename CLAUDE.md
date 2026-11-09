@@ -69,8 +69,11 @@ Reliability beats feature count.
 - Palette (proposal; tokens in one source, `src/styles/tokens.css`):
   - Light: bg `#FAF8F5` warm off-white · surface `#FFFFFF` · raised `#F3F0EB` ·
     text `#1F1D1A` · text-2 `#6B655C` · line `#1F1D1A` at 10 %.
-  - Dark: bg `#1C1A17` deep charcoal · surface `#252220` · raised `#2E2A27` ·
-    text `#EDE8E1` · text-2 `#A39B90` · line `#EDE8E1` at 10 %.
+  - Dark (neutral graphite like the Claude app, no brown; Will, 2026-11-08): bg `#1F1F1E` ·
+    surface `#292928` · raised `#333331` · text `#ECECEA` · text-2 `#A5A4A0` · line `#ECECEA` at 10 %.
+  - Silver (clearly cooler and deeper than Light; Will, 2026-11-08): bg `#D2D8E0` · surface
+    `#E8ECF1` · raised `#CDD3DC` · text `#1A1F27` · text-2 `#434B57`; accent `#B5573A`.
+  - Default theme is Match Windows (`system`); a pinned theme only after the user picks one.
   - Accent terracotta (Will kept it, 2026-11-08): `--accent` `#C96442` for large marks
     and charts; `--accent-solid` `#B4532F` filled buttons (white text); `--accent-text`
     `#9C4524` text and links; dark mode `#E07A55` fill, `#E8896A` text. Shipped values
