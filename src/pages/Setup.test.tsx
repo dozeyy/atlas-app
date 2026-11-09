@@ -9,6 +9,7 @@ import { mockSetupSnapshot } from "../lib/setup-mock";
 import { reloadSetup, resetSetupStore } from "../state/setupStore";
 import { CELEBRATE_MS, CHECKLIST_DONE_KEY } from "../components/setup/TopSlot";
 import { resetToasts } from "../state/toastStore";
+import { clearPendingToolkitItem, openToolkitItemNext, peekPendingToolkitItem } from "../lib/nav";
 import type { SetupSnapshot } from "../lib/setup-types";
 
 // CodeMirror needs real layout; the viewer and editor are checked in the running app instead.
@@ -78,6 +79,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute("data-theme");
   resetSetupStore();
   resetToasts();
+  clearPendingToolkitItem();
   backend = new Backend();
 });
 afterEach(() => {
@@ -518,6 +520,16 @@ describe("Setup page: a skill's files and actions", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Edit" }));
     return (await within(dialog).findByRole("textbox", { name: /^Editing / })) as HTMLTextAreaElement;
   }
+
+  it("opens the item the quick jump asked for", async () => {
+    const snap = await backend.setupSnapshot();
+    const id = snap.items.find((i) => i.kind === "skill" && i.name === "deep-research")!.id;
+    openToolkitItemNext(id);
+    await open(backend);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getAllByText("deep-research").length).toBeGreaterThan(0);
+    expect(peekPendingToolkitItem()).toBeNull();
+  });
 
   it("stays in the editor after saving and says it saved", async () => {
     const dialog = await openSkill(/skill deep-research/);
