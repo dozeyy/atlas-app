@@ -46,15 +46,16 @@
    - each update bundle against its `.sig` (a bundle signed with a CI throwaway key or any other key fails);
    - `latest.json`: version, the four platform entries, each URL equal to `https://github.com/dozeyy/atlas/releases/download/vX.Y.Z/<file>`, each signature equal to its `.sig` file.
    Then it reads the public `vX.Y.Z` release and compares each asset there by state, size and sha256. A **draft** with a stale or unexpected asset gets it deleted and re-uploaded; a **published** release holding anything that is not the verified file makes the script stop (see Roll back). Next it creates the draft (or reuses it), uploads what is missing, clones `dozeyy/atlas` `main` fresh, replaces `skill/` and `.claude-plugin/marketplace.json`, adds the `CHANGELOG.md` entry after the first `<!-- releases -->` line (stopping if that line is missing), and commits locally. Then it **publishes the release, then pushes the plugin commit**: `latest.json` and the plugin never point at assets that are not there yet. The release notes are the ones inside `latest.json` (the notes in `docs/release-notes/X.Y.Z.md` at build time), so the release page, the update tooltip and the changelog agree.
-5. Rerun is safe: it does the plugin sync on every run, also when the release is already published, so a push that failed after publishing is finished by rerunning. A complete published release plus an up-to-date plugin changes nothing.
-6. If it refuses, nothing was published (or, for a failed push, only the release is public and the message says to rerun); fix the cause and rerun.
+5. The public tag points at `main` as it was when the release was published, which is just before the plugin commit lands, so browsing the tag on GitHub shows the previous `skill/`. Downloads are not affected (they use the release assets); the current plugin is always on `main`.
+6. Rerun is safe: it does the plugin sync on every run, also when the release is already published, so a push that failed after publishing is finished by rerunning. A complete published release plus an up-to-date plugin changes nothing.
+7. If it refuses, nothing was published (or, for a failed push, only the release is public and the message says to rerun); fix the cause and rerun.
 7. The script prints no secrets, handles none, and opens no windows beyond its own console. It leaves no files behind (the temp folder is removed).
 8. Test hooks, for trying the script without a real release: `-AssetsDir <folder>` and `-SourceTree <folder>` replace the download and the `origin/main` read; `-CloneUrl` clones the plugin repo from somewhere else.
 
 ## Roll back a published release
 The script never edits a published release's files. If one was published wrong:
 1. `gh release edit vX.Y.Z --repo dozeyy/atlas --draft` turns it back into a draft (installed apps stop seeing it; `latest.json` is no longer served).
-2. Fix the cause (a bad pin, a rebuilt asset), re-run the workflow for the tag so the staging copy is correct, or simply delete the wrong asset: `gh release delete-asset vX.Y.Z <file> --repo dozeyy/atlas -y`.
+2. Fix the cause (a bad pin, a rebuilt asset), re-run only the failed Publish job of that tag's run (not "Re-run all jobs": a rebuild makes new bytes, and the pin step stops on "pinned with other hashes") so the staging copy is correct, or simply delete the wrong asset: `gh release delete-asset vX.Y.Z <file> --repo dozeyy/atlas -y`.
 3. Run `tools/publish-public.ps1 -Version X.Y.Z` again: it replaces the stale assets of the draft with the verified ones and publishes it.
 4. A plugin commit that was already pushed is fixed the same way: edit `skill/` here, merge, and rerun the script (it syncs `skill/` every time). `git revert` on the public repo's `main` also works if the plugin itself must go back right now.
 To pull a version entirely, delete the release (`gh release delete vX.Y.Z --repo dozeyy/atlas --yes`) and leave the tag; installed apps simply see no update.
