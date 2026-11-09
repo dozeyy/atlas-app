@@ -262,6 +262,9 @@
 
 /* ---- Not theme-dependent ---------------------------------------------- */
 :root {
+  /* Keyboard focus ring: a soft neutral (secondary text, a little see-through), never the accent. */
+  --focus-ring: color-mix(in srgb, var(--ink-2) 85%, transparent);
+
   /* Type. System fonts only: SF Pro on macOS, Segoe UI Variable on Windows. */
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
     "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;

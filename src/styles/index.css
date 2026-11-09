@@ -60,14 +60,33 @@ button {
   color: inherit;
 }
 
+/* Focus: the one place it is decided. A mouse click, a window coming back to the front and code that
+   hands focus back (a closed menu, a sheet) never draw anything; only a real keyboard walk does, and
+   then it is a soft neutral ring, never the accent. `lib/inputModality.ts` sets data-input on <html>
+   (keyboard after Tab or an arrow key, pointer after any press), so the engine's own guess about
+   "keyboard-looking" focus cannot put a box round a button the mouse just used. */
+@layer base {
 :focus-visible {
-  outline: 2px solid var(--accent-text);
+  outline: none;
+}
+
+html[data-input="keyboard"] :focus-visible {
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
+/* A text field always shows where you are typing, in the same neutral. */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 /* The page container is only focused by code (route change, scroll keys), never tabbed to. */
-main[tabindex="-1"]:focus-visible {
+html[data-input="keyboard"] main[tabindex="-1"]:focus-visible {
   outline: none;
+}
 }
 
 ::selection {

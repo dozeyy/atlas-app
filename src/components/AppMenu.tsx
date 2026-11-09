@@ -3,9 +3,10 @@ import type { KeyboardEvent } from "react";
 import { CaretRight, List } from "@phosphor-icons/react";
 import { IconButton } from "./controls";
 import { HelpSheet } from "./HelpSheets";
-import { APP_MENU } from "../lib/appMenu";
+import { APP_MENU, modName } from "../lib/appMenu";
 import type { MenuEntry, SheetId } from "../lib/appMenu";
 import { useAtlas } from "../state/AtlasProvider";
+import { openPalette } from "../state/paletteStore";
 
 const ITEMS = '[role="menuitem"]';
 
@@ -109,6 +110,12 @@ export function AppMenu() {
     setSheet(s);
   };
 
+  // The palette puts focus back where it was when it closes, so the button gets it first.
+  const jump = () => {
+    close(true);
+    openPalette();
+  };
+
   const onKey = (e: KeyboardEvent) => {
     const at = document.activeElement;
     const list = siblings(at);
@@ -172,10 +179,11 @@ export function AppMenu() {
         aria-expanded={parent ? sub === m.id : undefined}
         className="app-menu-item"
         onPointerEnter={() => setSub(parent ? m.id : null)}
-        onClick={() => (m.sheet ? pick(m.sheet) : setSub(m.id))}
+        onClick={() => (m.action === "palette" ? jump() : m.sheet ? pick(m.sheet) : setSub(m.id))}
       >
         <span>{m.label}</span>
         {parent && <CaretRight size={14} aria-hidden="true" />}
+        {m.action === "palette" && <span className="app-menu-hint">{modName(info.platform)}+K</span>}
       </button>
     );
   };

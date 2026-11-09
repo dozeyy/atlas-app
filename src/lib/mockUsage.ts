@@ -368,11 +368,13 @@ export class MockUsage {
       return day;
     };
     if (a.bucket === "hour") {
-      for (let h = 0; h < 24; h++) {
-        const start = `${a.from}T${String(h).padStart(2, "0")}`;
-        const list = all.filter((s) => s.day === a.from && new Date(s.startedAt).getHours() === h);
-        const per = periodOf(list);
-        points.push({ start, tokens: per.tokens, cost: per.cost, sessions: list.length });
+      for (let day = a.from; day <= a.to; day = addDays(day, 1)) {
+        for (let h = 0; h < 24; h++) {
+          const start = `${day}T${String(h).padStart(2, "0")}`;
+          const list = all.filter((s) => s.day === day && new Date(s.startedAt).getHours() === h);
+          const per = periodOf(list);
+          points.push({ start, tokens: per.tokens, cost: per.cost, sessions: list.length });
+        }
       }
     } else {
       const starts: string[] = [];
@@ -644,6 +646,7 @@ export class MockUsage {
   }
 
   async pricingReveal(): Promise<void> {}
+  async sessionOpenFolder(_sessionId: string): Promise<void> {}
 
   async onUsageStatus(cb: (s: UsageStatus) => void): Promise<() => void> {
     this.statusL.add(cb);
