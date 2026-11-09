@@ -222,3 +222,15 @@ pm ci is needed in a fresh worktree before tsc.
 - Layout rule (Will): "I don't want too much information on one tab. And I kind of don't want to have to scroll for anything, if possible, without compromising UI UX." Pages are checked at 1280x800 for no page scroll.
 - Themes: Dark is neutral graphite (#1f1f1e bg) because the old warm dark read brown next to the Claude app; Silver is cooler and deeper (#d2d8e0 bg) because it read too close to Light. Default theme stays Match Windows (system).
 - Charts: smoothPath dipped below the baseline on a steep drop into a zero day (unlimited averaged tangents overshoot). Fixed with the Fritsch-Carlson limit; a test samples every cubic segment and was proven to fail without the fix (7e20b27).
+## 2026-11-08 - Skill plugin install (main session)
+- Will: GitHub repo goes public once Atlas is finished; downloads and updates live on dozeyy/atlas. README top: big Download button (releases/latest) + direct Windows/macOS links (stable asset names `Atlas-Setup-Windows-x64.exe`, `Atlas-macOS.dmg`).
+- Install: `/plugin marketplace add dozeyy/atlas` (or paste the repo URL) then `/plugin install atlas@atlas`. Works in Claude Code only, not claude.ai web chat.
+- Launchers `skill/skills/atlas/bin/atlas-usage.{ps1,sh}`: PATH, then `<data>/cache/<ver>/`, then `%LOCALAPPDATA%\Atlas\atlas-usage.exe` (Tauri NSIS currentUser dir), else download from tag `v<version>`. Trust root is the plugin's own `checksums.txt` (never the release's SHA256SUMS); no pin = refuse. Plugin, app and tag share ONE version number.
+- Release pin step: `pwsh tools/pin-skill-checksums.ps1 -Dir <built atlas-usage-* files from the same CI run> -Version <x.y.z>`, then commit checksums.txt; refuses re-pin without -Force.
+- Security review (opus): 1 High (release-sourced sums as trust root) + 4 Medium fixed; re-review pass.
+- Gotchas: awk `-v` compares `1.1` == `1.10` numerically (use `$1"" == v""`); PS 5.1 `Invoke-WebRequest -MaximumRedirection 0` throws with no response (use HttpWebRequest); plugin env vars are filled into skill text, not exported to the shell; `--plugin-dir` session runs create `~/.claude/plugins/data/<name>-inline`.
+- Not run: macOS/Linux hosts, a real release download.
+
+## 2026-11-08 - CI fixes (main session)
+- Root cause (CI log): `is_inside` canonicalized only existing paths, so a not-yet-created file under `C:\Users\RUNNER~1` or macOS `/var` (-> `/private/var`) compared unequal to its folder. Fix: resolve the deepest existing ancestor, append the tail.
+- macOS-only Now watcher tests failed (likely cause: FSEvents reports `/private/var/...` for a watched `/var/...`, so `classify` dropped every event). Fix: `usage::watch::rebase` maps event paths back onto the configured root in both watchers. Confirm on the next macOS CI run.
