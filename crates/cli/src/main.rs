@@ -159,6 +159,12 @@ fn real_id(s: Option<String>) -> Option<String> {
     s.map(|s| s.trim().to_string()).filter(|s| !s.is_empty() && !s.contains('$') && !s.contains('{'))
 }
 
+/// An on/off environment value: only 1, true or yes (any case) switch it on, so `false`,
+/// `no`, `off`, `0` and an empty value leave it off.
+fn truthy(v: &str) -> bool {
+    matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes")
+}
+
 fn env_path(k: &str) -> Option<PathBuf> {
     std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from)
 }
@@ -194,11 +200,11 @@ fn main() {
             std::process::exit(2);
         }
     };
-    fmt::set_ascii(opts.ascii || env_path("ATLAS_ASCII").is_some_and(|v| v != Path::new("0")));
+    fmt::set_ascii(opts.ascii || std::env::var("ATLAS_ASCII").is_ok_and(|v| truthy(&v)));
     match run(&opts) {
         Ok(out) => println!("{out}"),
         Err(e) => {
-            eprintln!("atlas-usage: {e}");
+            eprintln!("atlas-usage: {}", fmt::plain(&e));
             std::process::exit(1);
         }
     }
@@ -430,6 +436,16 @@ mod tests {
         assert!(o.ascii);
         assert_eq!(o.span.as_deref(), Some("30d"));
         assert!(!opts(&["30d"]).ascii);
+    }
+
+    #[test]
+    fn only_a_yes_turns_the_ascii_env_on() {
+        for on in ["1", "true", "TRUE", "yes", " Yes "] {
+            assert!(truthy(on), "{on}");
+        }
+        for off in ["0", "false", "False", "no", "off", "", "2", "ascii"] {
+            assert!(!truthy(off), "{off}");
+        }
     }
 
     #[test]
