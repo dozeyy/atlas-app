@@ -641,7 +641,7 @@ html.reduced .side-main {
 .session-grid > li {
   border-bottom: 1px solid var(--line);
 }
-@container (min-width: 1100px) {
+@container (min-width: 1280px) {
   .session-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
