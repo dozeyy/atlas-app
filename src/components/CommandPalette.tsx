@@ -5,6 +5,7 @@ import { ChatsCircle, FolderSimple, MagnifyingGlass, Robot, Sparkle, TerminalWin
 import { NAV } from "./Sidebar";
 import { useAtlas } from "../state/AtlasProvider";
 import { closePalette, usePaletteOpen } from "../state/paletteStore";
+import { guardLeave } from "../state/unsavedStore";
 import { startSetup, useSetup } from "../state/setupStore";
 import { getBackend } from "../lib/ipc";
 import { modName } from "../lib/appMenu";
@@ -84,7 +85,7 @@ export function CommandPalette() {
 }
 
 function Palette() {
-  const { info, setView } = useAtlas();
+  const { info, view, setView } = useAtlas();
   const mod = modName(info.platform);
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState(0);
@@ -154,10 +155,16 @@ function Palette() {
     if (!item) return;
     const t = item.target;
     closePalette();
-    if (t.session) openSessionNext(t.session);
-    else if (t.project) openProjectNext(t.project);
-    else if (t.toolkitItem) openToolkitItemNext(t.toolkitItem);
-    setView(t.view);
+    const jump = () => {
+      if (t.session) openSessionNext(t.session);
+      else if (t.project) openProjectNext(t.project);
+      else if (t.toolkitItem) openToolkitItemNext(t.toolkitItem);
+      setView(t.view);
+    };
+    // Leaving the current view with unsaved edits asks first, before anything is handed over.
+    // (Staying on the Toolkit is asked by the Toolkit page itself, when it takes the item.)
+    if (t.view !== view) guardLeave(jump);
+    else jump();
   };
 
   const onKey = (e: KeyboardEvent) => {

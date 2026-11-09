@@ -150,6 +150,19 @@ pub fn window_control(app: AppHandle, action: String) {
     }
 }
 
+/// The page says whether an editor holds edits that are not saved, so a quit can ask first.
+#[tauri::command]
+pub fn set_unsaved(state: Shared, on: bool) {
+    state.set_unsaved(on);
+}
+
+/// The user chose Discard at the quit question: quit now.
+#[tauri::command]
+pub fn leave_app(app: AppHandle, state: Shared) {
+    state.set_unsaved(false);
+    app.exit(0);
+}
+
 /// Whether the window is maximized, so the middle caption button can show Restore.
 #[tauri::command]
 pub fn window_maximized(app: AppHandle) -> bool {

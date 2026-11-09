@@ -563,3 +563,201 @@ fn with_skill_name_edits_only_the_frontmatter_name() {
     assert_eq!(with_skill_name("no frontmatter\n", "b"), "no frontmatter\n");
     assert!(with_skill_name("\u{feff}---\nname: a\n---\n", "b").starts_with("\u{feff}---\nname: b\n"));
 }
+
+// ---- opening, links and leftovers -------------------------------------------
+
+/// Makes a file link, or says the machine will not let this test (Windows needs a privilege).
+fn link_file(target: &Path, at: &Path) -> bool {
+    #[cfg(unix)]
+    return std::os::unix::fs::symlink(target, at).is_ok();
+    #[cfg(windows)]
+    return std::os::windows::fs::symlink_file(target, at).is_ok();
+    #[cfg(not(any(unix, windows)))]
+    return false;
+}
+
+fn link_dir(target: &Path, at: &Path) -> bool {
+    #[cfg(unix)]
+    return std::os::unix::fs::symlink(target, at).is_ok();
+    // A junction needs no privilege, and the copy treats it as the folder link it is.
+    #[cfg(windows)]
+    return std::os::windows::fs::symlink_dir(target, at).is_ok()
+        || std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(at).arg(target).output().is_ok_and(|o| o.status.success());
+    #[cfg(not(any(unix, windows)))]
+    return false;
+}
+
+fn contains_text(dir: &Path, needle: &str) -> bool {
+    snapshot(dir).iter().any(|(_, b)| String::from_utf8_lossy(b).contains(needle))
+}
+
+#[test]
+fn the_file_to_open_is_absolute_canonical_and_never_a_network_or_verbatim_path() {
+    let fx = Fx::new();
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    for file in [None, Some("reference.md"), Some("scripts/run.py")] {
+        let p = d.file_target(&it.id, file).unwrap();
+        let s = p.to_string_lossy();
+        assert!(p.is_absolute() && p.is_file(), "{s}");
+        assert!(!s.starts_with(r"\\") && !s.starts_with("//") && !s.starts_with('-'), "{s}");
+    }
+}
+
+#[test]
+fn a_skill_md_that_links_outside_its_folder_is_neither_edited_nor_opened() {
+    let fx = Fx::new();
+    let outside = fx.dir.join("outside.md");
+    fs::write(&outside, "---\nname: linked-skill\ndescription: x\n---\nSECRET-BODY\n").unwrap();
+    let dir = fx.claude().join("skills").join("linked-skill");
+    fs::create_dir_all(&dir).unwrap();
+    if !link_file(&outside, &dir.join("SKILL.md")) {
+        eprintln!("skipped: this machine does not allow creating links");
+        return;
+    }
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "linked-skill");
+    assert!(d.save_plan(&it.id).is_err(), "saving through the link must be refused");
+    assert!(d.read_raw(&it.id, true).is_err());
+    assert!(d.file_target(&it.id, None).is_err(), "opening the link target must be refused");
+    assert_eq!(fs::read_to_string(&outside).unwrap().lines().last(), Some("SECRET-BODY"));
+}
+
+#[test]
+fn duplicating_never_copies_a_link_that_leaves_the_skill_folder_and_does_not_count_it() {
+    let fx = Fx::new();
+    let secret = fx.dir.join("credentials.txt");
+    fs::write(&secret, "TOP-SECRET-TOKEN").unwrap();
+    // Bigger than the copy limit: counting it would wrongly say the skill is too big.
+    let huge = fx.dir.join("huge.bin");
+    fs::write(&huge, vec![b'x'; 17 * 1024 * 1024]).unwrap();
+    let src = fx.claude().join("skills").join("shared-skill");
+    if !link_file(&secret, &src.join("leak.txt")) {
+        eprintln!("skipped: this machine does not allow creating links");
+        return;
+    }
+    assert!(link_file(&huge, &src.join("huge.txt")));
+    assert!(link_file(&src.join("reference.md"), &src.join("alias.md")));
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    d.duplicate_skill(&it.id, "shared-copy", &fx.claude()).expect("links that leave the folder are skipped, not counted");
+    let dest = fx.claude().join("skills").join("shared-copy");
+    assert!(!dest.join("leak.txt").exists() && !dest.join("huge.txt").exists());
+    assert!(!contains_text(&dest, "TOP-SECRET-TOKEN"));
+    // A link to a file inside the folder is copied as that file.
+    assert_eq!(fs::read(dest.join("alias.md")).unwrap(), fs::read(src.join("reference.md")).unwrap());
+    // The original, links included, is untouched.
+    assert_eq!(fs::read(&secret).unwrap(), b"TOP-SECRET-TOKEN");
+}
+
+#[test]
+fn a_folder_link_out_of_a_skill_is_skipped_and_one_into_itself_stops_the_copy() {
+    let fx = Fx::new();
+    let elsewhere = fx.dir.join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    fs::write(elsewhere.join("k.txt"), "TOP-SECRET-TOKEN").unwrap();
+    let src = fx.claude().join("skills").join("shared-skill");
+    if !link_dir(&elsewhere, &src.join("outlink")) {
+        eprintln!("skipped: this machine does not allow creating links");
+        return;
+    }
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    // Out of the folder: left out of the copy, never followed.
+    d.duplicate_skill(&it.id, "shared-copy", &fx.claude()).unwrap();
+    let dest = fx.claude().join("skills").join("shared-copy");
+    assert!(!dest.join("outlink").exists());
+    assert!(!contains_text(&dest, "TOP-SECRET-TOKEN"));
+    // Into the folder itself: refused whole, with nothing left behind.
+    assert!(link_dir(&src.join("scripts"), &src.join("inlink")));
+    assert!(d.duplicate_skill(&it.id, "second-copy", &fx.claude()).is_err());
+    let skills = fx.claude().join("skills");
+    assert!(!skills.join("second-copy").exists());
+    let names: Vec<String> = fs::read_dir(&skills).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert!(names.iter().all(|n| !n.starts_with(".atlas-copy")), "{names:?}");
+}
+#[test]
+fn deleting_a_skill_does_not_copy_a_linked_secret_into_the_backup() {
+    let fx = Fx::new();
+    let secret = fx.dir.join("credentials.txt");
+    fs::write(&secret, "TOP-SECRET-TOKEN").unwrap();
+    let src = fx.claude().join("skills").join("shared-skill");
+    if !link_file(&secret, &src.join("leak.txt")) {
+        eprintln!("skipped: this machine does not allow creating links");
+        return;
+    }
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    apply_delete(&d.delete_plan(&it.id).unwrap(), &fx.backups).expect("the delete still works");
+    assert!(!src.exists());
+    assert!(!contains_text(&fx.backups, "TOP-SECRET-TOKEN"), "the backup must not hold the linked file");
+    assert_eq!(fs::read(&secret).unwrap(), b"TOP-SECRET-TOKEN", "the link's target is never touched");
+}
+
+#[test]
+fn a_skill_md_that_is_not_utf8_is_refused_not_rewritten_with_replacement_characters() {
+    let fx = Fx::new();
+    let dir = fx.claude().join("skills").join("bytes-skill");
+    fs::create_dir_all(&dir).unwrap();
+    let mut b = b"---\nname: bytes-skill\ndescription: x\n---\nbody ".to_vec();
+    b.extend_from_slice(&[0xFF, 0xFE, b'\n']);
+    fs::write(dir.join("SKILL.md"), &b).unwrap();
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "bytes-skill");
+    assert!(d.duplicate_skill(&it.id, "bytes-copy", &fx.claude()).is_err());
+    assert!(!fx.claude().join("skills").join("bytes-copy").exists());
+    assert_eq!(fs::read(dir.join("SKILL.md")).unwrap(), b, "the original is untouched");
+}
+
+#[test]
+fn the_next_duplicate_removes_an_old_half_made_copy_and_leaves_a_fresh_one() {
+    let fx = Fx::new();
+    let skills = fx.claude().join("skills");
+    let old = skills.join(".atlas-copy-1000-1");
+    fs::create_dir_all(&old).unwrap();
+    fs::write(old.join("SKILL.md"), "half").unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+    let fresh = skills.join(format!(".atlas-copy-{now}-7"));
+    fs::create_dir_all(&fresh).unwrap();
+    let odd = skills.join(".atlas-copy-notanumber");
+    fs::create_dir_all(&odd).unwrap();
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    d.duplicate_skill(&it.id, "shared-copy", &fx.claude()).unwrap();
+    assert!(!old.exists(), "a crashed copy from long ago is cleaned up");
+    assert!(fresh.exists(), "a copy that may still be running is left alone");
+    assert!(odd.exists(), "a name Atlas did not write is left alone");
+}
+
+#[test]
+fn a_taken_name_is_refused_even_when_it_is_only_a_dangling_link() {
+    let fx = Fx::new();
+    let at = fx.claude().join("skills").join("ghost");
+    if !link_dir(&fx.dir.join("does-not-exist"), &at) {
+        eprintln!("skipped: this machine does not allow creating links");
+        return;
+    }
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    assert!(d.duplicate_skill(&it.id, "ghost", &fx.claude()).is_err());
+}
+
+#[test]
+fn a_supporting_file_reached_through_a_folder_link_that_leaves_the_skill_is_refused() {
+    use atlas_core::setup_write::inside;
+    let fx = Fx::new();
+    let elsewhere = fx.dir.join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    fs::write(elsewhere.join("x.md"), "TOP-SECRET-TOKEN").unwrap();
+    let src = fx.claude().join("skills").join("shared-skill");
+    if !link_dir(&elsewhere, &src.join("jx")) {
+        eprintln!("skipped: this machine does not allow creating links");
+        return;
+    }
+    let d = fx.discover();
+    let it = find(&d, ItemKind::Skill, ScopeKind::User, "shared-skill");
+    assert!(inside(&src, &src.join("jx").join("x.md")).is_err());
+    assert!(inside(&src, &src.join("reference.md")).is_ok());
+    assert!(d.file_target(&it.id, Some("jx/x.md")).is_err());
+    assert!(d.save_plan_file(&it.id, Some("jx/x.md")).is_err());
+}

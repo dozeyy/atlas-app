@@ -9,6 +9,7 @@ import { mockSetupSnapshot } from "../lib/setup-mock";
 import { reloadSetup, resetSetupStore } from "../state/setupStore";
 import { CELEBRATE_MS, CHECKLIST_DONE_KEY } from "../components/setup/TopSlot";
 import { resetToasts } from "../state/toastStore";
+import { resetUnsaved } from "../state/unsavedStore";
 import { clearPendingToolkitItem, openToolkitItemNext, peekPendingToolkitItem } from "../lib/nav";
 import type { SetupSnapshot } from "../lib/setup-types";
 
@@ -80,10 +81,12 @@ beforeEach(() => {
   resetSetupStore();
   resetToasts();
   clearPendingToolkitItem();
+  resetUnsaved();
   backend = new Backend();
 });
 afterEach(() => {
   vi.useRealTimers();
+  resetUnsaved();
   resetSetupStore();
   resetToasts();
 });
@@ -506,6 +509,99 @@ describe("Setup page: edit", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Show secrets and edit" }));
     expect(await within(dialog).findByRole("textbox", { name: /^Editing / })).toBeInTheDocument();
     expect(within(dialog).getByText("Secret values are showing while you edit.")).toBeInTheDocument();
+  });
+});
+
+describe("Setup page: leaving with unsaved edits", () => {
+  async function dirtyEditor() {
+    await open(backend);
+    await openTile("Skills");
+    await userEvent.click(await screen.findByRole("button", { name: /skill deep-research/ }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Edit" }));
+    const ta = (await within(dialog).findByRole("textbox", { name: /^Editing / })) as HTMLTextAreaElement;
+    fireEvent.input(ta, { target: { value: ta.value + "\nunsaved line" } });
+    await waitFor(() => expect(backend.unsaved).toBe(true));
+    return { dialog, ta };
+  }
+  const here = () => screen.getByRole("button", { name: "Toolkit" });
+  const ask = () => screen.findByRole("alertdialog", { name: "Discard your changes?" });
+
+  it("asks on a sidebar click, keeps the edit on Keep editing, and leaves on Discard", async () => {
+    const { ta } = await dirtyEditor();
+    await userEvent.click(screen.getByRole("button", { name: "Dashboard" }));
+    await userEvent.click(within(await ask()).getByRole("button", { name: "Keep editing" }));
+    expect(here()).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("textbox", { name: /^Editing / })).toHaveValue(ta.value);
+    expect(backend.unsaved).toBe(true);
+
+    await userEvent.click(screen.getByRole("button", { name: "Dashboard" }));
+    await userEvent.click(within(await ask()).getByRole("button", { name: "Discard" }));
+    expect(screen.getByRole("button", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("textbox", { name: /^Editing / })).not.toBeInTheDocument();
+    await waitFor(() => expect(backend.unsaved).toBe(false));
+  });
+
+  it("asks on Ctrl+number, and on the title-bar Wrapped gift", async () => {
+    await dirtyEditor();
+    await userEvent.keyboard("{Control>}1{/Control}");
+    await userEvent.click(within(await ask()).getByRole("button", { name: "Keep editing" }));
+    expect(here()).toHaveAttribute("aria-current", "page");
+
+    await userEvent.click(screen.getByRole("button", { name: "Wrapped" }));
+    await userEvent.click(within(await ask()).getByRole("button", { name: "Keep editing" }));
+    expect(here()).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("textbox", { name: /^Editing / })).toBeInTheDocument();
+  });
+
+  it("asks on a Ctrl+K jump to another page, and does not hand the target over until Discard", async () => {
+    await dirtyEditor();
+    await userEvent.keyboard("{Control>}k{/Control}");
+    const box = await screen.findByRole("combobox");
+    await userEvent.type(box, "Sessions");
+    await userEvent.keyboard("{Enter}");
+    await userEvent.click(within(await ask()).getByRole("button", { name: "Keep editing" }));
+    expect(here()).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("textbox", { name: /^Editing / })).toBeInTheDocument();
+  });
+
+  it("asks before another Toolkit item replaces the one being edited", async () => {
+    const { ta } = await dirtyEditor();
+    const other = (await backend.setupSnapshot()).items.find((i) => i.kind === "skill" && i.name !== "deep-research")!;
+    act(() => openToolkitItemNext(other.id));
+    await userEvent.click(within(await ask()).getByRole("button", { name: "Keep editing" }));
+    expect(screen.getByRole("textbox", { name: /^Editing / })).toHaveValue(ta.value);
+  });
+
+  it("does not ask when nothing was changed, or after the edit is saved", async () => {
+    await open(backend);
+    await openTile("Skills");
+    await userEvent.click(await screen.findByRole("button", { name: /skill deep-research/ }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Edit" }));
+    await within(dialog).findByRole("textbox", { name: /^Editing / });
+    expect(backend.unsaved).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Dashboard" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("asks before the window closes or Atlas quits, and quits only on Discard", async () => {
+    await dirtyEditor();
+    act(() => backend.askToQuit());
+    await userEvent.click(within(await ask()).getByRole("button", { name: "Keep editing" }));
+    expect(backend.left).toBe(0);
+
+    act(() => backend.askToQuit());
+    await userEvent.click(within(await ask()).getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(backend.left).toBe(1));
+  });
+
+  it("quits straight away when the page has nothing unsaved", async () => {
+    await open(backend);
+    act(() => backend.askToQuit());
+    await waitFor(() => expect(backend.left).toBe(1));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });
 

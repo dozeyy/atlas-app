@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { getBackend } from "../lib/ipc";
 import { applyTheme } from "../lib/theme";
 import { pushToast } from "./toastStore";
+import { guardLeave } from "./unsavedStore";
 import type { AppInfo, Theme, View } from "../lib/types";
 
 interface AtlasContext {
@@ -71,10 +72,17 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     [accept],
   );
 
+  // Every way to change the view (sidebar, Ctrl+1..7, the quick jump, the Wrapped gift, the app
+  // menu) comes through here, so an editor with unsaved edits is asked about once, in one place.
+  const viewNow = useRef(view);
+  viewNow.current = view;
   const setView = useCallback(
     (v: View) => {
-      setViewState(v);
-      void run(backend.updateSettings({ lastView: v }));
+      if (v === viewNow.current) return;
+      guardLeave(() => {
+        setViewState(v);
+        void run(backend.updateSettings({ lastView: v }));
+      });
     },
     [backend, run],
   );
