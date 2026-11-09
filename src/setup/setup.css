@@ -127,10 +127,15 @@ body {
   stroke-linejoin: round;
 }
 
+/* The dot is 4 px in radius. Behind it, drawn first, is a ring in the sheet's own colour that
+   reaches 9 px out: it wipes the trail's dash pitch (9 px) around the dot, so a dash that ends
+   at the dot's edge is never left as a speck peeking out from under it. */
 .walker {
   fill: var(--accent);
   stroke: var(--bg);
-  stroke-width: 2;
+  stroke-width: 10;
+  paint-order: stroke;
+  r: 4px;
   opacity: 0;
   transition: transform 420ms var(--ease-out);
 }
@@ -173,6 +178,10 @@ body {
   font-variation-settings: var(--display-axes);
   font-weight: 700;
   color: var(--ink);
+  /* The number face has taller metrics than the text face. Left alone, a number on a wrapped line
+     grows that line past 24 px, the two lines come to ~50 px and the buttons below shift 2 px.
+     A zero line-height takes the number out of the line's height; the glyphs draw the same. */
+  line-height: 0;
 }
 
 .line {
@@ -186,7 +195,7 @@ body {
    text to 3.8:1 (light) and the error red to 3.7:1 (dark), under the 4.5:1 floor. A soft halo
    in the sheet's own color, hugging the glyphs only, keeps that pixel at the page's contrast
    without cutting a gap in the line. */
-:is(.line, .opt-toggle, .check, .btn.quiet) {
+:is(.line, .check, .btn.quiet) {
   text-shadow:
     0 0 2px var(--bg),
     0 0 5px var(--bg);
@@ -257,7 +266,7 @@ body {
   cursor: default;
 }
 
-:is(.btn, .x, .opt-toggle, .check input):focus-visible {
+:is(.btn, .x, .check input):focus-visible {
   outline: 2px solid var(--accent-text);
   outline-offset: 2px;
 }
@@ -305,44 +314,23 @@ body {
   opacity: 1;
 }
 
-.opts {
+.databox {
   margin-top: 24px;
 }
 
-.opt-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 8px 0 0;
-  border: 0;
-  background: transparent;
-  color: var(--ink-2);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.opt-toggle:hover {
-  color: var(--ink);
-}
-
-.opt-toggle svg {
-  transition: transform var(--dur) var(--ease-out);
-}
-
-.opt-toggle[aria-expanded="true"] svg {
-  transform: rotate(90deg);
-}
-
-.opt-body {
-  display: grid;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.opt-body[hidden] {
+.databox[hidden] {
   display: none;
+}
+
+/* Under the box, lined up with its label (16 px box + 12 px gap). */
+.hint {
+  margin: 0 0 0 28px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink-2);
+  text-shadow:
+    0 0 2px var(--bg),
+    0 0 5px var(--bg);
 }
 
 .check {
@@ -395,7 +383,6 @@ body {
 }
 
 /* Reduced motion: nothing travels or scales; the page only fades. */
-.reduce .opt-toggle svg,
 .reduce .btn,
 .reduce .x,
 .reduce .sheet.leaving {

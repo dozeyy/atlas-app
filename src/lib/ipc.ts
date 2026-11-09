@@ -101,6 +101,10 @@ export interface Backend {
   openConfigDir(): Promise<void>;
   /** Shows Atlas's own data folder in the file manager. */
   openDataDir(): Promise<void>;
+  /** Whether an uninstaller sits beside this Atlas (a real Windows install, not a dev run). */
+  uninstallAvailable(): Promise<boolean>;
+  /** Starts the uninstaller on its own; it asks Atlas to quit once the person says yes there. */
+  uninstallAtlas(): Promise<void>;
   frontendReady(): Promise<void>;
   /** The page draws the title bar, so the caption buttons ask Rust to act on the window. */
   windowControl(action: "minimize" | "toggle-maximize" | "close"): Promise<void>;
@@ -216,6 +220,8 @@ const tauriBackend: Backend = {
   clearConfigDir: () => invoke<AppInfo>("clear_config_dir"),
   openConfigDir: () => invoke<void>("open_config_dir"),
   openDataDir: () => invoke<void>("open_data_dir"),
+  uninstallAvailable: () => invoke<boolean>("uninstall_available"),
+  uninstallAtlas: () => invoke<void>("uninstall_atlas"),
   frontendReady: async () => {
     await invoke("frontend_ready");
   },

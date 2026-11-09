@@ -1,9 +1,12 @@
-//! Atlas Setup: one small styled window that installs Atlas and, from the moment it opens,
-//! reads the Claude Code chats into Atlas's usage cache so Atlas opens already indexed.
+//! Atlas Setup: one small styled window that installs Atlas by itself the moment it opens and,
+//! from that moment, reads the Claude Code chats into Atlas's usage cache so Atlas opens already
+//! indexed. The same program, renamed `Uninstall Atlas.exe` and kept beside Atlas, is the remover.
 //!
-//! Flow: Ready (Install button, two quiet options, a live "already reading" line) ->
-//! Installing -> Done (the window eases out as Atlas's own intro starts). The real installer
-//! rides inside (`install.rs`); the reading is the app's own engine (`indexer.rs`).
+//! Install: the window opens, the trail plays while the real installer runs silently, Atlas is
+//! started the moment its files are written, and the window eases out as Atlas's own intro
+//! begins. Uninstall: one screen with one box (also remove Atlas's saved data), then the same
+//! trail backwards. The real installer rides inside (`install.rs`); the reading is the app's own
+//! engine (`indexer.rs`); the remover's disk work is `uninstall.rs`.
 
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
@@ -13,14 +16,17 @@ compile_error!("Atlas Setup is the Windows installer. Build it on Windows (exclu
 mod indexer;
 mod install;
 mod state;
+mod uninstall;
 #[cfg(windows)]
 mod winsys;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::{Manager, WindowEvent};
 
-use state::Setup;
+use state::{Mode, Setup};
+use uninstall::Launch;
 
 /// Test hook: behave as if the WebView2 runtime were missing (no registry is touched).
 const FORCE_NO_WEBVIEW2_ENV: &str = "ATLAS_SETUP_FORCE_NO_WEBVIEW2";
@@ -39,23 +45,80 @@ fn webview2_installed() -> bool {
     has(LocalMachine, true) || has(LocalMachine, false) || has(CurrentUser, false)
 }
 
-/// No WebView2: the styled window cannot run, so hand over to the plain installer, which
-/// installs the runtime itself. Returns the exit code.
-fn plain_installer() -> i32 {
-    match install::unpack() {
-        Ok(u) => install::run_interactive(&u.exe).unwrap_or(1),
+/// No WebView2: the styled window cannot run, so do the same work with no window at all. The
+/// Atlas installer fetches the runtime itself (silently) when it is missing. Nothing Windows-made
+/// is shown, and Atlas opens at the end. Returns the exit code.
+fn windowless_install() -> i32 {
+    let dir = install::install_dir();
+    let unpacked = match install::unpack() {
+        Ok(u) => u,
         Err(e) => {
             winsys::message("Atlas Setup", &e.message());
+            return 1;
+        }
+    };
+    let result = install::run_silent(&unpacked.exe, |_| {});
+    drop(unpacked);
+    if let Err(e) = result {
+        winsys::message("Atlas Setup", &e.message());
+        return 1;
+    }
+    let _ = install::place_remover(&dir);
+    if install::launch(&dir).is_err() {
+        winsys::message("Atlas Setup", "Atlas is installed but would not start. Open it from the Start menu.");
+        return 1;
+    }
+    0
+}
+
+/// The same for removing: no window, the installer's own uninstaller does the work.
+fn windowless_remove(dir: &std::path::Path) -> i32 {
+    let code = match uninstall::run_installer_uninstaller(dir, |_| {}) {
+        Ok(()) => 0,
+        Err(e) => {
+            winsys::message("Uninstall Atlas", &e.message());
             1
+        }
+    };
+    uninstall::tidy(dir);
+    if let Ok(me) = std::env::current_exe() {
+        uninstall::erase_my_copy_later(&me);
+    }
+    code
+}
+
+fn main() {
+    let me = std::env::current_exe().unwrap_or_default();
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    match uninstall::launch_for(&me, &args) {
+        Launch::PassOn => std::process::exit(uninstall::pass_on(&me, &winsys::command_line())),
+        Launch::RemoverFirstStep => {
+            if uninstall::hand_on(&me).is_ok() {
+                return;
+            }
+            // Could not make the temporary copy: remove from here (this file stays behind).
+            let dir = me.parent().map(PathBuf::from).unwrap_or_default();
+            window(Mode::Uninstall, dir);
+        }
+        Launch::RemoverWindow(dir) => window(Mode::Uninstall, dir),
+        Launch::Install => {
+            if !webview2_installed() {
+                std::process::exit(windowless_install());
+            }
+            window(Mode::Install, install::install_dir());
         }
     }
 }
 
-fn main() {
-    if !webview2_installed() {
-        std::process::exit(plain_installer());
+fn window(mode: Mode, dir: PathBuf) {
+    if mode == Mode::Uninstall && !uninstall::looks_installed(&dir) {
+        winsys::message("Uninstall Atlas", &uninstall::RemoveError::NotInstalledHere.message());
+        std::process::exit(1);
     }
-    let setup = Setup::new();
+    if mode == Mode::Uninstall && !webview2_installed() {
+        std::process::exit(windowless_remove(&dir));
+    }
+    let setup = Setup::new(mode, dir);
     let for_events = Arc::clone(&setup);
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -68,13 +131,16 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             state::setup_state,
             state::setup_ready,
-            state::begin_install,
+            state::retry,
             state::close_atlas_and_continue,
-            state::handoff,
+            state::begin_uninstall,
             state::cancel,
             state::finish,
         ])
         .setup(move |app| {
+            // Here, not before the builder: this hook runs only once the single-instance check
+            // has passed, so a second Setup that is about to exit never reads or writes anything.
+            setup.start();
             setup.attach(app.handle().clone());
             Ok(())
         })

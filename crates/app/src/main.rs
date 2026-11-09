@@ -93,6 +93,8 @@ fn main() {
             commands::clear_config_dir,
             commands::open_config_dir,
             commands::open_data_dir,
+            commands::uninstall_available,
+            commands::uninstall_atlas,
             commands::frontend_ready,
             commands::window_control,
             commands::window_maximized,
@@ -242,6 +244,19 @@ fn main() {
                     enforce_min_size(&w);
                 }
             });
+
+            // The Atlas installer asks a running Atlas to leave through this (the window's close
+            // button only hides it when close-to-tray is on). It runs the normal quit: the same
+            // path as the tray's Quit, so the cache is closed cleanly on the way out.
+            if let Ok(exe) = std::env::current_exe() {
+                let handle = app.handle().clone();
+                if !atlas_core::quit_signal::listen(&exe, move || {
+                    eprintln!("[atlas] quit requested by the installer");
+                    handle.exit(0);
+                }) {
+                    eprintln!("[atlas] quit signal: not available");
+                }
+            }
 
             // Failsafe: never leave the window invisible if the page fails to load.
             let w = window.clone();
