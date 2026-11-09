@@ -11,9 +11,13 @@
 application
 
 ## One-liner
-A premium Tauri 2 desktop companion for Claude Code: usage and cost dashboard, a safe
-manager for every file in the Claude Code setup, its own MCP server, an in-app assistant
-whose changes wait for approval, a "Wrapped" year story, and a tray readout.
+The toolbox that makes Claude Code better (Will, 2026-11-09: Atlas never competes with
+Claude itself; it is what everyone installs to help Claude). A premium Tauri 2 desktop
+app: a skill library with safe one-click installs, an Atlas skill that turns your
+repeated requests into new skills, a
+safe manager for every file in the Claude Code setup, its own MCP server that connects
+itself, usage and cost as supporting info, a "Wrapped" year story, and a tray readout.
+No in-app Claude chat (dropped by Will, 2026-11-09).
 
 ## Why
 A Christmas 2026 gift for Will's dad: a lifelong Apple fan and heavy Claude Code user.
@@ -28,13 +32,18 @@ Reliability beats feature count.
 
 ## Scope (v1) = spec phases 1-8
 - Must-have: Dashboard + Sessions (usage, est. cost, search), Setup (every item type,
-  global + project, full CRUD with backups), History/Undo, Atlas MCP server + one-click
-  connect, in-app assistant with a Pending Changes diff queue, Wrapped 2026 with the
+  global + project, full CRUD with backups), History/Undo, Atlas MCP server that
+  auto-connects (switch in Settings) with a Pending Changes diff queue, Skill Library
+  (official plugin marketplaces + any GitHub link, plain-words safety check before
+  install, installed through Claude Code's own plugin installer, undoable; a tab inside
+  Toolkit; 1 click when the check is clean, 2 when it flags something), Habits in the
+  Atlas skill, not the app (Will, 2026-11-09: when someone in a chat keeps doing the same
+  thing, the skill notices and offers to make a skill of it), Wrapped 2026 with the
   first-launch Christmas intro, tray/menu-bar readout + spend alerts, Settings, Sandbox
   Mode, `--config-dir`.
 - NOT in v1: claude.ai/desktop token data (not stored locally: Quick Links only), code
   signing/notarization (unless Will approves the cost), auto-update, cloud sync,
-  editing managed (org) settings, plugin install/uninstall (list + toggle only).
+  editing managed (org) settings, an in-app Claude chat.
 
 ## Safety invariants (non-negotiable)
 - Never write the real `~/.claude`, `~/.claude.json` or `$CLAUDE_CONFIG_DIR` during
@@ -171,7 +180,10 @@ via a CI-built `.dmg` that dad (or Will on a Mac) installs and runs.
 - [ ] Phase 4: Setup write + safety: editor, CRUD, templates, validation, settings
       form, hooks + MCP management, atomic writes, backups, History, Undo.
 - [ ] Phase 5: Atlas MCP server (`crates/mcp`), sidecar, Connect/Disconnect.
-- [ ] Phase 6: in-app assistant (headless `claude -p`), Pending Changes queue.
+- [ ] ~~Phase 6: in-app assistant~~ dropped (Will, 2026-11-09); the Pending Changes
+      queue stays, fed by the MCP `--propose` mode.
+- [ ] Phase 9 (core direction, Will 2026-11-09): Skill Library + Make a skill from your
+      habits. Spec: `docs/specs/skill-library.md`.
 - [ ] Phase 7: Wrapped 2026 + first-launch intro, tray/menu bar, spend alerts.
 - [ ] Phase 8: icon, onboarding, empty/error states, perf + a11y pass, README.
 
