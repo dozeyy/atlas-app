@@ -19,5 +19,8 @@ if (!window.matchMedia) {
     }) as MediaQueryList;
 }
 
+// jsdom draws nothing: a canvas has no 2D context unless a test hands it one.
+HTMLCanvasElement.prototype.getContext = (() => null) as unknown as HTMLCanvasElement["getContext"];
+
 // Tests read final numbers, not frames: run with the same single class the app sets for reduced motion.
 document.documentElement.classList.add("reduced");

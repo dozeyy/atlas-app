@@ -30,7 +30,7 @@ describe("navigation", () => {
     mount();
     const nav = screen.getByRole("navigation", { name: "Main" });
     const labels = Array.from(nav.querySelectorAll("button")).map((b) => b.textContent);
-    expect(labels).toEqual(["Dashboard", "Now", "Sessions", "Toolkit", "History", "Wrapped"]);
+    expect(labels).toEqual(["Dashboard", "Now", "Sessions", "Toolkit", "History"]);
     // Settings sits at the foot of the sidebar, where the version used to be; the version lives in Settings.
     const foot = screen.getByRole("navigation", { name: "Secondary" });
     // Icon only (Will, 2026-11-08): the name is the accessible label and tooltip, not visible text.
@@ -52,7 +52,15 @@ describe("navigation", () => {
   it("jumps with Ctrl+number", async () => {
     mount();
     await userEvent.keyboard("{Control>}6{/Control}");
+    expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+    await userEvent.keyboard("{Control>}7{/Control}");
     expect(screen.getByRole("heading", { level: 1, name: "Wrapped" })).toBeInTheDocument();
+  });
+
+  it("numbers the shortcuts 1 to 7 with no gap, Wrapped's gift included", () => {
+    mount();
+    const keys = [...screen.getByRole("navigation", { name: "Main" }).querySelectorAll("button"), ...screen.getByRole("navigation", { name: "Secondary" }).querySelectorAll("button"), screen.getByRole("button", { name: "Wrapped" })].map((b) => /\+(\d)\)$/.exec(b.getAttribute("title") ?? "")?.[1]);
+    expect(keys.sort()).toEqual(["1", "2", "3", "4", "5", "6", "7"]);
   });
 
   it("remembers the last page", async () => {

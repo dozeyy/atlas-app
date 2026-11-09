@@ -301,6 +301,12 @@ pub async fn usage_by_item(state: Shared<'_>, query: ItemQuery) -> Result<Vec<It
     blocking(state.usage.engine(), move |e| e.usage_by_item(&query)).await
 }
 
+/// Wrapped's extra numbers (chat shapes, helper share, the chat with the most helpers).
+#[tauri::command]
+pub async fn usage_wrapped_habits(state: Shared<'_>, from: String, to: String) -> Result<atlas_core::usage::wrapped::WrappedHabits, String> {
+    blocking(state.usage.engine(), move |e| e.wrapped_habits(&from, &to)).await
+}
+
 #[tauri::command]
 pub async fn usage_agent_detail(state: Shared<'_>, session_id: String, agent_id: String) -> Result<Option<AgentDetail>, String> {
     blocking(state.usage.engine(), move |e| e.agent_detail(&session_id, &agent_id)).await

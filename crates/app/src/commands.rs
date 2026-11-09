@@ -86,6 +86,35 @@ pub fn open_data_dir(state: Shared) -> Result<(), String> {
     open_in_file_manager(&dir)
 }
 
+/// Wrapped's share card: ask where to put the PNG (starting in Pictures) and write it there.
+/// The page hands over the bytes; only a PNG of sane size is written, and never into a Claude
+/// folder. Returns the path, or nothing when the picker was cancelled.
+#[tauri::command]
+pub async fn wrapped_save_card(app: AppHandle, state: Shared<'_>, png: Vec<u8>, day: String) -> Result<Option<String>, String> {
+    atlas_core::usage::wrapped::check_card(&png)?;
+    let claude_dir = state.info().config.map(|c| std::path::PathBuf::from(c.dir));
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title("Save your Wrapped card")
+        .set_file_name(atlas_core::usage::wrapped::card_file_name(&day))
+        .add_filter("PNG image", &["png"]);
+    if let Ok(pictures) = app.path().picture_dir() {
+        dialog = dialog.set_directory(pictures);
+    }
+    let Some(picked) = dialog.blocking_save_file() else { return Ok(None) };
+    let path = picked.into_path().map_err(|e| e.to_string())?;
+    if let Some(dir) = claude_dir.as_deref() {
+        atlas_core::history::save_copy_guard(&path, dir)?;
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        atlas_core::fsutil::atomic_write(&path, &png).map_err(|e| format!("The image could not be saved: {e}"))?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 pub(crate) fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let mut cmd = std::process::Command::new("explorer");

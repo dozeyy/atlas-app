@@ -264,6 +264,16 @@
   --font-display: "Recursive Variable", var(--font-ui);
   --display-axes: "CASL" 0.4;
 
+  /* Wrapped's share card is a picture that leaves the app, so it keeps one look in every theme:
+     warm paper, dark ink, terracotta. Drawn to a canvas by lib/shareCard.ts. */
+  --share-panel: #fbf5ec;
+  --share-ink: #1f1d1a;
+  --share-ink-2: #6b655c;
+  --share-line: #e1d6c8;
+  --share-accent: #c96442;
+  --share-accent-ink: #fffaf3;
+  --share-sand: #a8875f;
+
   /* Radii: controls 8, cards 14, sheets and popovers 18, pills round. */
   --r-control: 8px;
   --r-card: 14px;

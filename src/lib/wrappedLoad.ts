@@ -47,18 +47,23 @@ export async function loadWrapped(daily: Daily, modelName: (id: string) => strin
   const hourFrom = addDays(to, -(HOUR_WINDOW_DAYS - 1)) > from ? addDays(to, -(HOUR_WINDOW_DAYS - 1)) : from;
   const range = { from, to };
 
-  const [hourly, byProject, byModel, longest, skills, agents, tools, overview] = await Promise.all([
+  const [hourly, byProject, byModel, longest, biggest, first, habits, skills, agents, tools, overview] = await Promise.all([
     quiet(backend.usageTimeline({ from: hourFrom, to, bucket: "hour" }), null),
     quiet(backend.usageTimeline({ ...range, bucket: "month", groupBy: "project" }), null),
     quiet(backend.usageTimeline({ ...range, bucket: "month", groupBy: "model" }), null),
     quiet(backend.sessionsList({ ...range, sort: "duration", dir: "desc", limit: 1 }), null),
-    quiet(backend.usageByItem({ kind: "skill", ...range, limit: 5 }), [] as ItemUse[]),
+    quiet(backend.sessionsList({ ...range, sort: "tokens", dir: "desc", limit: 1 }), null),
+    quiet(backend.sessionsList({ ...range, sort: "started", dir: "asc", limit: 1 }), null),
+    quiet(backend.usageWrappedHabits(range), null),
+    // Every skill, so the Toolsmith rule can count all uses; the story shows the top five.
+    quiet(backend.usageByItem({ kind: "skill", ...range, limit: 500 }), [] as ItemUse[]),
     quiet(backend.usageByItem({ kind: "agent", ...range, limit: 5 }), [] as ItemUse[]),
     quiet(backend.usageByItem({ kind: "tool", ...range, limit: 5 }), [] as ItemUse[]),
     quiet(backend.settingsOverview(), null),
   ]);
 
   const used = (l: ItemUse[]) => l.filter((i) => i.uses > 0);
+  const usedSkills = used(skills);
 
   return {
     from,
@@ -71,13 +76,18 @@ export async function loadWrapped(daily: Daily, modelName: (id: string) => strin
     streak: daily.streak,
     longestStreak: daily.longest,
     hours: hourly ? hourTotals(hourly.points) : new Array<number>(24).fill(0),
+    hoursDays: Math.min(spanDays, HOUR_WINDOW_DAYS),
     dayTokens,
-    skills: used(skills),
+    skills: usedSkills.slice(0, 5),
     agents: used(agents),
     tools: used(tools),
+    skillUses: usedSkills.reduce((n, s) => n + s.uses, 0),
     projects: seriesTotals(byProject, (_k, name) => name),
     models: seriesTotals(byModel, (key) => modelName(key), 4),
     longest: longest?.rows[0] ?? null,
+    biggest: biggest?.rows[0] ?? null,
+    first: first?.rows[0] ?? null,
+    habits,
     keepDays: overview?.cleanupDays ?? DEFAULT_KEEP_DAYS,
   };
 }

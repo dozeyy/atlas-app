@@ -157,6 +157,21 @@ export interface MessagePoint {
   skill: string | null;
 }
 
+/** What the Wrapped story needs beyond the other lists: chat shapes, helper work, the busiest crowd. */
+export interface WrappedHabits {
+  /** Chats with a message in the range. */
+  chats: number;
+  /** Of those, chats whose messages span under ten minutes. */
+  shortChats: number;
+  /** Of those, chats whose messages span two hours or more. */
+  longChats: number;
+  /** Tokens in the range (the headline unit), and the part helpers spent. */
+  allTokens: number;
+  helperTokens: number;
+  /** The chat that started the most helpers; null when no chat started one. */
+  mostHelpers: SessionRow | null;
+}
+
 export type ItemKind = "skill" | "agent" | "tool";
 
 /** Which items to count: a kind, local days (inclusive, YYYY-MM-DD), optionally one session. */

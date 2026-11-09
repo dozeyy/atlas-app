@@ -74,6 +74,22 @@ describe("title bar row", () => {
   });
 });
 
+describe("Wrapped's gift", () => {
+  it("is an icon-only button in the title bar row, outside the main list, that opens Wrapped and shows it selected", async () => {
+    mount("windows");
+    const gift = screen.getByRole("button", { name: "Wrapped" });
+    expect(gift.closest("header.titlebar")).not.toBeNull();
+    expect(gift.closest("nav")).toBeNull();
+    expect(gift).toHaveTextContent("");
+    expect(gift).not.toHaveAttribute("data-tauri-drag-region");
+    expect(gift.getAttribute("title")).toMatch(/^Wrapped \((Ctrl|Cmd)\+7\)$/);
+    expect(gift).not.toHaveAttribute("aria-current");
+    await userEvent.click(gift);
+    expect(screen.getByRole("heading", { level: 1, name: "Wrapped" })).toBeInTheDocument();
+    expect(gift).toHaveAttribute("aria-current", "page");
+  });
+});
+
 describe("session row", () => {
   const row = {
     sessionId: "s1",

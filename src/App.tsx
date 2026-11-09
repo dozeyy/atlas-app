@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+﻿import { useEffect, useRef } from "react";
 import { WarningCircle } from "@phosphor-icons/react";
 import { useSidebar } from "./lib/useSidebar";
 import { NAV, Sidebar } from "./components/Sidebar";
@@ -32,7 +32,7 @@ export function App() {
   const Page = PAGES[view];
   const { collapsed, toggle: toggleSidebar } = useSidebar();
 
-  // Ctrl/Cmd + 1..6 jumps between sections; Ctrl/Cmd + B shows or hides the sidebar.
+  // Ctrl/Cmd + 1..7 jumps between sections; Ctrl/Cmd + B shows or hides the sidebar.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = info.platform === "macos" ? e.metaKey : e.ctrlKey;

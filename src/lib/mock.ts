@@ -163,6 +163,13 @@ export class MockBackend {
   agentDetail: Backend["agentDetail"] = (s, a) => this.usage.agentDetail(s, a);
   sessionReceipt: Backend["sessionReceipt"] = (id) => this.usage.sessionReceipt(id);
   usageByItem: Backend["usageByItem"] = (q) => this.usage.usageByItem(q);
+  usageWrappedHabits: Backend["usageWrappedHabits"] = (a) => this.usage.usageWrappedHabits(a);
+  /** No file picker in a browser: pretend it was cancelled, and remember the bytes for tests. */
+  lastCard: { bytes: number; day: string } | null = null;
+  wrappedSaveCard: Backend["wrappedSaveCard"] = async (png, day) => {
+    this.lastCard = { bytes: png.length, day };
+    return null;
+  };
   sessionTranscript: Backend["sessionTranscript"] = (id, c, l) => this.usage.sessionTranscript(id, c, l);
   usageFilterOptions = () => this.usage.usageFilterOptions();
   usageReindex: Backend["usageReindex"] = () => this.usage.usageReindex();

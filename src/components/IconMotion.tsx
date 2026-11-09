@@ -2,7 +2,7 @@ import { cloneElement } from "react";
 import type { ReactElement } from "react";
 import type { IconProps } from "@phosphor-icons/react";
 
-export type Motion = "zap" | "tilt" | "nudge" | "plug" | "swing" | "wiggle" | "bob" | "pop" | "spin";
+export type Motion = "zap" | "tilt" | "nudge" | "plug" | "swing" | "wiggle" | "bob" | "pop" | "spin" | "gift";
 
 /**
  * A Phosphor icon with one small move that plays once when its button, link or card is

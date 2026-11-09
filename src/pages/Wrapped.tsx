@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { CSSProperties } from "react";
 import { MapTrifold } from "@phosphor-icons/react";
 import { getBackend } from "../lib/ipc";
 import { cacheNotReady, useFetched, useUsageStatus } from "../lib/useUsage";
@@ -8,11 +9,11 @@ import { buildSlides, coverageLine } from "../lib/wrappedModel";
 import { compact, modelLabel, plural } from "../lib/usage";
 import { useAtlas } from "../state/AtlasProvider";
 import { PageTitle } from "../components/controls";
-import { CountUp } from "../components/CountUp";
 import { EmptyState } from "../components/EmptyState";
 import { IndexProgress } from "../components/IndexProgress";
 import { Topo } from "../components/Topo";
 import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
+import { Num, Words } from "../components/wrapped/motion";
 import { Story } from "../components/wrapped/Story";
 import type { WrappedData } from "../lib/wrappedModel";
 
@@ -22,14 +23,23 @@ function Cover({ d }: { d: WrappedData }) {
     <section aria-label="Your Claude Code so far" className="wr-slide relative isolate overflow-hidden" data-tone="accent">
       <Topo seed={23} />
       <div className="relative flex flex-col gap-3">
-        <div className="wr-kicker">Your Claude Code so far</div>
-        <CountUp value={d.tokens} format={compact} id="wrapped:tokens" className="d d-hero wr-cover-fig text-ink" />
-        <div className="text-subtitle text-ink">tokens so far</div>
+        <div className="wr-kicker wr-in" style={{ "--s": 0 } as CSSProperties}>
+          Your Claude Code so far
+        </div>
+        <div className="wr-cover-num">
+          <Num text={compact(d.tokens)} delay={160} className="d d-hero wr-cover-fig text-ink" />
+        </div>
+        <div className="text-subtitle text-ink wr-in" style={{ "--s": 4 } as CSSProperties}>
+          tokens so far
+        </div>
         <p className="wr-line">
-          {plural(d.sessions, "session")} on {plural(d.activeDays, "active day")}
-          {d.streak > 1 ? `, ${plural(d.streak, "day")} in a row right now` : ""}.
+          <Words
+            text={`${plural(d.sessions, "session")}. ${plural(d.activeDays, "active day")}.${d.streak > 1 ? ` ${plural(d.streak, "day")} in a row right now.` : ""} Ready?`}
+          />
         </p>
-        <p className="max-w-[62ch] text-caption text-ink-2">{coverageLine(d)}</p>
+        <p className="max-w-[62ch] text-caption text-ink-2 wr-in" style={{ "--s": 9 } as CSSProperties}>
+          {coverageLine(d)}
+        </p>
       </div>
     </section>
   );
