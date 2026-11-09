@@ -365,6 +365,7 @@ impl Session {
             project: self.project(),
             model: self.model.clone(),
             ended_ms: self.newest_write_ms(),
+            tokens: Some(self.files.iter().map(|f| f.tokens).sum()),
         }
     }
 
@@ -524,7 +525,8 @@ pub fn tail_last(path: &Path, id: &str, folder_hint: &str, facts: &Facts, prices
         true
     })
     .ok()?;
-    Some(s.last())
+    // Only the end of the file was read: a token total would be a fraction of the real one.
+    Some(NowLast { tokens: None, ..s.last() })
 }
 
 #[cfg(test)]

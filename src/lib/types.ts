@@ -15,6 +15,8 @@ export interface Settings {
   launchAnimation: boolean;
   /** Closing the window hides Atlas to the tray instead of quitting (default off). */
   closeToTray: boolean;
+  /** Tell me when a chat finishes or asks a question (default off). */
+  notifyOnFinish: boolean;
   /** How many copies of each file History keeps (10 to 200). */
   historyKeepVersions: number;
 }

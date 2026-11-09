@@ -71,6 +71,16 @@ describe("Settings", () => {
     await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").closeToTray).toBe(true));
   });
 
+  it("keeps the finished-chat notice off until it is switched on, and says what it cannot see", async () => {
+    mount();
+    const sw = await screen.findByRole("switch", { name: "Tell me when a chat finishes" });
+    expect(sw).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByText(/cannot tell when a chat is only waiting for you to allow something/)).toBeInTheDocument();
+    await userEvent.click(sw);
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").notifyOnFinish).toBe(true));
+    expect(sw).toHaveAttribute("aria-checked", "true");
+  });
+
   it("steps how many versions History keeps, inside 10 to 200", async () => {
     mount();
     const rail = await screen.findByRole("navigation", { name: "Settings sections" });

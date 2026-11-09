@@ -8,6 +8,7 @@ import { NoMatches } from "./states";
 import { Toolbar } from "./Toolbar";
 import {
   DEFAULT_FILTERS,
+  gridMove,
   groupItems,
   KIND_BY_ID,
   tileKinds,
@@ -83,14 +84,51 @@ export function CollectionView({
   const visible = useMemo(() => visibleItems(items, effective), [items, effective]);
   const groups = useMemo(() => groupItems(visible), [visible]);
 
-  // Up/Down walk the cards in reading order.
+  // Arrows move across the cards the way they sit on screen; Home / End jump to the ends.
   const onListKey = (e: KeyboardEvent) => {
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const nav = e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight";
+    if (!nav && e.key !== "Home" && e.key !== "End") return;
     const cards = Array.from(list.current?.querySelectorAll<HTMLElement>("[data-item-card]") ?? []);
     const at = cards.indexOf(document.activeElement as HTMLElement);
     if (at < 0) return;
     e.preventDefault();
-    cards[Math.max(0, Math.min(cards.length - 1, at + (e.key === "ArrowDown" ? 1 : -1)))]?.focus();
+    const to =
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+          ? cards.length - 1
+          : gridMove(
+              cards.map((c) => c.getBoundingClientRect()),
+              at,
+              e.key as "ArrowDown",
+            );
+    cards[to]?.focus();
+    cards[to]?.scrollIntoView?.({ block: "nearest" });
+  };
+
+  // "/" jumps to the search box from anywhere on the page that is not already a text field.
+  useEffect(() => {
+    const onSlash = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      const a = document.activeElement;
+      if (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement || a instanceof HTMLSelectElement) return;
+      if (a instanceof HTMLElement && a.isContentEditable) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      e.preventDefault();
+      search.current?.focus();
+      search.current?.select();
+    };
+    window.addEventListener("keydown", onSlash);
+    return () => window.removeEventListener("keydown", onSlash);
+  }, []);
+
+  // Down from the search box lands on the first card.
+  const onSearchDown = (e: KeyboardEvent) => {
+    if (e.key !== "ArrowDown") return;
+    const first = list.current?.querySelector<HTMLElement>("[data-item-card]");
+    if (!first) return;
+    e.preventDefault();
+    first.focus();
   };
 
   const forceOpen = query.trim() !== "";
@@ -125,6 +163,7 @@ export function CollectionView({
         projects={snap.projects}
         hidden={snap.hidden}
         searchRef={search}
+        onSearchKeyDown={onSearchDown}
         shortcut={mac ? "Cmd F" : "Ctrl F"}
         shown={visible.length}
         total={items.length}

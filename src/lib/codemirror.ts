@@ -157,6 +157,8 @@ export interface Editor {
   focus(): void;
   /** Mark one line (1-based) as the place a problem is, or clear it with null. */
   markLine(line: number | null): void;
+  /** Replace the whole text (kept in undo history). */
+  setText(text: string): void;
   destroy(): void;
 }
 
@@ -233,6 +235,10 @@ export async function mountEditor(
   return {
     focus: () => view.focus(),
     markLine: (line) => view.dispatch({ effects: setErrorLine.of(line) }),
+    setText: (next) => {
+      const cur = view.state.doc.toString();
+      if (next !== cur) view.dispatch({ changes: { from: 0, to: cur.length, insert: next } });
+    },
     destroy: () => {
       view.destroy();
       shadow.remove();

@@ -1,5 +1,6 @@
 // Small text helpers for the Now tab.
 
+import type { NowChat, NowLast, NowSnapshot } from "./nowTypes";
 import { formatDuration } from "./usage";
 
 /** 83 s -> "1:23", 3725 s -> "1:02:05". */
@@ -15,4 +16,13 @@ export function clock(ms: number): string {
 export function ago(ms: number, now: number): string {
   const d = now - ms;
   return d < 45_000 ? "just now" : `${formatDuration(d)} ago`;
+}
+
+/** What the page shows for a snapshot: three separate groups. Finished falls back to the single last chat. */
+export function groupChats(snap: NowSnapshot): { running: NowChat[]; waiting: NowChat[]; finished: NowLast[] } {
+  return {
+    running: snap.chats.filter((c) => c.state === "working"),
+    waiting: snap.chats.filter((c) => c.state !== "working"),
+    finished: snap.recent.length > 0 ? snap.recent : snap.last ? [snap.last] : [],
+  };
 }

@@ -58,6 +58,7 @@ fn main() {
     }
     let app = builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -125,6 +126,9 @@ fn main() {
             setup_service::setup_reveal,
             setup_service::setup_item_raw,
             setup_service::setup_validate,
+            setup_service::setup_skill_files,
+            setup_service::setup_open_file,
+            setup_service::setup_duplicate,
             setup_service::setup_save,
             setup_service::setup_delete,
             setup_service::setup_undo,

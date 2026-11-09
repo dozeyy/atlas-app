@@ -6,12 +6,14 @@ import {
   countByScope,
   DEFAULT_FILTERS,
   enabledTone,
+  gridMove,
   groupItems,
   isOnMissingProject,
   KINDS,
   matchesQuery,
   permissionBuckets,
   relativeTime,
+  scopeRuns,
   visibleItems,
 } from "./setup-model";
 import type { SetupSnapshot } from "./setup-types";
@@ -21,6 +23,43 @@ let withWt: SetupSnapshot;
 beforeAll(async () => {
   snap = await mockSetupSnapshot(false);
   withWt = await mockSetupSnapshot(true);
+});
+
+describe("scope runs", () => {
+  it("cuts a sorted list into neighbours that share a place", () => {
+    const skills = groupItems(snap.items).find((g) => g.meta.kind === "skill")!.items;
+    const runs = scopeRuns(skills);
+    expect(runs.length).toBeGreaterThan(1);
+    expect(runs.flatMap((r) => r.items)).toEqual(skills);
+    for (const r of runs) expect(new Set(r.items.map((i) => i.scopeLabel))).toEqual(new Set([r.label]));
+    expect(scopeRuns([])).toEqual([]);
+  });
+});
+
+describe("arrow keys across a grid", () => {
+  // Two rows of three, then a short third row of one.
+  const box = (col: number, row: number) => ({ left: col * 100, top: row * 80, width: 90, height: 70 });
+  const boxes = [box(0, 0), box(1, 0), box(2, 0), box(0, 1), box(1, 1), box(2, 1), box(0, 2)];
+
+  it("steps by one left and right and stops at the ends", () => {
+    expect(gridMove(boxes, 1, "ArrowRight")).toBe(2);
+    expect(gridMove(boxes, 0, "ArrowLeft")).toBe(0);
+    expect(gridMove(boxes, 6, "ArrowRight")).toBe(6);
+  });
+
+  it("goes up and down to the card nearest across in the next row", () => {
+    expect(gridMove(boxes, 1, "ArrowDown")).toBe(4);
+    expect(gridMove(boxes, 5, "ArrowUp")).toBe(2);
+    expect(gridMove(boxes, 4, "ArrowDown")).toBe(6); // the short row: nearest is the only one
+    expect(gridMove(boxes, 6, "ArrowDown")).toBe(6);
+    expect(gridMove(boxes, 0, "ArrowUp")).toBe(0);
+  });
+
+  it("walks in reading order when nothing has a layout", () => {
+    const flat = [0, 1, 2].map(() => ({ left: 0, top: 0, width: 0, height: 0 }));
+    expect(gridMove(flat, 0, "ArrowDown")).toBe(1);
+    expect(gridMove(flat, 0, "ArrowUp")).toBe(0);
+  });
 });
 
 describe("search", () => {

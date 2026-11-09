@@ -10,6 +10,7 @@
 
 pub mod facts;
 pub mod model;
+pub mod finish;
 pub mod track;
 
 use std::collections::{HashMap, HashSet};
@@ -223,13 +224,25 @@ pub(crate) struct State {
     facts: Facts,
     stats: ReadStats,
     sessions: Vec<Session>,
-    last: Option<NowLast>,
+    /// Chats that are not running, newest first.
+    recent: Vec<NowLast>,
     seq: u64,
 }
 
+/// How many finished chats the page can list.
+pub const RECENT_MAX: usize = 6;
+
 impl State {
     pub(crate) fn new(cfg: NowConfig) -> State {
-        State { cfg, facts: Facts::new(), stats: ReadStats::default(), sessions: Vec::new(), last: None, seq: 0 }
+        State { cfg, facts: Facts::new(), stats: ReadStats::default(), sessions: Vec::new(), recent: Vec::new(), seq: 0 }
+    }
+
+    /// Put a chat that just stopped at the top of the finished list (once, newest first).
+    fn remember(&mut self, l: NowLast) {
+        self.recent.retain(|r| r.session_id != l.session_id);
+        self.recent.push(l);
+        self.recent.sort_by_key(|r| std::cmp::Reverse(r.ended_ms));
+        self.recent.truncate(RECENT_MAX);
     }
 
     pub(crate) fn has_active(&self) -> bool {
@@ -268,6 +281,7 @@ impl State {
             let _ = s.read_file(fi, &self.facts, &self.cfg.prices, &self.stats);
         }
         if !s.files.is_empty() {
+            self.recent.retain(|r| r.session_id != sid);
             self.sessions.push(s);
         }
     }
@@ -302,23 +316,29 @@ impl State {
         for (sid, pd) in active {
             self.open_session(sid, &pd);
         }
-        if self.last.is_none() {
-            self.find_last(found);
+        if self.recent.is_empty() {
+            self.find_recent(found);
         }
     }
 
-    /// The newest chat that is not running, read from the end of its transcript.
-    fn find_last(&mut self, found: &[Found]) {
-        let best = found
-            .iter()
-            .filter(|f| !f.is_subagent && !self.sessions.iter().any(|s| s.id == f.folder_session))
-            .max_by_key(|f| f.mtime_ns);
-        let Some(f) = best else { return };
-        let ended = (f.mtime_ns / 1_000_000).max(0);
-        let hint = f.path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("");
-        if let Some(mut l) = tail_last(&f.path, &f.folder_session, hint, &self.facts, &self.cfg.prices, &self.stats) {
-            l.ended_ms = ended;
-            self.last = Some(l);
+    /// The newest chats that are not running, each read from the end of its transcript.
+    fn find_recent(&mut self, found: &[Found]) {
+        let mut by_chat: HashMap<&str, &Found> = HashMap::new();
+        for f in found.iter().filter(|f| !f.is_subagent && !self.sessions.iter().any(|s| s.id == f.folder_session)) {
+            let e = by_chat.entry(f.folder_session.as_str()).or_insert(f);
+            if f.mtime_ns > e.mtime_ns {
+                *e = f;
+            }
+        }
+        let mut newest: Vec<&Found> = by_chat.into_values().collect();
+        newest.sort_by_key(|f| std::cmp::Reverse(f.mtime_ns));
+        for f in newest.into_iter().take(RECENT_MAX) {
+            let ended = (f.mtime_ns / 1_000_000).max(0);
+            let hint = f.path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("");
+            if let Some(mut l) = tail_last(&f.path, &f.folder_session, hint, &self.facts, &self.cfg.prices, &self.stats) {
+                l.ended_ms = ended;
+                self.remember(l);
+            }
         }
     }
 
@@ -365,11 +385,8 @@ impl State {
         let (keep, gone): (Vec<_>, Vec<_>) =
             std::mem::take(&mut self.sessions).into_iter().partition(|s| s.newest_write_ms() >= cutoff);
         self.sessions = keep;
-        if let Some(newest) = gone.iter().max_by_key(|s| s.newest_write_ms()) {
-            let l = newest.last();
-            if self.last.as_ref().is_none_or(|old| l.ended_ms >= old.ended_ms) {
-                self.last = Some(l);
-            }
+        for s in &gone {
+            self.remember(s.last());
         }
     }
 
@@ -378,7 +395,8 @@ impl State {
         order.sort_by_key(|s| s.seq);
         NowSnapshot {
             chats: order.iter().map(|s| s.chat(now, self.cfg.window_ms)).collect(),
-            last: self.last.clone(),
+            last: self.recent.first().cloned(),
+            recent: self.recent.clone(),
             watching: self.cfg.projects_dir.is_dir(),
         }
     }
