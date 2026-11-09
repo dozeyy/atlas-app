@@ -1,8 +1,12 @@
 // Wrapped: the story told from real numbers. Pure functions only; the queries live in
 // wrappedLoad.ts. Nothing here invents data: a slide whose numbers are missing is not built.
 
-import { compact, exact, formatDuration, headline, plural } from "./usage";
+import { addDays, compact, exact, formatDuration, headline, plural } from "./usage";
+import { compare, compareTokens, WORDS_PER_TOKEN } from "./wrappedCompare";
+import type { Comparison } from "./wrappedCompare";
 import type { ItemUse, SessionRow, TimelinePoint, WrappedHabits } from "./usageTypes";
+
+export { WORDS_PER_TOKEN };
 
 export interface WrappedData {
   /** First day with any usage, and today. Local YYYY-MM-DD. */
@@ -28,7 +32,8 @@ export interface WrappedData {
   tools: ItemUse[];
   /** Every skill use in the range, for the Toolsmith rule (`skills` is only the top few). */
   skillUses: number;
-  projects: { label: string; value: number }[];
+  /** `label` is unique (a folder name two projects share gets its parent); `name` is the folder name alone. */
+  projects: { label: string; value: number; name?: string }[];
   models: { label: string; value: number }[];
   /** The chat that ran longest by the clock. */
   longest: SessionRow | null;
@@ -37,19 +42,58 @@ export interface WrappedData {
   first: SessionRow | null;
   /** Chat shapes, helper work and the chat with the most helpers; null if the query failed. */
   habits: WrappedHabits | null;
-  /** How many days Claude Code keeps its logs. */
-  keepDays: number;
+  /** How many days Claude Code keeps its logs (`cleanupPeriodDays`); null when the setting is not set. */
+  keepDays: number | null;
 }
 
 export type SlideTone = "accent" | "sand" | "slate" | "plain";
 
+/** Where the hero graphic sits against the words. */
+export type SlideLayout = "over" | "split" | "splitR" | "center" | "stack";
+
+export interface Row {
+  label: string;
+  value: number;
+  note?: string;
+}
+
+/**
+ * One hero graphic per kind, and no two slides share a kind. The model hands each its real data;
+ * src/components/wrapped/graphics.tsx draws it.
+ */
 export type SlideChart =
-  | { kind: "days"; values: number[] }
-  | { kind: "hours"; values: number[] }
-  | { kind: "weekdays"; values: number[] }
-  | { kind: "bars"; rows: { label: string; value: number; note?: string }[] }
-  | { kind: "countdown"; rows: { label: string; value: number; note?: string }[] }
-  | { kind: "split"; rows: { label: string; value: number }[] };
+  /** Every day of the history as a ridge; the busiest day is the summit. */
+  | { kind: "ridge"; values: number[] }
+  /** A shelf of novels. */
+  | { kind: "spines"; count: number }
+  /** A trail from the oldest chat to today. */
+  | { kind: "trail"; from: string; to: string; days: number }
+  /** The calendar of the last weeks; `run` is the best streak (inclusive day indexes) to ring. */
+  | { kind: "heat"; values: number[]; start: number; run: [number, number] | null; weeks: number }
+  /** One tower against the average chat. */
+  | { kind: "tower"; value: number; avg: number }
+  /** A dial: hours of one sitting, a lap per twelve. */
+  | { kind: "dial"; hours: number }
+  /** Projects as tiles sized by tokens. */
+  | { kind: "tiles"; rows: Row[] }
+  /** The top skills on a podium. */
+  | { kind: "podium"; rows: Row[] }
+  /** Helpers as lollipops. */
+  | { kind: "lollipop"; rows: Row[] }
+  /** A chat with its helpers around it. */
+  | { kind: "burst"; count: number }
+  /** Tools as bubbles. */
+  | { kind: "bubbles"; rows: Row[] }
+  /** The days around the busiest one; `peak` is its index. */
+  | { kind: "spike"; values: number[]; peak: number; first: string; last: string }
+  /** Seven spokes, Monday first. */
+  | { kind: "spokes"; values: number[] }
+  /** The 24 hours of the day as a strip. */
+  | { kind: "strip"; values: number[] }
+  /** Models as a ring. */
+  | { kind: "donut"; rows: Row[] }
+  /** The coder type: an emblem and its gauge (`score` = value / bar, 1 is the bar). */
+  | { kind: "badge"; id: string; name: string; score: number; traits: { name: string; score: number; note: string }[] };
 
 /** What the share card says. Only numbers, project, skill and model names: never a chat name. */
 export interface ShareCard {
@@ -64,6 +108,8 @@ export interface ShareCard {
   range: string;
   /** Today, local YYYY-MM-DD: the saved file's name. */
   day: string;
+  /** The history as a small ridge along the card: 0..1 heights, left to right. */
+  ridge: number[];
 }
 
 export interface Slide {
@@ -78,6 +124,10 @@ export interface Slide {
   /** A quieter line under the sentence, with its own hover. */
   aside?: { text: string; hint: string };
   chart?: SlideChart;
+  /** How the words and the graphic are laid out. */
+  layout: SlideLayout;
+  /** The fun comparison under the big number, and where its numbers come from (the hover). */
+  compare?: Comparison;
   /** One of the (at most three) moments that get a small pop. */
   celebrate?: boolean;
   /** The last slide: the whole story on one card. */
@@ -146,37 +196,63 @@ export function peakHour(hours: number[]): number | null {
 export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 export const WEEKDAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/** Tokens per weekday (Monday first) from the per-day totals that start on `from`. */
-export function weekdayTotals(from: string, dayTokens: number[]): number[] {
-  const out = new Array<number>(7).fill(0);
-  const start = dayDate(from).getDay(); // 0 = Sunday
+/** Monday-first weekday index (0 = Monday) of a local day. */
+export function weekdayOf(day: string): number {
+  return (dayDate(day).getDay() + 6) % 7;
+}
+
+/**
+ * Tokens on an average weekday, Monday first, from the per-day totals that start on `from`. Each
+ * weekday's total is divided by how many of that weekday the span holds, so a span that is not a
+ * whole number of weeks does not favor the days it contains one more of.
+ */
+export function weekdayAverages(from: string, dayTokens: number[]): number[] {
+  const sums = new Array<number>(7).fill(0);
+  const seen = new Array<number>(7).fill(0);
+  const start = weekdayOf(from);
   dayTokens.forEach((v, i) => {
-    out[(start + i + 6) % 7] += v;
+    const w = (start + i) % 7;
+    sums[w] += v;
+    seen[w] += 1;
   });
-  return out;
+  return sums.map((s, w) => (seen[w] > 0 ? s / seen[w] : 0));
 }
 
 // ---- scale lines ---------------------------------------------------------------------------
 
-/** Stated conversion for the "novels" line: an estimate, never a measurement. */
-export const WORDS_PER_TOKEN = 0.75;
+/** Stated conversion for the novels slide: an estimate, never a measurement. */
 export const WORDS_PER_NOVEL = 100_000;
 
 export function novelsOf(tokens: number): number {
   return (tokens * WORDS_PER_TOKEN) / WORDS_PER_NOVEL;
 }
 
-/** "About 360 novels of text", with the conversion in the hover; nothing under one novel. */
-export function novelsAside(tokens: number): { text: string; hint: string } | null {
-  const n = novelsOf(tokens);
-  if (!(n >= 1)) return null;
-  const rounded = n >= 10 ? Number(n.toPrecision(2)) : Math.round(n);
-  return {
-    text: `About ${compact(rounded)} ${rounded === 1 ? "novel" : "novels"} of text.`,
-    hint:
-      `${compact(tokens)} tokens x ${WORDS_PER_TOKEN} words per token / ${exact(WORDS_PER_NOVEL)} words per novel = about ${compact(rounded)}.\n` +
-      "An estimate. The count includes cache writes, so it is text that went through Claude, not words you typed.",
-  };
+/** Silent reading speed for adults, words a minute (Brysbaert, 2019: 238 for non-fiction). */
+export const READ_WORDS_PER_MIN = 238;
+
+/** The hours it takes to read this many tokens as words, at the stated speed. */
+export function readingHours(tokens: number): number {
+  return (tokens * WORDS_PER_TOKEN) / READ_WORDS_PER_MIN / 60;
+}
+
+/** The conversion behind the novel count, for the figure's hover. */
+export function novelsHint(tokens: number): string {
+  return (
+    `${compact(tokens)} tokens x ${WORDS_PER_TOKEN} words per token / ${exact(WORDS_PER_NOVEL)} words per novel = about ${compact(novelsOf(tokens))}.\n` +
+    "An estimate. The count includes cache writes, so it is text that went through Claude, not words you typed."
+  );
+}
+
+/** 0..1 heights for the small ridge on the share card: the days in `n` even bins, then normalised. */
+export function cardRidge(dayTokens: number[], n = 40): number[] {
+  if (dayTokens.length === 0) return [];
+  const bins = Math.min(n, dayTokens.length);
+  const out = new Array<number>(bins).fill(0);
+  dayTokens.forEach((v, i) => {
+    out[Math.min(bins - 1, Math.floor((i * bins) / dayTokens.length))] += v;
+  });
+  const max = Math.max(...out);
+  return max > 0 ? out.map((v) => v / max) : out;
 }
 
 // ---- coder type ----------------------------------------------------------------------------
@@ -341,7 +417,7 @@ export function coderType(d: WrappedData): CoderType | null {
  */
 export function buildCard(d: WrappedData, type: CoderType | null): ShareCard {
   const tiles: { label: string; value: string }[] = [];
-  if (d.projects.length > 0) tiles.push({ label: "Top project", value: d.projects[0].label });
+  if (d.projects.length > 0) tiles.push({ label: "Top project", value: d.projects[0].name ?? d.projects[0].label });
   if (d.skills.length > 0) tiles.push({ label: "Top skill", value: d.skills[0].id });
   if (d.models.length > 0) tiles.push({ label: "Main model", value: d.models[0].label });
   if (type) tiles.push({ label: "Coder type", value: type.name });
@@ -353,13 +429,57 @@ export function buildCard(d: WrappedData, type: CoderType | null): ShareCard {
     tiles,
     range: `${shortDay(d.from)} to ${shortDay(d.to)}`,
     day: d.to,
+    ridge: cardRidge(d.dayTokens),
+  };
+}
+
+
+// ---- the hero graphics' data -----------------------------------------------------------------
+
+/** The calendar graphic shows at most this many days (26 weeks) so the cells stay big enough to read. */
+export const HEAT_DAYS = 182;
+/** The days around the busiest one that the spike graphic shows. */
+export const SPIKE_DAYS = 21;
+
+/** The last weeks as a calendar, with the longest run of days in a row (two or more) to be ringed. */
+export function heatChart(d: Pick<WrappedData, "to" | "dayTokens">): Extract<SlideChart, { kind: "heat" }> | undefined {
+  const values = d.dayTokens.slice(-HEAT_DAYS);
+  if (values.length < 2) return undefined;
+  const start = weekdayOf(addDays(d.to, -(values.length - 1)));
+  let best: [number, number] | null = null;
+  let from = -1;
+  values.forEach((v, i) => {
+    if (v <= 0) {
+      from = -1;
+      return;
+    }
+    if (from < 0) from = i;
+    if (!best || i - from >= best[1] - best[0]) best = [from, i];
+  });
+  const run = best && (best as [number, number])[1] - (best as [number, number])[0] >= 1 ? (best as [number, number]) : null;
+  return { kind: "heat", values, start, run, weeks: Math.ceil((start + values.length) / 7) };
+}
+
+/** Up to SPIKE_DAYS days around the busiest day, which is the peak. */
+export function spikeChart(d: Pick<WrappedData, "from" | "to" | "dayTokens">, busyDay: string): Extract<SlideChart, { kind: "spike" }> | undefined {
+  const at = daysBetween(d.from, busyDay);
+  const n = d.dayTokens.length;
+  if (at < 0 || at >= n) return undefined;
+  const size = Math.min(SPIKE_DAYS, n);
+  const lo = Math.max(0, Math.min(n - size, at - Math.floor(size / 2)));
+  return {
+    kind: "spike",
+    values: d.dayTokens.slice(lo, lo + size),
+    peak: at - lo,
+    first: shortDay(addDays(d.from, lo)),
+    last: shortDay(addDays(d.from, lo + size - 1)),
   };
 }
 
 // ---- the slides ----------------------------------------------------------------------------
 
-/** The top rows of a list as bar rows. */
-function itemRows(items: ItemUse[], n = 5): { label: string; value: number; note: string }[] {
+/** The top rows of a list as ranked rows. */
+function itemRows(items: ItemUse[], n = 5): Row[] {
   return items.slice(0, n).map((i) => ({ label: i.id, value: i.uses, note: plural(i.uses, "use") }));
 }
 
@@ -382,9 +502,39 @@ function ago(days: number): string {
   return `${exact(days)} days ago`;
 }
 
+const MS_PER_HOUR = 3_600_000;
+
+/** The type slide's comparison: the real amount the winning habit counted, against its own ladder. */
+function typeCompare(d: WrappedData, id: string): Comparison | undefined {
+  const h = d.habits;
+  const at = (hours: number[]) => hours.reduce((s, x) => s + (d.hours[x] ?? 0), 0);
+  switch (id) {
+    case "owl":
+      return compareTokens(at(NIGHT_HOURS), { lead: "Your nights add up to about" }) ?? undefined;
+    case "bird":
+      return compareTokens(at(EARLY_HOURS), { lead: "Your early mornings add up to about" }) ?? undefined;
+    case "delegator":
+      return h ? (compareTokens(h.helperTokens, { lead: "Helper work adds up to about" }) ?? undefined) : undefined;
+    case "marathoner":
+      // Each long chat ran two hours or more, so this is a floor.
+      return h ? (compare("hours", (h.longChats * LONG_CHAT_HOURS), { lead: "Your long chats alone run at least" }) ?? undefined) : undefined;
+    case "sprinter":
+      return h ? (compare("count", h.shortChats, { lead: "Your quick chats number about" }) ?? undefined) : undefined;
+    case "toolsmith":
+      return compare("count", d.skillUses, { lead: "Your skill uses number about" }) ?? undefined;
+    case "loyalist":
+      return d.projects[0] ? (compareTokens(d.projects[0].value, { lead: "That project alone is about" }) ?? undefined) : undefined;
+    default:
+      return compare("days", d.activeDays, { lead: "Your active days add up to about" }) ?? undefined;
+  }
+}
+
+const LONG_CHAT_HOURS = 2;
+
 /**
  * The slides, in order. Each exists only if its numbers do. Under SHORT_STORY_DAYS active days the
- * story is the short one: the total, one favorite, the busiest day, and the card.
+ * story is the short one: the total, one favorite, the busiest day, and the card. Every slide has
+ * its own kind of hero graphic and, where the number reaches a rung, one comparison line.
  */
 export function buildSlides(d: WrappedData): Slide[] {
   const out: Slide[] = [];
@@ -395,31 +545,54 @@ export function buildSlides(d: WrappedData): Slide[] {
     return true;
   };
   const short = d.activeDays < SHORT_STORY_DAYS;
-  const skillChart = (): SlideChart | undefined => (d.skills.length > 1 ? { kind: "countdown", rows: itemRows(d.skills) } : undefined);
+  const skillChart = (): SlideChart | undefined => (d.skills.length > 1 ? { kind: "podium", rows: itemRows(d.skills) } : undefined);
+  const uses = (n: number, lead: string) => compare("count", n, { lead }) ?? undefined;
 
   if (d.tokens > 0) {
     out.push({
       id: "tokens",
       tone: "accent",
+      layout: "over",
       kicker: "The grand total",
       figure: compact(d.tokens),
       unit: "tokens",
       line: `That is ${plural(d.sessions, "session")} over ${plural(d.activeDays, "active day")}. You have been busy.`,
       hint: `${exact(d.tokens)} tokens in all: input, output and cache writes.`,
-      aside: novelsAside(d.tokens) ?? undefined,
-      chart: d.dayTokens.some((v) => v > 0) ? { kind: "days", values: d.dayTokens } : undefined,
+      compare: compareTokens(d.tokens, { lead: "About" }) ?? undefined,
+      chart: d.dayTokens.some((v) => v > 0) ? { kind: "ridge", values: d.dayTokens } : undefined,
       celebrate: pop(true),
+    });
+  }
+
+  const novels = novelsOf(d.tokens);
+  if (!short && novels >= 1) {
+    const rounded = novels >= 10 ? Number(novels.toPrecision(2)) : Math.round(novels);
+    out.push({
+      id: "novels",
+      tone: "sand",
+      layout: "splitR",
+      kicker: "In book terms",
+      figure: compact(rounded),
+      unit: rounded === 1 ? "novel" : "novels",
+      line: "That is quite a shelf.",
+      hint: novelsHint(d.tokens),
+      compare: compare("hours", readingHours(d.tokens), { lead: "Reading it all takes about" }) ?? undefined,
+      chart: { kind: "spines", count: rounded },
     });
   }
 
   if (!short && d.first) {
     const day = localDayOf(d.first.startedAt);
+    const since = daysBetween(day, d.to);
     out.push({
       id: "first",
-      tone: "sand",
-      kicker: "Day one",
+      tone: "slate",
+      layout: "center",
+      kicker: "Oldest chat still here",
       figure: shortDay(day),
-      line: `${ago(daysBetween(day, d.to))}: ${chatName(d.first)}, in ${d.first.projectName}. No going back.`,
+      line: `${ago(since)}: ${chatName(d.first)}, in ${d.first.projectName}. Still standing.`,
+      compare: compare("days", since, { lead: "Since then, about" }) ?? undefined,
+      chart: since > 0 ? { kind: "trail", from: day, to: d.to, days: since } : undefined,
     });
   }
 
@@ -427,6 +600,7 @@ export function buildSlides(d: WrappedData): Slide[] {
     out.push({
       id: "days",
       tone: "plain",
+      layout: "stack",
       kicker: "You keep showing up",
       figure: exact(d.activeDays),
       unit: d.activeDays === 1 ? "active day" : "active days",
@@ -434,19 +608,26 @@ export function buildSlides(d: WrappedData): Slide[] {
         d.longestStreak > 1
           ? `Your best run: ${plural(d.longestStreak, "day")} in a row${d.streak > 1 ? `. You are ${plural(d.streak, "day")} into the next one` : ""}.`
           : `Out of ${plural(d.spanDays, "day")}.`,
+      compare: compare("days", d.activeDays, { lead: "Active days add up to about" }) ?? undefined,
+      chart: heatChart(d),
       celebrate: pop(d.longestStreak >= 3),
     });
   }
 
   if (!short && d.biggest && headline(d.biggest.tokens) > 0) {
+    const big = headline(d.biggest.tokens);
+    const chats = d.habits && d.habits.chats > 0 ? d.habits.chats : d.sessions;
     out.push({
       id: "biggest",
       tone: "accent",
+      layout: "splitR",
       kicker: "Your biggest chat",
-      figure: compact(headline(d.biggest.tokens)),
+      figure: compact(big),
       unit: "tokens",
       line: `${chatName(d.biggest)}, in ${d.biggest.projectName}. One chat did all that.`,
-      hint: `${exact(headline(d.biggest.tokens))} tokens in one chat. The Longest sitting slide goes by time; this one goes by tokens.`,
+      hint: `${exact(big)} tokens in one chat. The Longest sitting slide goes by time; this one goes by tokens.`,
+      compare: compareTokens(big, { lead: "That one chat is about" }) ?? undefined,
+      chart: chats > 1 ? { kind: "tower", value: big, avg: d.tokens / chats } : undefined,
     });
   }
 
@@ -454,9 +635,12 @@ export function buildSlides(d: WrappedData): Slide[] {
     out.push({
       id: "long",
       tone: "sand",
+      layout: "split",
       kicker: "Longest sitting",
       figure: formatDuration(d.longest.durationMs),
       line: `${chatName(d.longest)}, ${shortDay(localDayOf(d.longest.startedAt))}. Did you ever close it?`,
+      compare: compare("hours", d.longest.durationMs / MS_PER_HOUR, { lead: "That sitting is about" }) ?? undefined,
+      chart: { kind: "dial", hours: d.longest.durationMs / MS_PER_HOUR },
     });
   }
 
@@ -465,10 +649,12 @@ export function buildSlides(d: WrappedData): Slide[] {
     out.push({
       id: "project",
       tone: "plain",
+      layout: "stack",
       kicker: "Your biggest project",
       figure: top.label,
       line: `${share(d.projects, top.value)}% of the tokens you can see by project.${share(d.projects, top.value) >= 50 ? " Clear favorite." : ""}`,
-      chart: d.projects.length > 1 ? { kind: "split", rows: d.projects } : undefined,
+      compare: compareTokens(top.value, { lead: "That project alone is about" }) ?? undefined,
+      chart: d.projects.length > 1 ? { kind: "tiles", rows: d.projects } : undefined,
     });
   }
 
@@ -481,13 +667,17 @@ export function buildSlides(d: WrappedData): Slide[] {
     for (const [list, kicker, id] of kinds) {
       if (list.length === 0) continue;
       const top = list[0];
+      const chart: SlideChart | undefined =
+        id === "skill" ? skillChart() : list.length > 1 ? { kind: id === "helper" ? "lollipop" : "bubbles", rows: itemRows(list) } : undefined;
       return {
         id,
         tone: "slate",
+        layout: id === "skill" ? "center" : id === "helper" ? "split" : "stack",
         kicker,
         figure: top.id,
         line: `Used ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}. You know what works.`,
-        chart: id === "skill" ? skillChart() : list.length > 1 ? { kind: "bars", rows: itemRows(list) } : undefined,
+        compare: uses(top.uses, "That many uses add up to about"),
+        chart,
       };
     }
     return null;
@@ -502,28 +692,53 @@ export function buildSlides(d: WrappedData): Slide[] {
       out.push({
         id: "skill",
         tone: "slate",
+        layout: "center",
         kicker: d.skills.length > 1 ? `Your top ${d.skills.length} skills, counted down` : "Favorite skill",
         figure: top.id,
         line: `Number one: used ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}.`,
+        compare: uses(top.uses, "That many uses add up to about"),
         chart: skillChart(),
       });
     }
     if (d.agents.length > 0) {
-      out.push({ id: "helper", tone: "plain", kicker: "Your go-to helper", figure: d.agents[0].id, line: `Called on ${plural(d.agents[0].uses, "time")} in ${plural(d.agents[0].sessions, "session")}. Reliable.`, chart: d.agents.length > 1 ? { kind: "bars", rows: itemRows(d.agents) } : undefined });
+      const top = d.agents[0];
+      out.push({
+        id: "helper",
+        tone: "plain",
+        layout: "split",
+        kicker: "Your go-to helper",
+        figure: top.id,
+        line: `Called on ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}. Reliable.`,
+        compare: uses(top.uses, "That many calls add up to about"),
+        chart: d.agents.length > 1 ? { kind: "lollipop", rows: itemRows(d.agents) } : undefined,
+      });
     }
     const crowd = d.habits?.mostHelpers;
     if (crowd && crowd.agentCount >= 2) {
       out.push({
         id: "crowd",
         tone: "sand",
+        layout: "splitR",
         kicker: "Most helpers in one chat",
         figure: exact(crowd.agentCount),
         unit: "helpers",
         line: `${chatName(crowd)}, in ${crowd.projectName}. A whole crew.`,
+        compare: compare("crew", crowd.agentCount, { lead: "Enough helpers to fill" }) ?? undefined,
+        chart: { kind: "burst", count: crowd.agentCount },
       });
     }
     if (d.tools.length > 0) {
-      out.push({ id: "tool", tone: "slate", kicker: "Go-to tool", figure: d.tools[0].id, line: `Run ${plural(d.tools[0].uses, "time")} in ${plural(d.tools[0].sessions, "session")}. Old faithful.`, chart: d.tools.length > 1 ? { kind: "bars", rows: itemRows(d.tools) } : undefined });
+      const top = d.tools[0];
+      out.push({
+        id: "tool",
+        tone: "slate",
+        layout: "stack",
+        kicker: "Go-to tool",
+        figure: top.id,
+        line: `Run ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}. Old faithful.`,
+        compare: uses(top.uses, "That many runs add up to about"),
+        chart: d.tools.length > 1 ? { kind: "bubbles", rows: itemRows(d.tools) } : undefined,
+      });
     }
   }
 
@@ -531,25 +746,30 @@ export function buildSlides(d: WrappedData): Slide[] {
     out.push({
       id: "busiest",
       tone: "accent",
+      layout: "over",
       kicker: "Your busiest day",
       figure: longDay(d.busiest.day),
       line: `${compact(d.busiest.tokens)} tokens over ${plural(d.busiest.sessions, "session")}. Nobody could stop you.`,
+      compare: compareTokens(d.busiest.tokens, { lead: "That one day is about" }) ?? undefined,
+      chart: spikeChart(d, d.busiest.day),
       celebrate: pop(!short),
     });
   }
 
-  const week = weekdayTotals(d.from, d.dayTokens);
+  const week = weekdayAverages(d.from, d.dayTokens);
   const weekTotal = week.reduce((a, b) => a + b, 0);
   if (!short && weekTotal > 0) {
     const top = week.indexOf(Math.max(...week));
     out.push({
       id: "weekday",
       tone: "plain",
+      layout: "splitR",
       kicker: "Your busiest weekday",
       figure: WEEKDAYS[top],
-      line: `${share(week.map((v) => ({ value: v })), week[top])}% of your tokens land on a ${WEEKDAYS[top]}. Plan around it.`,
-      hint: `${compact(week[top])} tokens on ${WEEKDAYS[top]}s since ${shortDay(d.from)}.`,
-      chart: { kind: "weekdays", values: week },
+      line: `${share(week.map((v) => ({ value: v })), week[top])}% of an average week's tokens land on a ${WEEKDAYS[top]}. Plan around it.`,
+      hint: `${compact(week[top])} tokens on an average ${WEEKDAYS[top]} since ${shortDay(d.from)}, counting every ${WEEKDAYS[top]} in that time.`,
+      compare: compareTokens(week[top], { lead: `An average ${WEEKDAYS[top]} is about` }) ?? undefined,
+      chart: { kind: "spokes", values: week },
     });
   }
 
@@ -558,10 +778,12 @@ export function buildSlides(d: WrappedData): Slide[] {
     out.push({
       id: "rhythm",
       tone: "slate",
+      layout: "stack",
       kicker: "Your prime time",
       figure: hourLabel(peak),
       line: `Most of your tokens land around then, ${partOfDay(peak)}. That is your hour.`,
-      chart: { kind: "hours", values: d.hours },
+      compare: compareTokens(d.hours[peak], { lead: `Every ${hourLabel(peak)} hour added up is about` }) ?? undefined,
+      chart: { kind: "strip", values: d.hours },
     });
   }
 
@@ -571,24 +793,27 @@ export function buildSlides(d: WrappedData): Slide[] {
     out.push({
       id: "models",
       tone: "sand",
+      layout: "split",
       kicker: "Your main model",
       figure: top.label,
       line: `${share(d.models, top.value)}% of your tokens. Your ride or die.`,
-      chart: d.models.length > 1 ? { kind: "split", rows: d.models } : undefined,
+      compare: compareTokens(top.value, { lead: "That model carried about" }) ?? undefined,
+      chart: d.models.length > 1 ? { kind: "donut", rows: d.models } : undefined,
     });
   }
 
   const type = short ? null : coderType(d);
   if (type) {
-    const top = type.traits.slice(0, 3);
     out.push({
       id: "type",
       tone: "accent",
+      layout: "center",
       kicker: "Your coder type",
       figure: type.name,
       line: type.line,
       hint: type.why,
-      chart: type.id !== "steady" && top.length > 1 ? { kind: "bars", rows: top.map((t) => ({ label: t.name, value: t.score, note: t.note })) } : undefined,
+      compare: typeCompare(d, type.id),
+      chart: { kind: "badge", id: type.id, name: type.name, score: type.traits[0]?.score ?? 1, traits: type.traits.slice(0, 3) },
       celebrate: pop(true),
     });
   }
@@ -597,16 +822,27 @@ export function buildSlides(d: WrappedData): Slide[] {
   out.push({
     id: "card",
     tone: "plain",
+    layout: "stack",
     kicker: "Your Wrapped, on one card",
     figure: card.tokens,
     unit: card.unit,
-    line: coverageLine(d),
+    line: rangeLabel(d),
+    hint: rangeHint(d),
     card,
   });
   return out;
 }
 
-/** The honest sentence about how far back the numbers go. */
-export function coverageLine(d: Pick<WrappedData, "from" | "keepDays">): string {
-  return `From ${shortDay(d.from)} to today. Claude Code clears its logs after ${d.keepDays} days, so anything older is not here.`;
+/** "Jul 9 to today": the span the numbers cover. */
+export function rangeLabel(d: Pick<WrappedData, "from">): string {
+  return `${shortDay(d.from)} to today`;
+}
+
+/**
+ * The hover on the range: where the numbers start. The log-retention setting is named only when it
+ * is set and the history is not longer than it; otherwise it would say something the data disproves.
+ */
+export function rangeHint(d: Pick<WrappedData, "from" | "keepDays" | "spanDays">): string {
+  const first = `${shortDay(d.from)} is your first day with usage.`;
+  return d.keepDays !== null && d.spanDays <= d.keepDays ? `${first} Claude Code keeps its logs for ${plural(d.keepDays, "day")}.` : first;
 }

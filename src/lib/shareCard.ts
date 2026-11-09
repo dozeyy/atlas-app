@@ -85,6 +85,45 @@ function star(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number):
   ctx.fill();
 }
 
+/** The history as a small ridge: heights are 0..1, the baseline is `base`, the tallest rise is `tall`. Never below the baseline. */
+function drawRidge(ctx: CanvasRenderingContext2D, ridge: number[], x0: number, x1: number, base: number, tall: number, ink: string): void {
+  if (ridge.length < 2) return;
+  const pts = ridge.map((v, i): [number, number] => [x0 + (i / (ridge.length - 1)) * (x1 - x0), base - Math.min(1, Math.max(0, v)) * tall]);
+  const trace = () => {
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) {
+      const mx = (pts[i - 1][0] + pts[i][0]) / 2;
+      ctx.bezierCurveTo(mx, pts[i - 1][1], mx, pts[i][1], pts[i][0], pts[i][1]);
+    }
+  };
+  ctx.save();
+  ctx.fillStyle = ink;
+  ctx.strokeStyle = ink;
+  ctx.globalAlpha = 0.22;
+  ctx.beginPath();
+  trace();
+  ctx.lineTo(x1, base);
+  ctx.lineTo(x0, base);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = 3;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  trace();
+  ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(x0, base);
+  ctx.lineTo(x1, base);
+  ctx.stroke();
+  let top = 0;
+  for (let i = 1; i < pts.length; i++) if (pts[i][1] < pts[top][1]) top = i;
+  ctx.globalAlpha = 1;
+  star(ctx, pts[top][0], Math.max(pts[top][1] - 14, base - tall - 8), 9);
+  ctx.restore();
+}
 /** Paint the card. Returns false when the canvas has no 2D context. */
 export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boolean {
   canvas.width = CARD_W;
@@ -133,6 +172,8 @@ export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boole
   ctx.globalAlpha = 0.92;
   ctx.fillText(clip(ctx, card.days, inner), PAD, baseBig + 116);
   ctx.globalAlpha = 1;
+
+  drawRidge(ctx, card.ridge, PAD, SPLIT - PAD, CARD_H - 122, 78, p.onAccent);
 
   ctx.font = ui(600, 26);
   ctx.fillText(clip(ctx, card.range, inner), PAD, CARD_H - 84);

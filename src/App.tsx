@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { WarningCircle } from "@phosphor-icons/react";
 import { useSidebar } from "./lib/useSidebar";
 import { NAV, Sidebar } from "./components/Sidebar";

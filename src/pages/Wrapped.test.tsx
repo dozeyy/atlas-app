@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
@@ -53,10 +53,13 @@ function fakeCanvas(): string[] {
 const position = () => screen.getByText(/^\d+ of \d+$/).textContent ?? "";
 
 describe("Wrapped", () => {
-  it("opens on the cover, said honestly about how far back it goes", async () => {
+  it("opens on the cover, with the range as a label and the why in its hover", async () => {
     mount();
     expect(await screen.findByText("tokens so far")).toBeInTheDocument();
-    expect(screen.getAllByText(/Claude Code clears its logs after \d+ days/).length).toBeGreaterThan(0);
+    const range = screen.getByText(/^[A-Z][a-z]{2} \d+ to today$/);
+    expect(range.getAttribute("title")).toMatch(/is your first day with usage\./);
+    // No explanation sentence on the cover, and never a retention claim the data disproves.
+    expect(screen.queryByText(/clears its logs/)).not.toBeInTheDocument();
     expect(position()).toMatch(/^1 of \d+$/);
     expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
     expect(screen.queryByText(/Live/)).not.toBeInTheDocument();
@@ -95,9 +98,10 @@ describe("Wrapped", () => {
     mount();
     await screen.findByText("tokens so far");
     await userEvent.click(screen.getByRole("button", { name: "Start" }));
-    const aside = screen.getByText(/^About [\d.,]+[kMB]? novels? of text\.$/);
+    const compare = document.querySelector(".wr-compare") as HTMLElement;
+    expect(compare.textContent).toMatch(/^About .+\.$/);
     const before = position();
-    await userEvent.click(aside);
+    await userEvent.click(compare);
     expect(position()).toBe(before);
   });
 
@@ -133,11 +137,33 @@ describe("Wrapped", () => {
     expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 
-  it("puts the tokens as novels on the totals slide, marked as an estimate in the hover", async () => {
+  it("tells the tokens as novels on their own slide, marked as an estimate in the hover", async () => {
     mount();
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
-    const aside = screen.getByText(/^About [\d.,]+[kMB]? novels? of text\.$/);
-    expect((aside.getAttribute("title") ?? aside.getAttribute("data-tip")) ?? "").toMatch(/0\.75 words per token[\s\S]*An estimate/);
+    await screen.findByText("tokens so far");
+    await userEvent.click(screen.getByRole("button", { name: /In book terms/ }));
+    const fig = document.querySelector(".wr-fig") as HTMLElement;
+    expect(fig.getAttribute("title") ?? "").toMatch(/0\.75 words per token[\s\S]*An estimate/);
+    expect(fig.getAttribute("aria-label")).toMatch(/An estimate/);
+    expect(document.querySelector(".wr-compare")?.textContent).toMatch(/^Reading it all takes about /);
+  });
+
+  it("puts one comparison on every slide but the card, each with its source in the hover", async () => {
+    mount();
+    await screen.findByText("tokens so far");
+    const total = Number(/of (\d+)/.exec(position())?.[1]);
+    await userEvent.click(screen.getByRole("button", { name: "Start" }));
+    let withLine = 0;
+    for (let i = 2; i < total; i++) {
+      const c = document.querySelector(".wr-compare");
+      if (c) {
+        withLine++;
+        expect(c.textContent).toMatch(/^[\x20-\x7e]+\.$/);
+        expect(c.getAttribute("title")).toMatch(/\d/);
+      }
+      await userEvent.keyboard("{ArrowRight}");
+    }
+    expect(withLine).toBeGreaterThanOrEqual(5);
+    expect(document.querySelector(".wr-compare")).toBeNull();
   });
 
   it("ends on the share card, saves the picture it shows, and draws no chat name", async () => {

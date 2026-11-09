@@ -16,7 +16,7 @@ function describe(card: ShareCard): string {
  * The last slide: the story on one card, drawn to a canvas, and a button that saves that same
  * canvas as a PNG through a picker that starts in Pictures. `note` is the honest coverage line.
  */
-export function CardSlide({ card, note }: { card: ShareCard; note: string }) {
+export function CardSlide({ card, note, noteHint }: { card: ShareCard; note: string; noteHint?: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [drawn, setDrawn] = useState(true);
@@ -50,7 +50,9 @@ export function CardSlide({ card, note }: { card: ShareCard; note: string }) {
     <div className="wr-card">
       <canvas ref={canvas} className="wr-card-pic" role="img" aria-label={describe(card)} width={1200} height={675} />
       <div className="wr-card-foot">
-        <p className="wr-card-note">{note}</p>
+        <p className="wr-card-note" title={noteHint} tabIndex={noteHint ? 0 : undefined}>
+          {note}
+        </p>
         <div className="wr-card-save">
           <span
             role="status"

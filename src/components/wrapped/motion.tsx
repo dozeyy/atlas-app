@@ -16,10 +16,13 @@ export interface CountParts {
   suffix: string;
 }
 
-/** "851M" -> 851 with suffix "M"; "1,234" -> 1234 with commas. Null for anything else (a date, a name). */
+/** A bare four-digit number in the calendar's range is a year, not a quantity: it must not count up from zero. */
+const YEAR = /^(?:19|20)\d{2}$/;
+
+/** "851M" -> 851 with suffix "M"; "1,234" -> 1234 with commas. Null for anything else (a date, a year, a name). */
 export function parseCount(text: string): CountParts | null {
   const m = NUM.exec(text);
-  if (!m) return null;
+  if (!m || YEAR.test(text)) return null;
   const n = Number(m[1].replace(/,/g, ""));
   if (!Number.isFinite(n) || n === 0) return null;
   return { n, decimals: (m[1].split(".")[1] ?? "").length, commas: m[1].includes(","), suffix: m[2] };
