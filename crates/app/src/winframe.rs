@@ -134,6 +134,7 @@ struct Sync {
     acks: u64,
     /// Steps of this drag applied by the cap without the page's answer.
     capped: u32,
+    step_cap: Duration,
     log: bool,
     t0: Instant,
 }
@@ -187,6 +188,7 @@ unsafe fn attach(controller: ICoreWebView2Controller) -> windows::core::Result<(
             failures: 0,
             acks: 0,
             capped: 0,
+            step_cap: step_cap(),
             log: std::env::var("ATLAS_FRAME_SYNC_LOG").as_deref() == Ok("1"),
             t0: Instant::now(),
         })
@@ -405,9 +407,21 @@ enum Late {
 }
 
 /// What to do about an answer the page has owed for `waited`.
-fn late_action(phase: Phase, waited: Duration) -> Late {
+/// The live step cap. Debug builds take `ATLAS_FRAME_SYNC_CAP_MS` so a test can force the capped
+/// path (a tiny cap applies every step without the page); release builds always use STEP_CAP.
+fn step_cap() -> Duration {
+    #[cfg(debug_assertions)]
+    if let Some(ms) = std::env::var("ATLAS_FRAME_SYNC_CAP_MS").ok().and_then(|v| v.parse::<u64>().ok()) {
+        eprintln!("[atlas] frame sync: step cap {ms} ms (test override)");
+        return Duration::from_millis(ms);
+    }
+    STEP_CAP
+}
+
+/// `step_cap` is STEP_CAP except in a debug test run (`ATLAS_FRAME_SYNC_CAP_MS`).
+fn late_action(phase: Phase, waited: Duration, step_cap: Duration) -> Late {
     match phase {
-        Phase::Live if waited >= STEP_CAP => Late::ApplyStep,
+        Phase::Live if waited >= step_cap => Late::ApplyStep,
         Phase::Arming | Phase::Growing if waited >= STEP_CAP => Late::HandBack,
         Phase::Ending if waited >= ACK_TIMEOUT => Late::HandBack,
         _ => Late::Wait,
@@ -417,7 +431,7 @@ fn late_action(phase: Phase, waited: Duration) -> Late {
 /// The cap: a page that is slow to answer must not hold the window still.
 unsafe extern "system" fn tick(_: HWND, _: u32, _: usize, _: u32) {
     let action = with(|s| match s.waiting {
-        Some((_, at)) if s.confirm.is_none() => late_action(s.phase, at.elapsed()),
+        Some((_, at)) if s.confirm.is_none() => late_action(s.phase, at.elapsed(), s.step_cap),
         _ => Late::Wait,
     })
     .unwrap_or(Late::Wait);
@@ -897,16 +911,19 @@ mod tests {
     #[test]
     fn a_slow_answer_applies_the_step_while_live_and_hands_back_before() {
         let ms = Duration::from_millis;
-        assert_eq!(late_action(Phase::Live, ms(20)), Late::Wait);
-        assert_eq!(late_action(Phase::Live, ms(149)), Late::Wait);
-        assert_eq!(late_action(Phase::Live, ms(150)), Late::ApplyStep);
-        assert_eq!(late_action(Phase::Arming, ms(160)), Late::HandBack);
-        assert_eq!(late_action(Phase::Growing, ms(160)), Late::HandBack);
-        assert_eq!(late_action(Phase::Arming, ms(100)), Late::Wait);
+        assert_eq!(late_action(Phase::Live, ms(20), super::STEP_CAP), Late::Wait);
+        assert_eq!(late_action(Phase::Live, ms(149), super::STEP_CAP), Late::Wait);
+        assert_eq!(late_action(Phase::Live, ms(150), super::STEP_CAP), Late::ApplyStep);
+        assert_eq!(late_action(Phase::Arming, ms(160), super::STEP_CAP), Late::HandBack);
+        assert_eq!(late_action(Phase::Growing, ms(160), super::STEP_CAP), Late::HandBack);
+        assert_eq!(late_action(Phase::Arming, ms(100), super::STEP_CAP), Late::Wait);
         // After the drag the window already has its size: wait longer before giving up on the page.
-        assert_eq!(late_action(Phase::Ending, ms(200)), Late::Wait);
-        assert_eq!(late_action(Phase::Ending, ms(400)), Late::HandBack);
-        assert_eq!(late_action(Phase::Idle, ms(5000)), Late::Wait);
+        assert_eq!(late_action(Phase::Ending, ms(200), super::STEP_CAP), Late::Wait);
+        assert_eq!(late_action(Phase::Ending, ms(400), super::STEP_CAP), Late::HandBack);
+        assert_eq!(late_action(Phase::Idle, ms(5000), super::STEP_CAP), Late::Wait);
+        // A test override changes the live step only; arming still waits the full cap.
+        assert_eq!(late_action(Phase::Live, ms(2), ms(1)), Late::ApplyStep);
+        assert_eq!(late_action(Phase::Arming, ms(2), ms(1)), Late::Wait);
     }
 
     #[test]
