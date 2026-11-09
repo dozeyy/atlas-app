@@ -6,14 +6,22 @@ name: release
 # job) runs in the `release` environment, re-signs the two update bundles with the real key and
 # makes the Release. A manual run, or a tag not on main's history, publishes nothing.
 #
+# This repository (dozeyy/atlas-app) is private and holds the source. The workflow makes the
+# finished release here as a PRERELEASE (the staging copy: the installers, latest.json, the
+# atlas-usage binaries and the signed SHA256SUMS.txt) with the default job token, and pins the skill
+# checksums on main. It never writes to any other repository and holds no cross-repo secret.
+# The public repository dozeyy/atlas gets the release from Will's own PC afterwards:
+# `tools/publish-public.ps1 -Version X.Y.Z` (docs/releasing.md). latest.json already carries the
+# final dozeyy/atlas URLs, so it works unchanged once the files are copied there.
+#
 # Secrets live in the `release` environment, not in the repository (set once, see
 # docs/releasing.md; the environment only accepts `v*` tags):
 #   TAURI_SIGNING_PRIVATE_KEY           the in-app update signing key (content of atlas-updater.key)
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (empty: the key has none)
 #
-# Release assets (stable names, linked from the README and the skill):
+# Release assets (stable names, linked from the public README and the skill):
 #   Atlas-Setup-Windows-x64.exe  Atlas-macOS.dmg  atlas-usage-windows-x64.exe
-#   atlas-usage-macos-universal  atlas-usage-linux-x64  SHA256SUMS.txt  latest.json
+#   atlas-usage-macos-universal  atlas-usage-linux-x64  SHA256SUMS.txt  SHA256SUMS.txt.sig  latest.json
 # plus the update bundles and their .sig files under the names Tauri gives them. The MSI is not
 # published.
 
@@ -262,11 +270,15 @@ jobs:
     # The only job that holds the real signing key. The key is a secret of the `release`
     # environment, which only accepts `v*` tags (docs/releasing.md has the commands that make it).
     environment: release
-    # The only job that writes: it makes the Release and commits the pinned skill checksums.
+    # The only job that writes, and only to this repository: the staging prerelease and the pinned
+    # skill checksums on main (the job token).
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      # Where the finished release is published later (tools/publish-public.ps1). Only used to
+      # write the download URLs into latest.json.
+      PUBLIC_REPO: dozeyy/atlas
       VERSION: ${{ needs.versions.outputs.version }}
       TAG: ${{ github.ref_name }}
     steps:
@@ -320,7 +332,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          # The files are published at the public repo's release of the same tag (a later, manual step).
+          base="https://github.com/${PUBLIC_REPO}/releases/download/${TAG}"
           # Notes belong to one version: docs/release-notes/<version>.md. A release without a file
           # of its own reads "Atlas <version>"; an older release's notes are never reused.
           notes="Atlas ${VERSION}"
@@ -345,27 +358,31 @@ jobs:
              }' > dist/latest.json
           jq . dist/latest.json
 
-      # One list covering every asset in the Release.
-      - name: Write SHA256SUMS.txt
+      # One list covering every asset in the Release, signed with the real update key. The
+      # signature is what tools/publish-public.ps1 trusts for the installers and latest.json: a
+      # file in the private repo's releases can be swapped by anything that can write there, but
+      # not signed again without this key.
+      - name: Write and sign SHA256SUMS.txt
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          cd dist
-          sha256sum $(ls | grep -v '^SHA256SUMS.txt$' | sort) > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-
-      - name: Create the Release
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh release create "$TAG" dist/* --verify-tag --title "Atlas ${VERSION}" --generate-notes
+          sha256sum $(cd dist && ls | grep -v '^SHA256SUMS.txt' | sort | sed 's#^#dist/#') | sed 's#  dist/#  #' > dist/SHA256SUMS.txt
+          cat dist/SHA256SUMS.txt
+          rm -f dist/SHA256SUMS.txt.sig
+          npx tauri signer sign -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" dist/SHA256SUMS.txt >/dev/null
+          [ -s dist/SHA256SUMS.txt.sig ] || { echo "::error::dist/SHA256SUMS.txt.sig was not written."; exit 1; }
 
       # The skill downloads atlas-usage and checks it against skill/skills/atlas/bin/checksums.txt;
       # pin the three binaries of THIS release there. This step writes to main, so it only does so
-      # when that is safe, and otherwise says why it did not (the release itself already stands):
+      # when that is safe, and otherwise fails (nothing is staged before this step succeeds):
       #  - the tag's commit must be part of main's history (a tag cut from a branch never pins);
       #  - the pin script runs as it is on main, not as the tag carries it;
       #  - main must still be on this version, and no newer version may be pinned already.
+      # publish-public.ps1 reads the pins from main and refuses a version that is not pinned there.
+      # Safe to rerun: a version already pinned with the same hashes changes nothing.
       - name: Pin skill checksums
         shell: bash
         run: |
@@ -375,21 +392,21 @@ jobs:
           fi
           git fetch --no-tags origin main
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::warning::Tag $TAG ($GITHUB_SHA) is not on main's history, so the skill checksums were not pinned."
-            exit 0
+            echo "::error::Tag $TAG ($GITHUB_SHA) is not on main's history, so the skill checksums were not pinned and nothing was staged."
+            exit 1
           fi
           # From here on every file is main's, the pin script included.
           git switch -C main origin/main
           plugin="$(jq -r .version skill/.claude-plugin/plugin.json)"
           if [ "$plugin" != "$VERSION" ]; then
-            echo "::warning::main is at plugin version $plugin, not $VERSION, so the skill checksums of $VERSION were not pinned."
-            exit 0
+            echo "::error::main is at plugin version $plugin, not $VERSION, so the skill checksums of $VERSION were not pinned and nothing was staged."
+            exit 1
           fi
           sums=skill/skills/atlas/bin/checksums.txt
           pinned="$(awk '!/^[[:space:]]*#/ && NF >= 3 { print $1 }' "$sums" | sort -V | tail -n 1)"
           if [ -n "$pinned" ] && [ "$(printf '%s\n%s\n' "$pinned" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then
-            echo "::warning::$pinned is already pinned, which is newer than $VERSION, so nothing was pinned."
-            exit 0
+            echo "::error::$pinned is already pinned, which is newer than $VERSION, so nothing was pinned and nothing was staged."
+            exit 1
           fi
           mkdir -p "$RUNNER_TEMP/pin"
           cp dist/atlas-usage-windows-x64.exe dist/atlas-usage-macos-universal dist/atlas-usage-linux-x64 "$RUNNER_TEMP/pin/"
@@ -410,3 +427,21 @@ jobs:
           done
           echo "::error::Could not push the pinned checksums to main."
           exit 1
+
+      # The staging copy, in this private repo: a prerelease (never "latest"), so nothing public
+      # points at it. Only here, after build, signing and pinning all succeeded. Idempotent: a rerun
+      # replaces the files of an existing staging release. The notes are the ones already inside
+      # latest.json, so the release page and the app's update tooltip say the same thing.
+      # tools/publish-public.ps1 downloads it, verifies it and copies it to the public repo.
+      - name: Create the staging release (private repo)
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/release-notes.md"
+          jq -r .notes dist/latest.json > "$notes"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --prerelease --title "Atlas ${VERSION} (staging)" --notes-file "$notes"
+          else
+            gh release create "$TAG" dist/* --verify-tag --prerelease --title "Atlas ${VERSION} (staging)" --notes-file "$notes"
+          fi

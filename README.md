@@ -12,6 +12,10 @@
 
 </div>
 
+> This is the private source repository (`dozeyy/atlas-app`). The downloads, the Claude Code
+> plugin and the public README live in the public repository,
+> [dozeyy/atlas](https://github.com/dozeyy/atlas); the links above point there.
+
 A desktop companion for Claude Code: a usage dashboard, a safe manager for the files in your
 Claude Code setup, and a tray readout. It only reads what Claude Code already keeps on your
 computer.

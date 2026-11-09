@@ -142,7 +142,8 @@ Reliability beats feature count.
   `tools/build-setup.ps1`; the release workflow (`.github/workflows/release.yml`, tags `v*`)
   builds the same chain. Details: `docs/releasing.md`.
 - **In-app updates** (`crates/app/src/update.rs`, `tauri-plugin-updater`): a quiet check after
-  first paint and every 6 h against `https://github.com/dozeyy/atlas/releases/latest/download/latest.json`;
+  first paint and every 6 h against `https://github.com/dozeyy/atlas/releases/latest/download/latest.json`
+  (the PUBLIC repo; this source repo is `dozeyy/atlas-app`);
   a blue download icon at the sidebar's bottom-left offers the update, never installs by itself.
   The signing key is `C:\Users\Will\.tauri\atlas-updater.key` (outside every repo, never
   printed or committed); only the public key is in `tauri.conf.json`.
@@ -188,8 +189,11 @@ via a CI-built `.dmg` that dad (or Will on a Mac) installs and runs.
 - [ ] Phase 8: icon, onboarding, empty/error states, perf + a11y pass, README.
 
 ### Decided
-- Terracotta accent kept; icon chosen (see Design Identity); repo is private
-  `dozeyy/atlas`.
+- Terracotta accent kept; icon chosen (see Design Identity); the source repo is private
+  `dozeyy/atlas-app`. The PUBLIC repo `dozeyy/atlas` (local folder `Documents\Desktop Apps\Atlas-public`)
+  holds the downloads, the plugin marketplace and the docs, never source (Will, 2026-11-09). The
+  release workflow stages the release in the private repo and `tools/publish-public.ps1` (run on Will's PC with gh) verifies and publishes it there (`docs/releasing.md`); its README
+  and `docs/` are edited by hand in that repo.
 
 ### Open questions
 - macOS signing: unsigned (Open Anyway in Privacy & Security) vs a paid Apple
