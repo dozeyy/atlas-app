@@ -802,6 +802,9 @@ pub struct ScopeArgs {
     /// "day" (default), "week" or "month".
     #[serde(default)]
     pub bucket: String,
+    /// How many of the biggest chats to list (0 = none).
+    #[serde(default)]
+    pub top: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -817,6 +820,9 @@ pub struct ScopeReport {
     pub points: Vec<TimelinePoint>,
     /// Every project with usage in the range, biggest first.
     pub projects: Vec<ProjectUse>,
+    /// The `top` biggest chats, with `tokens`, `cost` and `models` counted inside the
+    /// range only (the other fields describe the whole chat).
+    pub chats: Vec<SessionRow>,
 }
 
 /// The first local day with any recorded usage (`None` on an empty cache).
@@ -920,7 +926,58 @@ pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlit
         })
         .collect();
 
-    Ok(ScopeReport { from: a.from.clone(), to: a.to.clone(), bucket: bucket.to_string(), total, by_model, points, projects })
+    let chats = chats_in_range(conn, ctx, from, to, project, a.top)?;
+    Ok(ScopeReport { from: a.from.clone(), to: a.to.clone(), bucket: bucket.to_string(), total, by_model, points, projects, chats })
+}
+
+/// The `limit` biggest chats by tokens used inside `[from_day, to_day]`. A chat that only
+/// partly falls in the range counts only that part: the same messages, hours and prices
+/// that `usage_hour` sums, so these rows never exceed the range total.
+fn chats_in_range(
+    conn: &Connection,
+    ctx: &QueryCtx,
+    from_day: &str,
+    to_day: &str,
+    project: Option<&str>,
+    limit: usize,
+) -> rusqlite::Result<Vec<SessionRow>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT m.session_id, m.model, {SUMS} FROM messages m LEFT JOIN sessions s ON s.session_id = m.session_id \
+         WHERE m.hour_local >= ?1 AND m.hour_local < ?2 AND (?3 IS NULL OR COALESCE(s.project_key,'') = ?3) \
+         GROUP BY m.session_id, m.model, m.speed, m.geo, m.service_tier, m.price_tier"
+    );
+    let lo = format!("{from_day}T00");
+    let hi = format!("{}T00", add_days(to_day, 1));
+    let mut aggs: HashMap<String, SessionAgg> = HashMap::new();
+    {
+        let mut st = conn.prepare_cached(&sql)?;
+        let rows = st.query_map(rusqlite::params![lo, hi, project], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, group_from(r, 2)?))
+        })?;
+        for r in rows {
+            let (sid, model, g) = r?;
+            let e = aggs.entry(sid).or_default();
+            e.acc.add(&g);
+            *e.models.entry(model).or_default() += g.t.total;
+        }
+    }
+    let mut order: Vec<(&String, u64)> = aggs.iter().filter(|(_, a)| a.acc.t.total > 0).map(|(k, a)| (k, a.acc.t.total)).collect();
+    order.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    let ids: Vec<String> = order.into_iter().take(limit).map(|(k, _)| k.clone()).collect();
+    let mut rows = session_rows_for(conn, ctx, &ids)?;
+    for row in &mut rows {
+        if let Some(agg) = aggs.remove(&row.session_id) {
+            let mut models: Vec<(String, u64)> = agg.models.into_iter().collect();
+            models.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            row.models = models.into_iter().map(|m| m.0).collect();
+            row.tokens = agg.acc.t;
+            row.cost = agg.acc.cost();
+        }
+    }
+    Ok(rows)
 }
 
 // ---------------------------------------------------------------- sessions
