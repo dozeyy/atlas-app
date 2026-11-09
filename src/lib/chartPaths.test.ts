@@ -107,6 +107,37 @@ describe("paths", () => {
     expect(smoothPath([[1, 2]])).toBe("M1,2");
     expect(smoothPath([[0, 0], [10, 5]])).toMatch(/^M0,0C/);
   });
+  it("the ridge never dips below its baseline or above its peak (Will's week: a peak, a slide, empty days)", () => {
+    const weeks = [
+      [56.1, 41.2, 9.11, 0, 0, 1.82, 21],
+      [100, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 90, 0, 0, 0],
+      [5, 80, 1, 0, 70, 0.5, 0],
+    ];
+    for (const values of weeks) {
+      const g = ridgeGeometry(values, 600, 160);
+      const ys = g.pts.map((p) => p[1]);
+      const lo = Math.min(...ys);
+      const hi = Math.max(...ys);
+      const nums = g.line.match(/-?\d+(\.\d+)?/g)!.map(Number);
+      // Sample every cubic segment densely: x0,y0 then repeating (c1x,c1y c2x,c2y x,y).
+      let x0 = nums[0];
+      let y0 = nums[1];
+      for (let k = 2; k + 5 < nums.length + 1; k += 6) {
+        const [, c1y, , c2y, x1, y1] = nums.slice(k, k + 6);
+        for (let s = 0; s <= 40; s++) {
+          const u = s / 40;
+          const y = (1 - u) ** 3 * y0 + 3 * (1 - u) ** 2 * u * c1y + 3 * (1 - u) * u * u * c2y + u ** 3 * y1;
+          expect(y).toBeLessThanOrEqual(hi + 0.01);
+          expect(y).toBeGreaterThanOrEqual(lo - 0.01);
+        }
+        x0 = x1;
+        y0 = y1;
+      }
+      expect(x0).toBeGreaterThan(0);
+      expect(hi).toBeLessThanOrEqual(g.baseline);
+    }
+  });
   it("barPath keeps a flat bottom on the baseline", () => {
     expect(barPath(10, 8, 20, 100, 6)).toContain("V100Z");
     expect(barPath(10, 8, 99, 100, 6)).toBe("M10,100h8v-1h-8Z");
