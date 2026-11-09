@@ -12,6 +12,8 @@
 # captures (DwmFlush + screen copy) right after each move, then one settled capture 250 ms later.
 # meta.json holds each frame's DWM window rect in capture coordinates. A launched Atlas is killed at
 # the end, so the window-state plugin never saves the test bounds.
+# A magenta backdrop sits behind the window over the whole capture area, so a judge can find the
+# window's edge as drawn in each picture (windows behind it would otherwise pass for the window).
 param(
   [string]$Exe,
   [string]$ConfigDir,
@@ -27,6 +29,7 @@ param(
   [int]$MoveMs = 0,   # > 0: continuous drag (one StepPx move every MoveMs), analyze with tools\analyze-continuous.py
   [int]$W0 = 1240,
   [int]$H0 = 820,
+  [switch]$NoBackdrop,   # by default a magenta backdrop fills the capture area behind the window
   [switch]$KeepOpen
 )
 $ErrorActionPreference = "Stop"
@@ -134,6 +137,10 @@ public static class Drag {
     var list = new List<Frame>();
     var sw = Stopwatch.StartNew();
     SetCursorPos(x, y); Thread.Sleep(150);
+    // The settled layout at the start size (sub 97): a judge compares each frame with this and
+    // with the release frame (sub 98), since the layout can change between the two sizes.
+    var st0 = new Frame(); st0.Step = 0; st0.Sub = 97; st0.Ms = sw.ElapsedMilliseconds;
+    st0.Win = Bounds(h); st0.Img = Grab(reg); list.Add(st0);
     Btn(0x0002); Thread.Sleep(300);
     moved = 0;
     var mover = new Thread(() => { for (int s = 1; s <= steps; s++) { SetCursorPos(x + dx * s, y + dy * s); moved = s; Thread.Sleep(moveMs); } });
@@ -175,10 +182,10 @@ if ($Attach) {
   $env:ATLAS_NO_INTRO = "1"; $env:ATLAS_MULTI = "1"
   $app = Start-Process $Exe -ArgumentList @("--config-dir", "`"$ConfigDir`"", "--data-dir", "`"$DataDir`"") -RedirectStandardError (Join-Path $Out "atlas.log") -PassThru
   $h = [IntPtr]::Zero
-  for ($i = 0; $i -lt 100 -and $h -eq [IntPtr]::Zero; $i++) {
+  for ($i = 0; $i -lt 300 -and $h -eq [IntPtr]::Zero; $i++) {   # 45 s: a loaded machine starts slowly
     Start-Sleep -Milliseconds 150; $h = [Drag]::Find([uint32[]]@($app.Id), "Tauri Window", $true)
   }
-  if ($h -eq [IntPtr]::Zero) { throw "no window" }
+  if ($h -eq [IntPtr]::Zero) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue; throw "no window" }
   Start-Sleep -Milliseconds 2500
 }
 $X0 = 260; $Y0 = 160
@@ -204,6 +211,17 @@ foreach ($edge in $Edges) {
   if ($ht -ne $want) { Write-Output "$Mode-$edge skipped: no hit test $want near the edge (last $ht)"; continue }
   $m = 40 + $Steps * $StepPx
   $reg = New-Object System.Drawing.Rectangle(($r.L - $m), ($r.T - $m), ($r.R - $r.L + 2 * $m), ($r.B - $r.T + 2 * $m))
+  $bd = $null
+  if (-not $NoBackdrop) {
+    Add-Type -AssemblyName System.Windows.Forms
+    $bd = New-Object System.Windows.Forms.Form
+    $bd.FormBorderStyle = "None"; $bd.ShowInTaskbar = $false; $bd.StartPosition = "Manual"; $bd.TopMost = $true
+    $bd.BackColor = [System.Drawing.Color]::FromArgb(255, 0, 255)
+    $bd.Show(); $bd.Bounds = $reg; $bd.Refresh(); [System.Windows.Forms.Application]::DoEvents()
+    [Drag]::SetWindowPos($h, [IntPtr](-1), 0, 0, 0, 0, 0x0003) | Out-Null   # back on top of the backdrop
+    [Drag]::SetForegroundWindow($h) | Out-Null
+    Start-Sleep -Milliseconds 400
+  }
   $shots = if ($MoveMs -gt 0) { [Drag]::RunContinuous($h, $x, $y, $dx, $dy, $Steps, $MoveMs, $reg) }
            else { [Drag]::Run($h, $x, $y, $dx, $dy, $Steps, $PerStep, $reg) }
   $dir = Join-Path $Out "$Mode-$edge"; New-Item -ItemType Directory -Force $dir | Out-Null
@@ -214,6 +232,7 @@ foreach ($edge in $Edges) {
     $meta += [pscustomobject]@{ file = $name; step = $f.Step; sub = $f.Sub; ms = $f.Ms; L = $f.Win.L - $reg.X; T = $f.Win.T - $reg.Y; R = $f.Win.R - $reg.X; B = $f.Win.B - $reg.Y }
   }
   $meta | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $dir "meta.json")
+  if ($bd) { $bd.Close(); $bd.Dispose() }
   Write-Output "$Mode-$edge hittest=$ht grab=($x,$y) frames=$($shots.Count) -> $dir"
 }
 [Drag]::SetWindowPos($h, [IntPtr](-2), 0, 0, 0, 0, 0x0013) | Out-Null  # not topmost, no move/size/activate

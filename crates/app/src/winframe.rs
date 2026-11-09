@@ -218,6 +218,13 @@ struct Machine<H: Host> {
     /// The smallest window rect (width, height) the window may take.
     min: (i32, i32),
     step_cap: Duration,
+    /// Cap ticks that ran while the page owed an answer (this answer: `ticks - ticks_at_post`),
+    /// and the last one: a late answer with no tick behind it means the UI thread never got to
+    /// the cap (blocked, or the timer starved), not that the cap did not fire.
+    ticks: u32,
+    ticks_at_post: u32,
+    last_tick: Option<Instant>,
+    msgs_at_post: u64,
     log: bool,
     t0: Instant,
 }
@@ -247,6 +254,10 @@ impl<H: Host> Machine<H> {
             edge: 0,
             min: (0, 0),
             step_cap,
+            ticks: 0,
+            ticks_at_post: 0,
+            last_tick: None,
+            msgs_at_post: 0,
             log,
             t0: Instant::now(),
         }
@@ -486,7 +497,19 @@ impl<H: Host> Machine<H> {
             2 => "presentation not reported",
             _ => "two frames",
         };
-        self.trace(&format!("ack {seq} in {:?} ({how}, {:.1} ms)", self.phase, since.elapsed().as_secs_f64() * 1000.0));
+        let waited = since.elapsed();
+        self.trace(&format!("ack {seq} in {:?} ({how}, {:.1} ms)", self.phase, waited.as_secs_f64() * 1000.0));
+        if self.phase == Phase::Live && waited >= self.step_cap {
+            // Over the cap and the cap did not apply the step: say why (the UI thread was not
+            // running the cap's timer, or it ran and something held the step).
+            let last = self.last_tick.map_or(-1.0, |t| t.elapsed().as_secs_f64() * 1000.0);
+            self.trace(&format!(
+                "late ack {seq}: {} cap ticks ran during the wait (last {last:.1} ms ago), {} window messages, check pending {}",
+                self.ticks - self.ticks_at_post,
+                window_messages().saturating_sub(self.msgs_at_post),
+                self.confirm.is_some()
+            ));
+        }
         match self.phase {
             Phase::Idle => After::None,
             Phase::Arming => {
@@ -507,6 +530,10 @@ impl<H: Host> Machine<H> {
 
     /// The cap: a page that is slow to answer, or cannot be reached, must not hold the window.
     fn tick(&mut self, now: Instant) -> After {
+        self.last_tick = Some(now);
+        if self.waiting.is_some() {
+            self.ticks += 1;
+        }
         if self.phase == Phase::Idle {
             self.host.tick_timer(false);
             return After::None;
@@ -682,6 +709,8 @@ impl<H: Host> Machine<H> {
         };
         let ok = self.host.post(&Frame { seq: self.seq, live, frame, vw, vh });
         self.waiting = Some((self.seq, Instant::now()));
+        self.ticks_at_post = self.ticks;
+        self.msgs_at_post = window_messages();
         if !ok {
             self.post_failed = true;
         }
@@ -707,6 +736,12 @@ struct Win {
 
 thread_local! {
     static SYNC: RefCell<Option<Machine<Win>>> = const { RefCell::new(None) };
+    /// Messages the main window's subclass has seen (for the late-answer trace).
+    static MESSAGES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+fn window_messages() -> u64 {
+    MESSAGES.get()
 }
 
 unsafe fn attach(controller: ICoreWebView2Controller) -> windows::core::Result<()> {
@@ -734,6 +769,7 @@ unsafe fn attach(controller: ICoreWebView2Controller) -> windows::core::Result<(
 }
 
 unsafe extern "system" fn subclass_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM, _id: usize, _data: usize) -> LRESULT {
+    MESSAGES.set(MESSAGES.get().wrapping_add(1));
     match msg {
         WM_SYSCOMMAND if (wp.0 as u32 & 0xFFF0) == SC_SIZE => {
             let edge = wp.0 as u32 & 0x000F;
@@ -887,7 +923,24 @@ fn run(after: After) {
 /// The page has drawn the frame for message `seq`. UI thread only (a sync Tauri command runs
 /// there); from any other thread it does nothing and the cap carries the drag.
 pub fn on_ack(seq: u64, via: u8) {
+    #[cfg(debug_assertions)]
+    if dropped_for_test(seq) {
+        return;
+    }
     drive(|m| m.on_ack(seq, via));
+}
+
+/// Debug test hook: `ATLAS_FRAME_SYNC_DROP_ACK=N` loses every Nth answer, a page that never
+/// answers that step, so a test can watch the cap apply it with an idle UI thread.
+#[cfg(debug_assertions)]
+fn dropped_for_test(seq: u64) -> bool {
+    static EVERY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    let n = *EVERY.get_or_init(|| std::env::var("ATLAS_FRAME_SYNC_DROP_ACK").ok().and_then(|v| v.parse().ok()).unwrap_or(0));
+    let drop = n > 0 && seq % n == 0;
+    if drop {
+        eprintln!("[atlas] frame sync: answer {seq} dropped (test override)");
+    }
+    drop
 }
 
 unsafe extern "system" fn tick_proc(_: HWND, _: u32, _: usize, _: u32) {
@@ -1544,6 +1597,28 @@ mod tests {
         assert!(m.host.posts.last().unwrap().live);
         ack_last(&mut m);
         assert_eq!((m.capped, m.host.win.right), (1, 1500), "the next step is synced again");
+        let a = m.on_exit();
+        settle(&mut m, a);
+        ack_last(&mut m);
+        assert_idle(&m);
+    }
+
+    /// The late-answer trace counts the cap's ticks per owed answer: ticks inside the cap wait,
+    /// the first one past it applies the step, and the next answer starts from zero.
+    #[test]
+    fn cap_ticks_are_counted_per_owed_answer() {
+        let mut m = live(WMSZ_RIGHT);
+        m.on_sizing(rect(300, 200, 1450, 960), Instant::now());
+        let t = Instant::now();
+        assert_eq!(m.ticks - m.ticks_at_post, 0);
+        assert_eq!(m.tick(t + STEP_CAP / 2), After::None);
+        assert_eq!((m.ticks - m.ticks_at_post, m.capped), (1, 0));
+        assert_eq!(m.tick(t + STEP_CAP), After::Apply(rect(300, 200, 1450, 960)), "past the cap the tick applies the step");
+        assert_eq!(m.capped, 1);
+        m.host.win = rect(300, 200, 1450, 960);
+        m.on_sizing(rect(300, 200, 1480, 960), Instant::now());
+        assert_eq!(m.ticks - m.ticks_at_post, 0, "a new answer is owed from zero ticks");
+        ack_last(&mut m);
         let a = m.on_exit();
         settle(&mut m, a);
         ack_last(&mut m);
