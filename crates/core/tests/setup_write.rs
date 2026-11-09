@@ -1,4 +1,4 @@
-//! The Setup write path against a private copy of `fixtures/claude-setup`.
+//! The Setup write path against a private copy of `fixtures/pc`.
 //!
 //! Every test works in a temp folder; the real Claude folder is never opened for
 //! writing (the guard test only builds plans that point at it and checks that
@@ -53,7 +53,7 @@ impl Fx {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("machine");
         let root = dir.to_string_lossy().replace('\\', "/");
-        copy_tree(&fixtures().join("claude-setup"), &dir, &root);
+        copy_tree(&fixtures().join("pc"), &dir, &root);
         let home = dir.join("home");
         let backups = tmp.path().join("atlas-data").join("backups");
         Fx { _tmp: tmp, dir, home, backups }

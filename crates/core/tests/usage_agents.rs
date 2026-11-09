@@ -1,5 +1,5 @@
 //! Subagents: grouping under the parent session, naming and its fallbacks, per-agent spend and
-//! "counted once", against `fixtures/claude-agents` (synthetic; numbers are in the generator).
+//! "counted once", against `fixtures/agents` (synthetic; numbers are in the generator).
 
 mod common;
 
@@ -12,11 +12,11 @@ use atlas_core::usage::{NullSink, UsageEngine};
 use common::*;
 use rusqlite::Connection;
 
-const SA: &str = "aaaa0001-0000-4000-8000-000000000001";
-const SB: &str = "bbbb0002-0000-4000-8000-000000000002";
-const SC: &str = "cccc0003-0000-4000-8000-000000000003";
-const SD: &str = "dddd0004-0000-4000-8000-000000000004";
-const SE: &str = "eeee0005-0000-4000-8000-000000000005";
+const SA: &str = "sa";
+const SB: &str = "sb";
+const SC: &str = "sc";
+const SD: &str = "sd";
+const SE: &str = "se";
 
 fn detail(fx: &Fx, id: &str) -> SessionDetail {
     fx.engine.session_detail(id).unwrap().unwrap()
@@ -32,7 +32,7 @@ fn near(a: f64, b: f64) {
 
 #[test]
 fn subagents_nest_under_their_session_and_are_never_rows() {
-    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let fx = start(&fixture("agents"), Tz::Fixed(0));
     let page = fx.engine.sessions_list(&SessionQuery { limit: 50, ..Default::default() }).unwrap();
     let mut ids: Vec<&str> = page.rows.iter().map(|r| r.session_id.as_str()).collect();
     ids.sort();
@@ -48,7 +48,7 @@ fn subagents_nest_under_their_session_and_are_never_rows() {
 
 #[test]
 fn main_thread_and_helpers_add_up_and_nothing_is_counted_twice() {
-    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let fx = start(&fixture("agents"), Tz::Fixed(0));
     let d = detail(&fx, SA);
 
     // The main thread alone.
@@ -95,7 +95,7 @@ fn main_thread_and_helpers_add_up_and_nothing_is_counted_twice() {
 
 #[test]
 fn helpers_are_named_by_description_then_type_then_prompt_then_helper() {
-    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let fx = start(&fixture("agents"), Tz::Fixed(0));
     let d = detail(&fx, SA);
 
     let a1 = agent(&d, "a1");
@@ -129,7 +129,7 @@ fn helpers_are_named_by_description_then_type_then_prompt_then_helper() {
 
 #[test]
 fn sessions_are_named_by_title_then_agent_name_then_prompt_never_an_id() {
-    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let fx = start(&fixture("agents"), Tz::Fixed(0));
     let page = fx.engine.sessions_list(&SessionQuery { limit: 50, ..Default::default() }).unwrap();
     let row = |id: &str| page.rows.iter().find(|r| r.session_id == id).unwrap();
     let pair = |id: &str| (row(id).name.clone(), row(id).name_source.clone());
@@ -146,7 +146,7 @@ fn sessions_are_named_by_title_then_agent_name_then_prompt_never_an_id() {
 
 #[test]
 fn also_ids_adds_chats_found_by_message_search_to_the_title_matches() {
-    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let fx = start(&fixture("agents"), Tz::Fixed(0));
     let ids = |q: SessionQuery| -> Vec<String> {
         let mut v: Vec<String> = fx.engine.sessions_list(&q).unwrap().rows.into_iter().map(|r| r.session_id).collect();
         v.sort();
@@ -170,7 +170,7 @@ fn also_ids_adds_chats_found_by_message_search_to_the_title_matches() {
 
 #[test]
 fn one_helper_shows_what_it_spent_and_what_it_was_asked() {
-    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let fx = start(&fixture("agents"), Tz::Fixed(0));
     let a = fx.engine.agent_detail(SA, "a1").unwrap().unwrap();
     assert_eq!(a.agent.name, "Find usages of Invoice");
     assert_eq!(a.agent.model, "claude-haiku-5-5", "the model that did most of the work");
@@ -196,7 +196,7 @@ fn one_helper_shows_what_it_spent_and_what_it_was_asked() {
 
 #[test]
 fn a_session_without_helpers_has_an_empty_list_and_main_is_the_whole_session() {
-    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let fx = start(&fixture("agents"), Tz::Fixed(0));
     let d = detail(&fx, SC);
     assert!(d.agents.is_empty());
     assert_eq!(d.main.tokens.total, d.row.tokens.total);
@@ -216,7 +216,7 @@ fn include_missing_defaults_to_what_the_ui_sends() {
 #[test]
 fn an_older_cache_is_migrated_and_re_read() {
     let config = tempfile::tempdir().unwrap();
-    copy_tree(&fixture("claude-agents"), config.path());
+    copy_tree(&fixture("agents"), config.path());
     let data = tempfile::tempdir().unwrap();
     let db = data.path().join("cache.sqlite");
     let engine = UsageEngine::start(config_for(config.path(), data.path(), Tz::Fixed(0)), Arc::new(NullSink));
@@ -245,7 +245,7 @@ fn an_older_cache_is_migrated_and_re_read() {
 #[test]
 fn wrapped_habits_split_helper_work_from_the_chats_and_find_the_busiest_crowd() {
     use atlas_core::usage::wrapped::{LONG_CHAT_MS, SHORT_CHAT_MS};
-    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let fx = start(&fixture("agents"), Tz::Fixed(0));
     let h = fx.engine.wrapped_habits("2000-01-01", "2100-12-31").unwrap();
     let rows = fx.engine.sessions_list(&SessionQuery { limit: 50, ..Default::default() }).unwrap().rows;
 
@@ -280,7 +280,7 @@ fn rw(fx: &Fx) -> Connection {
 
 #[test]
 fn wrapped_habits_leave_out_chats_that_are_gone_from_disk() {
-    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let fx = start(&fixture("agents"), Tz::Fixed(0));
     rw(&fx).execute("UPDATE sessions SET missing = 1 WHERE session_id = ?1", [SA]).unwrap();
     let h = fx.engine.wrapped_habits("2000-01-01", "2100-12-31").unwrap();
     assert_eq!(h.chats, 4, "the chat that is gone is not counted, like the lists");
@@ -292,7 +292,7 @@ fn wrapped_habits_leave_out_chats_that_are_gone_from_disk() {
 
 #[test]
 fn a_side_chain_message_counts_as_helper_work_like_the_session_counter_says() {
-    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let fx = start(&fixture("agents"), Tz::Fixed(0));
     let before = fx.engine.wrapped_habits("2000-01-01", "2100-12-31").unwrap().helper_tokens;
     // A main-thread message with no agent id, marked as a side chain.
     let (key, tokens): (String, i64) = fx
@@ -308,7 +308,7 @@ fn a_side_chain_message_counts_as_helper_work_like_the_session_counter_says() {
 /// A chat that crosses midnight is judged by what happened inside the range being asked about.
 #[test]
 fn short_and_long_chats_follow_the_range_not_the_whole_chat() {
-    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let fx = start(&fixture("agents"), Tz::Fixed(0));
     let sid = "ffff0006-0000-4000-8000-000000000006";
     let ms = |s: &str| chrono_ms(s);
     {

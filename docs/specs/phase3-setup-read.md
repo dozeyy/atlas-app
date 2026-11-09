@@ -197,8 +197,8 @@ Notation: `<root>` = resolved config dir (`ConfigRoot.dir`), `<cj>` = resolved
     search budget fails.
 30. CodeMirror colours come from new `--syntax-*` tokens in `src/styles/tokens.css`
     (light + dark), never hard-coded hex.
-31. New fixture root `fixtures/claude-setup/` from a new `setup()` in
-    `tools/make-fixtures.py`; `claude-basic` and `claude-edge` unchanged.
+31. New fixture root `fixtures/pc/` from a new `setup()` in
+    `tools/make-fixtures.py`; `basic` and `edge` unchanged.
 32. Fixture project paths use the placeholder `@ROOT@`; tests copy the fixture to a temp
     dir and substitute the temp path (JSON-escaped) before discovery; tests never write
     under `fixtures/`.
@@ -232,7 +232,7 @@ Notation: `<root>` = resolved config dir (`ConfigRoot.dir`), `<cj>` = resolved
 ---
 
 ## Acceptance criteria
-Run from the Atlas root. "Fixture" = `fixtures/claude-setup` materialised into a temp dir.
+Run from the Atlas root. "Fixture" = `fixtures/pc` materialised into a temp dir.
 Rust tests live in `crates/core/tests/setup_*.rs` unless named.
 
 Discovery and parsing
@@ -281,7 +281,7 @@ Projects
     items.
 21. The home-as-project entry adds only `home/CLAUDE.md`; zero duplicate `ItemId`s and zero
     Project-scope items whose path is under `<root>`.
-22. `work/app/.claude/worktrees/agent-x` is not a project; its `wt-skill` is not listed.
+22. `work/app/.claude/worktrees/agent-x` is not a project; its `CLAUDE.md` is not listed.
 23. `work/gone` sits in "No longer on disk" with its local MCP entry and no file items;
     `work/empty-proj` is counted, not listed.
 24. `projects/<encoding of work/gone>/memory/` (no transcripts) maps to `work/gone`.
@@ -363,7 +363,7 @@ Front end
 | First paint (Phase 1 contract) | unchanged, < 1 s | criterion 32 |
 ---
 
-## Fixture additions (`fixtures/claude-setup/`, from `tools/make-fixtures.py setup()`)
+## Fixture additions (`fixtures/pc/`, from `tools/make-fixtures.py setup()`)
 - Every secret-looking value is `FIXTURE-PLACEHOLDER`, every text `[fixture ...]`; the
   existing "no real secrets" test covers the new root.
 - `home/.claude.json` (LF): top `mcpServers` `user-srv` (stdio, `env.SECRET_TOKEN`),
@@ -376,8 +376,8 @@ Front end
 - `home/.claude/` (user root):
   - Skills: `shared-skill/` (+ `scripts/run.py`), `user-only/`, `no-name-skill/`,
     `broken-yaml/`, `same-as-skill/`, `crlf-skill/` (CRLF + BOM) and an LF twin.
-  - Synced: `skills/synced/fixture-org_fixture-user/{manifest.json,
-    synced-skill/SKILL.md}`; `skills/synced/.bucket-fixture/ignored/SKILL.md`.
+  - Synced: `skills/synced/o_u/{manifest.json,
+    syn/SKILL.md}`; `skills/synced/.bucket-x/i/SKILL.md`.
   - Agents: `shared-agent.md` (CRLF), `user-agent.md`, `no-name-agent.md`, `dup-a.md` +
     `dup-b.md` (both `name: dup`), `user-agent.md.bak-20261001`.
   - Commands: `shared-cmd.md`, `same-as-skill.md`, `nested/deploy/prod.md`.
@@ -391,12 +391,12 @@ Front end
   - `workflows/nightly.js`, `agent-memory/user-agent/notes.md`, `keybindings.json`,
     `themes/warm.json` (shapes marked "assumed, verify at build time" in the generator).
   - Plugins: `plugins/installed_plugins.json`, `plugins/known_marketplaces.json`,
-    `plugins/cache/fixture-market/fixture-plugin/1.0.0/{.claude-plugin/plugin.json` (with
+    `@ROOT@/plugin/` (outside the config folder so paths stay short; `installPath` points there): `{.claude-plugin/plugin.json` (with
     `mcpServers`), `skills/plug-skill/SKILL.md`, `agents/plug-agent.md`,
     `commands/plug-cmd.md`, `hooks/hooks.json}`.
-  - Transcripts: `projects/-encoded-app/<sid>.jsonl` (cwd `@ROOT@/work/app`; first line
-    an `api-request` to prove it is skipped), `projects/-encoded-transcript-only/<sid>.jsonl`
-    (cwd `@ROOT@/work/transcript-only`), `projects/-encoded-app/memory/MEMORY.md`, and a
+  - Transcripts: `projects/-enc-app/s1.jsonl` (cwd `@ROOT@/work/app`; first line
+    an `api-request` to prove it is skipped), `projects/-enc-t-only/s2.jsonl`
+    (cwd `@ROOT@/work/transcript-only`), `projects/-enc-app/memory/MEMORY.md`, and a
     `memory/notes.md` in the folder named by encoding `@ROOT@/work/gone` (made at
     materialise time; no transcript).
   - Never shown: `.credentials.json`, `sessions/x.key`, `history.jsonl`, `backups/`,
@@ -408,12 +408,12 @@ Front end
   (`outputStyle` override, a deny rule), `settings.local.json`,
   `skills/shared-skill/SKILL.md`, `agents/shared-agent.md`, `commands/shared-cmd.md`,
   `rules/r.md`, `output-styles/proj-style.md`, `agent-memory/shared-agent/m.md`,
-  `launch.json`, `worktrees/agent-x/.claude/skills/wt-skill/SKILL.md}`.
+  `launch.json`, `worktrees/agent-x/CLAUDE.md}`.
 - `work/dotclaude-only/.claude/CLAUDE.md`; `work/transcript-only/.claude/agents/t.md`;
   `work/empty-proj/.gitkeep`.
 - `managed/managed-settings.json` (a deny rule, `disableAllHooks: false`) and
   `managed/managed-mcp.json` (`managed-srv`), passed as `managed_dir`.
-- Regression on unchanged `claude-basic` / `claude-edge`: discovery finds
+- Regression on unchanged `basic` / `edge`: discovery finds
   `code-reviewer`, `commit-helper`, `standup`, `terse`, `testing`, `lane-agent`,
   `crlf-skill`, `nested:deploy:prod`, `fixture-notes`, `fixture-local`, and lists
   `unknown-dir/notes.txt` and `café ☃/readme.txt` as Other.
@@ -447,7 +447,7 @@ Front end
 | `crates/app/src/state.rs` | change | snapshot cache, watcher lifecycle per active root, `atlas://setup-changed` |
 | `crates/app/src/main.rs` | change | register commands; discovery after `frontend_ready` |
 | `tools/make-fixtures.py` | change | new `setup()`; `basic()` / `edge()` untouched |
-| `fixtures/claude-setup/**` | new | generated tree above |
+| `fixtures/pc/**` | new | generated tree above |
 | `package.json` | change | `@codemirror/{state,view,language,lang-markdown,lang-json,lang-javascript,lang-yaml,lang-python,legacy-modes}` |
 | `src/lib/types.ts` | change | `SetupSnapshot`, `SetupItem`, `SourceView`, enums |
 | `src/lib/ipc.ts` | change | `setupSnapshot()`, `readSource(id)`, `onSetupChanged(cb)` |

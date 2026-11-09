@@ -197,8 +197,11 @@ via a CI-built `.dmg` that dad (or Will on a Mac) installs and runs.
   an in-memory `MockBackend`.
 - Commands: `npm test` (Vitest), `cargo test --workspace` (plain `cargo test` skips the
   app crate by design), `npx tauri build --debug --no-bundle` then run
-  `target/debug/atlas.exe --config-dir fixtures/claude-basic --data-dir <scratch>`.
-  Fixtures regenerate with `python tools/make-fixtures.py`.
+  `target/debug/atlas.exe --config-dir fixtures/basic --data-dir <scratch>`.
+  Fixtures regenerate with `python tools/make-fixtures.py` (it only touches the files listed
+  in `fixtures/generated.txt`; `agents/`, `items/` and the wire-key files are hand-made).
+  Keep every fixture path at most 60 characters from the repo root (Windows clones of the
+  plugin marketplace); `crates/core/tests/fixtures.rs` and `tools/test_make_fixtures.py` check it.
 - Deferred on purpose: Framer Motion, tray (Phase 7); the window
   state plugin stores bounds in its own app-config folder, not in `--data-dir`.
 - Launch intro (`crates/app/src/intro.rs`, `splash.html`, `src/splash/`): a transparent

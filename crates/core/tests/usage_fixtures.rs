@@ -12,10 +12,10 @@ use atlas_core::usage::time::Tz;
 use atlas_core::usage::State;
 use common::*;
 
-const S1: &str = "11111111-aaaa-4aaa-8aaa-000000000001";
+const S1: &str = "s1";
 
 fn uid(n: u32) -> String {
-    format!("{n:08}-dddd-4ddd-8ddd-{n:012}")
+    format!("u{n:02}")
 }
 
 fn price_of(fx: &Fx, msg: &str) -> Option<f64> {
@@ -46,7 +46,7 @@ fn rows(fx: &Fx) -> Vec<SessionRow> {
 
 #[test]
 fn basic_totals_match() {
-    let fx = start(&fixture("claude-basic"), Tz::Fixed(0));
+    let fx = start(&fixture("basic"), Tz::Fixed(0));
     assert_eq!(fx.one("SELECT COUNT(*) FROM messages"), 6);
     assert_eq!(fx.one("SELECT COUNT(*) FROM sessions WHERE messages > 0"), 3);
     let mut projects: Vec<String> = fx
@@ -66,7 +66,7 @@ fn basic_totals_match() {
 
 #[test]
 fn dedup_keeps_last_line() {
-    let fx = start(&fixture("claude-basic"), Tz::Fixed(0));
+    let fx = start(&fixture("basic"), Tz::Fixed(0));
     assert_eq!(fx.one("SELECT output FROM messages WHERE msg_key LIKE 'msg_A|%'"), 120);
     assert_eq!(fx.one("SELECT output FROM messages WHERE msg_key LIKE 'msg_SA1|%'"), 77);
     assert_eq!(fx.month().tokens.output, 538);
@@ -74,19 +74,19 @@ fn dedup_keeps_last_line() {
 
 #[test]
 fn subagents_roll_up() {
-    let fx = start(&fixture("claude-basic"), Tz::Fixed(0));
+    let fx = start(&fixture("basic"), Tz::Fixed(0));
     let d = fx.engine.session_detail(S1).unwrap().expect("session 1");
     assert_eq!(d.row.messages, 4);
     assert_eq!(d.row.subagent_messages, 1);
     let t = d.row.tokens;
     assert_eq!((t.input, t.output, t.cache_write5m, t.cache_read), (680, 509, 2000, 6000));
-    assert!(d.by_agent.iter().any(|a| a.agent_id.as_deref() == Some("fixture1")), "{:?}", d.by_agent);
+    assert!(d.by_agent.iter().any(|a| a.agent_id.as_deref() == Some("f1")), "{:?}", d.by_agent);
     assert!(d.files.iter().any(|f| f.is_subagent));
 }
 
 #[test]
 fn basic_cost_matches_price_table() {
-    let fx = start(&fixture("claude-basic"), Tz::Fixed(0));
+    let fx = start(&fixture("basic"), Tz::Fixed(0));
     near(fx.month().cost.usd.unwrap(), 0.0166325);
     assert!(fx.month().cost.complete);
     let s1 = rows(&fx).into_iter().find(|r| r.session_id == S1).unwrap();
@@ -99,9 +99,9 @@ fn basic_cost_matches_price_table() {
 
 #[test]
 fn synthetic_and_half_line_skipped() {
-    let fx = start(&fixture("claude-basic"), Tz::Fixed(0));
+    let fx = start(&fixture("basic"), Tz::Fixed(0));
     assert_eq!(fx.one("SELECT COUNT(*) FROM messages WHERE msg_key LIKE 'msg_S|%' OR msg_key LIKE 'msg_HALF|%'"), 0);
-    let path = fixture("claude-basic").join("projects/-fixture-app").join(format!("{S1}.jsonl"));
+    let path = fixture("basic").join("projects/-fx-app").join(format!("{S1}.jsonl"));
     let bytes = fs::read(&path).unwrap();
     let last_nl = bytes.iter().rposition(|b| *b == b'\n').unwrap() as i64 + 1;
     let off = fx
@@ -114,7 +114,7 @@ fn synthetic_and_half_line_skipped() {
 #[test]
 fn half_line_completed_later() {
     let dir = tempfile::tempdir().unwrap();
-    copy_tree(&fixture("claude-basic"), dir.path());
+    copy_tree(&fixture("basic"), dir.path());
     let fx = start(dir.path(), Tz::Fixed(0));
     let before = fx.one("SELECT COUNT(*) FROM messages");
     let all_before: Vec<(String, i64)> = fx
@@ -125,7 +125,7 @@ fn half_line_completed_later() {
         .unwrap()
         .map(Result::unwrap)
         .collect();
-    let path = dir.path().join("projects/-fixture-app").join(format!("{S1}.jsonl"));
+    let path = dir.path().join("projects/-fx-app").join(format!("{S1}.jsonl"));
     let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
     write!(
         f,
@@ -144,7 +144,7 @@ fn half_line_completed_later() {
 
 #[test]
 fn garbage_never_crashes() {
-    let fx = start(&fixture("claude-edge"), Tz::Fixed(0));
+    let fx = start(&fixture("edge"), Tz::Fixed(0));
     let s = fx.engine.status();
     assert_eq!(s.state, State::Idle, "{s:?}");
     assert_eq!(fx.one("SELECT COUNT(*) FROM messages"), 0);
@@ -158,7 +158,7 @@ fn garbage_never_crashes() {
 
 #[test]
 fn unknown_model_flagged() {
-    let fx = start(&fixture("claude-usage"), Tz::Fixed(0));
+    let fx = start(&fixture("usage"), Tz::Fixed(0));
     let status = fx.engine.status();
     assert!(status.unknown_models.contains(&"claude-nova-9".to_string()), "{:?}", status.unknown_models);
     assert!(status.unknown_models.contains(&"claude-opus-5-5-20261001".to_string()));
@@ -185,7 +185,7 @@ fn unknown_model_flagged() {
 
 #[test]
 fn modifiers_priced() {
-    let fx = start(&fixture("claude-usage"), Tz::Fixed(0));
+    let fx = start(&fixture("usage"), Tz::Fixed(0));
     near(price_of(&fx, "msg_FAST").unwrap(), 0.048);
     near(price_of(&fx, "msg_GEO").unwrap(), 0.0264);
     near(price_of(&fx, "msg_WEB").unwrap(), 0.024 + 0.03);
@@ -199,7 +199,7 @@ fn modifiers_priced() {
 
 #[test]
 fn haiku_long_context_tier() {
-    let fx = start(&fixture("claude-usage"), Tz::Fixed(0));
+    let fx = start(&fixture("usage"), Tz::Fixed(0));
     near(price_of(&fx, "msg_HLONG").unwrap(), 0.0485);
     assert_eq!(fx.one("SELECT price_tier FROM messages WHERE msg_key LIKE 'msg_HLONG|%'"), 1);
     assert_eq!(fx.one("SELECT price_tier FROM messages WHERE msg_key LIKE 'msg_HEDGE|%'"), 0);
@@ -209,7 +209,7 @@ fn haiku_long_context_tier() {
 
 #[test]
 fn cache_write_split() {
-    let fx = start(&fixture("claude-usage"), Tz::Fixed(0));
+    let fx = start(&fixture("usage"), Tz::Fixed(0));
     near(price_of(&fx, "msg_1H").unwrap(), (10.0 * 2.0 + 10.0 * 10.0 + 1000.0 * 4.0) / 1e6);
     assert_eq!(fx.one("SELECT cw1h FROM messages WHERE msg_key LIKE 'msg_1H|%'"), 1000);
     assert_eq!(fx.one("SELECT cw5m FROM messages WHERE msg_key LIKE 'msg_NOSPLIT|%'"), 500);
@@ -222,7 +222,7 @@ fn cache_write_split() {
 
 #[test]
 fn cross_file_dupe_order_independent() {
-    let usage = fixture("claude-usage").join("projects/-fx-dup");
+    let usage = fixture("usage").join("projects/-fx-dup");
     let low = fs::read(usage.join("dup-low.jsonl")).unwrap();
     let high = fs::read(usage.join("dup-high.jsonl")).unwrap();
     let mut results = Vec::new();
@@ -245,7 +245,7 @@ fn cross_file_dupe_order_independent() {
 
 #[test]
 fn project_from_cwd_and_relocated() {
-    let fx = start(&fixture("claude-usage"), Tz::Fixed(0));
+    let fx = start(&fixture("usage"), Tz::Fixed(0));
     let r = rows(&fx).into_iter().find(|r| r.session_id == uid(6)).unwrap();
     assert_eq!(r.project_path, "/fixture/after");
     let key = |n: u32| -> String {
@@ -271,7 +271,7 @@ fn project_from_cwd_and_relocated() {
 
 #[test]
 fn titles() {
-    let fx = start(&fixture("claude-usage"), Tz::Fixed(0));
+    let fx = start(&fixture("usage"), Tz::Fixed(0));
     let t = |n: u32| rows(&fx).into_iter().find(|r| r.session_id == uid(n)).unwrap().title;
     assert_eq!(t(9).as_deref(), Some("Custom title one"));
     assert_eq!(t(10).as_deref(), Some("Agent name two"));
@@ -282,14 +282,14 @@ fn titles() {
 
 #[test]
 fn bom_and_crlf_files_read() {
-    let fx = start(&fixture("claude-usage"), Tz::Fixed(0));
+    let fx = start(&fixture("usage"), Tz::Fixed(0));
     assert_eq!(fx.one("SELECT COUNT(*) FROM messages WHERE msg_key LIKE 'msg_CRLF|%' OR msg_key LIKE 'msg_BOM|%'"), 2);
 }
 
 fn copy_basic() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
-    copy_tree(&fixture("claude-basic"), dir.path());
-    let p = dir.path().join("projects/-fixture-other");
+    copy_tree(&fixture("basic"), dir.path());
+    let p = dir.path().join("projects/-fx-other");
     (dir, p)
 }
 
@@ -298,7 +298,7 @@ fn rotation_and_deletion() {
     // (a) a shrunk file is re-read from 0 with no duplicate rows.
     let (dir, other) = copy_basic();
     let fx = start(dir.path(), Tz::Fixed(0));
-    let f = other.join("33333333-cccc-4ccc-8ccc-000000000003.jsonl");
+    let f = other.join("s3.jsonl");
     let before = fx.one("SELECT COUNT(*) FROM messages");
     let bytes = fs::read(&f).unwrap();
     let first_line_end = bytes.iter().position(|b| *b == b'\n').unwrap() + 1;
@@ -317,7 +317,7 @@ fn rotation_and_deletion() {
     assert_eq!(fx.one("SELECT COUNT(*) FROM messages"), count_full);
     let (size, hash_changed): (i64, bool) = {
         let db = fx.db();
-        let size: i64 = db.query_row("SELECT size FROM files WHERE path LIKE '%3333%'", [], |r| r.get(0)).unwrap();
+        let size: i64 = db.query_row("SELECT size FROM files WHERE path LIKE '%s3.jsonl'", [], |r| r.get(0)).unwrap();
         (size, true)
     };
     assert_eq!(size as usize, swapped.len());
@@ -327,15 +327,15 @@ fn rotation_and_deletion() {
     fs::remove_file(&f).unwrap();
     fx.rescan();
     assert_eq!(fx.one("SELECT COUNT(*) FROM messages"), msgs_before);
-    assert_eq!(fx.one("SELECT missing FROM files WHERE path LIKE '%3333%'"), 1);
-    assert_eq!(fx.one("SELECT missing FROM sessions WHERE session_id LIKE '33333333%'"), 1);
+    assert_eq!(fx.one("SELECT missing FROM files WHERE path LIKE '%s3.jsonl'"), 1);
+    assert_eq!(fx.one("SELECT missing FROM sessions WHERE session_id = 's3'"), 1);
     assert_eq!(fx.engine.status().files_missing, 1);
     let all = fx.engine.sessions_list(&SessionQuery { include_missing: false, limit: 50, ..Default::default() }).unwrap();
     assert_eq!(all.total, 2, "missing sessions are hidden unless asked for");
     // The file coming back clears the flag.
     fs::write(&f, &swapped).unwrap();
     fx.rescan();
-    assert_eq!(fx.one("SELECT missing FROM files WHERE path LIKE '%3333%'"), 0);
+    assert_eq!(fx.one("SELECT missing FROM files WHERE path LIKE '%s3.jsonl'"), 0);
 }
 
 #[test]
@@ -366,15 +366,15 @@ fn deleting_a_file_during_a_read_ends_that_file_without_error() {
 #[test]
 fn incremental_reads_only_new_bytes() {
     let dir = tempfile::tempdir().unwrap();
-    copy_tree(&fixture("claude-basic"), dir.path());
+    copy_tree(&fixture("basic"), dir.path());
     let fx = start(dir.path(), Tz::Fixed(0));
     let full = fx.engine.bytes_read();
     assert!(full > 0);
     // A rescan with no change opens and reads nothing.
     fx.rescan();
     assert_eq!(fx.engine.bytes_read(), full, "no-change rescan must read zero bytes");
-    let path = dir.path().join("projects/-fixture-other/33333333-cccc-4ccc-8ccc-000000000003.jsonl");
-    let extra = format!("{}\n", jsonl_line("33333333-cccc-4ccc-8ccc-000000000003", "NEW", "2026-11-04T08:00:00.000Z", "claude-sonnet-5-5", 5, 6));
+    let path = dir.path().join("projects/-fx-other/s3.jsonl");
+    let extra = format!("{}\n", jsonl_line("s3", "NEW", "2026-11-04T08:00:00.000Z", "claude-sonnet-5-5", 5, 6));
     let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
     f.write_all(extra.as_bytes()).unwrap();
     drop(f);
@@ -386,7 +386,7 @@ fn incremental_reads_only_new_bytes() {
 #[test]
 fn local_day_buckets() {
     // UTC-7: 06:59:59Z is 23:59:59 on Nov 3; 07:00:00Z is midnight into Nov 4.
-    let fx = start(&fixture("claude-usage"), Tz::Fixed(-7 * 3600));
+    let fx = start(&fixture("usage"), Tz::Fixed(-7 * 3600));
     let a = fx.timeline("2026-11-03", "2026-11-03", "day", None).points.remove(0);
     let b = fx.timeline("2026-11-04", "2026-11-04", "day", None).points.remove(0);
     // msg_M1 (100 in / 100 out) before local midnight; msg_M2 (200/200) after; msg_ERR is not a call.
@@ -397,7 +397,7 @@ fn local_day_buckets() {
     assert_eq!(h("2026-11-03T23"), 100);
     assert_eq!(h("2026-11-04T00"), 200);
     // Same data, UTC: both land on Nov 4.
-    let utc = start(&fixture("claude-usage"), Tz::Fixed(0));
+    let utc = start(&fixture("usage"), Tz::Fixed(0));
     let hu = utc.timeline("2026-11-04", "2026-11-04", "hour", None);
     assert_eq!(hu.points.iter().find(|p| p.start == "2026-11-04T06").unwrap().tokens.output, 100);
     assert_eq!(hu.points.iter().find(|p| p.start == "2026-11-04T07").unwrap().tokens.output, 200);
@@ -410,7 +410,7 @@ fn local_day_buckets() {
 
 #[test]
 fn read_only_guarantee() {
-    for name in ["claude-basic", "claude-edge", "claude-usage"] {
+    for name in ["basic", "edge", "usage"] {
         let dir = tempfile::tempdir().unwrap();
         copy_tree(&fixture(name), dir.path());
         let before = snapshot(dir.path());
@@ -464,7 +464,7 @@ fn no_write_calls_in_usage() {
 #[test]
 fn cache_outside_config_root() {
     let dir = tempfile::tempdir().unwrap();
-    copy_tree(&fixture("claude-basic"), dir.path());
+    copy_tree(&fixture("basic"), dir.path());
     let before = snapshot(dir.path());
     let inside = dir.path().join("atlas-data");
     let cfg = config_for(dir.path(), &inside, Tz::Fixed(0));

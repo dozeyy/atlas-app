@@ -1,4 +1,4 @@
-//! Setup discovery against `fixtures/claude-setup`, a whole fake machine.
+//! Setup discovery against `fixtures/pc`, a whole fake machine.
 //!
 //! Each test copies the tree into a temp folder (replacing `@ROOT@`), runs
 //! discovery there and checks what the page would show. The one test that runs
@@ -57,7 +57,7 @@ impl Fx {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().to_path_buf();
         let root = dir.to_string_lossy().replace('\\', "/");
-        copy_tree(&fixtures().join("claude-setup"), &dir, &root);
+        copy_tree(&fixtures().join("pc"), &dir, &root);
         let home = dir.join("home");
         // A project that is gone from disk keeps its memory under the lossy folder name.
         let gone = format!("{root}/work/gone");
@@ -347,12 +347,17 @@ fn projects_come_from_three_sources_and_spellings_merge() {
 fn worktrees_stay_out_unless_asked() {
     let fx = Fx::new();
     let d = fx.discover();
-    assert!(!d.snapshot.items.iter().any(|i| i.name == "wt-skill"));
+    // The worktree `work/app/.claude/worktrees/agent-x` holds a CLAUDE.md.
+    let in_wt = |i: &&SetupItem| i.path.as_deref().is_some_and(|p| p.replace('\\', "/").contains("/worktrees/agent-x/"));
+    assert!(!d.snapshot.items.iter().any(|i| in_wt(&i)));
     assert_eq!(d.snapshot.hidden.worktrees, 1);
     assert!(!d.snapshot.projects.iter().any(|p| p.is_worktree));
     let d2 = discover(&fx.inputs_with(true), &mut Cache::default());
     let wt = d2.snapshot.projects.iter().find(|p| p.is_worktree).expect("worktree project");
     assert!(wt.parent_id.is_some());
+    let wt_items: Vec<_> = d2.snapshot.items.iter().filter(in_wt).collect();
+    assert_eq!(wt_items.len(), 1, "{wt_items:?}");
+    assert_eq!(wt_items[0].project_id.as_deref(), Some(wt.id.as_str()));
 }
 
 #[test]
@@ -497,7 +502,7 @@ fn tree(root: &Path) -> Vec<(String, Vec<u8>)> {
 #[test]
 fn discovery_and_reading_leave_the_tree_byte_identical() {
     // Run on the committed tree itself (placeholders stay as they are).
-    let src = fixtures().join("claude-setup");
+    let src = fixtures().join("pc");
     let before = tree(&src);
     let home = src.join("home");
     let root = resolve_config_root(&ConfigInputs { flag: None, settings_override: None, env: None, home: &home, cwd: &src });
@@ -514,8 +519,8 @@ fn discovery_and_reading_leave_the_tree_byte_identical() {
 #[test]
 fn the_basic_and_edge_fixtures_still_read_as_before() {
     for (name, want) in [
-        ("claude-basic", &["code-reviewer", "commit-helper", "standup", "terse", "testing"][..]),
-        ("claude-edge", &["lane-agent", "crlf-skill", "nested:deploy:prod", "unknown-dir/notes.txt", "caf\u{e9} \u{2603}/readme.txt"][..]),
+        ("basic", &["code-reviewer", "commit-helper", "standup", "terse", "testing"][..]),
+        ("edge", &["lane-agent", "crlf-skill", "nested:deploy:prod", "unknown-dir/notes.txt", "caf\u{e9} \u{2603}/readme.txt"][..]),
     ] {
         let dir = fixtures().join(name);
         let before = tree(&dir);
@@ -619,7 +624,7 @@ fn transcripts_writing_does_not_wake_the_page() {
     });
     std::thread::sleep(Duration::from_millis(400));
     drain(&rx);
-    let f = fx.p("home/.claude/projects/-encoded-app/00000000-0000-0000-0000-000000000001.jsonl");
+    let f = fx.p("home/.claude/projects/-enc-app/s1.jsonl");
     let mut t = fs::read_to_string(&f).unwrap();
     t.push_str("{\"type\":\"assistant\"}\n");
     fs::write(&f, t).unwrap();

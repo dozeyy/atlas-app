@@ -3,7 +3,7 @@
 
     python tools/make-demo-fixture.py OUT_DIR
 
-OUT_DIR gets a copy of fixtures/claude-setup/home (so the Toolkit has skills, agents, hooks and so on)
+OUT_DIR gets a copy of fixtures/pc/home (so the Toolkit has skills, agents, hooks and so on)
 plus about 90 days of made-up Claude Code transcripts that end today: a streak that reaches today,
 five projects, three models, sessions with helpers (one nested), busy weekdays and quiet weekends.
 Dates are relative to the moment you run it, so the Dashboard always has "Today" and a live streak.
@@ -17,7 +17,11 @@ import shutil
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SRC = os.path.join(HERE, "..", "fixtures", "claude-setup", "home")
+SRC = os.path.join(HERE, "..", "fixtures", "pc", "home")
+# The fixture installs its plugin outside the config folder (short paths); the demo puts it where
+# Atlas looks when `installPath` does not exist: plugins/cache/<market>/<plugin>/<version>.
+PLUGIN_SRC = os.path.join(HERE, "..", "fixtures", "pc", "plugin")
+PLUGIN_DEST = ("plugins", "cache", "fixture-market", "fixture-plugin", "1.0.0")
 
 PROJECTS = [
     ("maple-api", 0.34),
@@ -110,6 +114,7 @@ def main():
         sys.exit(f"{out} already exists; pick a new folder")
     home = os.path.join(out, "home")
     shutil.copytree(SRC, home)
+    shutil.copytree(PLUGIN_SRC, os.path.join(home, ".claude", *PLUGIN_DEST))
     # The setup fixture ships its own transcripts; the demo uses only its own so the numbers read cleanly.
     shutil.rmtree(os.path.join(home, ".claude", "projects"), ignore_errors=True)
 

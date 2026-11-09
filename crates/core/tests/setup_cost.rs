@@ -1,4 +1,4 @@
-//! What the setup costs, against `fixtures/claude-setup` (a whole fake machine) with a usage
+//! What the setup costs, against `fixtures/pc` (a whole fake machine) with a usage
 //! mix built by hand so every dollar can be checked with arithmetic, plus one test of the
 //! SQL that builds the mix from a real cache and one of the MCP prompt sampler.
 //!
@@ -64,7 +64,7 @@ impl Fx {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().to_path_buf();
         let root = dir.to_string_lossy().replace('\\', "/");
-        copy_tree(&common::fixture("claude-setup"), &dir, &root);
+        copy_tree(&common::fixture("pc"), &dir, &root);
         let home = dir.join("home");
         let gone = format!("{root}/work/gone");
         let mem = home.join(".claude").join("projects").join(encode_lossy(&gone)).join("memory");
@@ -345,7 +345,7 @@ fn mcp_tools_are_measured_from_a_real_prompt_and_unknown_servers_group_together(
 
 #[test]
 fn the_mix_is_read_from_the_cache_for_the_last_week_only() {
-    let fx = common::start(&common::fixture("claude-items"), Tz::Fixed(0));
+    let fx = common::start(&common::fixture("items"), Tz::Fixed(0));
     let mix = fx.engine.cost_mix(7).unwrap();
     assert_eq!(mix.days, 7);
     assert!(mix.total_turns() > 0);

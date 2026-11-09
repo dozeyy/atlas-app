@@ -357,19 +357,19 @@ pricing page (fetched 2026-11-08), and read-only measurements of Will's
 | `crates/core/tests/usage_huge.rs` | generated huge-file and long-line tests |
 | `crates/core/tests/usage_cache.rs` | migration, corruption, newer-schema, crash-resume tests |
 | `crates/core/examples/usage_bench.rs` | bench harness (`--projects --data --gen-huge --runs --append-test --json`) |
-| `tools/make-fixtures.py` | add `usage()` -> `fixtures/claude-usage/` |
-| `fixtures/claude-usage/**` | generated usage edge cases (below) |
+| `tools/make-fixtures.py` | add `usage()` -> `fixtures/usage/` |
+| `fixtures/usage/**` | generated usage edge cases (below) |
 | `crates/app/src/usage.rs` | Tauri commands + event bridge (implements the core event sink) |
 | `crates/app/src/state.rs` | owns `Arc<UsageEngine>`; start after `frontend_ready`; restart on root change |
 | `crates/app/src/main.rs` | register the usage commands |
 | `src/lib/types.ts` | usage types above |
 | `src/lib/ipc.ts` | `Backend` usage methods + listeners |
-| `src/lib/mock.ts` | MockBackend usage data matching the claude-basic numbers below |
+| `src/lib/mock.ts` | MockBackend usage data matching the basic numbers below |
 | `src/components/IndexProgress.tsx` | first-run progress strip (Dashboard + Sessions empty states) |
 | `src/lib/usage.test.ts`, `src/components/IndexProgress.test.tsx` | front-end contract + progress tests |
 | `docs/bench/usage-YYYY-MM-DD.md` | bench output kept with the commit that met the budgets |
 
-## New fixture `fixtures/claude-usage/` (from `make-fixtures.py`; no real text)
+## New fixture `fixtures/usage/` (from `make-fixtures.py`; no real text)
 - An unknown model `claude-nova-9` (made-up id) and a date-suffixed id with no alias.
 - Fast-mode `claude-opus-5-5`; `inference_geo: "us"`; `service_tier: "priority"`;
   3 web searches + 2 web fetches; a 1h cache write; a cache write with no
@@ -386,14 +386,14 @@ pricing page (fetched 2026-11-08), and read-only measurements of Will's
 ## Acceptance criteria
 Commands run from the repo root; test names are the ones to create.
 1. `cargo test -p atlas-core --test usage_fixtures` exits 0.
-2. `basic_totals_match`: indexing `fixtures/claude-basic` yields exactly 6 messages,
+2. `basic_totals_match`: indexing `fixtures/basic` yields exactly 6 messages,
    3 sessions, 2 projects (`/fixture/app`, `/fixture/other`); totals input 697,
    output 538, cache write 2,000 (all 5m), cache read 6,000.
 3. `dedup_keeps_last_line`: `msg_A` output = 120 (not 5), `msg_SA1` output = 77 (not 3);
    total output 538 (first-seen dedup would give 349).
 4. `subagents_roll_up`: session `11111111-...-000000000001` has 4 messages (A, B, C,
    SA1), input 680, output 509, cache write 2,000, cache read 6,000,
-   `subagentMessages` 1, and `byAgent` lists `fixture1`.
+   `subagentMessages` 1, and `byAgent` lists `f1`.
 5. `basic_cost_matches_price_table` (tolerance 1e-9): total $0.0166325; session 1
    $0.0152725; `msg_A` (sonnet-5-5) $0.0064; `msg_C` (opus-5-5) $0.0088; `msg_D`
    (fable-5) $0.0011; `msg_E` (opus-4-8) $0.00026.
@@ -401,7 +401,7 @@ Commands run from the repo root; test names are the ones to create.
    session 1 file offset = the byte after its last `\n`.
 7. `half_line_completed_later`: completing the `msg_HALF` line in a temp copy and
    rescanning adds exactly that message; no other row changes.
-8. `garbage_never_crashes`: `fixtures/claude-edge` indexes with 0 messages,
+8. `garbage_never_crashes`: `fixtures/edge` indexes with 0 messages,
    `malformedLines` >= 4, `empty.jsonl` tracked at offset 0, no panic.
 9. `unknown_model_flagged`: `claude-nova-9` tokens are in every total, its cost is
    `null`, its day and session costs have `complete: false` with the right
@@ -456,7 +456,7 @@ Commands run from the repo root; test names are the ones to create.
     before/after size + mtime listing of `--projects` and fails if anything changed.
 27. The bench prints Atlas's estimate vs `cost-state.totalCostUSD` for sessions that
     have one (count, median and max deviation). Report only; no threshold (Q5).
-28. App: `npm run tauri dev -- -- --config-dir fixtures/claude-basic` (or the Phase 1
+28. App: `npm run tauri dev -- -- --config-dir fixtures/basic` (or the Phase 1
     equivalent) logs `usage: index done 6 messages`, and the `[atlas] startup` line
     prints before any `usage:` line.
 29. App in Sandbox Mode (real logs linked read-only): the first run shows the progress
@@ -465,7 +465,7 @@ Commands run from the repo root; test names are the ones to create.
 30. Live update in Sandbox Mode: during a real Claude Code session, within 1 s of each
     assistant reply the app logs `usage: changed` and that session's tokens in
     `sessions_list` grow.
-31. `npm test` exits 0 with `usage.test.ts` (the mock returns the claude-basic numbers
+31. `npm test` exits 0 with `usage.test.ts` (the mock returns the basic numbers
     through the same types) and `IndexProgress.test.tsx` (0 %, mid, done and error
     states; reduced motion = no animation).
 32. `[Will]`: while the real data indexes, window drag/resize and sidebar clicks feel
@@ -554,7 +554,7 @@ Commands run from the repo root; test names are the ones to create.
   half-hour offset or a daylight change shifts a call near midnight to the neighbouring day
   the same way the token buckets move.
 - Tests: `crates/core/tests/usage_agents.rs` (8) and `usage_items.rs` (9) with the synthetic
-  fixtures `fixtures/claude-agents` and `fixtures/claude-items`. Invented sample prompts in
+  fixtures `fixtures/agents` and `fixtures/items`. Invented sample prompts in
   fixtures carry `"fixtureText": true`, which the "no real text" guard accepts.
 
 ## Open questions

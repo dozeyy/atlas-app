@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Tests for tools/make-fixtures.py: regeneration only ever touches the files it generates.
+
+    python tools/test_make_fixtures.py
+
+Everything runs in temp folders, except one read-only `--check` of the committed fixtures/.
+"""
+import contextlib
+import importlib.util
+import io
+import os
+import shutil
+import tempfile
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_spec = importlib.util.spec_from_file_location("make_fixtures", os.path.join(HERE, "make-fixtures.py"))
+mf = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(mf)
+
+
+def run(*argv):
+    """main() with its output captured: (exit code, output)."""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = mf.main(list(argv))
+    return code, buf.getvalue()
+
+
+def read(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def write(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(data)
+
+
+def tree(root):
+    out = {}
+    for base, _dirs, files in os.walk(root):
+        for name in files:
+            p = os.path.join(base, name)
+            out[os.path.relpath(p, root).replace(os.sep, "/")] = read(p)
+    return out
+
+
+class Regenerate(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="atlas-fixtures-")
+        self.out = os.path.join(self.tmp, "fixtures")
+        code, _ = run("--out", self.out)
+        self.assertEqual(code, 0)
+        self.generated = tree(self.out)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def test_first_run_writes_every_file_and_the_manifest(self):
+        files = mf.generate()
+        self.assertEqual(set(self.generated), set(files) | {mf.MANIFEST})
+        listed = {l for l in self.generated[mf.MANIFEST].decode("utf-8").splitlines() if l and not l.startswith("#")}
+        self.assertEqual(listed, set(files))
+        self.assertEqual(run("--out", self.out, "--check")[0], 0)
+
+    def test_hand_made_files_survive_regeneration(self):
+        hand = {
+            "agents/projects/-fx/sa.jsonl": b'{"hand":"made"}\n',  # a whole hand-made tree
+            "setup-wire-keys.json": b"{}\n",  # a file a Rust test writes
+            "basic/agents/hand.md": b"inside a generated tree\n",  # beside generated files
+        }
+        for rel, data in hand.items():
+            write(os.path.join(self.out, *rel.split("/")), data)
+        # A generated file that drifted is put back; nothing else moves.
+        drifted = os.path.join(self.out, "basic", "CLAUDE.md")
+        write(drifted, b"edited by hand\n")
+        code, log = run("--out", self.out)
+        self.assertEqual(code, 0, log)
+        after = tree(self.out)
+        for rel, data in hand.items():
+            self.assertEqual(after.get(rel), data, rel)
+        self.assertEqual(read(drifted), self.generated["basic/CLAUDE.md"])
+        self.assertEqual(after, {**self.generated, **hand})
+        self.assertEqual(run("--out", self.out, "--check")[0], 0)
+
+    def test_files_dropped_from_the_generator_are_removed_and_nothing_else(self):
+        # As if an older generator had written `old/deep/gone.txt` and `basic/gone.txt`.
+        manifest = os.path.join(self.out, mf.MANIFEST)
+        write(manifest, read(manifest) + b"old/deep/gone.txt\nbasic/gone.txt\n../outside.txt\n")
+        write(os.path.join(self.out, "old", "deep", "gone.txt"), b"stale\n")
+        write(os.path.join(self.out, "basic", "gone.txt"), b"stale\n")
+        write(os.path.join(self.out, "old", "keep.txt"), b"hand-made beside a stale file\n")
+        outside = os.path.join(self.tmp, "outside.txt")
+        write(outside, b"never touched\n")
+        code, log = run("--out", self.out, "--check")
+        self.assertEqual(code, 1)
+        self.assertIn("would remove: old/deep/gone.txt", log)
+        self.assertNotIn("outside", log)
+        self.assertTrue(os.path.exists(os.path.join(self.out, "old", "deep", "gone.txt")), "--check wrote")
+        code, log = run("--out", self.out)
+        self.assertEqual(code, 0, log)
+        self.assertFalse(os.path.exists(os.path.join(self.out, "old", "deep")))
+        self.assertFalse(os.path.exists(os.path.join(self.out, "basic", "gone.txt")))
+        self.assertEqual(read(os.path.join(self.out, "old", "keep.txt")), b"hand-made beside a stale file\n")
+        self.assertEqual(read(outside), b"never touched\n")
+        self.assertEqual(tree(self.out), {**self.generated, "old/keep.txt": b"hand-made beside a stale file\n"})
+
+    def test_a_file_the_script_did_not_write_is_never_overwritten(self):
+        os.remove(os.path.join(self.out, mf.MANIFEST))
+        target = os.path.join(self.out, "edge", "CLAUDE.md")
+        write(target, b"someone else's file\n")
+        before = tree(self.out)
+        code, log = run("--out", self.out)
+        self.assertEqual(code, 2)
+        self.assertIn("conflict (not generated by this script, would be overwritten): edge/CLAUDE.md", log)
+        self.assertEqual(tree(self.out), before, "nothing may be written when there is a conflict")
+
+    def test_every_path_fits_the_windows_budget(self):
+        for rel in mf.generate():
+            self.assertLessEqual(len(f"fixtures/{rel}"), mf.MAX_PATH, rel)
+
+
+class Committed(unittest.TestCase):
+    def test_committed_fixtures_match_the_generator(self):
+        code, log = run("--check")
+        self.assertEqual(code, 0, "fixtures/ is out of date; run python tools/make-fixtures.py\n" + log)
+
+
+if __name__ == "__main__":
+    unittest.main()

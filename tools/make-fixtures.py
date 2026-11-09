@@ -1,35 +1,54 @@
 #!/usr/bin/env python3
-"""Regenerate fixtures/ (fake Claude config folders used by tests and manual runs).
+"""Regenerate the generated part of fixtures/ (fake Claude config folders used by tests and manual runs).
 
 Shapes come from docs/phase0-recon.md (real Claude Code 2.1.x on disk). Nothing
 here is copied from a real machine: every message text is a "[fixture ...]"
 placeholder, every secret is an obvious placeholder, every id is made up.
 
-    python tools/make-fixtures.py
+    python tools/make-fixtures.py            # write
+    python tools/make-fixtures.py --check    # dry run: list what would change, exit 1 if anything would
+    python tools/make-fixtures.py --out DIR  # write into DIR instead of fixtures/ (tools/test_make_fixtures.py)
+
+Only the files this script generates are ever written or removed. They are listed in
+fixtures/generated.txt; on the next run a file that was in that list and is no longer
+generated is removed, and every other file under fixtures/ (the hand-made agents/ and
+items/ trees, the wire-key files the Rust tests write) is left alone. If a generated
+path would overwrite a file that is not in the list and holds different bytes, nothing
+is written at all.
+
+Every path stays at most MAX_PATH characters long counted from the repo root
+(`fixtures/...`): the Claude Code plugin marketplace clones this whole repo into the
+user's config folder, and Windows refuses paths over 260 characters, so ids and folder
+names here are deliberately short (crates/core/tests/fixtures.rs checks the whole tree).
 
 Writes bytes exactly (CRLF and BOM where the edge fixture needs them);
 .gitattributes marks fixtures/** as `-text` so git never converts them.
 """
+import argparse
 import json
 import os
-import shutil
 import sys
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixtures")
+ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixtures"))
+MANIFEST = "generated.txt"
+MAX_PATH = 60
+
+# Path under fixtures/ ("basic/settings.json") -> exact bytes; filled by the generators below.
+OUT = {}
 
 
 def put(base, rel, data, newline="\n", bom=False):
-    """Write text with the given newline style, or raw bytes."""
-    path = os.path.join(base, *rel.split("/"))
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    """Record text with the given newline style, or raw bytes, as `<base>/<rel>` under fixtures/."""
     if isinstance(data, bytes):
         raw = data
     else:
         raw = data.replace("\r\n", "\n").replace("\n", newline).encode("utf-8")
         if bom:
             raw = b"\xef\xbb\xbf" + raw
-    with open(path, "wb") as f:
-        f.write(raw)
+    key = f"{base}/{rel}"
+    if key in OUT:
+        raise SystemExit(f"generated twice: {key}")
+    OUT[key] = raw
 
 
 def jl(*objs):
@@ -94,10 +113,9 @@ def user(sid, uuid, parent, ts, cwd, text="[fixture user message]"):
 
 
 def basic():
-    b = os.path.join(ROOT, "claude-basic")
-    S1 = "11111111-aaaa-4aaa-8aaa-000000000001"
-    S2 = "22222222-bbbb-4bbb-8bbb-000000000002"
-    S3 = "33333333-cccc-4ccc-8ccc-000000000003"
+    b = "basic"
+    # Session ids are short on purpose (real ones are UUIDs): see MAX_PATH.
+    S1, S2, S3 = "s1", "s2", "s3"
     APP, OTHER = "/fixture/app", "/fixture/other"
 
     put(b, ".claude.json", json.dumps({
@@ -162,7 +180,7 @@ def basic():
     put(b, "daemon.lock", "1\n")
 
     # --- transcripts -------------------------------------------------------
-    app = "projects/-fixture-app"
+    app = "projects/-fx-app"
     # Session 1: duplicates (same message.id + requestId; only output_tokens
     # grows, the LAST line holds the max), a synthetic line, an api-request
     # blob, cost-state, a skill attribution, and a half-written last line.
@@ -182,10 +200,10 @@ def basic():
     put(b, f"{app}/{S1}.jsonl", jl(*s1) + '{"type":"assistant","message":{"id":"msg_HALF","usage":{"input_tokens":')
     # Subagent transcript of session 1 (80 % of real files look like this).
     sub = [
-        assistant(S1, "sa-1", None, "2026-11-02T09:00:30.000Z", "msg_SA1", "req_SA1", "claude-haiku-5-5", usage(50, 3, 0, 0), APP, isSidechain=True, agentId="fixture1"),
-        assistant(S1, "sa-1", None, "2026-11-02T09:00:31.000Z", "msg_SA1", "req_SA1", "claude-haiku-5-5", usage(50, 77, 0, 0), APP, isSidechain=True, agentId="fixture1"),
+        assistant(S1, "sa-1", None, "2026-11-02T09:00:30.000Z", "msg_SA1", "req_SA1", "claude-haiku-5-5", usage(50, 3, 0, 0), APP, isSidechain=True, agentId="f1"),
+        assistant(S1, "sa-1", None, "2026-11-02T09:00:31.000Z", "msg_SA1", "req_SA1", "claude-haiku-5-5", usage(50, 77, 0, 0), APP, isSidechain=True, agentId="f1"),
     ]
-    put(b, f"{app}/{S1}/subagents/agent-fixture1.jsonl", jl(*sub))
+    put(b, f"{app}/{S1}/subagents/agent-f1.jsonl", jl(*sub))
     put(b, f"{app}/{S1}/tool-results/result-1.txt", "[fixture tool result]\n")
 
     s2 = [
@@ -199,11 +217,11 @@ def basic():
         user(S3, "u-1", None, "2026-11-04T07:15:00.000Z", OTHER),
         assistant(S3, "a-1", "u-1", "2026-11-04T07:15:02.000Z", "msg_E", "req_E", "claude-opus-4-8", usage(7, 9, 0, 0), OTHER),
     ]
-    put(b, f"projects/-fixture-other/{S3}.jsonl", jl(*s3))
+    put(b, f"projects/-fx-other/{S3}.jsonl", jl(*s3))
 
 
 def edge():
-    e = os.path.join(ROOT, "claude-edge")
+    e = "edge"
     # BOM + CRLF + 4-space indent + unknown keys + unusual key order.
     put(e, "settings.json",
         '{\n    "zzz-last-alphabetically": true,\n    "model": "claude-sonnet-5-5",\n    "futureSetting": {"nested": [1, 2, 3]}\n}\n',
@@ -225,12 +243,13 @@ def edge():
 
 
 def usage_fx():
-    """fixtures/claude-usage: the pricing, dedup and attribution edge cases (Phase 2)."""
-    u = os.path.join(ROOT, "claude-usage")
+    """fixtures/usage: the pricing, dedup and attribution edge cases (Phase 2)."""
+    u = "usage"
     P = "projects"
 
     def uid(n):
-        return f"{n:08d}-dddd-4ddd-8ddd-{n:012d}"
+        # Short session ids (real ones are UUIDs): see MAX_PATH.
+        return f"u{n:02d}"
 
     def line(sid, n, ts, mid, model, usg, cwd, **extra):
         return assistant(sid, f"a-{n}", f"u-{n}", ts, mid, "req_" + mid[4:], model, usg, cwd, **extra)
@@ -343,10 +362,10 @@ def usage_fx():
     sub = line(sa, 1, "2026-11-05T09:20:30.000Z", "msg_SUB", "claude-sonnet-5-5", usage(10, 10), "/fixture/sub")
     del sub["sessionId"]
     sub["isSidechain"] = True
-    sub["agentId"] = "fixturesub"
+    sub["agentId"] = "fs"
     put(u, f"{P}/-fx-sub/{sa}.jsonl", jl(
         line(sa, 2, "2026-11-05T09:20:00.000Z", "msg_PARENT", "claude-sonnet-5-5", usage(10, 10), "/fixture/sub")))
-    put(u, f"{P}/-fx-sub/{sa}/subagents/agent-fixturesub.jsonl", jl(sub))
+    put(u, f"{P}/-fx-sub/{sa}/subagents/agent-fs.jsonl", jl(sub))
 
 
 def md(front, body="[fixture body]\n"):
@@ -360,14 +379,19 @@ def md(front, body="[fixture body]\n"):
 
 
 def setup():
-    """fixtures/claude-setup: a whole fake machine for Setup (Phase 3).
+    """fixtures/pc: a whole fake machine for Setup (Phase 3).
 
     `@ROOT@` stands for the folder the tests copy this tree into; they replace it
     (JSON-escaped inside .json/.jsonl) before discovery. Every secret-looking
     value is FIXTURE-PLACEHOLDER. Shapes marked "assumed" are not seen on a real
     disk yet (keybindings, themes, workflows, agent-memory, managed files).
+
+    Shortened for MAX_PATH: the plugin is installed at `pc/plugin` (its `installPath`
+    can be anywhere; the real `plugins/cache/<market>/<plugin>/<version>` is too deep
+    here), transcripts and synced-skill buckets have short names, and the agent worktree
+    holds a CLAUDE.md rather than a whole `.claude/skills/...` tree.
     """
-    s = os.path.join(ROOT, "claude-setup")
+    s = "pc"
     R = "@ROOT@"
     H = "home/.claude"
     P = "[fixture]"
@@ -425,13 +449,14 @@ def setup():
     put(s, f"{H}/skills/same-as-skill/SKILL.md", md({"name": "same-as-skill", "description": "A skill with a command of the same name."}))
     put(s, f"{H}/skills/crlf-skill/SKILL.md", md({"name": "crlf-skill", "description": "Twin skill."}), newline="\r\n", bom=True)
     put(s, f"{H}/skills/lf-skill/SKILL.md", md({"name": "lf-skill", "description": "Twin skill."}))
-    put(s, f"{H}/skills/synced/fixture-org_fixture-user/manifest.json", js({
+    # Synced buckets are `<org>_<user>` on a real disk; the skill folder name does not matter (the name is in SKILL.md).
+    put(s, f"{H}/skills/synced/o_u/manifest.json", js({
         "lastUpdated": "2026-11-01T00:00:00Z",
         "skills": [{"skillId": "skill_fixture", "name": "synced-skill", "description": "A skill synced from the account.",
                     "source": "anthropic", "backingPluginId": None, "updatedAt": "2026-11-01T00:00:00Z"}],
     }))
-    put(s, f"{H}/skills/synced/fixture-org_fixture-user/synced-skill/SKILL.md", md({"name": "synced-skill", "description": "Synced."}))
-    put(s, f"{H}/skills/synced/.bucket-fixture/ignored/SKILL.md", md({"name": "ignored", "description": "Never listed."}))
+    put(s, f"{H}/skills/synced/o_u/syn/SKILL.md", md({"name": "synced-skill", "description": "Synced."}))
+    put(s, f"{H}/skills/synced/.bucket-x/i/SKILL.md", md({"name": "ignored", "description": "Never listed."}))
 
     put(s, f"{H}/agents/shared-agent.md", md({"name": "shared-agent", "description": "User copy.", "model": "sonnet"}), newline="\r\n")
     put(s, f"{H}/agents/user-agent.md", md({"name": "user-agent", "description": "Only at user scope.", "lane": "implementation"}))
@@ -475,13 +500,13 @@ def setup():
     put(s, f"{H}/keybindings.json", js([{"key": "ctrl+k", "command": "fixture.noop"}]))
     put(s, f"{H}/themes/warm.json", js({"name": "Warm Fixture", "colors": {}}))
 
-    # Plugins.
-    inst = f"{R}/home/.claude/plugins/cache/fixture-market/fixture-plugin/1.0.0"
+    # Plugins. Installed outside the config folder (see the docstring); Atlas reads `installPath`.
+    inst = f"{R}/plugin"
     put(s, f"{H}/plugins/installed_plugins.json", js({"version": 2, "plugins": {"fixture-plugin@fixture-market": [
         {"scope": "user", "installPath": inst, "version": "1.0.0", "installedAt": "2026-10-01T00:00:00Z",
          "lastUpdated": "2026-10-01T00:00:00Z", "gitCommitSha": "0000000"}]}}))
     put(s, f"{H}/plugins/known_marketplaces.json", js({"fixture-market": {"source": {"source": "github", "repo": "fixture/market"}}}))
-    pc = f"{H}/plugins/cache/fixture-market/fixture-plugin/1.0.0"
+    pc = "plugin"
     put(s, f"{pc}/.claude-plugin/plugin.json", js({
         "name": "fixture-plugin", "description": "A plugin for tests.", "version": "1.0.0",
         "author": {"name": "Fixture"}, "mcpServers": {"plug-srv": {"command": "node", "args": ["plug.js"]}}}))
@@ -491,14 +516,14 @@ def setup():
     put(s, f"{pc}/hooks/hooks.json", js({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo plug"}]}]}}))
 
     # Transcripts: the first line is an api-request with a wrong cwd (must be skipped).
-    sid = "00000000-0000-0000-0000-000000000001"
-    sid2 = "00000000-0000-0000-0000-000000000002"
-    put(s, f"{H}/projects/-encoded-app/{sid}.jsonl", jl(
+    # The folder names stand in for encoded cwds; the project comes from the cwd inside.
+    sid, sid2 = "s1", "s2"
+    put(s, f"{H}/projects/-enc-app/{sid}.jsonl", jl(
         {"type": "api-request", "cwd": "/not/this/one"},
         {"type": "user", "cwd": f"{R}/work/app", "message": {"role": "user", "content": "[fixture user message]"}}))
-    put(s, f"{H}/projects/-encoded-transcript-only/{sid2}.jsonl", jl(
+    put(s, f"{H}/projects/-enc-t-only/{sid2}.jsonl", jl(
         {"type": "user", "cwd": f"{R}/work/transcript-only", "message": {"role": "user", "content": "[fixture user message]"}}))
-    put(s, f"{H}/projects/-encoded-app/memory/MEMORY.md", f"# App memory\n{P}\n")
+    put(s, f"{H}/projects/-enc-app/memory/MEMORY.md", f"# App memory\n{P}\n")
 
     # Never shown.
     put(s, f"{H}/.credentials.json", '{"token": "FIXTURE-PLACEHOLDER"}\n')
@@ -529,7 +554,7 @@ def setup():
     put(s, f"{A}/.claude/output-styles/proj-style.md", md({"name": "Proj Style", "description": "Project style."}))
     put(s, f"{A}/.claude/agent-memory/shared-agent/m.md", f"# Agent memory\n{P}\n")
     put(s, f"{A}/.claude/launch.json", js({"version": "0.0.1", "configurations": []}))
-    put(s, f"{A}/.claude/worktrees/agent-x/.claude/skills/wt-skill/SKILL.md", md({"name": "wt-skill", "description": "Inside a worktree."}))
+    put(s, f"{A}/.claude/worktrees/agent-x/CLAUDE.md", f"# Inside a worktree\n{P}\n")
     put(s, "work/dotclaude-only/.claude/CLAUDE.md", f"# Dot-claude only\n{P}\n")
     put(s, "work/transcript-only/.claude/agents/t.md", md({"name": "t", "description": "Project known only from a transcript."}))
     put(s, "work/empty-proj/.gitkeep", "")
@@ -539,22 +564,108 @@ def setup():
     put(s, "managed/managed-mcp.json", js({"mcpServers": {"managed-srv": {"command": "node", "args": ["managed.js"]}}}))
 
 
-def main():
-    if os.path.isdir(ROOT):
-        # Remove only files we generate, never a recursive delete of unknown content.
-        for base, _dirs, files in os.walk(ROOT, topdown=False):
-            for name in files:
-                os.remove(os.path.join(base, name))
-            for d in _dirs:
-                p = os.path.join(base, d)
-                if not os.listdir(p):
-                    os.rmdir(p)
+def generate():
+    """Every generated file as {path under fixtures/: bytes}."""
+    OUT.clear()
     basic()
     edge()
     usage_fx()
     setup()
-    n = sum(len(f) for _, _, f in os.walk(ROOT))
-    print(f"wrote {n} fixture files under {os.path.normpath(ROOT)}")
+    long = sorted(k for k in OUT if len(f"fixtures/{k}") > MAX_PATH)
+    if long:
+        raise SystemExit("paths over %d characters:\n  %s" % (MAX_PATH, "\n  ".join(f"fixtures/{k}" for k in long)))
+    return dict(OUT)
+
+
+def disk(out, rel):
+    return os.path.join(out, *rel.split("/"))
+
+
+def read_bytes(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except (FileNotFoundError, IsADirectoryError, NotADirectoryError):
+        return None
+
+
+def safe_rel(rel):
+    """A manifest line we are willing to act on: relative, `/`-separated, no `..`."""
+    parts = rel.split("/")
+    return bool(rel) and not rel.startswith("/") and ":" not in parts[0] and "\\" not in rel \
+        and all(p not in ("", ".", "..") for p in parts)
+
+
+def read_manifest(out):
+    text = read_bytes(os.path.join(out, MANIFEST))
+    if text is None:
+        return set()
+    lines = text.decode("utf-8").splitlines()
+    return {l for l in lines if l and not l.startswith("#") and safe_rel(l)}
+
+
+def manifest_bytes(files):
+    head = "# Written by tools/make-fixtures.py: the files it owns. Everything else under fixtures/ is hand-made.\n"
+    return (head + "".join(f"{k}\n" for k in sorted(files))).encode("utf-8")
+
+
+def plan(out, files):
+    """(writes, removes, conflicts) to bring `out` in line with `files`, touching only generated paths."""
+    old = read_manifest(out)
+    writes, conflicts = [], []
+    for rel, data in sorted(files.items()):
+        have = read_bytes(disk(out, rel))
+        if have == data:
+            continue
+        if have is not None and rel not in old:
+            conflicts.append(rel)  # a file we did not write: never overwrite it
+        else:
+            writes.append(rel)
+    removes = sorted(rel for rel in old - files.keys() if os.path.isfile(disk(out, rel)))
+    if read_bytes(os.path.join(out, MANIFEST)) != manifest_bytes(files):
+        writes.append(MANIFEST)
+    return writes, removes, conflicts
+
+
+def apply(out, files, writes, removes):
+    for rel in removes:
+        p = disk(out, rel)
+        os.remove(p)
+        # Drop folders this removal emptied, up to (never including) the output folder.
+        d = os.path.dirname(p)
+        while os.path.normcase(os.path.abspath(d)) != os.path.normcase(os.path.abspath(out)) and not os.listdir(d):
+            os.rmdir(d)
+            d = os.path.dirname(d)
+    for rel in writes:
+        data = manifest_bytes(files) if rel == MANIFEST else files[rel]
+        p = disk(out, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(data)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--check", action="store_true", help="dry run: print what would change and exit 1 if anything would")
+    ap.add_argument("--out", default=ROOT, help="folder to write into (default: fixtures/)")
+    args = ap.parse_args(argv)
+    files = generate()
+    writes, removes, conflicts = plan(args.out, files)
+    for rel in conflicts:
+        print(f"conflict (not generated by this script, would be overwritten): {rel}")
+    for rel in writes:
+        print(f"{'would write' if args.check else 'write'}: {rel}")
+    for rel in removes:
+        print(f"{'would remove' if args.check else 'remove'}: {rel}")
+    if conflicts:
+        print("nothing written: move or rename the files above, or add them to the manifest if they are generated")
+        return 2
+    if args.check:
+        return 1 if writes or removes else 0
+    apply(args.out, files, writes, removes)
+    print(f"{len(files)} generated files under {os.path.normpath(args.out)}: "
+          f"{len([w for w in writes if w != MANIFEST])} written, {len(removes)} removed")
+    return 0
 
 
 if __name__ == "__main__":

@@ -79,7 +79,7 @@ fn d21_an_edited_live_file_is_kept_and_a_newer_seed_is_offered() {
 #[test]
 fn editing_a_price_reprices_with_zero_transcript_bytes_and_emits() {
     let config = tempfile::tempdir().unwrap();
-    copy_tree(&fixture("claude-basic"), config.path());
+    copy_tree(&fixture("basic"), config.path());
     let data = tempfile::tempdir().unwrap();
     let cfg = config_for(config.path(), data.path(), Tz::Fixed(0));
     let sink = Arc::new(Capture::default());
@@ -132,7 +132,7 @@ fn editing_a_price_reprices_with_zero_transcript_bytes_and_emits() {
 #[test]
 fn editing_a_long_context_threshold_retiers_stored_rows() {
     let config = tempfile::tempdir().unwrap();
-    copy_tree(&fixture("claude-basic"), config.path());
+    copy_tree(&fixture("basic"), config.path());
     let data = tempfile::tempdir().unwrap();
     let engine = UsageEngine::start(config_for(config.path(), data.path(), Tz::Fixed(0)), Arc::new(Capture::default()));
     assert!(engine.wait_pass(0, WAIT));

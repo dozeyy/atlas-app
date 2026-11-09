@@ -76,6 +76,12 @@ jobs:
       - name: Frontend tests
         run: npm test
 
+      # 3b. The fixture generator only touches its own files and the committed fixtures match it.
+      #     macOS only: the runner's python3 is the real one there (one OS is enough for a script).
+      - name: Fixture generator tests
+        if: runner.os == 'macOS'
+        run: python3 tools/test_make_fixtures.py
+
       # 4. Installers as artifacts.
       - name: Upload installers
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

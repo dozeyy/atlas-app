@@ -300,13 +300,13 @@ History, About). This supersedes the stacked "cards" and "column" wording in the
 | `crates/core/Cargo.toml` | `similar` |
 | `crates/app/src/{history,wrapped}.rs`, `main.rs`, `state.rs` | commands, events; snapshotter starts after first paint |
 | `crates/core/tests/{history,wrapped}.rs` | fixture tests below |
-| `tools/make-fixtures.py` | `history()` -> `fixtures/claude-history/` |
+| `tools/make-fixtures.py` | `history()` -> `fixtures/history/` |
 | `src/pages/{History,Wrapped,Settings}.tsx` + `.test.tsx` | the screens and Vitest |
 | `src/components/history/*`, `src/components/wrapped/*` | ribbon, timeline, diff view, story, cards |
 | `src/lib/{types,ipc,mock}.ts` | types, calls, mock data |
 | `src/pages/Placeholders.tsx` | History and Wrapped removed |
 
-Fixture `fixtures/claude-history/` (generated, no real text): a `settings.json` with 2
+Fixture `fixtures/history/` (generated, no real text): a `settings.json` with 2
 earlier versions in `file-history/` and matching `file-history-snapshot` lines (one from
 a subagent), `backups/.claude.json.backup.<ms>` x2 (one adds an MCP server, one carries
 an `env` secret and an `oauthAccount` block), a `.bak-*` sibling, a skill folder, a
@@ -318,7 +318,7 @@ Commands run from the repo root; test names are the ones to create.
 
 ### History
 1. `cargo test -p atlas-core --test history` exits 0.
-2. `baseline_counts`: the first run on `fixtures/claude-history` tracks exactly the
+2. `baseline_counts`: the first run on `fixtures/history` tracks exactly the
    fixture's items, stores text files <= 1 MiB, and stores no blob for the 2 MiB and
    binary files.
 3. `imports`: both `file-history` versions and both `.claude.json` backups become
@@ -355,8 +355,8 @@ Commands run from the repo root; test names are the ones to create.
     log file or a spreadsheet.
 
 ### Wrapped
-14. `cargo test -p atlas-core --test wrapped` exits 0 on `fixtures/claude-usage` +
-    `claude-basic`: exact totals, busiest day, streak, active-time longest session (a
+14. `cargo test -p atlas-core --test wrapped` exits 0 on `fixtures/usage` +
+    `basic`: exact totals, busiest day, streak, active-time longest session (a
     2 h idle gap is not counted), top 3 projects, top model share, rhythm bucket, and
     sessions counted once with subagents rolled into the parent.
 15. `coverage_partial_year`: a ledger starting Oct 9 reports `firstDay` Oct 9, the cover

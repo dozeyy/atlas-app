@@ -17,11 +17,11 @@ fn fixtures() -> PathBuf {
 }
 
 fn basic() -> PathBuf {
-    fixtures().join("claude-basic")
+    fixtures().join("basic")
 }
 
 fn edge() -> PathBuf {
-    fixtures().join("claude-edge")
+    fixtures().join("edge")
 }
 
 /// Every file under `root` as (relative path, bytes), sorted.
@@ -59,7 +59,7 @@ fn lines(path: &Path) -> Vec<String> {
     fs::read_to_string(path).unwrap().split('\n').map(str::to_owned).collect()
 }
 
-const S1: &str = "11111111-aaaa-4aaa-8aaa-000000000001";
+const S1: &str = "s1";
 
 #[test]
 fn the_edge_fixture_keeps_its_awkward_bytes() {
@@ -79,7 +79,7 @@ fn the_edge_fixture_keeps_its_awkward_bytes() {
 
 #[test]
 fn transcripts_have_duplicates_subagents_and_a_half_written_line() {
-    let sess = basic().join("projects").join("-fixture-app").join(format!("{S1}.jsonl"));
+    let sess = basic().join("projects").join("-fx-app").join(format!("{S1}.jsonl"));
     let all = lines(&sess);
     let (last, complete) = all.split_last().unwrap();
     // The newest line of a live session is half-written: it must not parse.
@@ -108,14 +108,14 @@ fn transcripts_have_duplicates_subagents_and_a_half_written_line() {
 
     let sub = basic()
         .join("projects")
-        .join("-fixture-app")
+        .join("-fx-app")
         .join(S1)
         .join("subagents")
-        .join("agent-fixture1.jsonl");
+        .join("agent-f1.jsonl");
     let sub_lines = lines(&sub);
     let first: Value = serde_json::from_str(&sub_lines[0]).unwrap();
     assert_eq!(first["isSidechain"], true);
-    assert_eq!(first["agentId"], "fixture1");
+    assert_eq!(first["agentId"], "f1");
     assert_eq!(first["sessionId"], S1, "subagent rolls up into its parent session");
 }
 
@@ -133,6 +133,21 @@ fn the_garbage_transcripts_cannot_parse_as_usage() {
         })
         .count();
     assert_eq!(ok, 0);
+}
+
+/// The Claude Code plugin marketplace clones this whole repo into the user's config folder,
+/// and Windows refuses paths over 260 characters, so no fixture path (counted from the repo
+/// root, `fixtures/...`) may be longer than this. `tools/make-fixtures.py` uses the same limit.
+const MAX_FIXTURE_PATH: usize = 60;
+
+#[test]
+fn fixture_paths_stay_short_for_windows_clones() {
+    let long: Vec<String> = snapshot(&fixtures())
+        .into_iter()
+        .map(|(rel, _)| format!("fixtures/{rel}"))
+        .filter(|p| p.chars().count() > MAX_FIXTURE_PATH)
+        .collect();
+    assert!(long.is_empty(), "fixture paths over {MAX_FIXTURE_PATH} characters: {long:#?}");
 }
 
 #[test]

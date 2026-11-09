@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "plugins": {
+    "fixture-plugin@fixture-market": [
+      {
+        "scope": "user",
+        "installPath": "@ROOT@/plugin",
+        "version": "1.0.0",
+        "installedAt": "2026-10-01T00:00:00Z",
+        "lastUpdated": "2026-10-01T00:00:00Z",
+        "gitCommitSha": "0000000"
+      }
+    ]
+  }
+}

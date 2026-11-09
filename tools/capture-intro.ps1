@@ -1,6 +1,6 @@
 # Records the launch intro from the real running app: a screen capture (ffmpeg gdigrab,
 # wall-clock timestamps) of the window region while Atlas cold-starts, plus the app's
-# own log. Dev data only: --config-dir fixtures\claude-basic and a scratch --data-dir.
+# own log. Dev data only: --config-dir fixtures\basic and a scratch --data-dir.
 #
 #   powershell -NoProfile -File tools\capture-intro.ps1 -Out <dir> [-Exe <atlas.exe>] [-Region "x,y,w,h"] [-Seconds 5] [-Fps 120] [-DataDir <dir>] [-EnvVars NAME=VALUE,...]
 #
@@ -39,7 +39,7 @@ Start-Sleep -Milliseconds 1200
 
 foreach ($e in $EnvVars) { $k, $v = $e.Split("=", 2); Set-Item "Env:$k" $v }
 $launchMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-$app = Start-Process $Exe -ArgumentList @("--config-dir", (Join-Path $root "fixtures\claude-basic"), "--data-dir", $DataDir) `
+$app = Start-Process $Exe -ArgumentList @("--config-dir", (Join-Path $root "fixtures\basic"), "--data-dir", $DataDir) `
   -RedirectStandardError (Join-Path $Out "app.log") -PassThru
 $startMs = ([DateTimeOffset]$app.StartTime.ToUniversalTime()).ToUnixTimeMilliseconds()
 "$launchMs`n$startMs" | Set-Content (Join-Path $Out "launch.txt")

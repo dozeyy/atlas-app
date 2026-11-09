@@ -1,5 +1,5 @@
 # Launches the real app for one intro scenario and prints its log. Dev data only:
-# --config-dir fixtures\claude-basic and a scratch --data-dir.
+# --config-dir fixtures\basic and a scratch --data-dir.
 #
 #   powershell -NoProfile -File tools\drive-intro.ps1 -Exe <atlas.exe> -DataDir <dir> [-KeyAtMs 1000] [-EnvVars A=1,B=2] [-Seconds 5] [-Second]
 #
@@ -22,7 +22,7 @@ Get-Process atlas -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Ex
 Start-Sleep -Milliseconds 400
 foreach ($e in $EnvVars) { $k, $v = $e.Split("=", 2); Set-Item "Env:$k" $v }
 $log = Join-Path $DataDir "drive.log"
-$cfg = Join-Path $root "fixtures\claude-basic"
+$cfg = Join-Path $root "fixtures\basic"
 $t0 = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 $app = Start-Process $Exe -ArgumentList @("--config-dir", $cfg, "--data-dir", $DataDir) -RedirectStandardError $log -PassThru
 if ($KeyAtMs -gt 0) {

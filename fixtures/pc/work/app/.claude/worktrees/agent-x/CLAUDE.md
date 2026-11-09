@@ -1,0 +1,2 @@
+# Inside a worktree
+[fixture]

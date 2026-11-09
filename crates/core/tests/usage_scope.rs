@@ -58,7 +58,7 @@ fn chats_count_only_their_part_inside_the_range() {
 
 #[test]
 fn range_matches_timeline_day_by_day() {
-    let fx = start(&fixture("claude-basic"), Tz::Fixed(0));
+    let fx = start(&fixture("basic"), Tz::Fixed(0));
     let r = scope(&fx, "2026-11-01", "2026-11-30", None);
     assert_eq!(r.points.len(), 30);
     assert_eq!(r.total.tokens, fx.month().tokens);
@@ -80,7 +80,7 @@ fn range_matches_timeline_day_by_day() {
 
 #[test]
 fn project_filter_splits_the_total() {
-    let fx = start(&fixture("claude-basic"), Tz::Fixed(0));
+    let fx = start(&fixture("basic"), Tz::Fixed(0));
     let all = scope(&fx, "2026-11-01", "2026-11-30", None);
     assert!(all.projects.len() >= 2, "fixture has two projects");
     let mut sum = 0;
