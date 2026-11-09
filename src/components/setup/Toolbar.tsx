@@ -51,7 +51,7 @@ export function Toolbar({
   ].filter(Boolean).length;
   const choices = projects.filter((p) => p.exists && p.itemCount > 0 && !p.isWorktree).sort((a, b) => a.name.localeCompare(b.name));
   return (
-    <div className="sticky top-0 z-10 -mx-10 mb-6 border-b border-line bg-bg px-10 py-3">
+    <div className="sticky top-0 z-10 -mx-[var(--gutter)] mb-6 border-b border-line bg-bg px-[var(--gutter)] py-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="relative min-w-[220px] flex-1">
           <MagnifyingGlass size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-2" />

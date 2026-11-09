@@ -236,7 +236,17 @@ function ChatCard({ chat }: { chat: NowChat }) {
           <div className="now-chips">
             {chat.title && <span className="chip">{chat.project}</span>}
             {chat.model && <span className="chip">{modelLabel(chat.model)}</span>}
-            {out > 0 && <span className="chip chip-clay nc-helpers-chip">{plural(out, "helper")}</span>}
+            {out > 0 && (
+              <span
+                className="chip chip-clay nc-helpers-chip"
+                title={chat.helpers
+                  .filter((h) => !h.done)
+                  .map((h) => h.name)
+                  .join(", ")}
+              >
+                {plural(out, "helper")}
+              </span>
+            )}
           </div>
         </header>
 

@@ -741,6 +741,22 @@ html.reduced .nc-sweep.is-on::after {
   }
 }
 
+/* Very short and wide (a small window with several chats): one row, the trail is dropped. */
+@container nowcard (max-height: 150px) and (min-width: 721px) {
+  .nc-body {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "head doing numbers clock";
+    align-items: center;
+  }
+  .nc-trail,
+  .nc-doing .nc-sweep {
+    display: none;
+  }
+  .nc-head .now-chips {
+    margin-top: 6px;
+  }
+}
+
 /* Narrow but tall: stack the parts. */
 @container nowcard (min-height: 236px) and (max-width: 620px) {
   .nc-body {
