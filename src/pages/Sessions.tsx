@@ -12,7 +12,7 @@ import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
 import { SessionDetailView } from "./SessionDetail";
 import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
-import { clearPendingSession, peekPendingSession } from "../lib/nav";
+import { clearPendingProject, clearPendingSession, onNavRequest, peekPendingProject, peekPendingSession } from "../lib/nav";
 import { useChatSearch, useDebounced } from "../lib/useChatSearch";
 import type { ChatSearch } from "../lib/useChatSearch";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
@@ -56,10 +56,25 @@ export function Sessions() {
   const { status, progress } = useUsageStatus();
 
   const [selected, setSelected] = useState<string | null>(() => peekPendingSession());
-  useEffect(() => clearPendingSession(), []);
-
   const [text, setText] = useState("");
-  const [project, setProject] = useState("");
+  const [project, setProject] = useState(() => peekPendingProject() ?? "");
+  useEffect(() => {
+    clearPendingSession();
+    clearPendingProject();
+    // The quick jump can ask for a chat or a project while this page is already open.
+    return onNavRequest(() => {
+      const id = peekPendingSession();
+      const key = peekPendingProject();
+      clearPendingSession();
+      clearPendingProject();
+      if (id) setSelected(id);
+      else if (key) {
+        setSelected(null);
+        setText("");
+        setProject(key);
+      }
+    });
+  }, []);
   const [model, setModel] = useState("");
   const [span, setSpan] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("newest");

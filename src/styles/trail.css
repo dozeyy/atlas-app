@@ -500,6 +500,153 @@ html[data-input="keyboard"] .app-menu-item:focus-visible {
 html.reduced .app-menu {
   animation: none;
 }
+.app-menu-hint {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+/* ---- Quick jump (Ctrl+K) ------------------------------------------------------------------- */
+.qj-root {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 16px 16px;
+}
+.qj-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+}
+.qj-panel {
+  position: relative;
+  display: flex;
+  width: min(640px, 100%);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sheet);
+  background: var(--bg);
+  box-shadow: var(--shadow-pop);
+}
+.qj-field {
+  display: flex;
+  height: 56px;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.qj-lens {
+  flex: none;
+  color: var(--ink-2);
+}
+.qj-input {
+  height: 100%;
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: 16px;
+  outline: none;
+}
+.qj-input::placeholder {
+  color: var(--ink-2);
+}
+.qj-key {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.qj-list {
+  max-height: min(432px, calc(100vh - 12vh - 56px - 32px));
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  list-style: none;
+}
+.qj-row {
+  position: relative;
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-radius: var(--r-control);
+  cursor: pointer;
+}
+.qj-row[aria-selected="true"] {
+  background: var(--accent-tint);
+}
+.qj-row[aria-selected="true"]::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.qj-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--r-control);
+  background: var(--raised);
+  color: var(--ink-2);
+}
+.qj-row[aria-selected="true"] .qj-icon {
+  background: var(--surface);
+  color: var(--accent-text);
+}
+.qj-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.qj-title,
+.qj-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qj-title {
+  color: var(--ink);
+  font-size: 14px;
+}
+.qj-sub {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.qj-hit {
+  font-weight: 700;
+}
+.qj-meta {
+  flex: none;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.qj-none {
+  margin: 0;
+  padding: 24px 16px;
+  color: var(--ink-2);
+  font-size: 14px;
+  text-align: center;
+}
 .options-panel {
   position: absolute;
   right: 0;
