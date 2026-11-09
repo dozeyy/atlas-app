@@ -162,7 +162,7 @@ try {
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
                 $url = "$base/$Asset"
                 for ($hop = 0; $hop -lt 6 -and -not $got; $hop++) {
-                    if ($loopback) { $schemeOk = $url -match '^http://' } else { $schemeOk = $url -match '^https://' }
+                    if ($loopback) { $schemeOk = $url -match '^http://(127\.0\.0\.1|localhost)(:\d+)?(/|$)' } else { $schemeOk = $url -match '^https://' }
                     if (-not $schemeOk) { break }
                     $req = [Net.HttpWebRequest]::Create($url)
                     $req.AllowAutoRedirect = $false

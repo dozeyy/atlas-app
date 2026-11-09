@@ -55,5 +55,5 @@ if ($old.Count -gt 0) {
 foreach ($a in $wanted) { $keep.Add("$Version $a $($new[$a])") }
 
 $text = ($keep -join "`n") + "`n"
-[IO.File]::WriteAllText([IO.Path]::GetFullPath($Out), $text, (New-Object System.Text.UTF8Encoding($false)))
+[IO.File]::WriteAllText($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out), $text, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "pinned $Version -> $Out"
