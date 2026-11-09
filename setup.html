@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Follows the Windows light/dark setting (tokens.css decides from prefers-color-scheme). -->
+    <meta name="color-scheme" content="light dark" />
     <title>Atlas Setup</title>
     <!-- Transparent from the first byte: no white frame before the CSS arrives. -->
     <style>
@@ -93,19 +95,11 @@
         <p id="line" class="line" aria-live="polite"></p>
         <div class="actions">
           <button id="primary" class="btn primary" type="button" hidden></button>
-          <button id="secondary" class="btn quiet" type="button" hidden></button>
         </div>
-        <div id="opts" class="opts" hidden>
-          <button id="opt-toggle" class="opt-toggle" type="button" aria-expanded="false" aria-controls="opt-body">
-            <svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
-              <path d="M3 1.5L7 5L3 8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            Options
-          </button>
-          <div id="opt-body" class="opt-body" hidden>
-            <label class="check"><input id="opt-shortcut" type="checkbox" /><span class="box"></span>Desktop shortcut</label>
-            <label class="check"><input id="opt-open" type="checkbox" checked /><span class="box"></span>Open Atlas when done</label>
-          </div>
+        <!-- Uninstalling only: the one choice, off unless the person ticks it. -->
+        <div id="databox" class="databox" hidden>
+          <label class="check"><input id="opt-data" type="checkbox" /><span class="box"></span>Also remove Atlas's saved data</label>
+          <p class="hint">Your Claude Code chats are never touched.</p>
         </div>
       </div>
     </div>

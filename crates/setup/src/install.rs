@@ -11,8 +11,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use serde::Deserialize;
-
 /// The installer file, carried inside this program. Empty unless built with `--features payload`.
 #[cfg(feature = "payload")]
 static PAYLOAD: &[u8] = include_bytes!(env!("ATLAS_PAYLOAD_PATH"));
@@ -23,19 +21,12 @@ pub fn payload_present() -> bool {
     !PAYLOAD.is_empty()
 }
 
-/// The two choices on the Ready screen.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct Options {
-    pub desktop_shortcut: bool,
-    pub open_when_done: bool,
-}
+/// The remover that sits beside Atlas: Setup's own program in its remove mode. Apps and features
+/// points at it, and so does Settings > About.
+pub const REMOVER_NAME: &str = "Uninstall Atlas.exe";
 
-impl Default for Options {
-    fn default() -> Self {
-        Options { desktop_shortcut: false, open_when_done: true }
-    }
-}
+/// Where Windows lists Atlas in Apps and features (the installer writes it; per-user).
+pub const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Atlas";
 
 /// Test hook: install here instead of the default folder (so a test never touches a real install).
 pub const INSTALL_DIR_ENV: &str = "ATLAS_SETUP_INSTALL_DIR";
@@ -64,12 +55,8 @@ pub fn atlas_exe(dir: &Path) -> PathBuf {
 /// The switches for the silent run. `/NS` is the installer's own "no desktop shortcut"; without
 /// it a silent install makes one. The folder switch is separate (`folder_switch`) because the
 /// installer wants it last and unquoted.
-pub fn silent_args(opts: &Options) -> Vec<&'static str> {
-    let mut a = vec!["/S"];
-    if !opts.desktop_shortcut {
-        a.push("/NS");
-    }
-    a
+pub fn silent_args() -> [&'static str; 2] {
+    ["/S", "/NS"]
 }
 
 /// `/D=<folder>` only when the folder is a test override; it must be the final argument and
@@ -116,41 +103,37 @@ impl InstallError {
 
 /// The unpacked installer in its own temp folder; the folder is removed when this is dropped.
 pub struct Unpacked {
-    dir: PathBuf,
+    /// Removed, with the installer in it, when this is dropped.
+    _dir: tempfile::TempDir,
     pub exe: PathBuf,
 }
 
-impl Drop for Unpacked {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
+/// Write `bytes` as a new file called `name` in `dir`. The file must not exist yet.
+fn write_new(dir: &Path, name: &str, bytes: &[u8]) -> std::io::Result<PathBuf> {
+    let path = dir.join(name);
+    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+    f.write_all(bytes)?;
+    f.sync_all()?;
+    Ok(path)
 }
 
+/// The folder is new and its name unpredictable (random, made by the system, never one that
+/// already exists), so nothing another program left in the temp folder can stand in for it.
 pub fn unpack() -> Result<Unpacked, InstallError> {
     if !payload_present() {
         return Err(InstallError::NoInstallerInside);
     }
-    let dir = std::env::temp_dir().join(format!("AtlasSetup-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|_| InstallError::CouldNotUnpack)?;
-    let exe = dir.join("Atlas-installer.exe");
-    let write = || -> std::io::Result<()> {
-        let mut f = std::fs::File::create(&exe)?;
-        f.write_all(PAYLOAD)?;
-        f.sync_all()
-    };
-    if write().is_err() {
-        let _ = std::fs::remove_dir_all(&dir);
-        return Err(InstallError::CouldNotUnpack);
-    }
-    Ok(Unpacked { dir, exe })
+    let dir = tempfile::Builder::new().prefix("AtlasSetup-").tempdir().map_err(|_| InstallError::CouldNotUnpack)?;
+    let exe = write_new(dir.path(), "Atlas-installer.exe", PAYLOAD).map_err(|_| InstallError::CouldNotUnpack)?;
+    Ok(Unpacked { _dir: dir, exe })
 }
 
 /// Run the installer silently and wait for it, reporting `progress_on_disk` while it works.
 /// The check at the end is the file itself, not just the exit code.
-pub fn run_silent(exe: &Path, opts: &Options, mut on_progress: impl FnMut(f32)) -> Result<(), InstallError> {
+pub fn run_silent(exe: &Path, mut on_progress: impl FnMut(f32)) -> Result<(), InstallError> {
     let dir = install_dir();
     let mut cmd = Command::new(exe);
-    cmd.args(silent_args(opts)).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.args(silent_args()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -179,19 +162,32 @@ pub fn run_silent(exe: &Path, opts: &Options, mut on_progress: impl FnMut(f32)) 
     Ok(())
 }
 
-/// The plain interactive installer (used when the styled window cannot run): wait for it.
-/// Returns its exit code.
-pub fn run_interactive(exe: &Path) -> Result<i32, InstallError> {
-    let mut cmd = Command::new(exe);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        if let Some(d) = folder_switch() {
-            cmd.raw_arg(d);
-        }
+/// Copy a program's bytes to `to`, and only its bytes. A plain copy would also carry the
+/// download's "came from the internet" mark, and Windows would then ask the person about the
+/// remover the first time it runs.
+pub fn copy_bytes(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut src = std::fs::File::open(from)?;
+    let mut dst = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(to)?;
+    std::io::copy(&mut src, &mut dst)?;
+    dst.sync_all()
+}
+
+/// Put the remover beside Atlas and make Apps and features start it. The remover is this very
+/// program (it picks its role from its own file name), written under a temporary name and
+/// renamed into place so a half-written file is never what runs. Failure is not an install
+/// failure: Windows then keeps the installer's plain uninstaller.
+pub fn place_remover(dir: &Path) -> std::io::Result<PathBuf> {
+    let me = std::env::current_exe()?;
+    let to = dir.join(REMOVER_NAME);
+    let tmp = dir.join(format!("{REMOVER_NAME}.part"));
+    copy_bytes(&me, &tmp)?;
+    if let Err(e) = std::fs::rename(&tmp, &to) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
     }
-    let status = cmd.status().map_err(|_| InstallError::CouldNotStart)?;
-    Ok(status.code().unwrap_or(-1))
+    #[cfg(windows)]
+    crate::winsys::reg_set_string(crate::winsys::Hive::CurrentUser, UNINSTALL_KEY, "UninstallString", &format!("\"{}\"", to.display()));
+    Ok(to)
 }
 
 /// Start Atlas on its own, so closing Setup does not close it.
@@ -225,15 +221,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_desktop_shortcut_is_the_installers_own_switch() {
-        assert_eq!(silent_args(&Options { desktop_shortcut: false, open_when_done: true }), vec!["/S", "/NS"]);
-        assert_eq!(silent_args(&Options { desktop_shortcut: true, open_when_done: true }), vec!["/S"]);
+    fn the_install_is_silent_and_makes_no_desktop_shortcut() {
+        assert_eq!(silent_args(), ["/S", "/NS"]);
     }
 
     #[test]
-    fn defaults_are_no_shortcut_and_open_when_done() {
-        let d = Options::default();
-        assert!(!d.desktop_shortcut && d.open_when_done);
+    fn the_remover_copy_carries_the_bytes_and_nothing_else() {
+        let t = tempfile::tempdir().unwrap();
+        let from = t.path().join("setup.exe");
+        std::fs::write(&from, b"program bytes").unwrap();
+        let to = t.path().join(REMOVER_NAME);
+        std::fs::write(&to, b"an older, longer remover file").unwrap();
+        copy_bytes(&from, &to).unwrap();
+        assert_eq!(std::fs::read(&to).unwrap(), b"program bytes", "replaced whole, not overlaid");
     }
 
     #[test]
@@ -253,6 +253,25 @@ mod tests {
             assert!(m.ends_with('.') && !m.contains('!'), "{m}");
         }
         assert!(InstallError::Stopped(2).message().contains("code 2"));
+    }
+
+    #[test]
+    fn the_installer_is_written_to_a_new_file_never_over_an_existing_one() {
+        let t = tempfile::tempdir().unwrap();
+        let first = write_new(t.path(), "i.exe", b"payload").unwrap();
+        assert_eq!(std::fs::read(&first).unwrap(), b"payload");
+        let again = write_new(t.path(), "i.exe", b"planted");
+        assert!(again.is_err(), "a file already there is refused, not reused");
+        assert_eq!(std::fs::read(&first).unwrap(), b"payload");
+    }
+
+    #[test]
+    fn each_unpack_folder_is_new_and_unpredictable() {
+        let a = tempfile::Builder::new().prefix("AtlasSetup-").tempdir().unwrap();
+        let b = tempfile::Builder::new().prefix("AtlasSetup-").tempdir().unwrap();
+        assert_ne!(a.path(), b.path());
+        let name = a.path().file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with("AtlasSetup-") && name != format!("AtlasSetup-{}", std::process::id()));
     }
 
     #[cfg(not(feature = "payload"))]
