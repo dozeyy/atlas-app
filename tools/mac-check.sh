@@ -258,10 +258,10 @@ if [ -x "$CLI" ]; then
     env -u CLAUDE_CONFIG_DIR HOME="$FXHOME" "$CLI" --config-dir "$FXHOME/.claude" --cache-dir "$T/cli-cache" "$@" \
       >"$OUT/cli/$name.txt" 2>"$OUT/cli/$name.err"
     rc=$?
-    [ "$rc" -eq 0 ] || { note "atlas-usage $* exited $rc:"; tail -n 15 "$OUT/cli/$name.err" | sed "s#$T#<tmp>#g" | while IFS= read -r l; do note "  $l"; done; }
+    [ "$rc" -eq 0 ] || { note "atlas-usage $* ($name) exited $rc:"; tail -n 15 "$OUT/cli/$name.err" | sed "s#$T#<tmp>#g" | while IFS= read -r l; do note "  $l"; done; }
     return "$rc"
   }
-  run_cli today && ok "atlas-usage (today) runs" || bad "atlas-usage failed (cli/today.err)"
+  run_cli today today && ok "atlas-usage today runs" || bad "atlas-usage today failed (cli/today.err)"
   run_cli week-vs week --vs last-week && ok "atlas-usage week --vs last-week runs" || bad "atlas-usage week --vs failed"
   run_cli month-json month --json && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$OUT/cli/month-json.txt" &&
     ok "atlas-usage month --json is valid JSON" || bad "atlas-usage --json failed or is not JSON"
