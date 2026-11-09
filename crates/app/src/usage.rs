@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use atlas_core::cache;
 use atlas_core::cache::pricing_file;
@@ -84,6 +85,35 @@ pub struct UsageHost {
     /// The app handle events go out through; set once the window exists.
     app: Mutex<Option<AppHandle>>,
     pub signals: Arc<Signals>,
+    focus_gate: Mutex<FocusGate>,
+}
+
+/// A window that loses focus and gets it back within this long never really left: it is the
+/// focus hop Windows makes when a press lands on the title bar, not the user coming back.
+const FOCUS_FLIP: Duration = Duration::from_millis(250);
+
+/// Tells a real return to the window from a focus flip.
+#[derive(Default)]
+struct FocusGate {
+    seen: bool,
+    blurred_at: Option<Instant>,
+}
+
+impl FocusGate {
+    /// Feed one focus event; true when it is a gain that should count as coming back. The
+    /// first gain counts (nothing to compare it with), and so does a gain after a loss that
+    /// lasted at least `FOCUS_FLIP`; a repeated gain with no loss between does not.
+    fn update(&mut self, focused: bool, now: Instant) -> bool {
+        if !focused {
+            self.blurred_at = Some(now);
+            return false;
+        }
+        let first = !std::mem::replace(&mut self.seen, true);
+        match self.blurred_at.take() {
+            Some(t) => now.saturating_duration_since(t) >= FOCUS_FLIP,
+            None => first,
+        }
+    }
 }
 
 struct TauriSink {
@@ -171,14 +201,19 @@ impl UsageHost {
             .ok_or_else(|| "Atlas has no Claude folder to read yet.".to_string())
     }
 
+    /// The window gained or lost focus. Only a real return (the window was away for a while)
+    /// asks the engine for a catch-up pass: on Windows a press on the title bar (every window
+    /// drag) reports a lost-then-gained pair 1-2 ms apart, and a pass per press made the
+    /// "Catching up" card blink on every drag.
     pub fn focus(&self, focused: bool) {
+        let returned = self.focus_gate.lock().unwrap_or_else(|p| p.into_inner()).update(focused, Instant::now());
         if let Ok(e) = self.engine() {
             e.set_visible(focused);
-            if focused {
+            if returned {
                 e.focus();
             }
         }
-        if focused {
+        if returned {
             self.signals.fire(Signal::Focus);
         }
     }
@@ -335,4 +370,30 @@ fn reveal(path: &std::path::Path) -> Result<(), String> {
     #[cfg(not(any(windows, target_os = "macos")))]
     let r = Command::new("xdg-open").arg(path.parent().unwrap_or(path)).spawn();
     r.map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_title_bar_focus_flip_is_not_a_return() {
+        let t0 = Instant::now();
+        let mut g = FocusGate::default();
+        assert!(g.update(true, t0), "the first focus counts");
+        // What Windows reports for a press on the title bar (measured: 1-2 ms apart).
+        assert!(!g.update(false, t0 + Duration::from_millis(1000)));
+        assert!(!g.update(true, t0 + Duration::from_millis(1002)), "a flip must not start a catch-up pass");
+    }
+
+    #[test]
+    fn coming_back_after_a_real_absence_is_a_return() {
+        let t0 = Instant::now();
+        let mut g = FocusGate::default();
+        g.update(true, t0);
+        g.update(false, t0 + Duration::from_secs(1));
+        assert!(g.update(true, t0 + Duration::from_secs(1) + FOCUS_FLIP));
+        // A second gain with no loss in between is not another return.
+        assert!(!g.update(true, t0 + Duration::from_secs(5)));
+    }
 }
