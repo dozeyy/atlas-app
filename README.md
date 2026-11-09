@@ -16,6 +16,29 @@ A desktop companion for Claude Code: a usage dashboard, a safe manager for the f
 Claude Code setup, and a tray readout. It only reads what Claude Code already keeps on your
 computer.
 
+## Installing on a Mac
+
+1. Open `Atlas-macOS.dmg` and drag Atlas into the Applications folder.
+2. Open Atlas from Applications. The first time, the Mac stops it, because Atlas is not from
+   the App Store and has no paid Apple developer ID. This happens once.
+
+**macOS Sequoia (15) and newer**
+
+1. When the Mac says it could not check Atlas, click **Done**.
+2. Open **System Settings**, then **Privacy & Security**.
+3. Scroll down to the line about Atlas being blocked and click **Open Anyway**.
+4. Click **Open Anyway** again and type your Mac password. Atlas opens, and from now on it opens
+   like any other app.
+
+**macOS Sonoma (14) and older**
+
+1. In Applications, hold **Control** and click Atlas, then pick **Open**.
+2. Click **Open** in the box that appears. Atlas opens, and from now on it opens normally.
+   (The Sequoia steps above also work here.)
+
+Closing the Atlas window keeps it running in the Dock, so it can keep an eye on new chats;
+**Cmd+Q** quits. Updates install from inside the app (Settings, About).
+
 ## Add the /atlas skill to Claude Code
 
 Type `/atlas` in a chat to see your usage, or just ask "what's my usage this week". The

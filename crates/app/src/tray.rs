@@ -1,4 +1,4 @@
-//! The tray icon (Windows notification area, macOS menu bar): a menu that reads "Today: N
+﻿//! The tray icon (Windows notification area, macOS menu bar): a menu that reads "Today: N
 //! tokens" and a tooltip that adds "~$X est." (see `atlas_core::readout`), a left click that opens
 //! Atlas, and the opt-in close-to-tray.
 //!
@@ -38,6 +38,9 @@ pub fn focus_main(app: &AppHandle) {
         return;
     }
     if let Some(w) = app.get_webview_window("main") {
+        // macOS: a window closed with "keep running when closed" on also left the Dock.
+        #[cfg(target_os = "macos")]
+        let _ = app.set_dock_visibility(true);
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
@@ -65,20 +68,24 @@ fn line_for(state: &AppState) -> (String, String) {
 pub fn install(app: &AppHandle, state: &Arc<AppState>) -> tauri::Result<()> {
     let today = MenuItem::with_id(app, "today", readout::WAITING, false, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", "Open Atlas", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", if cfg!(target_os = "macos") { "Quit Atlas" } else { "Quit" }, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&today, &PredefinedMenuItem::separator(app)?, &open, &quit])?;
 
     let builder = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip(readout::WAITING)
         .menu(&menu)
-        // A left click opens Atlas; the menu is the right click.
-        .show_menu_on_left_click(false)
+        // Windows: a left click opens Atlas and the menu is the right click. macOS: a click on a
+        // menu-bar icon opens its menu (Open Atlas is in it), as every menu-bar item does.
+        .show_menu_on_left_click(cfg!(target_os = "macos"))
         .on_menu_event(|app, ev| match ev.id().as_ref() {
             "open" => focus_main(app),
             "quit" => app.exit(0),
             _ => {}
         })
         .on_tray_icon_event(|tray, ev| {
+            if cfg!(target_os = "macos") {
+                return; // the click opened the menu
+            }
             if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = ev {
                 focus_main(tray.app_handle());
             }

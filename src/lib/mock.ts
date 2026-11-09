@@ -1,4 +1,4 @@
-// In-memory stand-in for the Rust side: used in a plain browser and in tests.
+﻿// In-memory stand-in for the Rust side: used in a plain browser and in tests.
 // Settings persist in localStorage only so a browser reload keeps your choices.
 
 import type { Backend, SettingsPatch } from "./ipc";
@@ -59,15 +59,29 @@ function loadSettings(): Settings {
   }
 }
 
+/**
+ * The browser preview can play another platform: `?platform=macos` (the WebKit screenshot run,
+ * tools/webkit-shots.mjs). Tests and a plain `npm run dev` stay on Windows.
+ */
+function urlPlatform(): Platform {
+  try {
+    const p = new URLSearchParams(window.location.search).get("platform");
+    return p === "macos" || p === "linux" ? p : "windows";
+  } catch {
+    return "windows";
+  }
+}
+
 export function mockInfo(overrides: Partial<AppInfo> = {}, platform: Platform = "windows"): AppInfo {
-  const real = view("C:/Users/you/.claude", "default");
+  const mac = platform === "macos";
+  const real = view(mac ? "/Users/you/.claude" : "C:/Users/you/.claude", "default");
   return {
     seq: 0,
     version: "0.1.0",
     build: "release",
     platform,
     backdrop: false,
-    dataDir: "C:/Users/you/AppData/Roaming/atlas",
+    dataDir: mac ? "/Users/you/Library/Application Support/atlas" : "C:/Users/you/AppData/Roaming/atlas",
     config: real,
     realConfig: real,
     sandbox: { enabled: false, state: "off", error: null, path: null, report: null },
@@ -81,7 +95,7 @@ export function mockInfo(overrides: Partial<AppInfo> = {}, platform: Platform = 
 }
 
 export class MockBackend {
-  private info: AppInfo = mockInfo();
+  private info: AppInfo = mockInfo({}, urlPlatform());
   private listeners = new Set<(i: AppInfo) => void>();
   /** The made-up setup and its edits; tests reach in to simulate outside changes. */
   readonly world = new MockSetupWorld();

@@ -159,7 +159,11 @@ export function Settings() {
         </Row>
         <Row
           label="Keep running when closed"
-          hint={`Closing the window hides Atlas ${info.platform === "macos" ? "to the menu bar" : "to the tray"} instead of quitting, so it keeps watching. Off by default.`}
+          hint={
+            info.platform === "macos"
+              ? "Closing the window always leaves Atlas running in the Dock (Cmd+Q quits). Turn this on to keep it in the menu bar only, out of the Dock. Off by default."
+              : "Closing the window hides Atlas to the tray instead of quitting, so it keeps watching. Off by default."
+          }
         >
           <Toggle label="Keep running when closed" checked={info.settings.closeToTray} onChange={setCloseToTray} />
         </Row>
