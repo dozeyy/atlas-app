@@ -11,7 +11,7 @@ import type { Receipt } from "../../lib/types";
 
 const FLAGS_SHOWN = 3;
 const WIDE_PX = 896; // where the receipt goes to three columns (Tailwind @4xl)
-const FOOTER_PX = 36; // the estimates line and its gap
+const FOOTER_PX = 0; // nothing sits under the lists any more
 
 /** The pane's size, kept current. Starts at 0 (unknown) until the element is measured. */
 function useBox(): [{ w: number; h: number }, (el: HTMLDivElement | null) => void] {
@@ -156,8 +156,8 @@ export function ReceiptPane({ state, sessionId, onOpenHelper }: { state: Receipt
         <div className="min-w-0 space-y-6">
           <Lines label="What it used" lines={whatItUsed(r)} total={total}>
             {reads.tokens > 0 && (
-              <p className="mt-1 text-caption text-ink-2" title={`Cache reads: ${tokensText(reads.tokens)}, ${guess(reads.usd)}`}>
-                {`Plus ${compact(reads.tokens)} cache reads, listed apart`}
+              <p className="mt-1 text-caption text-ink-2" title={`Cache reads: ${tokensText(reads.tokens)}, ${guess(reads.usd)}. Counted apart from the total.`}>
+                {`${compact(reads.tokens)} cache reads`}
               </p>
             )}
           </Lines>
@@ -225,8 +225,6 @@ export function ReceiptPane({ state, sessionId, onOpenHelper }: { state: Receipt
           )}
         </section>
       </div>
-
-      <p className="mt-4 shrink-0 text-caption text-ink-2">All figures are estimates.</p>
     </div>
   );
 }

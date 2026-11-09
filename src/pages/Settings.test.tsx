@@ -45,7 +45,8 @@ describe("Settings", () => {
     expect(screen.queryByRole("switch", { name: "Keep running when closed" })).not.toBeInTheDocument();
 
     await userEvent.click(within(rail).getByRole("button", { name: "About" }));
-    expect(screen.getByText("Atlas never sends your data anywhere", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("Privacy")).toHaveAttribute("title", expect.stringContaining("never sends your data"));
+    expect(screen.queryByText(/never sends your data/)).not.toBeInTheDocument();
     expect(screen.getByText("Version")).toBeInTheDocument();
   });
 
@@ -81,7 +82,8 @@ describe("Settings", () => {
     await userEvent.click(within(rail).getByRole("button", { name: "About" }));
     await userEvent.click(await screen.findByRole("button", { name: "Uninstall Atlas..." }));
     expect(started).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Your Claude Code chats are never touched.", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("Uninstall")).toHaveAttribute("title", expect.stringContaining("Your Claude Code chats are never touched."));
+    expect(screen.queryByText(/never touched/)).not.toBeInTheDocument();
   });
 
   it("turns Keep running when closed on and off", async () => {

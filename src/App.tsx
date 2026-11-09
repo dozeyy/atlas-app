@@ -113,7 +113,7 @@ export function App() {
       <CommandPalette />
       <LeaveGuard />
       <ToastHost />
-      <TipLayer />
+      <TipLayer resetKey={view} />
     </div>
   );
 }

@@ -43,14 +43,14 @@ async function chatWithHelpers(backend: MockBackend) {
 }
 
 describe("Chat receipt and helper map", () => {
-  it("opens a chat on its receipt with every list, and says once that the figures are estimates", async () => {
+  it("opens a chat on its receipt with every list; dollars sit in hovers and are called an estimate there", async () => {
     const backend = sessionsBackend();
     const { row } = await chatWithHelpers(backend);
     mountDetail(backend, row.sessionId);
     expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "What it used" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Biggest line items" })).toBeInTheDocument();
-    expect(screen.getAllByText(/All figures are estimates/)).toHaveLength(1);
+    expect(screen.queryAllByText(/All figures are estimates/)).toHaveLength(0);
     // Each list ends in a total, so the sum is visible.
     expect(within(screen.getByRole("region", { name: "Who used it" })).getByText("Total")).toBeInTheDocument();
     // Tokens are the figure everywhere; dollars live only in hover text.
@@ -61,7 +61,7 @@ describe("Chat receipt and helper map", () => {
     }
     expect(within(screen.getByRole("region", { name: "Who used it" })).getByText(/tokens$/)).toBeInTheDocument();
     const titled = Array.from(document.querySelectorAll("[title]")).map((e) => e.getAttribute("title") ?? "");
-    expect(titled.some((t) => /about \$/.test(t))).toBe(true);
+    expect(titled.some((t) => /an estimate of about \$/.test(t))).toBe(true);
   });
 
   it("offers the Helpers tab only when helpers ran", async () => {

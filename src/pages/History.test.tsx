@@ -101,12 +101,15 @@ describe("History", () => {
     expect(within(detail).getByText(/last copy Atlas kept/)).toBeInTheDocument();
   });
 
-  it("explains a change from before Atlas was watching without inventing a diff", async () => {
+  it("shows a change from before Atlas was watching as a date, without inventing a diff or a sentence", async () => {
     mount();
     const rail = await screen.findByRole("list", { name: "Changes" });
+    expect(within(rail).queryByText("Last changed here.")).not.toBeInTheDocument();
     await userEvent.click(within(rail).getAllByText(/last changed/i)[0]);
     const detail = await screen.findByTestId("history-detail");
-    expect(within(detail).getByText(/had not started keeping copies yet/)).toBeInTheDocument();
+    // The header already says it, with the date: no second line repeats it.
+    expect(within(detail).getAllByText(/last changed/i)).toHaveLength(1);
+    expect(within(detail).queryByText(/had not started keeping copies/)).not.toBeInTheDocument();
     expect(within(detail).queryByRole("button", { name: "Copy this version" })).not.toBeInTheDocument();
   });
 

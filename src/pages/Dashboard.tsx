@@ -262,7 +262,14 @@ export function Dashboard() {
                     <h2 className="d d-figure text-ink">Last 7 days</h2>
                     {week?.delta != null && <Delta pct={week.delta} />}
                   </div>
-                  <div className="my-2 flex items-baseline gap-2.5" title={tokenHint(weekTokens, data.week.cost)}>
+                  <div
+                    className="my-2 flex items-baseline gap-2.5"
+                    title={
+                      data.week.tokens.cacheRead > 0
+                        ? `${tokenHint(weekTokens, data.week.cost)}\nPlus ${exact(data.week.tokens.cacheRead)} cache reads, counted apart.`
+                        : tokenHint(weekTokens, data.week.cost)
+                    }
+                  >
                     <CountUp value={weekTokens} format={compact} id="dash:hero" className="d d-hero text-ink" />
                     <span className="text-lead font-semibold text-ink-2">tokens</span>
                   </div>
@@ -270,11 +277,6 @@ export function Dashboard() {
                     {plural(data.week.sessions, "session")}
                     {projects.count ? ` · ${plural(projects.count, "project")}` : ""}
                   </div>
-                  {data.week.tokens.cacheRead > 0 && (
-                    <div className="mt-1 text-caption text-ink-2" title={`${exact(data.week.tokens.cacheRead)} tokens`}>
-                      {`Plus ${compact(data.week.tokens.cacheRead)} cache reads, listed apart.`}
-                    </div>
-                  )}
                   <div className="mt-1 flex items-center gap-2 text-caption text-ink-2">
                     {updated && <span>{updated}</span>}
                     <AboutNumbers data={data} status={status} />
@@ -407,9 +409,8 @@ export function Dashboard() {
                     values={heat.values}
                     readouts={heat.readouts}
                     label="Daily activity"
-                    footer={(weeks) => (
-                      <div className="mt-3 flex items-center justify-between">
-                        <span className="text-caption text-ink-2">{`Last ${weeks} weeks`}</span>
+                    footer={() => (
+                      <div className="mt-3 flex items-center justify-end">
                         <span aria-hidden="true" className="flex items-center gap-1 text-caption text-ink-2">
                           Less
                           {[0, 1, 2, 3, 4, 5].map((b) => (

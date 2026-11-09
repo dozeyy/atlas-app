@@ -134,8 +134,8 @@ export function Settings() {
       : upd.state.kind === "failed"
         ? upd.state.message
         : upd.state.kind === "downloading" || upd.state.kind === "installing"
-          ? `Version ${upd.state.info.version} is on its way. Atlas restarts when it is done.`
-          : (updateNote ?? "Atlas looks for a new version when it opens and every few hours. It never installs one without asking.");
+          ? `Version ${upd.state.info.version} on its way`
+          : (updateNote ?? undefined);
 
   const ov = overview.data;
   const [active, setActive] = useState<SectionId>("appearance");
@@ -154,6 +154,7 @@ export function Settings() {
     }
   };
 
+  const lockedTip = info.configLockedByFlag ? "Set when Atlas was launched" : sb.enabled ? "Turn off Sandbox mode first" : undefined;
   const indexing = status?.state === "indexing";
   const cleanup =
     ov?.cleanupDays != null
@@ -164,26 +165,16 @@ export function Settings() {
     appearance: (
       <>
         <ThemePicker theme={info.settings.theme} platform={info.platform} onChange={setTheme} />
-        <Row
-          label="Launch animation"
-          hint="A short animation when Atlas opens. Click or press any key to skip it. A quick fade instead when your computer asks for reduced motion."
-        >
+        <Row label="Launch animation">
           <Toggle label="Launch animation" checked={info.settings.launchAnimation} onChange={setLaunchAnimation} />
         </Row>
         <Row
           label="Keep running when closed"
-          hint={
-            info.platform === "macos"
-              ? "Closing the window always leaves Atlas running in the Dock (Cmd+Q quits). Turn this on to keep it in the menu bar only, out of the Dock. Off by default."
-              : "Closing the window hides Atlas to the tray instead of quitting, so it keeps watching. Off by default."
-          }
+          tip={info.platform === "macos" ? "Keeps Atlas in the menu bar only, out of the Dock." : "Hides Atlas to the tray instead of quitting."}
         >
           <Toggle label="Keep running when closed" checked={info.settings.closeToTray} onChange={setCloseToTray} />
         </Row>
-        <Row
-          label="Tell me when a chat finishes"
-          hint="A notice when a chat you were watching ends its turn or asks you a question. Off by default."
-        >
+        <Row label="Tell me when a chat finishes">
           <Toggle label="Tell me when a chat finishes" checked={info.settings.notifyOnFinish} onChange={setNotifyOnFinish} />
         </Row>
       </>
@@ -203,21 +194,16 @@ export function Settings() {
             <Button onClick={() => void openConfigDir()} disabled={!cfg}>
               Open folder
             </Button>
-            <Button onClick={() => void chooseConfigDir()} disabled={info.configLockedByFlag || sb.enabled}>
+            <Button onClick={() => void chooseConfigDir()} disabled={info.configLockedByFlag || sb.enabled} title={lockedTip}>
               Choose folder
             </Button>
             {usingChosen && (
-              <Button onClick={() => void clearConfigDir()} disabled={info.configLockedByFlag || sb.enabled}>
+              <Button onClick={() => void clearConfigDir()} disabled={info.configLockedByFlag || sb.enabled} title={lockedTip}>
                 Use default
               </Button>
             )}
           </div>
         </Row>
-        {(info.configLockedByFlag || sb.enabled) && (
-          <p className="border-t border-line px-5 py-3 text-caption text-ink-2">
-            {info.configLockedByFlag ? "This folder was set when Atlas was launched, so it cannot be changed here." : "Turn off Sandbox mode to change the folder."}
-          </p>
-        )}
         {info.settingsNote && (
           <p role="status" className="border-t border-line px-5 py-3 text-caption text-ink-2">
             {info.settingsNote}
@@ -225,13 +211,8 @@ export function Settings() {
         )}
         {cfg && <Row label="Claude Code settings" hint={ov?.claudeSettingsFile ? <Path>{ov.claudeSettingsFile}</Path> : "No settings file yet"} />}
         {cfg && <Row label="Account and projects file" hint={<Path>{cfg.claudeJson}</Path>} />}
-        <Row label="Conversation logs" hint={cleanup}>
-          <span className="text-caption text-ink-2">Atlas keeps what it has read.</span>
-        </Row>
-        <Row
-          label="Work on a copy"
-          hint="Atlas copies your Claude folder to a temporary place and only touches the copy. Your real files are never changed. Large conversation logs are linked read-only instead of copied."
-        >
+        <Row label="Conversation logs" hint={cleanup} />
+        <Row label="Work on a copy" tip="Atlas copies your Claude folder to a temporary place and only touches the copy. Your real files are never changed.">
           <Toggle label="Sandbox mode" checked={sb.enabled} onChange={(v) => void setSandbox(v)} />
         </Row>
         {sb.enabled && (
@@ -293,7 +274,7 @@ export function Settings() {
                 <span className="text-danger">{price.data.error}</span>
               ) : (
                 <>
-                  Updated {price.data.table.updated}. Costs on the Dashboard are worked out from it.
+                  Updated {price.data.table.updated}
                   <div className="mt-1 text-caption">
                     <Path>{price.data.path}</Path>
                   </div>
@@ -317,15 +298,15 @@ export function Settings() {
           label="Saved copies"
           hint={
             ov?.historyPaused
-              ? "Paused while Sandbox mode is on. Atlas keeps copies of your real Claude folder only."
+              ? "Paused in Sandbox mode"
               : ov && ov.historyVersions > 0
-                ? `${plural(ov.historyVersions, "version")} of ${plural(ov.historyItems, "file")}, ${formatBytes(ov.historyBytes)}.`
-                : "Nothing saved yet. Atlas starts when it first looks at your folder."
+                ? `${plural(ov.historyVersions, "version")} of ${plural(ov.historyItems, "file")}, ${formatBytes(ov.historyBytes)}`
+                : "Nothing saved yet"
           }
         >
           <Button onClick={() => void backend.historyOpenFolder().catch(() => {})}>Open history folder</Button>
         </Row>
-        <Row label="Keep up to" hint="Older copies of a file are let go once it passes this many. The newest are always kept.">
+        <Row label="Keep up to" tip="Older copies of a file are let go once it passes this many. The newest are always kept.">
           <Stepper value={keep} onChange={setHistoryKeep} />
         </Row>
       </>
@@ -351,12 +332,14 @@ export function Settings() {
         <Row label="Build">
           <span className="text-body text-ink-2">{info.build === "release" ? "Release" : "Debug"}</span>
         </Row>
-        <Row label="Started in" hint="Time from launch to the first screen.">
+        <Row label="Started in" tip="Time from launch to the first screen.">
           <span className="text-body text-ink-2">{info.firstPaintMs === null ? "Not measured" : `${info.firstPaintMs} ms`}</span>
         </Row>
-        <Row label="Privacy" hint="Atlas never sends your data anywhere. Everything it shows is read from files on this computer. The only thing it asks the internet is whether a newer version exists." />
+        <Row label="Privacy" tip="Atlas never sends your data anywhere. The only thing it asks the internet is whether a newer version exists.">
+          <span className="text-body text-ink-2">Stays on this computer</span>
+        </Row>
         {canUninstall && (
-          <Row label="Uninstall" hint="Opens the uninstaller. It closes Atlas and asks whether to keep or remove Atlas's saved data. Your Claude Code chats are never touched.">
+          <Row label="Uninstall" tip="Closes Atlas and asks whether to keep or remove its saved data. Your Claude Code chats are never touched.">
             <Button
               onClick={() =>
                 void backend.uninstallAtlas().catch((e: unknown) => pushToast({ message: typeof e === "string" ? e : "Could not start the uninstaller.", tone: "error" }))

@@ -57,7 +57,9 @@ function Row({
                 {project}
               </span>
             </span>
-            <span className="block truncate text-body text-ink-2">{many > 1 ? `Changed ${many} times` : head.summary}</span>
+            {(many > 1 || !dated) && (
+              <span className="block truncate text-body text-ink-2">{many > 1 ? `Changed ${many} times` : head.summary}</span>
+            )}
           </span>
           {!dated && <span className="shrink-0 text-caption text-ink-2">{timeText(head.at)}</span>}
         </span>
