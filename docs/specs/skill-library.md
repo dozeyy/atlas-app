@@ -1,39 +1,51 @@
-# Skill Library and Habits
+# Skill Library and repeated-request skills
 
 **What it is:** two features Will asked for on 2026-11-09, the core of Atlas's new direction
 ("a separate thing where everyone installs skills and everything to help Claude"; Atlas is the
 toolbox that makes Claude better, not a Claude replacement):
 
-1. **Library**: browse and preview plugins, skills, agents, commands, hooks, MCP servers and
-   output styles from the official plugin catalog, any marketplace, or any pasted GitHub link;
-   a plain-words safety check before install; install in a click.
-2. **Habits**: find requests the user types again and again across chats ("You've asked for
-   this 14 times. Turn it into a skill?") and write a skill from them.
+1. **Library** (a tab inside Toolkit): browse and preview plugins, skills, agents, commands,
+   hooks, MCP servers and output styles from the official plugin catalog, any marketplace, or
+   any pasted GitHub link; a plain-words safety check before install; install in a click.
+2. **Skills from repeated requests, in the chat** (not in the app). Will: "Don't make habit
+   skills inside app but like for the skill if someone in chat keeps doing whatever the skill
+   should detect that and offer to make a skill out of it." The Atlas Claude Code plugin notices
+   when the user keeps asking for the same kind of thing, offers once to turn it into a skill,
+   and saves it through the Atlas MCP. A new read-only MCP tool, `find_repeated_requests`, lets
+   it see the user's past chats.
 
-**Status:** spec, not built. Two build units (A Library, B Habits) after a small shared shell
-(Unit 0). Research was done on 2026-11-09 against Claude Code **2.1.296** on Windows in a
-scratch `CLAUDE_CONFIG_DIR`; the real `~/.claude/plugins/*.json` were unchanged afterwards
-(mtime listing diff).
+**Status:** spec, not built. Two parallel build units: **A** Library tab (app + core) and **B**
+plugin skill text + MCP `find_repeated_requests` + the search index `origin` column. No shared
+shell unit. Will answered the first open questions on 2026-11-09 (section 7). Research was done
+on 2026-11-09 against Claude Code **2.1.296** on Windows in a scratch `CLAUDE_CONFIG_DIR`; the
+real `~/.claude/plugins/*.json` were unchanged afterwards (mtime listing diff).
 
 ---
 
 ## Goal
-A user opens Library, finds a skill or plugin, reads in plain words what it can do to their
-computer, and installs it with one click; a user opens Habits, sees the requests they repeat,
-and saves one as a skill after editing it. Every install, uninstall and new skill is backed up,
-shows in History and can be undone. Nothing writes the real Claude folder in dev or tests.
+- In Toolkit > Library a user finds a skill or plugin, reads in plain words what it can do to
+  their computer, and installs it with one click. Every install and uninstall is backed up,
+  shows in History and can be undone.
+- In any Claude Code chat, when the user has clearly asked for the same kind of thing before,
+  Claude offers once, in one line, after the task is done, to turn it into a skill. On yes it
+  drafts `SKILL.md` from the user's real wording, shows it, and saves it through the Atlas MCP
+  (backup, History, Undo). It never nags.
+- Nothing writes the real Claude folder in dev or tests.
 
 ## Not in scope (v1)
+- Any in-app Habits UI: no Habits tab, cards, editor, or app commands for it. Habit
+  detection lives only in the plugin skill + MCP tool.
 - A curated Atlas list, ratings, download counts, screenshots, or any Atlas server.
 - Hosts other than github.com for pasted links (GitLab, Bitbucket, gists, raw URLs, npm).
 - Plugins whose catalog source is `command` or `npm` (they run a command at install).
-- Installing **hooks or LSP servers from a repo that is not a marketplace** (OPEN Q1).
+- Installing hooks or LSP servers from a repo that is not a marketplace (Will: list them as
+  not installed).
 - Project or local install scope (user scope only), plugin `update`, `prune`, `configure`,
   `userConfig` entry, plugin `eval`/`validate` UI, renaming a copied item on a name clash.
 - Category filters (the directory catalog has no category field), sorting by popularity.
-- Using an AI model for Habits (no `claude -p`, no network, no embeddings) (OPEN Q4).
-- Habits per project, merging habits by hand, scheduling or automating a habit.
-- MCP tools `search_library` / `suggest_install` (section 6; a later unit).
+- Any AI model inside Atlas for grouping requests (no `claude -p`, no embeddings, no network);
+  the drafting is done by the Claude the user is already chatting with.
+- MCP `suggest_install` (section 6: not cheap, no Pending Changes UI exists yet).
 - Showing "installed from the Library" provenance on Toolkit cards.
 
 ---
@@ -74,62 +86,55 @@ Every mutating subcommand has `--json` (one result line on stdout, same exit cod
 - A bare repo is **not** installable by the CLI: `marketplace add` on a folder with only
   `skills/` and `agents/` fails `manifest_missing`; `install x --marketplace <dir>` with a
   `plugin.json` but no `marketplace.json` fails the same way. Wrapping a copy in an
-  Atlas-written `marketplace.json` (source `"./plugins/x"`), then `marketplace add <dir>` +
-  `install x@atlas-local` **does work** (tested), recorded as `{source:"directory", path}`.
+  Atlas-written `marketplace.json` works (tested) but is not used (1.2).
 - A plugin is a folder with `.claude-plugin/plugin.json` and any of `skills/`, `agents/`,
   `commands/`, `output-styles/`, `hooks/hooks.json`, `.mcp.json`, `lspServers`, scripts.
-  What the safety check must catch, real example: `hookify` ships `hooks/*.py` and runs
+  Real example the safety check must catch: `hookify` ships `hooks/*.py` and runs
   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse.py"` on every `PreToolUse`, `PostToolUse`
   and `Stop`.
 - `https://codeload.github.com/<o>/<r>/tar.gz/<ref>` returns a tarball whose pax global header
   holds `comment=<full commit sha>` (verified on `octocat/Hello-World`, ref `HEAD`). No git, no
   API token, no API rate limit.
 
-### 1.2 Decision: how a pasted GitHub repo installs
+### 1.2 How a pasted GitHub repo installs (Will: option a)
 - **Repo has `.claude-plugin/marketplace.json`**: it is a marketplace. `claude plugin
   marketplace add owner/repo`, then its plugins install like catalog plugins (Claude Code is
   the writer).
 - **Anything else** (one `SKILL.md`, a `skills/` folder, `agents/`, `commands/`,
-  `output-styles/`, the same under `.claude/`, or a `plugin.json`-only plugin): Atlas **copies
-  the markdown items into the user's Claude folder through the Setup write path** (backup +
-  atomic write + History + Undo); MCP servers from a root `.mcp.json` go through the existing
-  `create mcpServer` path (Claude Code's `claude mcp add-json`, guarded edit as fallback).
-  Hooks and LSP servers in such repos are listed by the check as "Not installed".
+  `output-styles/`, the same under `.claude/`, or a `plugin.json`-only plugin): Atlas copies
+  the skills, agents, commands and output styles into the user's Claude folder **through the
+  Setup write path** (backup + atomic write + History + Undo); MCP servers from a root
+  `.mcp.json` go through the existing `create mcpServer` path (Claude Code's
+  `claude mcp add-json`, guarded edit as fallback). Hooks and LSP servers are listed as not
+  installed with a plain reason.
 - Why: copied items become ordinary user items (usable as `/name`, editable in Toolkit, Undo
-  restores bytes exactly) through the one write path that exists and was reviewed. A wrap
-  would make every pasted repo a plugin the user cannot edit, add an Atlas-owned marketplace
-  folder that must stay alive, and namespace each skill (`x:greet`). The tested wrap stays the
-  answer to OPEN Q1 if Will wants hooks from plain repos.
+  restores bytes exactly) through the one write path that exists and was reviewed.
 
-### 1.3 Where habits come from
+### 1.3 Where repeated requests come from
 - The usage cache stores **no prompt text** (only an 80-char first-prompt summary per helper,
-  the approved exception to recon D15/D43). The **chat search index** (`<data>/search.sqlite`, or
-  `caches/<hash>.search.sqlite` for other roots) already stores user text with secrets masked
-  before indexing: `msgs(id, uuid, file_id, session_id, agent_id, role 0=user, ts)` + `fts(text)`
-  (rowid = `msgs.id`) + `sfiles(..., is_subagent, project)`.
+  the approved exception to recon D15/D43). The **chat search index** (`<data>/search.sqlite`,
+  or `caches/<hash>.search.sqlite` for other roots, `search::db::search_file`) stores user text
+  with secrets masked before indexing: `msgs(id, uuid, file_id, session_id, agent_id, role
+  0=user, ts)` + `fts(text)` (rowid = `msgs.id`) + `sfiles(..., is_subagent, project)`. It is
+  built by the app's search engine; the MCP only reads it.
 - It cannot tell a typed prompt from a machine one. Real user lines (sampled: field names and
   enum values only, no text) carry `origin.kind` = `human` | `task-notification` | `peer`,
   `promptSource` = `sdk` | `system`, `isCompactSummary`, `isSidechain`, and `entrypoint`
   (`claude-desktop`, `sdk-cli` = headless `-p`). In Will's 150 newest files: 2,197 task
   notifications, 119 scheduled prompts and 483 `sdk-cli` lines would all pass as typed.
-- Decision: **Habits reads the search index**, which gains one column `msgs.origin INTEGER`
-  (0 unknown/older line, 1 human, 2 machine), search schema 2 + `PARSER_VERSION` "2" (one
-  background re-read inside the existing <= 60 s budget). Machine = `origin.kind` present and
-  not `human`, or `promptSource == "system"`, or `isCompactSummary`, or
-  `entrypoint == "sdk-cli"`.
-
+- Decision: the index gains `msgs.origin INTEGER` (0 unknown/older line, 1 human, 2 machine),
+  search schema 2 + `PARSER_VERSION` "2" (one background re-read inside the existing <= 60 s
+  budget). Machine = `origin.kind` present and not `human`, or `promptSource == "system"`, or
+  `isCompactSummary`, or `entrypoint == "sdk-cli"`.
+- The Atlas MCP's direct mode (what Connect registers: no `--propose`) already lets
+  `create_item` write a skill whose `SKILL.md` has no `hooks`/`allowed-tools`-style keys and no
+  `!` command lines (`ops.rs` `CODE_KEYS`). A drafted habit skill is plain text, so it saves
+  directly, with a backup tagged `mcp` (History: "Made by Claude through Atlas's connector").
 ---
 
 ## 2. Decisions made (the code-reviewer's checklist)
 
-### Shared
-- D1. New sidebar page **Library** (`view: "library"`, Phosphor `Books`, motion `bob`), right
-  after Toolkit. Shortcuts become Ctrl/Cmd+1..8 (History 6, Settings 7, Wrapped 8). (OPEN Q5)
-- D2. Library has three tabs in one segmented control: **Browse**, **Installed**, **Habits**;
-  last tab kept in localStorage `atlas.library.tab`. No page header (as every page).
-- D3. Every Library/Habits write goes through `atlas_core::setup_write` or Claude Code's CLI,
-  holds the cross-process write lock, and tags its backup `library` or `habits`; History shows
-  "Installed from the Library" / "Made from your habits" (`history_source` + `sourceNote`).
+### Both units
 - D4. **The real-folder guard covers the CLI.** Every `claude` spawn sets `CLAUDE_CONFIG_DIR`
   to the resolved root explicitly; debug builds refuse to spawn when the root is the real
   Claude folder (same rule as `fsutil::check_write_allowed`), including listing calls (1.1:
@@ -137,35 +142,44 @@ Every mutating subcommand has `--json` (one result line on stdout, same exit cod
 - D5. Every spawn goes through `atlas_core::proc::quiet` (no console window) with a timeout
   (list 30 s, marketplace add/update 120 s, install 180 s, others 30 s) and stdout capped at
   8 MB; only `--json` output is parsed, the last JSON line wins; never on the UI thread.
-- D6. Network only (a) when the Library page is open and the catalog cache is older than 6 h,
+- D6. Network only (a) when Toolkit > Library is open and the catalog cache is older than 6 h,
   (b) on Refresh, (c) when the user opens a plugin's details or checks a pasted link. Never at
-  startup, never in the background otherwise, no telemetry, no Atlas server. Habits never uses
+  startup, never in the background otherwise, no telemetry, no Atlas server. Unit B never uses
   the network.
 - D7. Nothing downloaded is executed by Atlas: no script, installer, `npm` or `git`. Install
   never passes `-y` or `--accept-command`; a plugin that needs a command to install is refused
   with one plain sentence.
 - D8. ASCII-only UI strings; no "Live" tags; key hints via `useKeyHints` only; calm zones per
-  DIRECTION.md (detail sheet, check, editor, confirms: no springs, no count-ups, no spark).
-### Library (Unit A)
+  DIRECTION.md (detail sheet, check, confirms: no springs, no count-ups, no spark).
+
+### Unit A: Library tab
+- D1. **Library is a tab inside Toolkit** (Will). Toolkit gets a segmented control,
+  "Your setup" | "Library", remembered in localStorage `atlas.toolkit.tab`. The sidebar, the
+  Ctrl/Cmd+1..7 shortcuts and `View` are unchanged. Ctrl+K quick jump gains "Library" (opens
+  Toolkit on that tab).
+- D3. Library writes go through `atlas_core::setup_write` or Claude Code's CLI, hold the
+  cross-process write lock, and tag their backups `library`; History shows "Installed from the
+  Library" (`history_source` + `sourceNote`).
 - D10. Catalog = `claude plugin list --available --json`, parsed in Rust, cached atomically at
-  `<data>/library/catalog.json` (`schemaVersion` 1, `fetchedMs`, entries). The page paints from
+  `<data>/library/catalog.json` (`schemaVersion` 1, `fetchedMs`, entries). The tab paints from
   the cache; refresh runs in the background and swaps the list in when done. Refresh of one
   marketplace = `marketplace update <name> --json`.
-- D11. Browse search is in memory over name + description + marketplace (case-folded, every
-  word must match, the last word as a prefix); no network per keystroke.
+- D11. Search is in memory over name + description + marketplace (case-folded, every word must
+  match, the last word as a prefix); no network per keystroke.
 - D12. Rows are keyed by `pluginId`; the same plugin in two marketplaces stays two rows with
   their source captions ("Claude plugin directory", or the marketplace name).
 - D13. Preview and check need the plugin's files: fetched on demand from
   `codeload.github.com/<o>/<r>/tar.gz/<sha>` (catalog sha; `git-subdir` keeps only `path`), or
   read from the local marketplace clone for relative sources (`./plugin`). Staging is
   content-addressed at `<data>/library/fetch/<o>-<r>-<sha12>/`, reused when present; folders
-  untouched for 7 days are pruned when Library opens.
+  untouched for 7 days are pruned when the tab opens.
 - D14. Download: HTTPS only; redirects only within `github.com` and `codeload.github.com`;
   connect 10 s, total 120 s; compressed cap 25 MB; progress events and Cancel (AtomicBool).
-  HTTP lives in `crates/app` (reqwest, already linked by the updater); archive reading lives
-  in `crates/core` (`flate2` + `tar`, already in `Cargo.lock`) so tests need no network.
-  `ATLAS_LIBRARY_GITHUB_BASE` overrides the base URL only in debug builds or with the
-  `dev-update` feature (the `ATLAS_UPDATE_URL` pattern). (OPEN Q3)
+  Direct dependencies (Will: yes): `reqwest` in `crates/app` (already linked by the updater),
+  `flate2` + `tar` in `crates/core` (already in `Cargo.lock`), at the locked versions; a new
+  feature flag only if `cargo tree` shows no new crate. `ATLAS_LIBRARY_GITHUB_BASE` overrides
+  the base URL only in debug builds or with the `dev-update` feature (the `ATLAS_UPDATE_URL`
+  pattern).
 - D15. Archives are untrusted: regular files only (no symlinks, hard links, devices), no
   absolute paths, no `..`, no Windows-reserved names (CON, NUL, ...), depth <= 12, <= 2,000
   files, <= 50 MB unpacked, each file <= 5 MB. Any violation refuses the whole fetch with one
@@ -196,7 +210,7 @@ Every mutating subcommand has `--json` (one result line on stdout, same exit cod
   | `no_ask` | Lets Claude use these without asking: <tools> | `allowed-tools` in a skill, command or agent |
   | `also_installs` | Also installs: <names> | `plugin.json` `dependencies` |
   | `asks_settings` | Asks you for settings or keys after install | `plugin.json` `userConfig` |
-  | `not_installed` | Not installed from this repo: hooks, LSP servers | plugin.json-only or loose shape carrying hooks or LSP (1.2) |
+  | `not_installed` | Not installed: its hooks and LSP servers. Atlas installs those only from a plugin marketplace, so they can be turned off and removed as one plugin. | plugin.json-only or loose shape carrying hooks or LSP (1.2) |
   | `bad_header` | Has a header Atlas can't read | unparseable or unclosed YAML header |
 
   None found: "Text only. Nothing here runs on its own." Always one caption: "Atlas reads the
@@ -205,9 +219,9 @@ Every mutating subcommand has `--json` (one result line on stdout, same exit cod
 - D19. Each check carries `treeHash` = sha256 over sorted (relative path, bytes). After a CLI
   install Atlas re-scans `installPath` (ignoring Claude Code's `.in_use` marker); a different
   hash marks the row "Changed since you checked it" with Check again (no auto-uninstall).
-- D20. One-click rule: a row's Install installs at once when its check is done and has no
-  flags; otherwise it opens the detail sheet (fetching first) and focuses the sheet's Install.
-  A flagged install always takes that second, deliberate click. (OPEN Q2)
+- D20. One-click rule (Will: a): a row's Install installs at once when its check is done and
+  has no flags; otherwise it opens the detail sheet (fetching first) and focuses the sheet's
+  Install. A flagged install always takes that second, deliberate click.
 - D21. Plugin install: back up `settings.json`, `plugins/installed_plugins.json` and
   `plugins/known_marketplaces.json` (tag `library`), run `claude plugin install <id> --json`
   (user scope), read `installed_plugins.json` back. Uninstall and Undo of an install =
@@ -223,12 +237,18 @@ Every mutating subcommand has `--json` (one result line on stdout, same exit cod
   unticked with "You already have one called <name>" (no overwrite, no rename in v1).
 - D23. Ledger `<data>/library/ledger.json` (`schemaVersion` 1, atomic, one writer: the Library
   service): per install, kind (`plugin` | `item`), id or path, repo, sha, `treeHash`,
-  `installedMs`, `backupId`. Installed tab = `installed_plugins.json` + ledger items still on disk.
-- D24. Claude Code's command not found (`connect::find_claude_cli`): Browse still lists the
-  cached catalog; plugin rows say "Needs Claude Code's command to install plugins." Loose items
-  from links still install (MCP servers then use the guarded edit).
-### Habits (Unit B)
-- D30. Source rows: `role = 0 AND origin IN (0,1) AND agent_id IS NULL AND sfiles.is_subagent = 0`.
+  `installedMs`, `backupId`. The rail's Installed filter = `installed_plugins.json` + ledger
+  items still on disk.
+- D24. Claude Code's command not found (`connect::find_claude_cli`): the cached catalog still
+  lists; plugin rows say "Needs Claude Code's command to install plugins." Loose items from
+  links still install (MCP servers then use the guarded edit).
+- D25. MCP `search_library {query, limit 1..20 (default 10)}`, read-only: filters
+  `<data>/library/catalog.json` with the D11 matcher and returns `{pluginId, name, description,
+  marketplace, version, installed}`; no network, no CLI. No catalog file yet: "Open Toolkit >
+  Library in Atlas once so it can load the plugin catalog." Cheap, so it is in Unit A.
+### Unit B: repeated requests -> skill, in the chat
+Index and grouping (core)
+- D30. Rows: `role = 0 AND origin IN (0,1) AND agent_id IS NULL AND sfiles.is_subagent = 0`.
 - D31. Dropped before grouping: first non-space char `/` (slash command), or `<` followed by a
   tag name (command-name, local-command-*, task-notification, system-reminder, bash-input,
   pasted_content, scheduled-task, ...); a code fence; >= 6 lines; < 12 or > 400 characters after
@@ -242,61 +262,118 @@ Every mutating subcommand has `--json` (one result line on stdout, same exit cod
   shingles = character 5-grams; MinHash with 64 fixed-seed hashes + LSH 16 bands x 4 rows for
   candidates; **leader clustering**: unique strings in descending count (tie: newest) each join
   the first leader whose exact shingle Jaccard is >= 0.55, else become a leader. No chaining.
-- D34. A habit = a group with >= 5 prompts, in >= 3 different sessions, on >= 2 different days,
-  last seen within 90 days. Order: count desc, then last seen desc. At most 12 shown. All
-  thresholds in one place (`habits::Thresholds`).
-- D35. Habit id = first 16 hex of sha256(leader's normalized text). Dismissed ("Not a habit")
-  and made ("Saved as /name") ids persist in `<data>/habits.json` (`schemaVersion` 1, atomic,
-  ids only); both are hidden. Representative = the most frequent original text in the group
-  (tie: newest); examples = up to 5 other distinct originals, newest first.
-- D36. Computed on a background thread after a search pass, cached in memory keyed by the
-  search engine's pass counter; while the first search index runs, the tab shows its progress.
-- D37. The skill text is built in Rust (`habits::skill_draft`) and opened in an editor before
-  anything is written. Save = the existing `setup_create("skill", name, None, text)` (backup,
-  atomic write, History, Undo) with the backup tagged `habits`. Template:
+- D34. A repeated request = a group with >= 5 prompts, in >= 3 different sessions, on >= 2
+  different days, last seen within the `days` window (default 90). Order: count desc, then last
+  seen desc. All thresholds in one place (`habits::Thresholds`).
+- D35. Group id = first 16 hex of sha256(leader's normalized text), stable across runs.
+  Representative = the most frequent original text in the group (tie: newest), cut to 400
+  characters; examples = up to 5 other distinct originals, newest first.
+
+MCP tools (`crates/mcp`, documented in `docs/specs/mcp-server.md`)
+- D40. `find_repeated_requests`, read-only, allowed in direct and propose mode. Input
+  (camelCase): `like?: string` (the request in front of Claude now, <= 2,000 chars), `days?:
+  1..365` (default 90), `project?: string` (a known project name or path), `limit?: 1..20`
+  (default 8). Output: `{ indexedThroughMs, offersOff, likeMatch: {groupId, similarity} |
+  null, groups: [{ id, count, sessions, days, projects: [name], firstSeenMs, lastSeenMs,
+  representative, examples: [string], offer: null | {answer, atMs, skillName?} }] }`.
+  With `like`, the group whose leader has Jaccard >= 0.55 with the normalized `like` text is
+  returned first even when it is under the D34 thresholds (count >= 2), so "has the user asked
+  for this before?" has an answer.
+- D41. It reads the search index through a read-only SQLite connection (the file resolved like
+  the app, `search::db::search_file`); it never writes the index and never reads transcripts
+  itself. Missing index: tool error "Atlas has not read your chats yet. Open the Atlas app once
+  and try again." Schema 1: "Open the Atlas app once so it can update its chat index."
+- D42. Cache: in-process, keyed by (index path, `MAX(msgs.id)`, file mtime); the first call
+  groups (<= 2 s release on 20,000 prompts), later calls with no new rows answer from memory.
+  No network, no file cache.
+- D43. `note_skill_offer {groupId, answer: "offered" | "declined" | "made" | "never",
+  skillName?}` writes `<data>/habits.json` (`schemaVersion` 1, atomic; per group id: answer,
+  `atMs`, skill name; plus `offersOff`). It writes Atlas's own data only, never the Claude
+  folder, so it is allowed in direct mode. `never` (any group id) sets `offersOff: true`.
+- D44. Privacy: the tools return only text the user typed (D30-D31), already secret-masked;
+  never assistant text, never a prompt containing `***`; nothing is logged; `habits.json`
+  holds ids, answers, times and skill names only.
+
+The skill (plugin root `skill/`)
+- D50. A **second skill in the Atlas plugin**, `skill/skills/atlas-repeats/SKILL.md`, not new
+  text in `skill/skills/atlas/SKILL.md`. Reason: a skill's body only loads when it fires, and it
+  fires from its always-listed description; the usage skill's description is about usage, and
+  adding a second trigger to it would make usage questions and repeat offers compete. Same
+  plugin, same marketplace, same version number (MEMORY 2026-11-08: plugin, app and tag share
+  one version). (Open question 1 in section 7.)
+- D51. Frontmatter: `name: atlas-repeats`; `description` says it offers to turn a request the
+  user keeps making into a reusable skill; `when_to_use`: after a task is finished, when the
+  user's request is one they have clearly made before (the same kind of ask 3+ times in this
+  chat, or words like "again", "like last time", "as usual", "same as before"), or when the
+  user asks "make this a skill". Not mid-task, not for one-off questions, not when the user
+  already said no to it. `allowed-tools: mcp__atlas__find_repeated_requests,
+  mcp__atlas__note_skill_offer` (read-only and Atlas-data-only); `create_item` is not
+  pre-allowed, so Claude Code asks before the save.
+- D52. Body steps: (1) if `mcp__atlas__find_repeated_requests` exists, call it with `like` =
+  the user's current request; if `offersOff`, stop silently; (2) offer only if the matched group
+  meets D34 (or this chat alone has 3+ asks of the same kind), has no `offer` answer, and no
+  existing skill covers it (`list_items {kind: "skill", query: <2-3 key words>}`; if one does,
+  at most mention it once: "Your skill /x does this."); (3) the offer is one line at the end of
+  the reply, after the task's result, e.g. "You've asked for this 14 times across 6 chats. Want
+  me to turn it into a skill?", then `note_skill_offer offered`; (4) "no" or silence -> `declined`
+  and never again for that group; "stop asking" -> `never`; (5) on yes, draft with the D53
+  template, show the whole file in a code block, apply the user's edits, then
+  `create_item {kind: "skill", name, text}` and `note_skill_offer made`; report the saved path
+  and that it can be undone in Atlas History.
+- D53. Draft template (the skill instructs Claude to fill it from the user's real wording, not
+  invent steps):
 
   ```
   ---
-  name: <name>
-  description: <representative request, first 20 words, cleaned>. Use when the user asks things like '<ex1>', '<ex2>' or '<ex3>'.
+  name: <2-4 key words, kebab-case, [a-z0-9-], <= 40 chars>
+  description: <what it does in one line>. Use when the user asks things like '<ex1>', '<ex2>' or '<ex3>'.
   ---
 
   # <Name in words>
 
   The user asks for this often. Do it the way they describe it:
 
-  > <representative request, verbatim>
+  > <their most common wording, verbatim>
 
   ## Ways they ask
   - '<example>'   (up to 5)
   ```
 
-  Name = the 2-4 most frequent non-stopword words of the group in the leader's order,
-  kebab-case, <= 40 characters of `[a-z0-9-]`, `-2`/`-3` when taken, fallback `my-habit`.
-  Description: one line, <= 1,024 characters, no `<` or `>`.
-- D38. Privacy: habit text never leaves the machine, is never logged, never sent in an event
-  (only returned on request), never offered to the MCP server, never in screenshots of real
-  data; verification shots use the habits fixture only. `habits.json` holds ids only, so
-  deleting the search index removes every habit's text.
-
+  Rules: one-line description <= 1,024 chars without `<` or `>`; no `allowed-tools`, `hooks` or
+  other `CODE_KEYS`; no `!` command lines; no example containing `***`; a taken name gets `-2`.
+- D54. Never naggy: at most one offer per chat; at most once per group ever (D43); never
+  mid-task, never before the task's result, never in the same reply as an error or a question
+  to the user; the offer is one sentence, no emoji, no exclamation mark.
+- D55. Without the Atlas MCP connected: offer only on repeats inside this chat; on yes show the
+  draft and say "Connect Atlas in Settings > Claude Code to save it with a backup, or tell me to
+  save it here." Save with Claude Code's own file tools only after that second yes.
 ---
 
-## 3. Screens (Trail Map; tokens from `src/styles/tokens.css`)
+## 3. Screens: Toolkit > Library (Trail Map; tokens from `src/styles/tokens.css`)
 
-No page scroll at 1280x800; at 900x600 lists scroll inside their pane, nothing clipped.
+No page scroll at 1280x800 on either Toolkit tab; at 900x600 lists scroll inside their pane,
+nothing clipped. Unit B has no screens.
 
-**Top bar (every tab), a 48 px row, 16 px page padding:** the segmented control (Browse |
-Installed | Habits; track `raised` radius 10, sliding thumb 320 ms spring) on the left. On
-Browse and Installed: a 36 px search field (240-360 px, radius 8, magnifier 16 px, placeholder
-"Search plugins and skills"), **Add from GitHub** (secondary, `GithubLogo`), and a 32 px Refresh
-icon button (`spin`) with the caption "Updated 3 min ago" / "Updating...".
+**Toolkit tab row** (top of the page, 40 px): the segmented control "Your setup" | "Library"
+(track `raised` radius 10, sliding thumb 320 ms spring). "Your setup" is today's Toolkit,
+unchanged; if the 40 px row makes it scroll at 1280x800, the height comes out of the gaps
+between its panels, not out of the tiles.
 
-**Browse:** a virtualized list of 56 px rows, row hover `raised` (no lift): 32 px icon blob
-(`Package`, radius 10, `accent-tint`), name 14/600 over a one-line description (`text-2`,
-truncated); right side: source caption 12, version 12 mono, an "Installed" pill when installed,
-Install (secondary, 28 px) or Open. At >= 1100 px a 200 px source rail sits left of the list
-(All, Claude plugin directory, each added marketplace with its count, Add a marketplace); below
-1100 px the rail folds into a Source dropdown in the top bar. Click or Enter opens the sheet.
+**Library tab, top row** (48 px): a 36 px search field (240-360 px, radius 8, magnifier 16 px,
+placeholder "Search plugins and skills"), **Add from GitHub** (secondary, `GithubLogo`), and a
+32 px Refresh icon button (`spin`) with the caption "Updated 3 min ago" / "Updating...".
+
+**Source rail** (>= 1100 px: 200 px column left of the list; below: a Source dropdown in the
+top row): All, Installed (count), Claude plugin directory (count), each added marketplace
+(count), Add a marketplace.
+
+**List:** virtualized 56 px rows, row hover `raised` (no lift): 32 px icon blob (`Package`,
+radius 10, `accent-tint`), name 14/600 over a one-line description (`text-2`, truncated); right
+side: source caption 12, version 12 mono, an "Installed" pill when installed, Install
+(secondary, 28 px) or Open. Installed rows add the plugin on/off switch (`claude plugin
+enable/disable`) and an Uninstall X with the Toolkit inline confirm; Library-copied items add
+Open in Toolkit and a Remove X (inline confirm = Undo of the create); the D19 note with Check
+again. Click or Enter opens the sheet.
 
 **Detail sheet** (right, 480 px, `sheet-in` 250 ms, calm zone): name 20/600; source line with
 the repo link (opens the OS browser), version + short sha; description; **What's inside**
@@ -309,22 +386,8 @@ a thin progress bar and Cancel.
 **Add from GitHub** (dialog, 520 px): one input (autofocus, placeholder "github.com/owner/repo")
 and Check (primary, disabled until the text parses). Marketplace result: its plugin list and
 "Add this marketplace" (primary). Plugin or loose result: a checklist of items (kind icon, name,
-path; taken names unticked with the reason), the Before-you-install card, and "Install 3 items"
-(primary).
-
-**Installed:** 56 px rows: installed plugins (on/off switch via `claude plugin enable/disable`,
-Uninstall X with the Toolkit inline confirm) and Library-copied items (Open in Toolkit, Remove X
-with the inline confirm = Undo of the create); the D19 note with Check again.
-
-**Habits:** a 2-column grid of cards (1 column under 1000 px), radius 14, clickable-card lift.
-Card: the count in display `stat` (28, Recursive) + caption "times"; the representative in
-quotes (14, 2 lines max); meta "in 6 chats, last on Nov 7" (caption, `text-2`); **Make a
-skill** (primary, small) and **Not a habit** (ghost). Clicking the card expands it to the
-examples (date + project name each). The page's one hero number is the top card's count, no
-count-up after the first view. Make a skill opens a calm sheet: Name input (validated like
-Toolkit create), CodeMirror with the drafted `SKILL.md`, the note "Where it goes: <skills
-folder>", Save (primary, Ctrl/Cmd+S, disabled while invalid) and Cancel. After Save: toast
-"Saved as /name" with Undo and Open in Toolkit; the card collapses out (200 ms).
+path; taken names unticked with the reason), the Before-you-install card (with the
+`not_installed` line when hooks or LSP servers are present), and "Install 3 items" (primary).
 
 **States**
 - No catalog cache and offline: Topo + spark, "Atlas could not reach the plugin catalog. Check
@@ -334,81 +397,73 @@ folder>", Save (primary, Ctrl/Cmd+S, disabled while invalid) and Cancel. After S
   link, unsafe archive) and the next step; nothing is half installed.
 - Install error: the CLI `message` cut to one sentence, plus "Nothing was changed." when the
   read-back confirms it.
-- Habits while the index builds: "Reading your chats. This runs once." + the search progress.
-- No habits: Topo + spark, "No habits yet. When you ask Claude for the same thing in a few
-  different chats, it shows up here."
 
 **Keyboard:** Ctrl/Cmd+F or `/` focuses search; Up/Down move the selected row; Enter opens the
 sheet; Ctrl/Cmd+Enter in the sheet installs; Esc closes the sheet, dialog or confirm;
-Left/Right on the segmented control switch tabs; Ctrl/Cmd+S saves in Make a skill.
+Left/Right on the segmented control switch tabs.
+
 ---
 
 ## 4. Build units and files
 
-### Unit 0: shared shell (main session, small; lands before A and B)
+### Unit A: Library tab (app + core)
 | File | Change |
 |---|---|
-| `src/lib/types.ts` | `View` adds `"library"` |
-| `src/components/Sidebar.tsx` | NAV row after Toolkit (D1) |
-| `src/App.tsx` | page switch, Ctrl/Cmd+1..8 |
-| `src/components/HelpSheets.tsx` | shortcut list |
-| `src/pages/Library.tsx` | tab shell, segmented control, `atlas.library.tab`; renders `BrowseTab`, `InstalledTab`, `HabitsTab` placeholders |
-| `crates/core/src/history/marks.rs`, `src/lib/historyModel.ts` | sources `library` and `habits` (D3) |
-| `src/lib/shotTour.ts`, `tools/mac-check.sh` | Library in the picture tour, new counts |
-
-### Unit A: Library
-| File | Change |
-|---|---|
-| `crates/core/src/library/{mod,catalog,cli,link,archive,shape,check,install,ledger}.rs` | new: catalog parse + cache (D10), CLI runner (D4, D5, D7), link parse (D16), tar.gz reader (D15), shape (D17), check (D18, D19), installs (D21, D22), ledger (D23) |
-| `crates/core/src/setup_write.rs` | `install_skill_folder`; `restore_any` undoes a folder `create` (D22) |
-| `crates/core/Cargo.toml` | `flate2`, `tar` at the locked versions (OPEN Q3) |
-| `crates/app/src/library.rs` | commands, reqwest download with progress + cancel events, background refresh |
-| `crates/app/Cargo.toml` | direct `reqwest` at the locked version; no new feature unless `cargo tree` shows no new crate |
-| `src/components/library/{BrowseTab,InstalledTab,DetailSheet,SafetyCheck,AddFromGitHub,ItemChecklist}.tsx` | UI |
+| `src/pages/Setup.tsx` | "Your setup" / "Library" segmented control, `atlas.toolkit.tab` (D1) |
+| `src/components/CommandPalette.tsx` | "Library" entry (D1) |
+| `src/components/library/{LibraryTab,SourceRail,LibraryList,DetailSheet,SafetyCheck,AddFromGitHub,ItemChecklist}.tsx` | UI |
 | `src/lib/{library.ts,libraryTypes.ts,mockLibrary.ts}` | model, filter, mock backend |
-| `fixtures/library/` | captured CLI JSON (1.1 shapes, incl. a 3,603-entry catalog), small `.tar.gz` repos: marketplace, hookify-like plugin, loose skills with scripts, http-MCP repo, malicious archives |
+| `crates/core/src/library/{mod,catalog,cli,link,archive,shape,check,install,ledger}.rs` | catalog parse + cache (D10), CLI runner (D4, D5, D7), link parse (D16), tar.gz reader (D15), shape (D17), check (D18, D19), installs (D21, D22), ledger (D23) |
+| `crates/core/src/setup_write.rs` | `install_skill_folder`; `restore_any` undoes a folder `create` (D22) |
+| `crates/core/src/history/marks.rs`, `src/lib/historyModel.ts` | source `library` (D3) |
+| `crates/core/Cargo.toml` | `flate2`, `tar` at the locked versions (D14) |
+| `crates/app/src/library.rs` | commands, reqwest download with progress + cancel events, background refresh |
+| `crates/app/Cargo.toml` | direct `reqwest` at the locked version (D14) |
+| `src/lib/shotTour.ts`, `tools/mac-check.sh` | the Library tab in the picture tour, new counts |
+| `fixtures/library/` | captured CLI JSON (1.1 shapes, incl. a 3,603-entry catalog), small `.tar.gz` repos: marketplace, hookify-like plugin, plugin.json-only repo with hooks + skills, loose skills with scripts, http-MCP repo, malicious archives |
 
-### Unit B: Habits
+### Unit B: skill text + `find_repeated_requests` + `origin` column
 | File | Change |
 |---|---|
 | `crates/core/src/search/{extract,db,mod}.rs` | `origin` column, schema 2, `PARSER_VERSION` "2" (1.3) |
-| `crates/core/src/habits/{mod,filter,normalize,cluster,skill,store}.rs` | new (D30-D37) |
-| `crates/app/src/habits.rs` | commands `habits_list`, `habits_dismiss`, `habits_draft` |
-| `src/components/setup/CreateFlow.tsx` | optional `initialName` / `initialText` props, only if reused for Make a skill |
-| `src/components/library/habits/{HabitsTab,HabitCard,MakeSkillSheet}.tsx` | UI |
-| `src/lib/{habitsTypes.ts,mockHabits.ts}` | types, mock |
-| `tools/make-fixtures.py`, `fixtures/claude-habits/` | habits fixture (every text line `"fixtureText": true`) |
+| `crates/core/src/habits/{mod,filter,normalize,cluster,notes}.rs` | new: D30-D35 grouping, D43 `habits.json` |
+| `skill/skills/atlas-repeats/SKILL.md` | new skill (D50-D55) |
+| `skill/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` | descriptions mention the new skill; version bump with the release |
+| `tools/make-fixtures.py`, `fixtures/claude-habits/` | repeated-request fixture (every text line `"fixtureText": true`) |
 
-### Shared, append-only (merge A first, B rebases)
-`crates/core/src/lib.rs` (`pub mod library; pub mod habits;`), `crates/app/src/main.rs`
-(`generate_handler!` entries, managed state), `src/lib/ipc.ts` (Backend methods),
-`src/lib/mock.ts`.
-
+### Shared files (append-only; merge A first, B rebases)
+- `crates/mcp/src/server.rs`: A adds `search_library` (D25); B adds `find_repeated_requests`
+  and `note_skill_offer` (D40-D43).
+- `docs/specs/mcp-server.md`: each unit adds its tool rows and notes.
+- `crates/core/src/lib.rs`: `pub mod library;` (A), `pub mod habits;` (B).
+- `crates/mcp/src/main.rs` only if the server needs the data dir passed differently (today it
+  already resolves `--data-dir`).
 ---
 
 ## 5. Acceptance criteria
 
-Safety (both units)
-1. `cargo test --workspace` passes, including a test that runs every Library and Habits write
-   (plugin install via a fake CLI, uninstall, copy install, undo, make skill) against a tempdir
-   root and asserts the real Claude folder's tree (paths, sizes, mtimes) is unchanged.
-2. Debug build, real root: the CLI runner refuses `list --available` and `install` without
-   spawning (unit test: spawn counter stays 0).
-3. A source-level test (like `no_network_listener`) fails if `crates/core/src/library`,
-   `crates/app/src/library.rs` or `crates/app/src/habits.rs` builds a `Command` without
-   `proc::quiet`. [Will or a screen recording] no console window flashes during refresh,
-   install and uninstall on Windows.
-4. With the `ATLAS_LIBRARY_GITHUB_BASE` test server counting requests: 0 requests in a 60 s run
-   that never opens Library; 0 requests from Habits (source test: no HTTP client under `habits/`).
-5. The only process `library/` can start is `claude`; the runner test asserts no install call
-   ever carries `-y` or `--accept-command`.
+Both units
+1. `cargo test --workspace` passes, including a test that runs every Library write (plugin
+   install via a fake CLI, uninstall, copy install, undo) and every Unit B write
+   (`note_skill_offer`, `create_item` of a drafted skill) against tempdir roots and asserts the
+   real Claude folder's tree (paths, sizes, mtimes) is unchanged.
+2. `npx tsc --noEmit`, `npm test`, `cargo clippy --workspace -- -D warnings` green; existing
+   tests changed only where intended (tour counts, Toolkit tab).
 
-Library
+Unit A: Library tab
+3. Debug build, real root: the CLI runner refuses `list --available` and `install` without
+   spawning (unit test: spawn counter stays 0).
+4. A source-level test (like `no_network_listener`) fails if `crates/core/src/library` or
+   `crates/app/src/library.rs` builds a `Command` without `proc::quiet`, or starts anything but
+   `claude`; the runner test asserts no install call carries `-y` or `--accept-command`.
+   [Will or a screen recording] no console window flashes during refresh, install, uninstall.
+5. With the `ATLAS_LIBRARY_GITHUB_BASE` test server counting requests: 0 requests in a 60 s run
+   that never opens Toolkit > Library.
 6. Parsing the captured `list --available --json` fixture yields 3,603 entries with pluginId,
    name, marketplace, version, source kind and sha; `catalog.json` round-trips, and a write
    killed between temp and rename leaves the old file readable.
-7. With the 3,603-entry cache, Browse shows rows <= 150 ms after navigation (log line
-   `library: first rows N ms`); during a refresh a typed key appears in the search field
+7. With the 3,603-entry cache, the Library tab shows rows <= 150 ms after the tab switch (log
+   line `library: first rows N ms`); during a refresh a typed key appears in the search field
    within one frame.
 8. Search over 3,603 entries: p95 <= 16 ms per keystroke (vitest bench on the fixture).
 9. Link parsing: a table test over every D16 form plus 10 rejects (gitlab, gist, raw URL, `..`,
@@ -419,17 +474,18 @@ Library
 12. Safety check: the hookify-like fixture yields `commands`, `every_action`, `every_message`
     and `scripts` with `path:line` evidence; the http-MCP fixture yields `internet` + `server`; a
     plain skill yields "Text only. Nothing here runs on its own."; `allowed-tools: Bash` yields
-    `no_ask` + `commands`; a YAML merge key hiding `hooks` is caught; a planted `sk-ant-`
-    token in a script shows masked.
+    `no_ask` + `commands`; a YAML merge key hiding `hooks` is caught; a planted `sk-ant-` token
+    in a script shows masked; the plugin.json-only repo with hooks yields `not_installed`.
 13. Verifier, real network, scratch `CLAUDE_CONFIG_DIR` (never the real folder): install
     `frontend-design@anthropic-plugin-directory` from the UI -> row shows Installed, History
     shows "Installed from the Library", the backup holds the three JSON files, the ledger has
     the entry; Undo -> `installed_plugins.json` no longer lists it and `plugins/data/<id>` is
-    kept. Screenshots of Browse, the sheet and History.
+    kept. Screenshots of the list, the sheet and History.
 14. Copy install from the loose fixture (test server): two skills with scripts and one agent
     land under `<root>/skills/` and `<root>/agents/` byte-identical to the archive; a taken name
     is unticked and untouched; Undo moves the folder into the backup and the trash; undoing
-    that Undo restores it byte-identical (hash test).
+    that Undo restores it byte-identical (hash test). The plugin.json-only fixture installs its
+    skills and leaves `settings.json` hooks untouched (hash test).
 15. Marketplace link: the marketplace fixture makes the runner record exactly
     `plugin marketplace add <o/r> --json`, then lists its plugins; a `manifest_missing` reply
     shows one sentence and changes nothing on disk.
@@ -441,88 +497,103 @@ Library
     still works (test + screenshot).
 19. A `command`- or `npm`-source entry shows Install disabled with "This plugin installs by
     running a command. Atlas does not run those." (test).
+20. MCP `search_library`: on the catalog fixture "frontend" returns `frontend-design` first; no
+    catalog file returns the D25 sentence; the test server sees 0 requests.
+21. Screens at 1280x800 and 900x600, light and dark (Silver once at 1280x800): "Your setup" with
+    the tab row (no scroll at 1280x800), the Library list with the rail, the sheet with flags,
+    an Add-from-GitHub result with `not_installed`, the Installed filter, empty and error
+    states; nothing clipped at 900x600; fixtures only; saved under `docs/shots/library/` and
+    viewed.
+22. Sidebar, `View` and Ctrl/Cmd+1..7 unchanged (existing tests untouched); Ctrl+K "Library"
+    opens Toolkit on the Library tab (test).
 
-Habits
-20. Search schema 2: a schema-1 index re-reads once and fills `origin`; fixture lines with
+Unit B: repeated requests
+23. Search schema 2: a schema-1 index re-reads once and fills `origin`; fixture lines with
     `origin.kind` human / task-notification / peer, `promptSource: system`, `isCompactSummary`,
     `entrypoint: sdk-cli` map to 1 / 2 / 2 / 2 / 2 / 2, and a subagent file's lines are excluded.
-21. Habits fixture: the planted habit (7 variants of one request, 4 sessions, 3 days) is found
-    once with count 7; each of these is not a habit (one named test each): a request x20 in one
-    session, a subagent prompt x20, a task notification x30, a slash command x10, a pasted log
-    x6, a 2-word prompt x15, a prompt with a masked secret x6.
-22. Deterministic: two runs, and a run with the input rows shuffled, give the same ids, counts
+24. Fixture: the planted request (7 variants, 4 sessions, 3 days) is one group with count 7;
+    none of these is a group (one named test each): a request x20 in one session, a subagent
+    prompt x20, a task notification x30, a slash command x10, a pasted log x6, a 2-word prompt
+    x15, a prompt with a masked secret x6.
+25. Deterministic: two runs, and a run with the input rows shuffled, give the same ids, counts
     and order.
-23. 20,000 synthetic prompts group in <= 2 s in release (`cargo test --release -p atlas-core
-    habits::bench -- --ignored` prints the time); a call with no new search pass returns the
-    cached list in <= 50 ms.
-24. The skill draft passes the Toolkit validator; `name` matches `[a-z0-9-]{1,40}`; the
-    description is one line, <= 1,024 characters, without `<` or `>`; a taken name gets `-2`.
-25. In the app on the fixture root: edit the draft, Ctrl+S -> `<root>/skills/<name>/SKILL.md`
-    equals the editor text, History shows "Made from your habits", Undo removes it, the card
-    stays hidden after a relaunch. Screenshots of the tab, the sheet and History.
-26. Not a habit: the card hides and stays hidden after a relaunch; `habits.json` contains no
-    fixture text (grep: 0 hits).
-27. Run the app on the fixture with logging on; grep the log folder for every fixture prompt:
-    0 hits.
-
-Both
-28. Screens at 1280x800 and 900x600, light and dark (Silver once at 1280x800): Browse, the sheet
-    with flags, an Add-from-GitHub result, Installed, Habits, Make a skill, empty and error
-    states; no page scroll at 1280x800, nothing clipped at 900x600; fixtures only; saved under
-    `docs/shots/library/` and viewed.
-29. `npx tsc --noEmit`, `npm test`, `cargo test --workspace`, `cargo clippy --workspace -- -D
-    warnings` green; existing tests changed only where intended (shortcut numbers, tour counts).
-30. [Will] Browsing feels instant, and the check's words make sense to someone who is not a
-    developer.
-31. [Will] On his real chats the top habits are things he really repeats, and a saved skill
-    fires in Claude Code when he asks the same thing again.
+26. 20,000 synthetic prompts group in <= 2 s in release (`cargo test --release -p atlas-core
+    habits::bench -- --ignored` prints the time); a second MCP call with no new rows answers in
+    <= 50 ms.
+27. MCP stdio test on the fixture data dir: `find_repeated_requests {}` returns the planted
+    group with count 7, sessions 4, days 3, its projects and <= 5 examples; `{like: <a fresh
+    variant>}` sets `likeMatch` to that group; no returned text contains `***` or assistant text;
+    the index file's sha256 is the same before and after; missing index and schema-1 index give
+    the D41 sentences.
+28. `note_skill_offer`: `declined` shows as the group's `offer`; `never` makes `offersOff` true;
+    `habits.json` contains no fixture prompt text (grep: 0 hits); the Claude folder is untouched.
+29. `create_item {kind:"skill"}` in direct mode accepts a filled D53 draft (backup tagged `mcp`,
+    History "Made by Claude through Atlas's connector") and refuses the same draft with an
+    `allowed-tools` line (existing allow-list).
+30. `claude plugin validate skill --json` reports success with no errors; `atlas-repeats`
+    SKILL.md is ASCII and has the D51 frontmatter keys.
+31. Verifier, scratch `CLAUDE_CONFIG_DIR`, plugin loaded with `--plugin-dir skill`, `atlas-mcp`
+    registered with `--config-dir`/`--data-dir` pointing at the fixture: a headless `claude -p`
+    with a fresh variant of the planted request, after the task, ends with exactly one offer
+    line; with that group noted `declined`, no offer; with `offersOff`, no offer; with a one-off
+    request, no offer. Transcripts saved as evidence (fixture text only).
+32. [Will] In his real chats the offer comes at the right moment, once, and never feels naggy;
+    a saved skill fires when he asks the same thing again.
+33. [Will] The Library tab feels instant, and the check's words make sense to someone who is
+    not a developer.
 
 ## Done when
-Units 0, A and B are merged to `main`; criteria 1-29 carry evidence (test names, log lines,
-screenshot paths) and pass code-reviewer and verifier; a release build installed one real
-plugin into a scratch config dir; Will has run 30 and 31.
+Units A and B are merged to `main`; criteria 1-31 carry evidence (test names, log lines,
+screenshot and transcript paths) and pass code-reviewer and verifier; a release build installed
+one real plugin into a scratch config dir; the plugin version is bumped with the next release
+so `atlas-repeats` ships; Will has run 32 and 33.
 
 ## Risk-floor flags
-- Installing third-party code into Claude's setup (hooks and MCP servers later run with the
-  user's rights): opus code-reviewer with the security checklist, plus the verifier.
-- Untrusted archives (path traversal, symlinks, bombs) and untrusted YAML/JSON.
+- Unit A installs third-party code into Claude's setup (hooks and MCP servers later run with
+  the user's rights): opus code-reviewer with the security checklist, plus the verifier.
+- Untrusted archives (path traversal, symlinks, bombs) and untrusted YAML/JSON (Unit A).
 - The CLI writes the Claude folder even when listing (1.1): the debug guard must cover it.
-- Habits reads conversation text: privacy (D38); no screenshots of real prompts.
+- Unit B hands the user's own typed prompts to Claude through a local stdio MCP: masked text
+  only, user-typed only, nothing logged (D44); the reviewer checks the filters and the masking.
 - The search schema bump re-reads the whole corpus once (background, existing budget).
 
 ## Suggested agent chain
-Unit 0 main session -> Unit A coder (sonnet, Rust + React, primary skill `ui-ux-pro-max`) and
-Unit B coder (sonnet) in parallel worktrees -> per unit code-reviewer (opus + security
-checklist for A; sonnet for B) and verifier in parallel -> merge A, rebase and merge B ->
-design-reviewer on `docs/shots/library/` -> Will (30, 31).
+Unit A coder (sonnet; Rust + React; primary skill `ui-ux-pro-max`) and Unit B coder (sonnet;
+Rust + skill text) in parallel worktrees -> per unit code-reviewer (A: opus + security
+checklist; B: sonnet) in parallel with a verifier -> merge A, rebase and merge B ->
+design-reviewer on `docs/shots/library/` -> Will (32, 33).
 
 ---
 
-## 6. MCP tie-in
-Recommendation: **yes, later, as its own unit.** `search_library` (read-only over the cached
-catalog, no network) is cheap; `suggest_install` only as a propose-mode card in Pending Changes
-that carries the safety check, never in direct mode, so a prompt-injected chat cannot install
-hooks. Not part of this spec's must-haves.
+## 6. MCP tie-in (Library)
+- `search_library`: **yes, in Unit A** (D25). It is cheap: a read-only filter over
+  `catalog.json`.
+- `suggest_install`: **no, not now.** It is not cheap. A proposal would need a new `Write`
+  variant whose apply fetches, checks and runs the CLI inside `pending::apply`. Also no Pending
+  Changes screen exists in the app yet (Phase 6), so a proposal would sit where nobody sees it.
+  When it is built, it must stay propose-only, never direct, so a prompt-injected chat cannot
+  install hooks.
 
-## 7. Open questions (Will)
-1. A repo that is not a marketplace but ships hooks or LSP servers: (a) install only its
-   skills, agents, commands, output styles and MCP servers, and list the hooks as not installed
-   [pick]; (b) wrap it as a local Atlas marketplace so it installs whole as a plugin (tested).
-2. Install clicks: (a) one click when the check is clean, a second click in the sheet when it
-   flags something [pick]; (b) always one click; (c) always open the sheet first.
-3. Rust dependencies: (a) direct `reqwest`, `flate2`, `tar` at the versions already in
-   `Cargo.lock` through the updater, no new crates [pick]; (b) shell out to the OS `curl`.
-4. Habit skills: (a) built from your own words only, no AI [pick]; (b) add a "Let Claude write
-   the steps" button later (runs `claude -p`, uses tokens).
-5. Placement: (a) Library in the sidebar right after Toolkit, shortcuts shift by one [pick];
-   (b) Library as a tab inside Toolkit.
+## 7. Will's answers (2026-11-09) and open questions
+Answered: install clicks = one click when clean, a second in the sheet when flagged (D20);
+Library = a tab inside Toolkit (D1); non-marketplace repos install skills, agents, commands,
+output styles and MCP servers, hooks and LSP listed as not installed (1.2, D18); direct
+`reqwest` + `flate2` + `tar` (D14); no in-app Habits, the plugin skill offers instead (Unit B).
+
+Open:
+1. Where the offer instructions live: (a) a second skill `atlas-repeats` in the same Atlas
+   plugin [pick, D50]; (b) inside the existing `atlas` usage skill.
+2. When to offer from past chats: (a) 5 asks in 3 chats on 2 days, or 3 in this chat [pick,
+   D34/D52]; (b) lower (3 asks in 2 chats); (c) higher (10 asks).
 
 ## 8. Not verified
 - Whether `list --available` refetches the directory over the network on every call.
 - Whether installing a directory plugin ever runs code (npm dependencies, `.mcpb` setup); only
-  a skill-only plugin was installed here.
+  a skill-only plugin was installed.
 - JSON of `marketplace update`, `enable`, `disable`; whether a reinstall after `--keep-data`
   gets its data back.
 - macOS: finding `claude` from a GUI app's PATH (`find_claude_cli` adds `~/.local/bin` and
   `~/.claude/local`); codeload behind proxies.
-- The habit thresholds (D33, D34) are first guesses; only Will's real chats tune them (31).
+- Whether models fire `atlas-repeats` reliably from its description, and whether a plugin
+  skill's `allowed-tools` pre-allows `mcp__atlas__*` tools (criterion 31 tests it).
+- The thresholds (D33, D34) are first guesses; only Will's real chats tune them (32).
