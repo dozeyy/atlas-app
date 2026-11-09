@@ -214,3 +214,11 @@ pm ci is needed in a fresh worktree before tsc.
 ## 2026-11-08 - Atlas skill: biggest chats count only the range
 - "Biggest chats" now shows each chat's tokens inside the requested range (a chat that spills over counts only its part), not its whole-life total; header caveat dropped. Core `scope_report` takes `top` and returns `chats` from `messages` by `hour_local` (the same rows `usage_hour` sums), so the listed chats never exceed the range total. Comparison ranges ask `top: 0`.
 - Week start stays locale-based (same as the app); binaries go to "the latest GitHub Release" (coordinator decisions). Test: a chat spanning Nov 5-6 counts 37 of its 1,237 tokens for Nov 6 only. Real last week: top 5 chats sum 97.4M of 108M.
+
+## 2026-11-08 - Will's decisions this round (main session)
+- Tokens, not dollars, on every surface outside the Toolkit (Will: most people are on a plan, not the API). Compact numbers, 3 significant digits (27M, 7.3k), 4 only if needed. Dollars only in the hover, always called an estimate. Chat and helper headers switched too (TokenFigure, commit 321e54a).
+- Toolkit: category tiles show no cost; inside a category each item says tokens per call.
+- Usage limits: Will said "Don't implement". Do not build a limits or quota feature.
+- Layout rule (Will): "I don't want too much information on one tab. And I kind of don't want to have to scroll for anything, if possible, without compromising UI UX." Pages are checked at 1280x800 for no page scroll.
+- Themes: Dark is neutral graphite (#1f1f1e bg) because the old warm dark read brown next to the Claude app; Silver is cooler and deeper (#d2d8e0 bg) because it read too close to Light. Default theme stays Match Windows (system).
+- Charts: smoothPath dipped below the baseline on a steep drop into a zero day (unlimited averaged tangents overshoot). Fixed with the Fritsch-Carlson limit; a test samples every cubic segment and was proven to fail without the fix (7e20b27).
