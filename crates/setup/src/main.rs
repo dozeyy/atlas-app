@@ -116,9 +116,9 @@ fn windowless_remove(dir: &std::path::Path) -> i32 {
 }
 
 fn main() {
-    // First, before Tauri or anything else loads a library by name: only System32 is searched, so
-    // a DLL dropped beside this program (it runs from Downloads) is never picked up.
-    winsys::search_only_system32();
+    // First, before Tauri or anything else loads a library by name: only System32 is searched,
+    // never this program's folder, the current folder or PATH.
+    winsys::search_safe_dirs_only();
     let me = std::env::current_exe().unwrap_or_default();
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match uninstall::launch_for(&me, &args) {
