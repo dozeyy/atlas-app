@@ -48,39 +48,57 @@ fn webview2_installed() -> bool {
 /// No WebView2: the styled window cannot run, so do the same work with no window at all. The
 /// Atlas installer fetches the runtime itself (silently) when it is missing. Nothing Windows-made
 /// is shown, and Atlas opens at the end. Returns the exit code.
-fn windowless_install() -> i32 {
+///
+/// `quiet` is a deliberate `/S`: no message boxes at all (the exit code says how it went), and
+/// Atlas is opened only when `/R` came with it, the same convention as the installer inside.
+fn windowless_install(quiet: bool, open_after: bool) -> i32 {
+    let say = |text: &str| {
+        if !quiet {
+            winsys::message("Atlas Setup", text);
+        }
+    };
     let dir = install::install_dir();
     let unpacked = match install::unpack() {
         Ok(u) => u,
         Err(e) => {
-            winsys::message("Atlas Setup", &e.message());
+            say(&e.message());
             return 1;
         }
     };
     let result = install::run_silent(&unpacked.exe, |_| {});
     drop(unpacked);
     if let Err(e) = result {
-        winsys::message("Atlas Setup", &e.message());
+        say(&e.message());
         return 1;
     }
     let _ = install::place_remover(&dir);
+    if quiet && !open_after {
+        return 0;
+    }
     match install::launch(&dir) {
         Err(_) => {
-            winsys::message("Atlas Setup", "Atlas is installed but would not start. Open it from the Start menu.");
+            say("Atlas is installed but would not start. Open it from the Start menu.");
             1
         }
         Ok(install::Launched::SkippedElevated) => {
-            winsys::message("Atlas Setup", "Atlas is installed. Setup was run as administrator, so it did not open Atlas. Open it from the Start menu.");
+            say("Atlas is installed. Setup was run as administrator, so it did not open Atlas. Open it from the Start menu.");
             0
         }
         Ok(install::Launched::Started) => 0,
     }
 }
 
+/// A switch on the command line, in any letter case (`/S`, `/s`).
+fn has_switch(args: &[std::ffi::OsString], name: &str) -> bool {
+    args.iter().any(|a| a.to_string_lossy().eq_ignore_ascii_case(name))
+}
+
 /// The same for removing: no window, the installer's own uninstaller does the work.
 fn windowless_remove(dir: &std::path::Path) -> i32 {
+    let mut removed = false;
     let code = match uninstall::run_installer_uninstaller(dir, |_| {}) {
         Ok(()) => {
+            removed = true;
             // Only after the installer's uninstaller finished: a failed one leaves the removers
             // in place so the person can run it again.
             uninstall::tidy(dir);
@@ -92,7 +110,7 @@ fn windowless_remove(dir: &std::path::Path) -> i32 {
         }
     };
     if let Ok(me) = std::env::current_exe() {
-        uninstall::erase_my_copy_later(&me);
+        uninstall::erase_my_copy_later(&me, removed.then_some(dir));
     }
     code
 }
@@ -119,8 +137,9 @@ fn main() {
         }
         Launch::RemoverWindow(dir) => window(Mode::Uninstall, dir),
         Launch::Install => {
-            if !webview2_installed() {
-                std::process::exit(windowless_install());
+            let quiet = has_switch(&args, "/S");
+            if quiet || !webview2_installed() {
+                std::process::exit(windowless_install(quiet, has_switch(&args, "/R")));
             }
             window(Mode::Install, install::install_dir());
         }
@@ -128,6 +147,10 @@ fn main() {
 }
 
 fn window(mode: Mode, dir: PathBuf) {
+    if mode == Mode::Uninstall {
+        // This process must not keep the folder it is about to remove as its working folder.
+        install::leave_folder(&dir);
+    }
     if mode == Mode::Uninstall && !uninstall::is_install_dir(&dir) {
         winsys::message("Uninstall Atlas", &uninstall::RemoveError::NotInstalledHere.message());
         std::process::exit(1);

@@ -104,6 +104,7 @@ pub fn raw_tail(cmdline: &str) -> &str {
 pub fn pass_on(exe: &Path, cmdline: &str) -> i32 {
     let Some(dir) = exe.parent() else { return 1 };
     let mut cmd = Command::new(nsis_uninstaller(dir));
+    cmd.current_dir(install::neutral_dir());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -137,18 +138,40 @@ fn erase_installed_remover(exe: &Path) {
     if !cmd_safe(&f) || !cmd_safe(&d) {
         return;
     }
+    spawn_cleanup(9, &f, &[&d]);
+}
+
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// The hidden shell that finishes a removal after this program has exited: wait `wait` seconds,
+/// delete the one file, then try each folder (empty folders only: `rmdir` refuses anything else)
+/// three times a few seconds apart, since the last process that held one may still be leaving.
+/// Its own working folder is the Windows folder, so it never holds what it removes. The caller has
+/// already checked every path with `cmd_safe`.
+fn spawn_cleanup(wait: u32, file: &str, folders: &[&str]) {
+    let script = cleanup_script(wait, file, folders);
     let mut cmd = Command::new("cmd.exe");
-    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.current_dir(install::neutral_dir()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.raw_arg(format!("/D /V:OFF /C \"ping -n 9 127.0.0.1 >nul & del /f /q \"{f}\" & rmdir \"{d}\"\""))
-            .creation_flags(CREATE_NO_WINDOW | 0x0000_0008);
+        cmd.raw_arg(format!("/D /V:OFF /C \"{script}\"")).creation_flags(CREATE_NO_WINDOW | 0x0000_0008); // no window, detached
     }
     let _ = cmd.spawn();
 }
 
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+fn cleanup_script(wait: u32, file: &str, folders: &[&str]) -> String {
+    let mut script = format!("ping -n {wait} 127.0.0.1 >nul & del /f /q \"{file}\"");
+    for round in 0..3 {
+        for d in folders {
+            script.push_str(&format!(" & rmdir \"{d}\" 2>nul"));
+        }
+        if round < 2 {
+            script.push_str(" & ping -n 4 127.0.0.1 >nul");
+        }
+    }
+    script
+}
 
 /// A path that can sit inside a quoted `cmd` command line without being read as anything but
 /// itself: none of the characters `cmd` treats specially, `!` included (delayed expansion is
@@ -161,7 +184,10 @@ fn cmd_safe(path: &str) -> bool {
 pub fn hand_on(exe: &Path, dir: &Path) -> std::io::Result<()> {
     let tmp = tempfile::Builder::new().prefix("AtlasRemove-").tempdir()?.keep();
     let copy = tmp.join(REMOVER_NAME);
-    if let Err(e) = install::copy_bytes(exe, &copy).and_then(|()| Command::new(&copy).arg(REMOVE_FROM).arg(dir).spawn().map(|_| ())) {
+    // The copy starts in the Windows folder, not in whatever folder started this program (Atlas
+    // starts the remover from inside the install folder, and a working folder is held open).
+    let start = |c: &Path| Command::new(c).arg(REMOVE_FROM).arg(dir).current_dir(install::neutral_dir()).spawn().map(|_| ());
+    if let Err(e) = install::copy_bytes(exe, &copy).and_then(|()| start(&copy)) {
         let _ = std::fs::remove_file(&copy);
         let _ = std::fs::remove_dir(&tmp);
         return Err(e);
@@ -171,28 +197,27 @@ pub fn hand_on(exe: &Path, dir: &Path) -> std::io::Result<()> {
 
 /// When this run is the copy in a temporary `AtlasRemove-` folder, erase it once it has exited
 /// (a program cannot delete itself while it runs): a hidden shell waits a few seconds, then
-/// deletes that one file and its now empty folder. Nothing else is named.
-pub fn erase_my_copy_later(exe: &Path) {
+/// deletes that one file and its now empty folder. When the removal finished, `removed_from` is
+/// the Atlas folder: it is tried again once this program is gone (an empty folder only; the
+/// shell's `rmdir` refuses one that still holds anything, such as kept saved data).
+pub fn erase_my_copy_later(exe: &Path, removed_from: Option<&Path>) {
     let Some(dir) = exe.parent() else { return };
     let in_temp_copy = dir.file_name().is_some_and(|n| n.to_string_lossy().starts_with("AtlasRemove-"))
         && exe.file_name().is_some_and(|n| n.eq_ignore_ascii_case(REMOVER_NAME));
     if !in_temp_copy {
         return;
     }
-    // Paths made by this program under the temp folder: no quote, percent or ampersand in them.
+    // Paths made by this program under the temp folder: none of cmd's special characters in them.
     let (f, d) = (exe.display().to_string(), dir.display().to_string());
     if !cmd_safe(&f) || !cmd_safe(&d) {
         return;
     }
-    let mut cmd = Command::new("cmd.exe");
-    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.raw_arg(format!("/D /V:OFF /C \"ping -n 4 127.0.0.1 >nul & del /f /q \"{f}\" & rmdir \"{d}\"\""))
-            .creation_flags(CREATE_NO_WINDOW | 0x0000_0008); // no window, detached
+    let mut folders = vec![d.as_str()];
+    let install_dir = removed_from.map(|p| p.display().to_string()).filter(|p| cmd_safe(p));
+    if let Some(p) = &install_dir {
+        folders.push(p.as_str());
     }
-    let _ = cmd.spawn();
+    spawn_cleanup(4, &f, &folders);
 }
 
 // ----------------------------------------------------------------- removing Atlas
@@ -229,7 +254,7 @@ pub fn run_installer_uninstaller(dir: &Path, mut on_progress: impl FnMut(f32)) -
         return Err(RemoveError::NotInstalledHere);
     }
     let mut cmd = Command::new(nsis_uninstaller(dir));
-    cmd.arg("/S").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.arg("/S").current_dir(install::neutral_dir()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -634,6 +659,16 @@ mod tests {
         std::fs::remove_file(dir.join("cache.sqlite")).unwrap();
         tidy(&dir);
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn the_cleanup_deletes_one_file_then_tries_each_folder_three_times() {
+        let s = cleanup_script(4, r"C:\T\AtlasRemove-x\Uninstall Atlas.exe", &[r"C:\T\AtlasRemove-x", r"C:\Apps\Atlas"]);
+        assert!(s.starts_with("ping -n 4 127.0.0.1 >nul & del /f /q \"C:\\T\\AtlasRemove-x\\Uninstall Atlas.exe\""));
+        assert_eq!(s.matches("rmdir \"C:\\Apps\\Atlas\" 2>nul").count(), 3);
+        assert_eq!(s.matches("rmdir \"C:\\T\\AtlasRemove-x\" 2>nul").count(), 3);
+        assert_eq!(s.matches("del ").count(), 1, "one file only, never a wildcard");
+        assert!(!s.contains("/s"), "rmdir never recurses");
     }
 
     #[test]

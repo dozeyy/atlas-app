@@ -580,7 +580,9 @@ impl Setup {
             && !self.cleaned_up.swap(true, Ordering::SeqCst)
             && let Ok(me) = std::env::current_exe()
         {
-            uninstall::erase_my_copy_later(&me);
+            // The Atlas folder is tried again afterwards only when the removal finished.
+            let finished = self.lock().phase == Phase::Done;
+            uninstall::erase_my_copy_later(&me, finished.then_some(self.dir.as_path()));
         }
     }
 

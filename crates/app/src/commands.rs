@@ -109,6 +109,9 @@ pub fn uninstall_available() -> bool {
 pub fn uninstall_atlas() -> Result<(), String> {
     let path = uninstaller_path().ok_or_else(|| "This copy of Atlas has no uninstaller beside it.".to_string())?;
     let mut cmd = std::process::Command::new(path);
+    // Not Atlas's own working folder (often the install folder): the remover inherits it, and a
+    // working folder is held open, which would keep the emptied install folder from going.
+    cmd.current_dir(std::env::var_os("SystemRoot").map(std::path::PathBuf::from).filter(|p| p.is_dir()).unwrap_or_else(std::env::temp_dir));
     cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     #[cfg(windows)]
     {
