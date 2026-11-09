@@ -155,6 +155,10 @@ pub fn duration(ms: i64) -> String {
 /// "claude-opus-5-5" -> "Opus 5.5", "claude-3-5-sonnet-20241022" -> "Sonnet 3.5". Anything
 /// else is left as it is, exactly as the app leaves it.
 pub fn model(m: &str) -> String {
+    cell(&model_label(m), 40)
+}
+
+fn model_label(m: &str) -> String {
     let family = |s: &str| matches!(s, "opus" | "sonnet" | "haiku");
     let digits = |s: &str, max: usize| !s.is_empty() && s.len() <= max && s.bytes().all(|b| b.is_ascii_digit());
     let cap = |s: &str| {
@@ -181,9 +185,15 @@ pub fn model(m: &str) -> String {
     }
 }
 
-/// One table cell: no pipes or newlines, at most `max` characters.
+/// Text from the user's own data (chat titles, project names, model ids) for output: in ASCII
+/// mode every non-ASCII character becomes `?`, so `--ascii` really is ASCII-only.
+pub fn plain(s: &str) -> String {
+    if ascii() && !s.is_ascii() { s.chars().map(|c| if c.is_ascii() { c } else { '?' }).collect() } else { s.to_string() }
+}
+
+/// One table cell: no pipes or newlines, at most `max` characters, ASCII-only in ASCII mode.
 pub fn cell(s: &str, max: usize) -> String {
-    let flat: String = s.chars().map(|c| if c == '|' || c.is_control() { ' ' } else { c }).collect();
+    let flat: String = plain(s).chars().map(|c| if c == '|' || c.is_control() { ' ' } else { c }).collect();
     let flat = flat.trim();
     if flat.chars().count() <= max {
         flat.to_string()
@@ -250,6 +260,7 @@ mod tests {
 
     #[test]
     fn models_are_named_like_the_app() {
+        let _g = glyph_lock();
         assert_eq!(model("claude-opus-5-5"), "Opus 5.5");
         assert_eq!(model("claude-sonnet-5-5"), "Sonnet 5.5");
         assert_eq!(model("claude-haiku-5-5"), "Haiku 5.5");
@@ -260,6 +271,19 @@ mod tests {
         // Not a family the app names: shown as it is.
         assert_eq!(model("claude-fable-5-1"), "claude-fable-5-1");
         assert_eq!(model("<synthetic>"), "<synthetic>");
+    }
+
+    #[test]
+    fn user_text_is_ascii_in_ascii_mode_only() {
+        let _g = glyph_lock();
+        assert_eq!(cell("caf\u{e9}|x", 40), "caf\u{e9} x");
+        assert_eq!(model("claude-\u{e9}"), "claude-\u{e9}");
+        set_ascii(true);
+        let (c, m, long) = (cell("caf\u{e9}|x", 40), model("claude-\u{e9}"), cell(&"\u{65e5}".repeat(50), 10));
+        set_ascii(false);
+        assert_eq!(c, "caf? x");
+        assert_eq!(m, "claude-?");
+        assert_eq!(long, "???????...");
     }
 
     #[test]

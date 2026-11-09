@@ -77,7 +77,10 @@ sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" <words> --session ${CLAUDE_SESSION_I
   project, keep that line.
 - Optional: if a visual tool such as `show_widget` is available and the user asks for a
   richer chart, run the same command again with `--json` and draw from those numbers. The
-  text output must still be shown and stand on its own. Draw it in Atlas's colours, not a
+  text output must still be shown and stand on its own. In the JSON, `report.points` is
+  one point per `report.bucket`: a day for ranges up to 84 days, a week up to 26 weeks, a
+  month beyond; plot them as they come and label the buckets accordingly (the last day is
+  "Today"). Draw it in Atlas's colours, not a
   default palette. Light (page `#FAF8F5`, text `#1F1D1A`): resting bars `#D07A55`, today
   and the busiest day clay `#C96442`, second series slate `#5B7083`, third sand `#A8875F`,
   idle `#F0EBE4`. Dark (page `#1F1F1E`, text `#ECECEA`): resting bars `#B4653F`, today and

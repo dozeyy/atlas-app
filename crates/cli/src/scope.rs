@@ -162,6 +162,7 @@ mod tests {
         assert_eq!(bucket_for(7), "day");
         assert_eq!(bucket_for(31), "day");
         assert_eq!(bucket_for(84), "day");
+        assert_eq!(bucket_for(85), "week");
         assert_eq!(bucket_for(90), "week");
         assert_eq!(bucket_for(400), "month");
     }
