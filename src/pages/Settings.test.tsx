@@ -151,24 +151,85 @@ describe("Settings", () => {
     expect(await screen.findByText(/Claude Code keeps conversation logs for/)).toBeInTheDocument();
   });
 
-  it("Claude Code section connects and disconnects, reading the state back each time", async () => {
+  it("Claude Code section is one switch, on by default, and the state is read back each time", async () => {
     mount();
     await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
-    expect(await screen.findByText(/Not connected\./)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
-    expect(await screen.findByRole("button", { name: "Disconnect" })).toBeInTheDocument();
-    expect(screen.getByText(/Open a new chat to use it/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Disconnect" }));
-    expect(await screen.findByRole("button", { name: "Connect" })).toBeInTheDocument();
+    const sw = await screen.findByRole("switch", { name: "Let Claude Code use Atlas" });
+    expect(sw).toBeChecked();
+    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Disconnect" })).toBeNull();
+    await userEvent.click(sw);
+    expect(await screen.findByText("Off")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Let Claude Code use Atlas" })).not.toBeChecked();
+    await userEvent.click(screen.getByRole("switch", { name: "Let Claude Code use Atlas" }));
+    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Let Claude Code use Atlas" })).toBeChecked();
     expect(screen.getByText("No network access")).toBeInTheDocument();
   });
 
-  it("Claude Code section cannot connect while Sandbox mode is on", async () => {
+  it("Claude Code section says when Claude Code is not found", async () => {
+    mount((b) => {
+      b.mcpStatus = async () => ({ state: "notConnected", command: null, server: "C:/x/atlas-mcp.exe", cliFound: false, configReadable: true, sandbox: false });
+    });
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
+    expect(await screen.findByText("Claude Code not found")).toBeInTheDocument();
+  });
+
+  it("the switch saves its choice once, inside the connect command, not from the page too", async () => {
+    const b = mount();
+    const save = vi.spyOn(b, "updateSettings");
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
+    await userEvent.click(await screen.findByRole("switch", { name: "Let Claude Code use Atlas" }));
+    expect(await screen.findByText("Off")).toBeInTheDocument();
+    expect(save).not.toHaveBeenCalled();
+    expect(screen.getByRole("switch", { name: "Let Claude Code use Atlas" })).not.toBeChecked();
+  });
+
+  it("another program named atlas shows honestly: switch off and disabled, and nothing is ever disconnected", async () => {
+    const b = mount((m) => {
+      m.mcpStatus = async () => ({ state: "foreign", command: "npx", server: "C:/x/atlas-mcp.exe", cliFound: true, configReadable: true, sandbox: false });
+    });
+    const off = vi.spyOn(b, "mcpDisconnect");
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
+    const sw = await screen.findByRole("switch", { name: "Let Claude Code use Atlas" });
+    expect(await screen.findByText(/different program named "atlas"/)).toBeInTheDocument();
+    expect(sw).not.toBeChecked();
+    expect(sw).toBeDisabled();
+    expect(screen.queryByText(/Atlas fixes this when it starts/)).toBeNull();
+    await userEvent.click(sw);
+    expect(off).not.toHaveBeenCalled();
+  });
+
+  it("a stale registration to another copy is shown whether the switch is on or off", async () => {
+    const moved = { state: "moved", command: "C:/old/atlas-mcp.exe", server: "C:/x/atlas-mcp.exe", cliFound: true, configReadable: true, sandbox: false } as const;
+    mount((m) => {
+      m.mcpStatus = async () => moved;
+    });
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
+    expect(await screen.findByText(/Registered to a different copy of Atlas/)).toBeInTheDocument();
+    cleanup();
+    // Switched off earlier (or the disconnect failed): the card must not say a plain "Off".
+    localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "settings", mcpAutoConnect: false }));
+    const b = new MockBackend();
+    b.mcpStatus = async () => moved;
+    setBackend(b);
+    render(
+      <AtlasProvider>
+        <App />
+      </AtlasProvider>,
+    );
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
+    expect(await screen.findByText(/still registered with Claude Code/)).toBeInTheDocument();
+    expect(screen.queryByText("Off")).toBeNull();
+  });
+
+  it("Claude Code section cannot change while Sandbox mode is on", async () => {
     mount((b) => {
       b.mcpStatus = async () => ({ state: "notConnected", command: null, server: "C:/x/atlas-mcp.exe", cliFound: true, configReadable: true, sandbox: true });
     });
     await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
-    expect(await screen.findByText(/Turn Sandbox mode off to connect/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
+    expect(await screen.findByText(/Turn Sandbox mode off/)).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Let Claude Code use Atlas" })).toBeDisabled();
   });
 });

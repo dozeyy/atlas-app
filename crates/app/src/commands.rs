@@ -229,6 +229,8 @@ pub fn frontend_ready(app: AppHandle, state: Shared) -> u64 {
     state.usage.sync_in_background(state.inner());
     // Setup reads Will's Claude folder in the background so its page is full when opened.
     crate::setup_service::prefetch(&app);
+    // Claude Code gets Atlas's connector without a button (opt-out in Settings), quietly.
+    crate::mcp_service::auto_connect_in_background(state.inner());
     // History keeps its own record of the setup, quietly, once the first index has settled.
     state.history.start(&app);
     // The page booted with first_paint_ms unset; tell it the number now.

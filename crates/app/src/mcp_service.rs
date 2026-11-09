@@ -68,12 +68,53 @@ fn with_ctx(state: &AppState, f: impl FnOnce(&ConnectCtx) -> Result<ConnectOutco
     f(&ConnectCtx { root: &root, server: &server, backups: &backups, data_dir_flag: state.launch.data_dir.as_deref(), cli: CliChoice::Auto })
 }
 
+/// Turning "Let Claude Code use Atlas" on: remember the choice (the page hears about it through
+/// the usual settings announcement), then connect now. If the choice cannot be saved, nothing
+/// else happens.
 #[tauri::command(async)]
 pub fn mcp_connect(state: Shared) -> Result<ConnectOutcome, String> {
-    with_ctx(&state, connect::connect)
+    let done = state.save_mcp_choice(true).and_then(|()| with_ctx(&state, connect::connect));
+    state.announce();
+    done
 }
 
+/// Turning it off: remember the choice first (so Atlas never reconnects by itself, whatever
+/// happens next), then remove the registration. If the choice cannot be saved the registration
+/// stays and the page is told so, rather than promising an off the next launch would undo. An
+/// `atlas` entry that is another program's is never removed.
 #[tauri::command(async)]
 pub fn mcp_disconnect(state: Shared) -> Result<ConnectOutcome, String> {
-    with_ctx(&state, connect::disconnect)
+    let done = state.save_mcp_choice(false).and_then(|()| with_ctx(&state, connect::disconnect));
+    state.announce();
+    done
+}
+
+/// After the first paint, on its own thread, once per run: connect Atlas to Claude Code if it
+/// should be, and repair a registration whose program no longer exists. Never shows anything; a
+/// missing `claude` command just means a later launch tries again. All spawns are quiet (no
+/// window), and a debug build refuses to touch the real Claude folder, so development never
+/// changes it. A `--config-dir` or `--data-dir` launch, and a program in a place that will not
+/// last (a build folder, a temp folder, a macOS translocated copy), never registers itself.
+pub fn auto_connect_in_background(state: &Arc<AppState>) {
+    if !state.claim_auto_connect() {
+        return;
+    }
+    let state = Arc::clone(state);
+    std::thread::spawn(move || {
+        // Let the first screen and the usage index settle before a child process starts.
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let (Some(root), Some(server)) = (state.history_root(), server_path()) else { return };
+        if !connect::auto_allowed(root.source, state.launch.data_dir.as_deref()) {
+            eprintln!("[atlas] claude code connection: skipped (a --config-dir or --data-dir launch)");
+            return;
+        }
+        if !connect::is_stable_install(&server) {
+            eprintln!("[atlas] claude code connection: skipped (this copy runs from a folder that will not stay)");
+            return;
+        }
+        let backups = state.data_dir.join("setup-backups");
+        let ctx = ConnectCtx { root: &root, server: &server, backups: &backups, data_dir_flag: state.launch.data_dir.as_deref(), cli: CliChoice::Auto };
+        let out = connect::auto_connect(&ctx, &|| state.mcp_auto_connect());
+        eprintln!("[atlas] claude code connection: {out:?}");
+    });
 }
