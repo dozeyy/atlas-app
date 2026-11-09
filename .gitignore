@@ -11,3 +11,7 @@ crates/app/gen/
 
 # Fixtures need settings.local.json even though the global git ignore drops it.
 !fixtures/**/.claude/settings.local.json
+# atlas-usage binaries dropped next to the skill (built or downloaded, never committed)
+skill/bin/
+skill/skills/atlas/bin/
+dist-cli/

@@ -786,6 +786,143 @@ pub fn timeline(conn: &Connection, ctx: &QueryCtx, a: &TimelineArgs) -> rusqlite
     Ok(Timeline { bucket: bucket.to_string(), points, series })
 }
 
+// ---------------------------------------------------------------- scope report
+
+/// Any day range, optionally one project: what the `atlas-usage` CLI (and the skill on
+/// top of it) shows. Built from the same `usage_hour` rows, session rule and pricing as
+/// the dashboard and timeline, so a day here equals that day's bar in the app.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopeArgs {
+    pub from: String,
+    pub to: String,
+    /// A `sessions.project_key` (see `ingest::project_key`); `None` = every project.
+    #[serde(default)]
+    pub project_key: Option<String>,
+    /// "day" (default), "week" or "month".
+    #[serde(default)]
+    pub bucket: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopeReport {
+    pub from: String,
+    pub to: String,
+    pub bucket: String,
+    /// Tokens and cost in the range; `sessions` = chats with a message in it.
+    pub total: Period,
+    pub by_model: Vec<ModelUse>,
+    /// One point per bucket, zero-filled; `sessions` = chats started in that bucket.
+    pub points: Vec<TimelinePoint>,
+    /// Every project with usage in the range, biggest first.
+    pub projects: Vec<ProjectUse>,
+}
+
+/// The first local day with any recorded usage (`None` on an empty cache).
+pub fn first_day(conn: &Connection) -> rusqlite::Result<Option<String>> {
+    conn.query_row("SELECT MIN(substr(hour_local,1,10)) FROM usage_hour", [], |r| r.get::<_, Option<String>>(0))
+}
+
+/// Chats with a message in `[from_day, to_day]`, per project key (the dashboard's rule).
+fn sessions_by_project(conn: &Connection, tz: Tz, from_day: &str, to_day: &str) -> rusqlite::Result<HashMap<String, u64>> {
+    let lo = day_start_ms(tz, from_day);
+    let hi = day_start_ms(tz, &add_days(to_day, 1));
+    let mut st = conn.prepare_cached(
+        "SELECT COALESCE(s.project_key,''), COUNT(*) FROM sessions s \
+         WHERE s.messages > 0 AND s.last_ts >= ?1 AND s.first_ts < ?2 \
+         AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.session_id AND m.ts_utc_ms >= ?1 AND m.ts_utc_ms < ?2) \
+         GROUP BY 1",
+    )?;
+    let mut counts = HashMap::new();
+    for r in st.query_map([lo, hi], |r| Ok((r.get::<_, String>(0)?, u(r.get::<_, i64>(1)?))))? {
+        let (k, n) = r?;
+        counts.insert(k, n);
+    }
+    Ok(counts)
+}
+
+pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlite::Result<ScopeReport> {
+    let bucket = match a.bucket.as_str() {
+        "week" | "month" => a.bucket.as_str(),
+        _ => "day",
+    };
+    let (from, to) = (a.from.as_str(), a.to.as_str());
+    let project = a.project_key.as_deref();
+    let rows: Vec<GroupRow> = fetch_hours(conn, "substr(hour_local,1,10)", "project_key", from, to)?
+        .into_iter()
+        .filter(|r| project.is_none_or(|k| r.s == k))
+        .collect();
+
+    let by_project_sessions = sessions_by_project(conn, ctx.tz, from, to)?;
+    let sessions = match project {
+        Some(k) => by_project_sessions.get(k).copied().unwrap_or(0),
+        None => sessions_active(conn, ctx.tz, from, to)?,
+    };
+    let total = period(&rows, from, to, sessions);
+
+    let mut models: BTreeMap<&str, Acc> = BTreeMap::new();
+    let mut projs: BTreeMap<&str, Acc> = BTreeMap::new();
+    let starts = bucket_starts(from, to, bucket, ctx.week_starts_sunday);
+    let mut per_bucket: BTreeMap<String, Acc> = starts.iter().map(|s| (s.clone(), Acc::default())).collect();
+    for r in &rows {
+        models.entry(r.model.as_str()).or_default().add(&r.g);
+        projs.entry(r.s.as_str()).or_default().add(&r.g);
+        if let Some(acc) = per_bucket.get_mut(&bucket_of(&r.k, bucket, ctx.week_starts_sunday)) {
+            acc.add(&r.g);
+        }
+    }
+    let mut by_model: Vec<ModelUse> = models
+        .into_iter()
+        .map(|(m, a)| ModelUse { model: m.to_string(), known: ctx.prices.is_known(m), tokens: a.t, cost: a.cost() })
+        .collect();
+    by_model.sort_by(|a, b| b.tokens.total.cmp(&a.tokens.total).then_with(|| a.model.cmp(&b.model)));
+
+    // Chats started per bucket (the timeline's rule), in this project only when one is asked.
+    let lo = day_start_ms(ctx.tz, from);
+    let hi = day_start_ms(ctx.tz, &add_days(to, 1));
+    let mut started: HashMap<String, u64> = HashMap::new();
+    {
+        let sql = "SELECT substr(hour_of(first_ts),1,10), COALESCE(project_key,''), COUNT(*) FROM sessions \
+                   WHERE messages > 0 AND first_ts >= ?1 AND first_ts < ?2 GROUP BY 1, 2";
+        let mut st = conn.prepare_cached(sql)?;
+        let it = st.query_map([lo, hi], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, u(r.get::<_, i64>(2)?))))?;
+        for r in it {
+            let (day, key, n) = r?;
+            if project.is_none_or(|k| key == k) {
+                *started.entry(bucket_of(&day, bucket, ctx.week_starts_sunday)).or_default() += n;
+            }
+        }
+    }
+    let points = starts
+        .iter()
+        .map(|s| {
+            let a = per_bucket.get(s).copied().unwrap_or_default();
+            TimelinePoint { start: s.clone(), tokens: a.t, cost: a.cost(), sessions: started.get(s).copied().unwrap_or(0) }
+        })
+        .collect();
+
+    let names = project_index(conn)?;
+    let mut list: Vec<(&str, Acc)> = projs.into_iter().collect();
+    list.sort_by(|a, b| b.1.t.total.cmp(&a.1.t.total).then_with(|| a.0.cmp(b.0)));
+    let projects = list
+        .into_iter()
+        .map(|(k, a)| {
+            let (name, path) = names.get(k).cloned().unwrap_or_default();
+            ProjectUse {
+                project_key: k.to_string(),
+                name: if name.is_empty() { "Unknown project".to_string() } else { name },
+                path,
+                tokens: a.t,
+                cost: a.cost(),
+                sessions: by_project_sessions.get(k).copied().unwrap_or(0),
+            }
+        })
+        .collect();
+
+    Ok(ScopeReport { from: a.from.clone(), to: a.to.clone(), bucket: bucket.to_string(), total, by_model, points, projects })
+}
+
 // ---------------------------------------------------------------- sessions
 
 #[derive(Default)]

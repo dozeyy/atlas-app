@@ -73,3 +73,23 @@ jobs:
             target/release/bundle/nsis/*.exe
             target/release/bundle/msi/*.msi
             target/universal-apple-darwin/release/bundle/dmg/*.dmg
+
+      # 5. The atlas-usage CLI behind the Claude Code skill (skill/README.md).
+      - name: Build atlas-usage
+        shell: bash
+        run: |
+          mkdir -p dist-cli
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            cargo build -p atlas-cli --release --target aarch64-apple-darwin --target x86_64-apple-darwin
+            lipo -create -output dist-cli/atlas-usage target/aarch64-apple-darwin/release/atlas-usage target/x86_64-apple-darwin/release/atlas-usage
+          else
+            cargo build -p atlas-cli --release
+            cp target/release/atlas-usage.exe dist-cli/
+          fi
+
+      - name: Upload atlas-usage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: atlas-usage-${{ runner.os }}
+          if-no-files-found: error
+          path: dist-cli/*

@@ -371,6 +371,21 @@ impl UsageEngine {
         self.read(|c, x| query::timeline(c, x, a))
     }
 
+    /// Any day range, optionally one project (the `atlas-usage` CLI).
+    pub fn scope_report(&self, a: &query::ScopeArgs) -> Result<query::ScopeReport, String> {
+        self.read(|c, x| query::scope_report(c, x, a))
+    }
+
+    /// The first local day with recorded usage.
+    pub fn first_day(&self) -> Result<Option<String>, String> {
+        self.read(|c, _| query::first_day(c))
+    }
+
+    /// The local day it is now (the day the app's periods end on).
+    pub fn today_date(&self) -> String {
+        query::today_of(&self.ctx())
+    }
+
     pub fn sessions_list(&self, q: &query::SessionQuery) -> Result<query::SessionPage, String> {
         self.read(|c, x| query::sessions_list(c, x, q))
     }
