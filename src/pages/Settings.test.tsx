@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
@@ -63,6 +63,27 @@ describe("Settings", () => {
     expect(screen.getByRole("button", { name: "Update and restart" })).toBeInTheDocument();
   });
 
+  it("About offers Uninstall Atlas only where an uninstaller sits beside it, and starts it on a click", async () => {
+    // A dev run or a copy with no uninstaller: no row.
+    mount();
+    let rail = await screen.findByRole("navigation", { name: "Settings sections" });
+    await userEvent.click(within(rail).getByRole("button", { name: "About" }));
+    expect(await screen.findByText("Version")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Uninstall Atlas..." })).not.toBeInTheDocument();
+    cleanup();
+
+    const started = vi.fn(async () => {});
+    mount((b) => {
+      b.uninstallAvailable = async () => true;
+      b.uninstallAtlas = started;
+    });
+    rail = await screen.findByRole("navigation", { name: "Settings sections" });
+    await userEvent.click(within(rail).getByRole("button", { name: "About" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Uninstall Atlas..." }));
+    expect(started).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Your Claude Code chats are never touched.", { exact: false })).toBeInTheDocument();
+  });
+
   it("turns Keep running when closed on and off", async () => {
     mount();
     const sw = await screen.findByRole("switch", { name: "Keep running when closed" });
@@ -71,11 +92,11 @@ describe("Settings", () => {
     await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").closeToTray).toBe(true));
   });
 
-  it("keeps the finished-chat notice off until it is switched on, and says what it cannot see", async () => {
+  it("keeps the finished-chat notice off until it is switched on", async () => {
     mount();
     const sw = await screen.findByRole("switch", { name: "Tell me when a chat finishes" });
     expect(sw).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByText(/cannot tell when a chat is only waiting for you to allow something/)).toBeInTheDocument();
+    expect(screen.queryByText(/cannot tell when a chat is only waiting/)).not.toBeInTheDocument();
     await userEvent.click(sw);
     await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").notifyOnFinish).toBe(true));
     expect(sw).toHaveAttribute("aria-checked", "true");

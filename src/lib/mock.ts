@@ -175,11 +175,33 @@ export class MockBackend {
 
   async openConfigDir(): Promise<void> {}
   async openDataDir(): Promise<void> {}
+  async uninstallAvailable(): Promise<boolean> {
+    return false;
+  }
+  async uninstallAtlas(): Promise<void> {}
 
   async frontendReady(): Promise<void> {}
   async windowControl(_action: "minimize" | "toggle-maximize" | "close"): Promise<void> {}
   async windowMaximized(): Promise<boolean> {
     return false;
+  }
+  /** What the page last told Rust about unsaved edits, and the quit it asked about (tests read these). */
+  unsaved = false;
+  left = 0;
+  private quitAsks = new Set<() => void>();
+  async setUnsaved(on: boolean): Promise<void> {
+    this.unsaved = on;
+  }
+  async onQuitAsk(cb: () => void): Promise<() => void> {
+    this.quitAsks.add(cb);
+    return () => void this.quitAsks.delete(cb);
+  }
+  async leaveApp(): Promise<void> {
+    this.left += 1;
+  }
+  /** Test hook: Rust holds back a quit and asks the page. */
+  askToQuit(): void {
+    for (const cb of this.quitAsks) cb();
   }
 
   // ---- usage: the stand-in lives in mockUsage.ts so this file stays small ----

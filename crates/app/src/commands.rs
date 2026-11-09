@@ -86,6 +86,38 @@ pub fn open_data_dir(state: Shared) -> Result<(), String> {
     open_in_file_manager(&dir)
 }
 
+/// The program that takes Atlas off this computer, when this is a real Windows install: the styled
+/// remover Setup places beside Atlas, else the installer's own plain uninstaller. Nothing is ever
+/// taken from the page; the path is always next to the running Atlas.
+fn uninstaller_path() -> Option<std::path::PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    ["Uninstall Atlas.exe", "uninstall.exe"].iter().map(|n| dir.join(n)).find(|p| p.is_file())
+}
+
+/// Whether Settings should offer "Uninstall Atlas...".
+#[tauri::command]
+pub fn uninstall_available() -> bool {
+    uninstaller_path().is_some()
+}
+
+/// Starts the remover on its own and leaves Atlas running: the remover asks Atlas to quit (through
+/// the same quit signal an update uses) once the person has said yes on its own screen.
+#[tauri::command(async)]
+pub fn uninstall_atlas() -> Result<(), String> {
+    let path = uninstaller_path().ok_or_else(|| "This copy of Atlas has no uninstaller beside it.".to_string())?;
+    let mut cmd = std::process::Command::new(path);
+    cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0000_0008 | 0x0000_0200); // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    }
+    cmd.spawn().map(|_| ()).map_err(|e| format!("Could not start the uninstaller: {e}"))
+}
+
 /// Wrapped's share card: ask where to put the PNG (starting in Pictures) and write it there.
 /// The page hands over the bytes; only a PNG of sane size is written, and never into a Claude
 /// folder. Returns the path, or nothing when the picker was cancelled.
@@ -148,6 +180,19 @@ pub fn window_control(app: AppHandle, action: String) {
         }
         _ => {}
     }
+}
+
+/// The page says whether an editor holds edits that are not saved, so a quit can ask first.
+#[tauri::command]
+pub fn set_unsaved(state: Shared, on: bool) {
+    state.set_unsaved(on);
+}
+
+/// The user chose Discard at the quit question: quit now.
+#[tauri::command]
+pub fn leave_app(app: AppHandle, state: Shared) {
+    state.set_unsaved(false);
+    app.exit(0);
 }
 
 /// Whether the window is maximized, so the middle caption button can show Restore.

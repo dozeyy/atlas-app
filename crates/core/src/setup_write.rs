@@ -215,7 +215,15 @@ impl Discovery {
                         safe_join(dir, rel)?
                     }
                     Some(_) => return refuse("Only a skill has more than one file."),
-                    None => path.clone(),
+                    None => {
+                        // SKILL.md itself may be a link to a file outside the skill.
+                        if item.kind == ItemKind::Skill
+                            && let Some(dir) = path.parent()
+                        {
+                            inside(dir, path)?;
+                        }
+                        path.clone()
+                    }
                 };
                 let folder = (item.kind == ItemKind::Skill && target == *path).then(|| path.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned())).flatten();
                 let language = language_of_path(&target).to_string();
@@ -286,7 +294,14 @@ impl Discovery {
             SourceRef::File { path } => match file {
                 Some(rel) if item.kind == ItemKind::Skill => safe_join(path.parent().ok_or_else(|| WriteError::Refused("This skill has no folder.".into()))?, rel)?,
                 Some(_) => return refuse("Only a skill has more than one file."),
-                None => path.clone(),
+                None => {
+                    if item.kind == ItemKind::Skill
+                        && let Some(dir) = path.parent()
+                    {
+                        inside(dir, path)?;
+                    }
+                    path.clone()
+                }
             },
             SourceRef::JsonEntry { file, .. } => file.clone(),
             SourceRef::Text(_) => return refuse("There is no file on this computer for this."),
@@ -294,7 +309,8 @@ impl Discovery {
         if !path.is_file() {
             return refuse("The file is gone.");
         }
-        Ok(path)
+        // The OS opener gets a vetted, canonical, absolute path and nothing else.
+        crate::fsutil::vet_open_path(&path).map_err(WriteError::Refused)
     }
 
     /// Copy a skill into the user's own skills folder under a new name. The copy is built
@@ -312,7 +328,9 @@ impl Discovery {
         let src_dir = path.parent().ok_or_else(|| WriteError::Refused("This skill has no folder.".into()))?;
         let skills = root.join("skills");
         let dest = skills.join(name);
-        if dest.exists() {
+        // `symlink_metadata`: a dangling link at `dest` is "something there" too.
+        let taken = |d: &Path| fs::symlink_metadata(d).is_ok();
+        if taken(&dest) {
             return refuse(format!("You already have a skill called {name}."));
         }
         check_write_allowed(&dest)?;
@@ -321,16 +339,20 @@ impl Discovery {
             return refuse("This skill is too big to copy here.");
         }
         fs::create_dir_all(&skills)?;
-        let tmp = skills.join(format!(".atlas-copy-{}-{}", now_ms(), COUNTER.fetch_add(1, Ordering::Relaxed) % 10_000));
+        remove_stale_copies(&skills);
+        let tmp = skills.join(format!("{COPY_PREFIX}{}-{}", now_ms(), COUNTER.fetch_add(1, Ordering::Relaxed) % 10_000));
         check_write_allowed(&tmp)?;
         let built = (|| -> Res<()> {
             copy_tree(src_dir, &tmp, 0)?;
             let main = tmp.join(path.file_name().unwrap_or_default());
             if main.is_file() {
-                let old = String::from_utf8_lossy(&fs::read(&main)?).into_owned();
+                // Bytes, not lossy text: a file that is not UTF-8 is refused, never rewritten
+                // with replacement characters.
+                let old = String::from_utf8(fs::read(&main)?).map_err(|_| WriteError::Refused("SKILL.md is not plain UTF-8 text, so Atlas cannot rename the copy safely.".into()))?;
                 fs::write(&main, with_skill_name(&old, name))?;
             }
-            if dest.exists() {
+            // Last look: on some systems a rename onto an empty folder would replace it.
+            if taken(&dest) {
                 return refuse(format!("You already have a skill called {name}."));
             }
             fs::rename(&tmp, &dest)?;
@@ -362,6 +384,26 @@ pub struct SkillFile {
 pub struct DuplicateOutcome {
     pub name: String,
     pub path: String,
+}
+
+const COPY_PREFIX: &str = ".atlas-copy-";
+/// A half-made copy older than this was left by a crash; the next duplicate removes it.
+const STALE_COPY_MS: u64 = 10 * 60 * 1000;
+
+/// Remove `.atlas-copy-<ms>-<n>` folders a crashed duplicate left behind. Young ones (another
+/// duplicate may be running) and names that do not parse are left alone.
+fn remove_stale_copies(skills: &Path) {
+    let Ok(rd) = fs::read_dir(skills) else { return };
+    let now = now_ms();
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let Some(rest) = name.strip_prefix(COPY_PREFIX) else { continue };
+        let Some(ms) = rest.split('-').next().and_then(|s| s.parse::<u64>().ok()) else { continue };
+        let path = e.path();
+        if now.saturating_sub(ms) > STALE_COPY_MS && e.file_type().is_ok_and(|t| t.is_dir()) && check_write_allowed(&path).is_ok() {
+            let _ = fs::remove_dir_all(&path);
+        }
+    }
 }
 
 const SKILL_FILES_MAX: usize = 80;
@@ -398,19 +440,25 @@ fn walk_skill(dir: &Path, rel: &str, depth: usize, out: &mut Vec<SkillFile>) {
     }
 }
 
+/// (file count, bytes) of what `copy_tree` will actually copy: links out of the folder do
+/// not count, because they are not copied.
 fn tree_size(p: &Path) -> (u64, u64) {
     let (mut files, mut bytes) = (0, 0);
+    let Ok(root) = fs::canonicalize(p) else { return (0, 0) };
     let mut stack = vec![p.to_path_buf()];
     while let Some(d) = stack.pop() {
         let Ok(rd) = fs::read_dir(&d) else { continue };
         for e in rd.flatten() {
-            match e.metadata() {
-                Ok(m) if m.is_dir() => stack.push(e.path()),
-                Ok(m) => {
+            let Ok(ft) = e.file_type() else { continue };
+            match copy_kind(&e.path(), &ft, &root) {
+                Ok(CopyKind::Dir) => stack.push(e.path()),
+                Ok(CopyKind::File) => {
+                    // `metadata` follows a link inside the folder, as the copy does.
                     files += 1;
-                    bytes += m.len();
+                    bytes += fs::metadata(e.path()).map(|m| m.len()).unwrap_or(0);
                 }
-                Err(_) => {}
+                // A folder link is refused by the copy itself.
+                Ok(CopyKind::Skip) | Err(_) => {}
             }
             if files > DUP_MAX_FILES || bytes > DUP_MAX_BYTES {
                 return (files, bytes);
@@ -434,12 +482,19 @@ pub fn safe_join(dir: &Path, rel: &str) -> Res<PathBuf> {
         }
         out.push(part);
     }
-    if let (Ok(real), Ok(base)) = (fs::canonicalize(&out), fs::canonicalize(dir))
+    inside(dir, &out)?;
+    Ok(out)
+}
+
+/// Refuses `file` when it resolves (through a link) to somewhere outside `dir`. A file that
+/// does not exist yet cannot be checked and passes; reading or writing it fails on its own.
+pub fn inside(dir: &Path, file: &Path) -> Res<()> {
+    if let (Ok(real), Ok(base)) = (fs::canonicalize(file), fs::canonicalize(dir))
         && !real.starts_with(&base)
     {
-        return Err(bad());
+        return Err(WriteError::Refused("That file is not inside this skill.".into()));
     }
-    Ok(out)
+    Ok(())
 }
 
 /// Sets `name:` in a SKILL.md's frontmatter (adds it when missing). Text with no
@@ -758,8 +813,45 @@ fn read_manifest(backups: &Path, id: &str) -> Res<(Manifest, PathBuf)> {
     Ok((m, dir))
 }
 
-/// Copy a file or folder tree. Symlinks are followed for files and skipped for folders.
+/// What a copy does with one thing found inside a folder it is copying.
+enum CopyKind {
+    Dir,
+    File,
+    /// Left out: a link to something outside the folder (a key, a token file), a link that
+    /// leads nowhere, or something that is neither a file nor a folder.
+    Skip,
+}
+
+/// Decides what copying `p` does. `root` is the canonical folder being copied. A link to a
+/// file inside it is copied as that file; a link to a folder is refused; a link out of `root`
+/// is never followed. The size check and the checksum use this too, so all three agree.
+fn copy_kind(p: &Path, ft: &fs::FileType, root: &Path) -> io::Result<CopyKind> {
+    if ft.is_symlink() {
+        let Ok(real) = fs::canonicalize(p) else { return Ok(CopyKind::Skip) };
+        if !real.starts_with(root) {
+            return Ok(CopyKind::Skip);
+        }
+        if real.is_dir() {
+            return Err(io::Error::other("a folder link inside this folder"));
+        }
+        return Ok(if real.is_file() { CopyKind::File } else { CopyKind::Skip });
+    }
+    Ok(if ft.is_dir() {
+        CopyKind::Dir
+    } else if ft.is_file() {
+        CopyKind::File
+    } else {
+        CopyKind::Skip
+    })
+}
+
+/// Copy a file or folder tree (never following a link out of the tree; see `copy_kind`).
 fn copy_tree(src: &Path, dst: &Path, depth: usize) -> io::Result<()> {
+    let root = fs::canonicalize(src)?;
+    copy_inside(src, dst, depth, &root)
+}
+
+fn copy_inside(src: &Path, dst: &Path, depth: usize, root: &Path) -> io::Result<()> {
     let md = fs::metadata(src)?;
     if md.is_dir() {
         if depth > 24 {
@@ -768,11 +860,10 @@ fn copy_tree(src: &Path, dst: &Path, depth: usize) -> io::Result<()> {
         fs::create_dir_all(dst)?;
         for e in fs::read_dir(src)? {
             let e = e?;
-            let ft = e.file_type()?;
-            if ft.is_symlink() && fs::metadata(e.path()).is_ok_and(|m| m.is_dir()) {
-                return Err(io::Error::other("a folder link inside this folder"));
+            if matches!(copy_kind(&e.path(), &e.file_type()?, root)?, CopyKind::Skip) {
+                continue;
             }
-            copy_tree(&e.path(), &dst.join(e.file_name()), depth + 1)?;
+            copy_inside(&e.path(), &dst.join(e.file_name()), depth + 1, root)?;
         }
     } else {
         let bytes = fs::read(src)?;
@@ -790,12 +881,15 @@ fn copy_tree(src: &Path, dst: &Path, depth: usize) -> io::Result<()> {
 
 /// (file count, a hash over names and bytes) of a file or folder.
 fn tree_digest(p: &Path) -> io::Result<(u64, u64)> {
-    fn walk(p: &Path, rel: &str, files: &mut u64, h: &mut u64) -> io::Result<()> {
+    fn walk(p: &Path, rel: &str, files: &mut u64, h: &mut u64, root: &Path) -> io::Result<()> {
         if fs::metadata(p)?.is_dir() {
             let mut names: Vec<_> = fs::read_dir(p)?.collect::<Result<Vec<_>, _>>()?;
             names.sort_by_key(|e| e.file_name());
             for e in names {
-                walk(&e.path(), &format!("{rel}/{}", e.file_name().to_string_lossy()), files, h)?;
+                if matches!(copy_kind(&e.path(), &e.file_type()?, root)?, CopyKind::Skip) {
+                    continue;
+                }
+                walk(&e.path(), &format!("{rel}/{}", e.file_name().to_string_lossy()), files, h, root)?;
             }
         } else {
             *files += 1;
@@ -806,7 +900,8 @@ fn tree_digest(p: &Path) -> io::Result<(u64, u64)> {
         Ok(())
     }
     let (mut files, mut h) = (0, 0xcbf29ce484222325);
-    walk(p, "", &mut files, &mut h)?;
+    let root = fs::canonicalize(p)?;
+    walk(p, "", &mut files, &mut h, &root)?;
     Ok((files, h))
 }
 
@@ -1085,9 +1180,17 @@ pub fn apply_save(plan: &SavePlan, text: &str, expected_stamp: &str, force: bool
         match &plan.unit {
             Unit::Path { path, .. } => {
                 let old = fs::read(path)?;
+                // The stamp was checked a moment ago; check what is about to be backed up too.
+                if !force && stamp_of(&old) != expected_stamp {
+                    return Err(WriteError::Conflict);
+                }
                 fs::write(dir.join("file-before"), &old)?;
                 let bytes = encode_like(text, current.bom, current.crlf);
                 write_manifest(&dir, &save_manifest(&id, plan, path))?;
+                // Last look before the swap: the backup must be of exactly what is replaced.
+                if fs::read(path)? != old {
+                    return Err(WriteError::Conflict);
+                }
                 atomic_write(path, &bytes)?;
                 let back = fs::read(path)?;
                 if back != bytes {

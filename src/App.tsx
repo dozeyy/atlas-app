@@ -3,6 +3,7 @@ import { WarningCircle } from "@phosphor-icons/react";
 import { useSidebar } from "./lib/useSidebar";
 import { NAV, Sidebar } from "./components/Sidebar";
 import { CommandPalette } from "./components/CommandPalette";
+import { LeaveGuard } from "./components/LeaveGuard";
 import { TitleBar } from "./components/TitleBar";
 import { openPalette } from "./state/paletteStore";
 import { refreshPaletteData } from "./lib/usePaletteData";
@@ -45,8 +46,10 @@ export function App() {
         // An editor that took Ctrl+K for itself keeps it.
         if (e.defaultPrevented) return;
         // Not over another dialog (the quick jump's own panel is the one dialog that may be up).
+        // A side sheet marked data-allow-jump (the Toolkit item sheet) may be left by a jump;
+        // the unsaved-edit guard still asks first.
         const over = Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"]')).some(
-          (d) => !d.closest(".qj-root"),
+          (d) => !d.closest(".qj-root") && !d.hasAttribute("data-allow-jump"),
         );
         if (over) return;
         e.preventDefault();
@@ -108,6 +111,7 @@ export function App() {
         </main>
       </div>
       <CommandPalette />
+      <LeaveGuard />
       <ToastHost />
       <TipLayer />
     </div>

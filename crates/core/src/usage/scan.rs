@@ -238,6 +238,7 @@ pub fn plan(
     projects_dir: &Path,
     mode: &Mode,
     now_secs: i64,
+    cancel: &std::sync::atomic::AtomicBool,
 ) -> rusqlite::Result<Plan> {
     let (found, only, force): (Vec<Found>, Option<Vec<String>>, bool) = match mode {
         Mode::All { force_reparse } => {
@@ -268,6 +269,12 @@ pub fn plan(
             "INSERT INTO files(path, fs_id, head_hash, session_id, is_subagent, last_seen_at) VALUES(?1,?2,?3,?4,?5,?6)",
         )?;
         for f in &found {
+            // A stop request lands here within one file's open + hash. Returning drops
+            // the transaction (rolls back), so nothing is half-planned and no row is
+            // wrongly marked missing; the next pass plans it all again.
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return Ok(Plan::default());
+            }
             let k = key(&f.path);
             let existing = rows.remove(&k);
             if let Some(row) = &existing

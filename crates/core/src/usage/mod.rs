@@ -1001,7 +1001,7 @@ impl Core {
         let mut owned = self.conn.take().expect("checked above");
         let conn = &mut owned;
 
-        let plan = match scan::plan(conn, &projects, &mode, secs) {
+        let plan = match scan::plan(conn, &projects, &mode, secs, &shared.cancel) {
             Ok(p) => p,
             Err(e) => {
                 self.conn = Some(owned);

@@ -93,9 +93,13 @@ fn main() {
             commands::clear_config_dir,
             commands::open_config_dir,
             commands::open_data_dir,
+            commands::uninstall_available,
+            commands::uninstall_atlas,
             commands::frontend_ready,
             commands::window_control,
             commands::window_maximized,
+            commands::set_unsaved,
+            commands::leave_app,
             usage::usage_status,
             usage::usage_dashboard,
             usage::usage_timeline,
@@ -157,7 +161,13 @@ fn main() {
             WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
                 let state = window.state::<Arc<AppState>>();
                 let tray = window.try_state::<tray::Tray>().is_some();
-                if cfg!(target_os = "macos") || (state.close_to_tray() && tray) {
+                let hides = cfg!(target_os = "macos") || (state.close_to_tray() && tray);
+                // The close would end Atlas while an editor holds edits that are not saved:
+                // keep the window and let the page ask. (Hiding loses nothing.)
+                if crate::state::Leave::Ask == state.leave_decision(!hides) {
+                    api.prevent_close();
+                    tray::ask_quit(window.app_handle());
+                } else if hides {
                     api.prevent_close();
                     let _ = window.hide();
                     state.usage.focus(false);
@@ -235,6 +245,19 @@ fn main() {
                 }
             });
 
+            // The Atlas installer asks a running Atlas to leave through this (the window's close
+            // button only hides it when close-to-tray is on). It runs the normal quit: the same
+            // path as the tray's Quit, so the cache is closed cleanly on the way out.
+            if let Ok(exe) = std::env::current_exe() {
+                let handle = app.handle().clone();
+                if !atlas_core::quit_signal::listen(&exe, move || {
+                    eprintln!("[atlas] quit requested by the installer");
+                    handle.exit(0);
+                }) {
+                    eprintln!("[atlas] quit signal: not available");
+                }
+            }
+
             // Failsafe: never leave the window invisible if the page fails to load.
             let w = window.clone();
             std::thread::spawn(move || {
@@ -271,6 +294,12 @@ fn main() {
         .expect("error while building Atlas");
 
     app.run(move |handle, event| match event {
+        // Cmd+Q / the last window closing, with edits not saved: hold it back and let the page ask.
+        // (A quit the program asks for itself, `exit(code)`, is not held back here.)
+        RunEvent::ExitRequested { api, code: None, .. } if state.has_unsaved() => {
+            api.prevent_exit();
+            tray::ask_quit(handle);
+        }
         RunEvent::Exit => {
             tray::remove(handle);
             state.shutdown();

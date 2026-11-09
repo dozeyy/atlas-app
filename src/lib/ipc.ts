@@ -69,6 +69,7 @@ export const USAGE_CHANGED_EVENT = "atlas://usage/changed";
 export const SEARCH_STATUS_EVENT = "atlas://search/status";
 export const NOW_UPDATE_EVENT = "atlas://now/update";
 export const NOW_FINISHED_EVENT = "atlas://now/finished";
+export const QUIT_ASK_EVENT = "atlas://quit-ask";
 export const UPDATE_PROGRESS_EVENT = "atlas://update/progress";
 
 export type Unlisten = () => void;
@@ -100,10 +101,20 @@ export interface Backend {
   openConfigDir(): Promise<void>;
   /** Shows Atlas's own data folder in the file manager. */
   openDataDir(): Promise<void>;
+  /** Whether an uninstaller sits beside this Atlas (a real Windows install, not a dev run). */
+  uninstallAvailable(): Promise<boolean>;
+  /** Starts the uninstaller on its own; it asks Atlas to quit once the person says yes there. */
+  uninstallAtlas(): Promise<void>;
   frontendReady(): Promise<void>;
   /** The page draws the title bar, so the caption buttons ask Rust to act on the window. */
   windowControl(action: "minimize" | "toggle-maximize" | "close"): Promise<void>;
   windowMaximized(): Promise<boolean>;
+  /** Tells Rust whether an editor holds edits that are not saved, so a close or quit can ask first. */
+  setUnsaved(on: boolean): Promise<void>;
+  /** Rust held back a quit because of unsaved edits; the page asks, and `leaveApp` carries it out. */
+  onQuitAsk(cb: () => void): Promise<Unlisten>;
+  /** Quit now (after the user chose Discard). */
+  leaveApp(): Promise<void>;
   onInfo(cb: (info: AppInfo) => void): Promise<() => void>;
 
   // Usage engine. Every call is async; none blocks the page.
@@ -209,11 +220,16 @@ const tauriBackend: Backend = {
   clearConfigDir: () => invoke<AppInfo>("clear_config_dir"),
   openConfigDir: () => invoke<void>("open_config_dir"),
   openDataDir: () => invoke<void>("open_data_dir"),
+  uninstallAvailable: () => invoke<boolean>("uninstall_available"),
+  uninstallAtlas: () => invoke<void>("uninstall_atlas"),
   frontendReady: async () => {
     await invoke("frontend_ready");
   },
   windowControl: (action) => invoke<void>("window_control", { action }),
   windowMaximized: () => invoke<boolean>("window_maximized"),
+  setUnsaved: (on) => invoke<void>("set_unsaved", { on }),
+  onQuitAsk: (cb) => listen<null>(QUIT_ASK_EVENT, () => cb()),
+  leaveApp: () => invoke<void>("leave_app"),
   onInfo: async (cb) => {
     const off = await listen<AppInfo>(INFO_EVENT, (e) => cb(e.payload));
     return off;
