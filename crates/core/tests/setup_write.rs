@@ -270,6 +270,129 @@ fn deleting_a_hook_refuses_when_another_hook_now_sits_at_its_position() {
     assert_eq!(fs::read(&sp).unwrap(), changed, "neither hook was removed");
 }
 
+fn user_hook<'a>(d: &'a Discovery, event: &str) -> &'a SetupItem {
+    d.snapshot
+        .items
+        .iter()
+        .find(|i| i.kind == ItemKind::Hook && i.scope == ScopeKind::User && i.path.as_deref().is_some_and(|p| p.ends_with("settings.json")) && i.chips.first().is_some_and(|c| c == event))
+        .unwrap_or_else(|| panic!("no user {event} hook"))
+}
+
+/// Put a new PreToolUse group in front of the existing one, as Claude Code or the user might.
+fn insert_group_in_front(sp: &Path) -> Vec<u8> {
+    let mut v: serde_json::Value = serde_json::from_slice(&fs::read(sp).unwrap()).unwrap();
+    let other = serde_json::json!({ "matcher": "Edit", "hooks": [{ "type": "command", "command": "echo someone else" }] });
+    v["hooks"]["PreToolUse"].as_array_mut().unwrap().insert(0, other);
+    let changed = serde_json::to_vec_pretty(&v).unwrap();
+    fs::write(sp, &changed).unwrap();
+    changed
+}
+
+fn commands(sp: &Path, event: &str) -> Vec<String> {
+    let v: serde_json::Value = serde_json::from_slice(&fs::read(sp).unwrap()).unwrap();
+    v["hooks"][event]
+        .as_array()
+        .map(|groups| groups.iter().flat_map(|g| g["hooks"].as_array().unwrap().iter().map(|h| h["command"].as_str().unwrap().to_string())).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn deleting_a_hook_after_a_rescan_removes_the_hook_the_user_picked_not_the_one_now_at_its_index() {
+    // The app's real order: the page shows scan 1, the file changes, the watcher rescans
+    // (scan 2), then the delete builds its plan from scan 2 with the id from scan 1.
+    let fx = Fx::new();
+    let sp = fx.claude().join("settings.json");
+    let picked = user_hook(&fx.discover(), "PreToolUse").id.clone();
+    insert_group_in_front(&sp);
+    let d2 = fx.discover();
+    apply_delete(&d2.delete_plan(&picked).unwrap(), &fx.backups).unwrap();
+    let left = commands(&sp, "PreToolUse");
+    assert_eq!(left, vec!["echo someone else".to_string()], "the other hook stays, the picked one is gone");
+}
+
+#[test]
+fn a_hook_changed_on_disk_after_the_page_loaded_is_not_found_by_its_old_id() {
+    let fx = Fx::new();
+    let sp = fx.claude().join("settings.json");
+    let picked = user_hook(&fx.discover(), "Stop").id.clone();
+    let mut v: serde_json::Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    v["hooks"]["Stop"][0]["hooks"][0]["command"] = serde_json::json!("echo changed");
+    let changed = serde_json::to_vec_pretty(&v).unwrap();
+    fs::write(&sp, &changed).unwrap();
+    let d2 = fx.discover();
+    assert!(d2.delete_plan(&picked).is_err(), "a stale id must not resolve");
+    assert!(d2.save_plan(&picked).is_err());
+    assert_eq!(fs::read(&sp).unwrap(), changed);
+}
+
+#[test]
+fn hook_ids_stay_the_same_across_rescans_of_an_unchanged_file() {
+    let fx = Fx::new();
+    let ids = |d: &Discovery| {
+        let mut v: Vec<String> = d.snapshot.items.iter().filter(|i| i.kind == ItemKind::Hook).map(|i| i.id.clone()).collect();
+        v.sort();
+        v
+    };
+    let (a, b) = (ids(&fx.discover()), ids(&fx.discover()));
+    assert!(!a.is_empty());
+    assert_eq!(a, b);
+    let mut dedup = a.clone();
+    dedup.dedup();
+    assert_eq!(dedup, a, "ids are unique");
+}
+
+#[test]
+fn two_identical_hooks_get_different_ids_and_deleting_one_keeps_the_other() {
+    let fx = Fx::new();
+    let sp = fx.claude().join("settings.json");
+    let mut v: serde_json::Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    let copy = v["hooks"]["Stop"][0].clone();
+    v["hooks"]["Stop"].as_array_mut().unwrap().push(copy);
+    fs::write(&sp, serde_json::to_vec_pretty(&v).unwrap()).unwrap();
+    let d = fx.discover();
+    let stops: Vec<&SetupItem> = d.snapshot.items.iter().filter(|i| i.kind == ItemKind::Hook && i.scope == ScopeKind::User && i.chips.first().is_some_and(|c| c == "Stop")).collect();
+    assert_eq!(stops.len(), 2);
+    assert_ne!(stops[0].id, stops[1].id);
+    apply_delete(&d.delete_plan(&stops[1].id).unwrap(), &fx.backups).unwrap();
+    assert_eq!(commands(&sp, "Stop"), vec!["echo done".to_string()]);
+}
+
+#[test]
+fn saving_a_hook_after_a_rescan_edits_the_hook_the_user_opened() {
+    let fx = Fx::new();
+    let sp = fx.claude().join("settings.json");
+    let d1 = fx.discover();
+    let picked = user_hook(&d1, "PreToolUse").id.clone();
+    let raw = d1.read_raw(&picked, true).unwrap();
+    insert_group_in_front(&sp);
+    let d2 = fx.discover();
+    let plan = d2.save_plan(&picked).unwrap();
+    let edited = raw.text.replace("--check", "--fix");
+    assert_ne!(edited, raw.text);
+    apply_save(&plan, &edited, &raw.stamp, false, &fx.backups).unwrap();
+    let cmds = commands(&sp, "PreToolUse");
+    assert_eq!(cmds.len(), 2);
+    assert_eq!(cmds[0], "echo someone else", "the hook that moved in front is untouched");
+    assert!(cmds[1].ends_with("--fix"), "{cmds:?}");
+}
+
+#[test]
+fn a_forced_hook_save_never_overwrites_a_different_hook_that_moved_into_its_place() {
+    // The plan is made before the file changes (the window between the last scan and the
+    // write); the user then chooses "overwrite". The other hook must survive.
+    let fx = Fx::new();
+    let sp = fx.claude().join("settings.json");
+    let d = fx.discover();
+    let picked = user_hook(&d, "PreToolUse").id.clone();
+    let raw = d.read_raw(&picked, true).unwrap();
+    let plan = d.save_plan(&picked).unwrap();
+    let changed = insert_group_in_front(&sp);
+    let edited = raw.text.replace("--check", "--fix");
+    let err = apply_save(&plan, &edited, &raw.stamp, true, &fx.backups).unwrap_err();
+    assert!(matches!(&err, WriteError::Refused(m) if m.contains("moved")), "{err:?}");
+    assert_eq!(fs::read(&sp).unwrap(), changed, "nothing was written");
+}
+
 #[test]
 fn deleting_a_hook_that_has_not_moved_still_works_after_an_unrelated_edit() {
     let fx = Fx::new();
@@ -572,9 +695,9 @@ fn debug_builds_refuse_delete_save_undo_and_create_against_the_real_config() {
         let err = apply_delete(p, backups.path()).unwrap_err();
         assert!(matches!(&err, WriteError::Refused(m) if m.contains("refused")), "{err:?}");
     }
-    let save = SavePlan { id: "x".into(), name: "ghost".into(), kind: ItemKind::Skill, unit: Unit::Path { path: ghost_file.clone(), is_dir: false }, folder_name: None, language: "markdown".into() };
+    let save = SavePlan { id: "x".into(), name: "ghost".into(), kind: ItemKind::Skill, unit: Unit::Path { path: ghost_file.clone(), is_dir: false }, folder_name: None, language: "markdown".into(), expect: None };
     assert!(matches!(apply_save(&save, "hello", "0", true, backups.path()).unwrap_err(), WriteError::Refused(m) if m.contains("refused")));
-    let save_json = SavePlan { id: "x".into(), name: "ghost".into(), kind: ItemKind::McpServer, unit: Unit::Entry { file: ghost_json, pointer: vec!["mcpServers".into(), "atlas-guard-test".into()] }, folder_name: None, language: "json".into() };
+    let save_json = SavePlan { id: "x".into(), name: "ghost".into(), kind: ItemKind::McpServer, unit: Unit::Entry { file: ghost_json, pointer: vec!["mcpServers".into(), "atlas-guard-test".into()] }, folder_name: None, language: "json".into(), expect: None };
     assert!(matches!(apply_save(&save_json, "{\"command\": \"x\"}", "0", true, backups.path()).unwrap_err(), WriteError::Refused(m) if m.contains("refused")));
 
     // Create, aimed at the real folder.

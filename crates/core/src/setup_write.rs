@@ -62,7 +62,7 @@ fn strip_bom_and_eol(s: &str) -> (String, bool, bool) {
 }
 
 const EDIT_CAP: u64 = 1024 * 1024;
-const NOT_UTF8: &str = "This file is not plain UTF-8 text, so Atlas shows it read only: saving it here could change bytes you did not touch.";
+const NOT_UTF8: &str = "This file is not plain UTF-8 text, so Atlas does not open it for editing: saving it here could change bytes you did not touch.";
 
 // ---------------------------------------------------------------------------
 // Errors and outcomes
@@ -75,7 +75,8 @@ pub enum WriteError {
     /// The file changed on disk since the editor opened it.
     Conflict,
     /// The change did not fully go through after the disk was already touched. The
-    /// backup is kept and listed with the others, so Undo can still put things back.
+    /// backup is kept (never deleted on this path) and the message says where it is on
+    /// disk, because the app has no screen that lists backups yet.
     Kept { backup_id: String, message: String },
     Io(io::Error),
 }
@@ -171,12 +172,18 @@ pub struct SavePlan {
     /// For skills: the folder name the frontmatter name must equal.
     pub folder_name: Option<String>,
     pub language: String,
+    /// For an entry addressed by its position (a hook): its value when the scan saw
+    /// it. The save is refused, even when forced, if something else sits there now.
+    pub expect: Option<Value>,
 }
 
 impl Discovery {
     fn plan_unit(&self, id: &str) -> Res<(SetupItem, SourceRef, Capability)> {
-        let item = self.item(id).cloned().ok_or_else(|| WriteError::Refused("Unknown item. Refresh the page and try again.".into()))?;
-        let src = self.sources.get(id).cloned().ok_or_else(|| WriteError::Refused("Unknown item. Refresh the page and try again.".into()))?;
+        // Hook ids name the hook's content, so a hook that was changed or removed on disk since
+        // the page loaded is not found here (rather than another hook at the same position).
+        const GONE: &str = "Atlas can't find this as it was: it was changed or removed since the page loaded. Nothing was changed. Refresh the page and try again.";
+        let item = self.item(id).cloned().ok_or_else(|| WriteError::Refused(GONE.into()))?;
+        let src = self.sources.get(id).cloned().ok_or_else(|| WriteError::Refused(GONE.into()))?;
         let cap = capability(&item, Some(&src));
         Ok((item, src, cap))
     }
@@ -217,7 +224,7 @@ impl Discovery {
             SourceRef::JsonEntry { file, pointer } => (Unit::Entry { file: file.clone(), pointer: pointer.clone() }, "json".to_string(), None),
             SourceRef::Text(_) => return refuse("There is no file on this computer to edit."),
         };
-        Ok(SavePlan { id: id.to_string(), name: item.name.clone(), kind: item.kind, unit, folder_name, language })
+        Ok(SavePlan { id: id.to_string(), name: item.name.clone(), kind: item.kind, unit, folder_name, language, expect: self.entry_values.get(id).cloned() })
     }
 
     /// The raw (unmasked) text for the editor. Only for items Atlas may edit.
@@ -560,10 +567,18 @@ fn copy_tree(src: &Path, dst: &Path, depth: usize) -> io::Result<()> {
             }
         // Keep the mode bits (last, so a read-only mode cannot block the line above),
         // so a script stays executable after a backup and an undo.
-        #[cfg(unix)]
-        fs::set_permissions(dst, md.permissions())?;
+        keep_mode(dst, &md);
     }
     Ok(())
+}
+
+/// Copy the Unix mode bits onto `dst`, best effort: some volumes (exFAT, SMB, FUSE)
+/// refuse chmod, and the bytes are what must not be lost. Never fails the caller.
+fn keep_mode(_dst: &Path, _md: &fs::Metadata) {
+    #[cfg(unix)]
+    {
+        let _ = fs::set_permissions(_dst, _md.permissions());
+    }
 }
 
 /// (file count, a hash over names and bytes) of a file or folder.
@@ -647,9 +662,14 @@ pub fn apply_delete(plan: &DeletePlan, backups: &Path) -> Res<DeleteOutcome> {
                 manifest.incomplete = Some(true);
                 let _ = write_manifest(&dir, &manifest);
                 let message = if put_back || !md.is_dir() {
-                    format!("Atlas could not remove {} ({e}). Nothing is lost: it is still there, and the backup is kept in History.", plan.name)
+                    format!("Atlas could not remove {} ({e}). Nothing is lost: it is still there, and a full copy is kept in {}.", plan.name, payload.display())
                 } else {
-                    format!("Atlas could not remove all of {} ({e}) and could not put everything back. The backup is kept in History: Undo puts back what is missing.", plan.name)
+                    format!(
+                        "Atlas could not remove all of {} ({e}) and could not put everything back. Nothing is lost: every file is kept in {}. Copy what is missing from there back into {}.",
+                        plan.name,
+                        copy.display(),
+                        path.display()
+                    )
                 };
                 return Err(WriteError::Kept { backup_id: id, message });
             }
@@ -703,9 +723,16 @@ pub fn apply_delete(plan: &DeletePlan, backups: &Path) -> Res<DeleteOutcome> {
                 return refuse("The file changed while Atlas was getting ready. Nothing was deleted; please try again.");
             }
             atomic_write(file, &after)?;
-            let check = fs::read(file)?;
-            if check != after {
-                return refuse("Claude changed the file at the same moment, so the delete may not have stuck. Please check and try again.");
+            after_write(file);
+            // The file is replaced now: from here the backup holds the only copy of the old file.
+            if fs::read(file).ok().as_deref() != Some(&after[..]) {
+                return Err(WriteError::Kept {
+                    backup_id: id,
+                    message: format!(
+                        "Claude changed the file at the same moment, so the delete may not have stuck. Please check the file. The file as it was before is kept in {}.",
+                        dir.join("file-before").display()
+                    ),
+                });
             }
             let note = reformatted.then(|| "The file's spacing was tidied while saving.".to_string());
             Ok(DeleteOutcome { backup_id: id, name: plan.name.clone(), kind: plan.kind.as_str().into(), note })
@@ -793,8 +820,9 @@ fn restore_path(payload_copy: &Path, dest: &Path, is_dir: bool) -> Res<()> {
             && let Ok(f) = fs::OpenOptions::new().write(true).open(dest) {
                 let _ = f.set_modified(t);
             }
-        #[cfg(unix)]
-        fs::set_permissions(dest, fs::metadata(payload_copy)?.permissions())?;
+        if let Ok(md) = fs::metadata(payload_copy) {
+            keep_mode(dest, &md);
+        }
     }
     Ok(())
 }
@@ -957,6 +985,12 @@ pub fn apply_save(plan: &SavePlan, text: &str, expected_stamp: &str, force: bool
                 fs::write(dir.join("file-before"), &before)?;
                 let style = detect_style(&before);
                 let mut root = parse_json_bytes(&before).map_err(|e| WriteError::Refused(format!("The file can't be read as JSON ({e}).")))?;
+                // A hook is addressed by its position: never write over a different hook that moved
+                // into it, not even when the user chose to overwrite a change.
+                if let Some(want) = &plan.expect
+                    && navigate(&root, pointer) != Some(want) {
+                        return refuse("This hook changed or moved in the file since you opened it, so nothing was saved. Close the editor, refresh the page and open it again.");
+                    }
                 let new_entry: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| WriteError::Refused(format!("Not valid JSON: {e}")))?;
                 *navigate_mut(&mut root, pointer).ok_or_else(|| WriteError::Refused("This entry is gone.".into()))? = new_entry.clone();
                 let after = render_json(&root, &style);
@@ -978,7 +1012,7 @@ pub fn apply_save(plan: &SavePlan, text: &str, expected_stamp: &str, force: bool
     match outcome {
         Err(e) if replaced => Err(WriteError::Kept {
             backup_id: id,
-            message: format!("{} The version from before this save is kept in History.", e.message()),
+            message: format!("{} The version from before this save is kept in {}.", e.message(), dir.join("file-before").display()),
         }),
         Err(e) => {
             // Nothing was changed; the half-made backup is only clutter.
@@ -1390,7 +1424,10 @@ mod tests {
         let err = apply_delete(&delete_plan(&dir), &backups).unwrap_err();
         FAIL_REMOVE.with(|c| c.set(None));
         let WriteError::Kept { backup_id, message } = err else { panic!("{err:?}") };
-        assert!(message.contains("Undo"), "{message}");
+        // The app has no backups screen yet: the message must say where the files are on disk.
+        let copy = backups.join(&backup_id).join("payload").join("demo");
+        assert!(message.contains(&copy.display().to_string()), "{message}");
+        assert!(!message.contains("History") && !message.contains("Undo"), "{message}");
         // While something else sits in the folder, Undo refuses and adds nothing.
         let partial = files(&dir);
         assert!(restore(&backups, &backup_id).is_err());
@@ -1402,7 +1439,7 @@ mod tests {
     }
 
     fn save_plan(path: &Path) -> SavePlan {
-        SavePlan { id: "x".into(), name: "a".into(), kind: ItemKind::Agent, unit: Unit::Path { path: path.to_path_buf(), is_dir: false }, folder_name: None, language: "markdown".into() }
+        SavePlan { id: "x".into(), name: "a".into(), kind: ItemKind::Agent, unit: Unit::Path { path: path.to_path_buf(), is_dir: false }, folder_name: None, language: "markdown".into(), expect: None }
     }
 
     fn agent_file(root: &Path, text: &str) -> PathBuf {
@@ -1423,9 +1460,53 @@ mod tests {
         AFTER_WRITE.with(|c| c.set(Some(|p: &Path| fs::write(p, "someone else\n").unwrap())));
         let r = apply_save(&plan, "my edit\n", &stamp, false, &backups);
         AFTER_WRITE.with(|c| c.set(None));
-        assert!(r.is_err(), "the failed check is reported");
+        let Err(WriteError::Kept { backup_id, message }) = r else { panic!("{r:?}") };
         let kept = list_backups(&backups);
         assert_eq!(kept.len(), 1, "the version from before the save is kept and listed");
-        assert_eq!(fs::read(backups.join(&kept[0].0).join("file-before")).unwrap(), b"the old version\n");
+        assert_eq!(kept[0].0, backup_id);
+        let before = backups.join(&kept[0].0).join("file-before");
+        assert_eq!(fs::read(&before).unwrap(), b"the old version\n");
+        assert!(message.contains(&before.display().to_string()) && !message.contains("History"), "{message}");
+    }
+
+    #[test]
+    fn an_entry_delete_whose_check_fails_after_the_file_was_replaced_keeps_the_backup() {
+        let t = tempfile::tempdir().unwrap();
+        let p = t.path().join("claude").join("settings.json");
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let old = b"{\n  \"mcpServers\": {\n    \"a\": { \"command\": \"x\" }\n  },\n  \"model\": \"m\"\n}\n";
+        fs::write(&p, old).unwrap();
+        let backups = t.path().join("backups");
+        let plan = DeletePlan {
+            id: "x".into(),
+            name: "a".into(),
+            kind: ItemKind::McpServer,
+            unit: Unit::Entry { file: p.clone(), pointer: vec!["mcpServers".into(), "a".into()] },
+            expect: None,
+        };
+        AFTER_WRITE.with(|c| c.set(Some(|p: &Path| fs::write(p, "{}\n").unwrap())));
+        let r = apply_delete(&plan, &backups);
+        AFTER_WRITE.with(|c| c.set(None));
+        let Err(WriteError::Kept { backup_id, message }) = r else { panic!("{r:?}") };
+        let before = backups.join(&backup_id).join("file-before");
+        assert_eq!(fs::read(&before).unwrap(), old, "the old file is kept");
+        assert!(message.contains(&before.display().to_string()), "{message}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keeping_the_mode_never_fails_its_caller() {
+        use std::os::unix::fs::PermissionsExt;
+        // keep_mode never fails its caller, whatever set_permissions says.
+        let t = tempfile::tempdir().unwrap();
+        let src = t.path().join("src.sh");
+        fs::write(&src, "x").unwrap();
+        fs::set_permissions(&src, fs::Permissions::from_mode(0o755)).unwrap();
+        let md = fs::metadata(&src).unwrap();
+        keep_mode(&t.path().join("not-there"), &md);
+        let dst = t.path().join("dst.sh");
+        fs::write(&dst, "x").unwrap();
+        keep_mode(&dst, &md);
+        assert_eq!(fs::metadata(&dst).unwrap().permissions().mode() & 0o777, 0o755);
     }
 }

@@ -1,6 +1,7 @@
 //! Settings files and everything they define: hooks, permission rules, the
 //! status line, hook scripts, and the "is it on?" state of items.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -176,6 +177,8 @@ impl Build<'_> {
     pub(crate) fn add_hooks(&mut self, h: &Value, file: &Path, scope: &ScopeCtx, base_ptr: &str, in_json: bool) {
         let Value::Object(events) = h else { return };
         let base: Vec<String> = base_ptr.split('/').filter(|s| !s.is_empty()).map(str::to_string).collect();
+        // How many identical hooks (same event, matcher and JSON) came before, for the id.
+        let mut seen_same: HashMap<String, usize> = HashMap::new();
         for (event, arr) in events {
             let Value::Array(groups) = arr else { continue };
             for (gi, g) in groups.iter().enumerate() {
@@ -200,6 +203,19 @@ impl Build<'_> {
                         it.detail.push(DetailRow { label: if cmd.is_some() { "Command" } else { "Prompt" }.into(), value: truncate_chars(&redact_inline(body), 400) });
                     }
                     let ptr = format!("{base_ptr}/{event}/{gi}/hooks/{hi}");
+                    // A settings hook can be deleted or saved, and it lives at a position in an
+                    // array that Claude Code or the user can shift at any time. Its id names the
+                    // hook by what it is (event, matcher, its JSON and which identical copy), not by
+                    // its index: after a rescan the same id finds the same hook wherever it moved,
+                    // and an id from an older scan never lands on a different hook.
+                    let id_key = if in_json {
+                        let content = format!("{base_ptr}/{event}\u{1f}{}\u{1f}{}", g.get("matcher").map(Value::to_string).unwrap_or_default(), hd);
+                        let n = seen_same.entry(content.clone()).or_insert(0);
+                        *n += 1;
+                        format!("{content}\u{1f}{}", *n - 1)
+                    } else {
+                        ptr.clone()
+                    };
                     let src = if in_json {
                         let mut p = base.clone();
                         p.extend([event.clone(), gi.to_string(), "hooks".into(), hi.to_string()]);
@@ -207,10 +223,10 @@ impl Build<'_> {
                     } else {
                         SourceRef::File { path: file.to_path_buf() }
                     };
-                    let added = self.add(it, scope, file, &ptr, src);
+                    let added = self.add(it, scope, file, &id_key, src);
                     if let Some(i) = added
                         && in_json {
-                            // A hook is addressed by its position; remember which one sat there.
+                            // The write path re-checks that this exact hook still sits at the pointer.
                             self.entry_values.insert(self.items[i].id.clone(), hd.clone());
                         }
                     if let Some(i) = added
