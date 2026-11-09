@@ -69,17 +69,19 @@ export function ModelChip({ model, className = "" }: { model: string; className?
 interface Look {
   Icon: ComponentType<IconProps>;
   tone: string;
+  /** What the icon stands for, for the helper map's legend. */
+  label: string;
 }
 
-/** An icon and a color per kind of helper, so a row of them reads at a glance. */
+/** An icon and a color per kind of helper, so a row of them reads at a glance. The list and the map both use it. */
 export function agentLook(type: string | null): Look {
   const t = (type ?? "").toLowerCase();
-  if (/explor|search|research|find/.test(t)) return { Icon: Compass, tone: "bg-raised text-slate" };
-  if (/plan|architect/.test(t)) return { Icon: MapTrifold, tone: "bg-warning-tint text-warning" };
-  if (/review|audit/.test(t)) return { Icon: Eye, tone: "bg-success-tint text-success" };
-  if (/test|verif|qa/.test(t)) return { Icon: Flask, tone: "bg-success-tint text-success" };
-  if (/general|code|build|dev/.test(t)) return { Icon: Lightning, tone: "bg-accent-tint text-accent-text" };
-  return { Icon: Robot, tone: "bg-raised text-ink-2" };
+  if (/explor|search|research|find/.test(t)) return { Icon: Compass, tone: "bg-raised text-slate", label: "Explore" };
+  if (/plan|architect/.test(t)) return { Icon: MapTrifold, tone: "bg-warning-tint text-warning", label: "Plan" };
+  if (/review|audit/.test(t)) return { Icon: Eye, tone: "bg-success-tint text-success", label: "Review" };
+  if (/test|verif|qa/.test(t)) return { Icon: Flask, tone: "bg-success-tint text-success", label: "Test" };
+  if (/general|code|build|dev/.test(t)) return { Icon: Lightning, tone: "bg-accent-tint text-accent-text", label: "General purpose" };
+  return { Icon: Robot, tone: "bg-raised text-ink-2", label: "Other helper" };
 }
 
 export function AgentAvatar({ type, size = 40 }: { type: string | null; size?: number }) {

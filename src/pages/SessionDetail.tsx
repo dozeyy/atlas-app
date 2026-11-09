@@ -518,6 +518,7 @@ export function SessionDetailView({
   const resume = resumeCommand(id, row.projectPath, info.platform);
   const sessionUsd = row.cost.usd ?? 0;
   const names = new Map(agents.map((a) => [a.agentId, a.name]));
+  const helperTypes = new Map(agents.map((a) => [a.agentId, a.agentType]));
   const hasHelpers = agents.length > 0;
   const shownTab: Tab = tab === "helpers" && !hasHelpers ? "receipt" : tab;
 
@@ -642,7 +643,7 @@ export function SessionDetailView({
             <HelperList agents={agents} order={order} sessionId={id} sessionUsd={sessionUsd} names={names} onOpen={setAgentId} />
           ) : receipt.data ? (
             <div className="map-grid">
-              <HelperMap receipt={receipt.data} sessionId={id} selected={picked} onSelect={setPicked} />
+              <HelperMap receipt={receipt.data} sessionId={id} selected={picked} onSelect={setPicked} types={helperTypes} />
               <HelperSlice receipt={receipt.data} nodeId={picked} onOpenHelper={setAgentId} />
             </div>
           ) : receipt.error ? (

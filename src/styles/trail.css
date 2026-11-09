@@ -2191,6 +2191,10 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
   stroke-linejoin: round;
   pointer-events: none;
 }
+.map-icon {
+  color: var(--c, var(--ink-2));
+  pointer-events: none;
+}
 .map-glyph-fill {
   fill: var(--c, var(--ink-2));
   stroke: none;

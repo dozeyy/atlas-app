@@ -3,7 +3,7 @@ import type { KeyboardEvent, RefObject } from "react";
 import { MapGlyph } from "./MapGlyph";
 import { useIntro } from "../../lib/motion";
 import { layoutMap, MAIN_ID, pathTo, placePlate, ROOT_R, zoomFor, type MapNode, type Metric } from "../../lib/helperMap";
-import { FAMILIES, FAMILY_NAME, modelFamily, type ModelFamily } from "../../lib/modelFamily";
+import { agentLook } from "./helperKit";
 import { compact } from "../../lib/usage";
 import type { Outcome, Receipt } from "../../lib/types";
 
@@ -52,11 +52,12 @@ export function nodeDetail(n: MapNode): string {
   return n.outcome ? `${tokens}, ${OUTCOME_LABEL[n.outcome].toLowerCase()}` : tokens;
 }
 
-const glyphOf = (n: MapNode): ModelFamily | "chat" => (n.kind === "root" ? "chat" : modelFamily(n.thread?.model));
+/** A helper's look on the map: the same icon as its card in the list, by helper type. */
+const lookOf = (n: MapNode, types: Map<string, string | null>) => agentLook(types.get(n.thread?.agentId ?? "") ?? null);
 
 /**
  * The helper map: the main chat in the middle, each helper hanging from the thread that started
- * it. A bubble wears its model's icon and the colour of how it ended; its size follows its
+ * it. A bubble wears its helper type's icon (the same as in the list) and the colour of how it ended; its size follows its
  * tokens. Names show only on a plate when a bubble is pointed at or focused, placed where it
  * covers no other bubble. A big tree grows past the pane and the pane scrolls.
  */
@@ -65,11 +66,14 @@ export function HelperMap({
   sessionId,
   selected,
   onSelect,
+  types = new Map(),
 }: {
   receipt: Receipt;
   sessionId: string;
   selected: string | null;
   onSelect: (id: string) => void;
+  /** Helper type per agent id (from the session's helpers), for the icons. */
+  types?: Map<string, string | null>;
 }) {
   const intro = useIntro(`map:${sessionId}`);
   const [box, size] = useSize<HTMLDivElement>();
@@ -80,7 +84,7 @@ export function HelperMap({
   const zoom = useMemo(() => zoomFor(layout, size), [layout, size]);
   const lit = useMemo(() => pathTo(layout, hover ?? selected ?? MAIN_ID), [layout, hover, selected]);
   const present = new Set(layout.nodes.map((n) => n.outcome).filter((o): o is Outcome => o !== null));
-  const families = FAMILIES.filter((f) => layout.nodes.some((n) => n.kind === "helper" && modelFamily(n.thread?.model) === f));
+  const looks = [...new Map(layout.nodes.filter((n) => n.kind === "helper").map((n) => lookOf(n, types)).map((l) => [l.label, l])).values()];
 
   const plateNode = hover ? layout.nodes.find((n) => n.id === hover) : undefined;
   const plate = useMemo(() => {
@@ -132,7 +136,7 @@ export function HelperMap({
               ))}
             </g>
             {layout.nodes.map((n) => {
-              const kind = n.kind === "more" ? null : glyphOf(n);
+              const Icon = n.kind === "helper" ? lookOf(n, types).Icon : null;
               const glyphSize = n.kind === "root" ? 30 : Math.round(Math.min(26, n.r * 1.15));
               return (
                 <g key={n.id} transform={`translate(${n.x} ${n.y})`}>
@@ -154,8 +158,10 @@ export function HelperMap({
                     <circle className="map-ring" r={n.r + 6} />
                     <g className="map-body">
                       <circle className="map-dot" r={n.r} />
-                      {kind ? (
-                        <MapGlyph kind={kind} size={glyphSize} />
+                      {n.kind === "root" ? (
+                        <MapGlyph kind="chat" size={glyphSize} />
+                      ) : Icon ? (
+                        <Icon className="map-icon" x={-glyphSize / 2} y={-glyphSize / 2} size={glyphSize} weight="bold" aria-hidden="true" />
                       ) : (
                         <text className="map-plus" textAnchor="middle" dominantBaseline="central">
                           {`+${n.hidden.length}`}
@@ -188,12 +194,10 @@ export function HelperMap({
         </div>
       </div>
       <ul className="map-legend" aria-label="What the icons and colours mean">
-        {families.map((f) => (
-          <li key={f}>
-            <svg width={16} height={16} viewBox="-8 -8 16 16" aria-hidden="true" className="map-legend-glyph">
-              <MapGlyph kind={f} size={14} />
-            </svg>
-            {FAMILY_NAME[f]}
+        {looks.map(({ Icon, label }) => (
+          <li key={label}>
+            <Icon size={14} weight="bold" aria-hidden="true" className="map-legend-glyph" />
+            {label}
           </li>
         ))}
         {(["finished", "errored", "stopped"] as Outcome[])
