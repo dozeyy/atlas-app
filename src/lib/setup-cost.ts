@@ -86,6 +86,15 @@ export function windowLabel(report: CostReport): string {
   return report.windowDays === 1 ? "last day" : `last ${report.windowDays} days`;
 }
 
+/**
+ * The name a ranking row shows. Something that only loads in one project's chats carries that
+ * project's name ("CLAUDE.md · heavens-casino"), so two files with the same name never look alike.
+ */
+export function rowTitle(r: CostRow): string {
+  const project = /^Chats in (.+)$/.exec(r.loadsIn)?.[1];
+  return project ? `${r.name} · ${project}` : r.name;
+}
+
 /** "8.8k per message" */
 export function perMessage(r: CostRow): string {
   return `${compact(r.tokens)} per message`;

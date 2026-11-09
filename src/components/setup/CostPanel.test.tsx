@@ -56,10 +56,13 @@ describe("CostPanel", () => {
     expect(lis).toHaveLength(3);
     // Ranked by tokens over the window: tools 114M, then CLAUDE.md 107M, then the rule 62M.
     expect(lis[0]).toHaveTextContent("Other connected tools (19)");
-    expect(lis[0]).toHaveTextContent("114M /wk");
+    expect(lis[0]).toHaveTextContent("114M a week");
     expect(lis[0]).toHaveTextContent("Chats that connect them - 7.3k per message");
-    expect(lis[1]).toHaveTextContent("CLAUDE.md");
-    expect(lis[1]).toHaveTextContent("107M /wk");
+    // A project's file carries the project name in its title, so same-named files differ.
+    expect(lis[1]).toHaveTextContent("CLAUDE.md · heavens-casino");
+    expect(lis[1]).toHaveTextContent("107M a week");
+    expect(lis[2]).toHaveTextContent("agent-routing");
+    expect(lis[2]).not.toHaveTextContent("·");
     expect(lis[1]).toHaveTextContent("Chats in heavens-casino - 8.8k per message");
     expect(lis[2]).toHaveTextContent("All chats - 2.8k per message");
   });
@@ -82,7 +85,7 @@ describe("CostPanel", () => {
   it("opens an item that is in the setup, and leaves the rest as plain text", async () => {
     const onOpen = vi.fn();
     render(<CostPanel report={report(rows)} items={items} onOpen={onOpen} />);
-    await userEvent.click(screen.getByRole("button", { name: "CLAUDE.md" }));
+    await userEvent.click(screen.getByRole("button", { name: "CLAUDE.md · heavens-casino" }));
     expect(onOpen).toHaveBeenCalledWith("i1");
     expect(screen.queryByRole("button", { name: /Other connected tools/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "agent-routing" })).not.toBeInTheDocument(); // i2 is not in `items`
@@ -98,7 +101,7 @@ describe("CostPanel", () => {
     const sizes = [row({ name: "big", tokens: 900, turns: 0, usdWeek: 0 }), row({ name: "small", tokens: 10, turns: 0, usdWeek: 0 })];
     const { container } = render(<CostPanel report={report(sizes, { turns: 0, usdWeek: 0 })} items={items} />);
     expect(container.textContent).not.toContain("$");
-    expect(container.textContent).not.toContain("/wk");
+    expect(container.textContent).not.toContain("a week");
     const lis = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(lis[0]).toHaveTextContent("900 each");
     expect(document.querySelector("[data-cost-headline]")).not.toHaveAttribute("title");

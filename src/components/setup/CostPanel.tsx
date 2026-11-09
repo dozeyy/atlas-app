@@ -1,5 +1,5 @@
 import { KIND_BY_ID } from "../../lib/setup-model";
-import { fmtUsd, topRows, usdHover, weeklyTokens, windowLabel } from "../../lib/setup-cost";
+import { fmtUsd, rowTitle, topRows, usdHover, weeklyTokens, windowLabel } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
 import type { CostReport, ItemKind, SetupItem } from "../../lib/setup-types";
 
@@ -40,10 +40,10 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
             .join(" ");
           const name = openable ? (
             <button type="button" onClick={() => onOpen(r.id!)} className="press min-w-0 cursor-pointer text-left text-body font-medium text-ink hover:text-accent-text">
-              <span className="block truncate">{r.name}</span>
+              <span className="block truncate">{rowTitle(r)}</span>
             </button>
           ) : (
-            <span className="min-w-0 truncate text-body font-medium text-ink">{r.name}</span>
+            <span className="min-w-0 truncate text-body font-medium text-ink">{rowTitle(r)}</span>
           );
           return (
             <li key={`${r.id ?? r.name}-${i}`} data-cost-row={r.id ?? r.name} title={hover}>
@@ -52,7 +52,7 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
                 {name}
                 <span className="ml-auto shrink-0 text-body text-ink">
                   <span className="d d-small">{compact(weekly ? weeklyTokens(r) : r.tokens)}</span>
-                  <span className="text-caption text-ink-2">{weekly ? " /wk" : " each"}</span>
+                  <span className="text-caption text-ink-2">{weekly ? " a week" : " each"}</span>
                 </span>
               </div>
               <p className="mt-0.5 truncate text-caption text-ink-2">
