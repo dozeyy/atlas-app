@@ -482,7 +482,7 @@ impl Setup {
         let ix = self.take_reader_for_handoff();
         if let Some(ix) = ix {
             let r = ix.reading();
-            self.log("reader: counted");
+            self.log(&format!("reader: counted {} of {} (finished {})", r.done, r.total, r.finished));
             ix.stop_logged(&|m| self.log(m));
             self.lock().settled.get_or_insert(r);
             self.log("reading stopped and cache closed");

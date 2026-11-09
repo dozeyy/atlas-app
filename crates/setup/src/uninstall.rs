@@ -90,7 +90,42 @@ pub fn pass_on(exe: &Path, cmdline: &str) -> i32 {
         // Raw, because the installer wants `_?=<folder>` last and unquoted, spaces and all.
         cmd.raw_arg(raw_tail(cmdline)).creation_flags(CREATE_NO_WINDOW);
     }
-    cmd.status().ok().and_then(|s| s.code()).unwrap_or(1)
+    let code = cmd.status().ok().and_then(|s| s.code()).unwrap_or(1);
+    if code == 0 && is_plain_silent_uninstall(raw_tail(cmdline)) {
+        erase_installed_remover(exe);
+    }
+    code
+}
+
+/// `/S` alone: someone removing Atlas without a window. An update passes more (`/UPDATE`,
+/// `/P`, `/R`, `_?=`) and keeps this file, which the new installer replaces.
+pub fn is_plain_silent_uninstall(tail: &str) -> bool {
+    let words: Vec<String> = tail.split_whitespace().map(str::to_ascii_lowercase).collect();
+    words.iter().any(|w| w == "/s") && words.iter().all(|w| w == "/s")
+}
+
+/// The installer's uninstaller cannot delete this file while it runs, so a plain silent
+/// uninstall would leave it (and its folder) behind. A hidden shell waits for this program to
+/// exit and the installer's own cleanup to finish, deletes only this one file, then removes
+/// the folder if it is empty.
+fn erase_installed_remover(exe: &Path) {
+    let (Some(dir), Some(name)) = (exe.parent(), exe.file_name()) else { return };
+    if !name.eq_ignore_ascii_case(REMOVER_NAME) {
+        return;
+    }
+    let (f, d) = (exe.display().to_string(), dir.display().to_string());
+    if f.contains(['"', '%', '&', '^']) || d.contains(['"', '%', '&', '^']) {
+        return;
+    }
+    let mut cmd = Command::new("cmd.exe");
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.raw_arg(format!("/D /C \"ping -n 9 127.0.0.1 >nul & del /f /q \"{f}\" & rmdir \"{d}\"\""))
+            .creation_flags(CREATE_NO_WINDOW | 0x0000_0008);
+    }
+    let _ = cmd.spawn();
 }
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -384,6 +419,15 @@ mod tests {
         }
         // Setup itself never mistakes a switch for a remover request.
         assert_eq!(launch_for(Path::new(r"C:\x\Atlas-Setup.exe"), &args(&["/S"])), Launch::Install);
+    }
+
+    #[test]
+    fn only_a_bare_silent_uninstall_erases_the_remover_an_update_keeps_it() {
+        assert!(is_plain_silent_uninstall("/S"));
+        assert!(is_plain_silent_uninstall("/s"));
+        for t in ["", "/S _?=C:\\Atlas", "/S /UPDATE", "/P", "/S /P /R", "/UPDATE"] {
+            assert!(!is_plain_silent_uninstall(t), "{t}");
+        }
     }
 
     #[test]

@@ -123,9 +123,18 @@ pub fn unpack() -> Result<Unpacked, InstallError> {
     if !payload_present() {
         return Err(InstallError::NoInstallerInside);
     }
-    let dir = tempfile::Builder::new().prefix("AtlasSetup-").tempdir().map_err(|_| InstallError::CouldNotUnpack)?;
-    let exe = write_new(dir.path(), "Atlas-installer.exe", PAYLOAD).map_err(|_| InstallError::CouldNotUnpack)?;
-    Ok(Unpacked { _dir: dir, exe })
+    // A virus scanner can hold a file it has only just seen for a moment (seen once, 12 ms into
+    // a run, gone on the next try), so a failed write gets a few fresh folders before it is an error.
+    for attempt in 0..4 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        let Ok(dir) = tempfile::Builder::new().prefix("AtlasSetup-").tempdir() else { continue };
+        if let Ok(exe) = write_new(dir.path(), "Atlas-installer.exe", PAYLOAD) {
+            return Ok(Unpacked { _dir: dir, exe });
+        }
+    }
+    Err(InstallError::CouldNotUnpack)
 }
 
 /// Run the installer silently and wait for it, reporting `progress_on_disk` while it works.
