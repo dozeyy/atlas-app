@@ -125,10 +125,12 @@ function Palette() {
       const snippet = chat.snippets.get(r.sessionId);
       const made = sessionItem(r, now);
       const prior = byId.get(made.id);
+      const found = snippet ? snippet.map((p) => p.text).join("").trim() : "";
       // A chat found by its words shows where they are; it is listed even if its title says nothing.
+      // A snippet that only repeats the title adds nothing, so the project stays.
       byId.set(made.id, {
         ...(prior ?? made),
-        sub: snippet ? snippet.map((p) => p.text).join("").trim() : (prior ?? made).sub,
+        sub: found && found.toLowerCase() !== (prior ?? made).title.toLowerCase() ? found : (prior ?? made).sub,
         forced: chat.ids.includes(r.sessionId) ? 9 : undefined,
       });
     }
