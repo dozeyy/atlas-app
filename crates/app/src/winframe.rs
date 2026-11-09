@@ -252,8 +252,14 @@ impl<H: Host> Machine<H> {
         }
     }
 
-    /// Put the cover up, timed for the log (it runs on the UI thread mid-drag).
+    /// Put the cover up, timed for the log (it runs on the UI thread mid-drag). A shift under one
+    /// shrunk pixel each way gets none: the check could not tell the old frame moved from the new
+    /// one, and a stale frame that far off is a 1-3 px nudge for one frame.
     fn cover_up(&mut self, cl: RECT, shift: (i32, i32)) -> bool {
+        if !checkable(shift) {
+            self.trace(&format!("no cover: shift {shift:?} is under the check's resolution"));
+            return false;
+        }
         let t = Instant::now();
         let up = self.host.cover(cl, shift);
         self.trace(&format!("cover up ({:.1} ms)", t.elapsed().as_secs_f64() * 1000.0));
@@ -418,6 +424,35 @@ impl<H: Host> Machine<H> {
         (self.phase != Phase::Idle && to == stale && stale != self.held).then_some(self.held)
     }
 
+    /// WM_SYSCOMMAND SC_SIZE on `edge`: the size loop that follows may be synced.
+    fn on_size_command(&mut self, edge: u32, zoomed: bool) {
+        if self.failures < 3 && !zoomed {
+            self.sizing_edge = Some(edge);
+            self.trace(&format!("size command, edge {edge}"));
+        } else {
+            self.trace(&format!("size command, edge {edge}: not synced (failures {}, zoomed {zoomed})", self.failures));
+        }
+    }
+
+    /// The size command is done (its loop has ended, or it never started one): it must not carry
+    /// over to a later title-bar move.
+    fn size_command_done(&mut self) {
+        self.sizing_edge = None;
+    }
+
+    /// A size or move loop starts. Returns the edge to begin a synced drag on, if any.
+    fn on_enter_loop(&mut self) -> Option<u32> {
+        match self.sizing_edge.take() {
+            Some(edge) if self.phase == Phase::Idle => return Some(edge),
+            Some(edge) => self.trace(&format!("size loop entered on edge {edge} while {:?}: not synced", self.phase)),
+            // A move (title drag) or a size the command above did not take.
+            None => self.trace("size/move loop entered without a size command: not synced"),
+        }
+        // A new loop, not ours: the last drag's loop rect means nothing to it.
+        self.loop_rect = None;
+        None
+    }
+
     /// The mouse was released.
     fn on_exit(&mut self) -> After {
         self.sizing_edge = None;
@@ -524,6 +559,9 @@ impl<H: Host> Machine<H> {
             Phase::Live => self.next(),
             _ => {
                 self.host.tick_timer(false);
+                if target == Phase::Idle {
+                    self.loop_rect = None;
+                }
                 After::None
             }
         }
@@ -624,6 +662,7 @@ impl<H: Host> Machine<H> {
         self.uncover();
         self.host.tick_timer(false);
         self.phase = Phase::Idle;
+        self.loop_rect = None;
         After::HandBack(to)
     }
 
@@ -698,29 +737,22 @@ unsafe extern "system" fn subclass_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
     match msg {
         WM_SYSCOMMAND if (wp.0 as u32 & 0xFFF0) == SC_SIZE => {
             let edge = wp.0 as u32 & 0x000F;
-            let seen = with(|m| {
-                let zoomed = IsZoomed(m.host.top).as_bool();
-                if m.failures < 3 && !zoomed {
-                    m.sizing_edge = Some(edge);
-                    m.trace(&format!("size command, edge {edge}"));
-                } else {
-                    m.trace(&format!("size command, edge {edge}: not synced (failures {}, zoomed {zoomed})", m.failures));
-                }
-            });
-            if seen.is_none() {
+            let zoomed = IsZoomed(hwnd).as_bool();
+            if with(|m| m.on_size_command(edge, zoomed)).is_none() {
                 trace_busy("size command");
             }
+            // The whole size loop runs inside this call.
+            let r = DefSubclassProc(hwnd, msg, wp, lp);
+            with(|m| m.size_command_done());
+            return r;
         }
         WM_ENTERSIZEMOVE => {
             let r = DefSubclassProc(hwnd, msg, wp, lp);
-            let seen = with(|m| match m.sizing_edge.take() {
-                Some(edge) if m.phase == Phase::Idle => {
+            let seen = with(|m| {
+                if let Some(edge) = m.on_enter_loop() {
                     let (window, client, monitor, min) = m.host.geometry();
                     m.begin(edge, window, client, monitor, min);
                 }
-                Some(edge) => m.trace(&format!("size loop entered on edge {edge} while {:?}: not synced", m.phase)),
-                // A move (title drag) or a size the command above did not take.
-                None => m.trace("size/move loop entered without a size command: not synced"),
             });
             if seen.is_none() {
                 trace_busy("size loop entered");
@@ -733,10 +765,11 @@ unsafe extern "system" fn subclass_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
             // its invisible resize borders: add them, or the client stops that much under the
             // minimum and the app then grows it back from the top-left corner, sliding the far edge.
             if !IsZoomed(hwnd).as_bool() && !IsIconic(hwnd).as_bool() {
-                let (bw, bh) = border_size(hwnd);
-                let mmi = &mut *(lp.0 as *mut MINMAXINFO);
-                mmi.ptMinTrackSize.x += bw;
-                mmi.ptMinTrackSize.y += bh;
+                if let Some((bw, bh)) = border_size(hwnd) {
+                    let mmi = &mut *(lp.0 as *mut MINMAXINFO);
+                    mmi.ptMinTrackSize.x += bw;
+                    mmi.ptMinTrackSize.y += bh;
+                }
             }
             return r;
         }
@@ -980,7 +1013,7 @@ impl Host for Win {
             let src = POINT::default();
             let _ = UpdateLayeredWindow(ov, Some(screen), Some(&pt), Some(&size), Some(mem), Some(&src), COLORREF(0), None, ULW_OPAQUE);
             self.cover = shrink(screen, mem, w, h)
-                .map(|(px, sw, sh)| Cover { px, w: sw, h: sh, full: (w, h), shift: (shift.0 / CHECK_SCALE, shift.1 / CHECK_SCALE) });
+                .map(|(px, sw, sh)| Cover { px, w: sw, h: sh, full: (w, h), shift: (shrunk(shift.0), shrunk(shift.1)) });
             SelectObject(mem, old);
             let _ = DeleteObject(bmp.into());
             let _ = DeleteDC(mem);
@@ -1016,12 +1049,31 @@ impl Host for Win {
     }
 }
 
-/// Window size minus client size: the invisible resize borders.
-unsafe fn border_size(hwnd: HWND) -> (i32, i32) {
+thread_local! {
+    /// The last border measured on a normal window.
+    static BORDER: std::cell::Cell<Option<(i32, i32)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Window size minus client size: the invisible resize borders. Taken live, but only trusted
+/// from a normal window: while a window comes back from minimized its rects can still be the
+/// minimized ones (a 160x28 window over a 0x0 client), which would read as a huge border and
+/// leave a window at its minimum bigger after every restore. Then the last good one is used.
+unsafe fn border_size(hwnd: HWND) -> Option<(i32, i32)> {
     let (mut wr, mut cr) = (RECT::default(), RECT::default());
     let _ = GetWindowRect(hwnd, &mut wr);
     let _ = GetClientRect(hwnd, &mut cr);
-    (((wr.right - wr.left) - cr.right).max(0), ((wr.bottom - wr.top) - cr.bottom).max(0))
+    let b = border_from((wr.right - wr.left, wr.bottom - wr.top), (cr.right, cr.bottom), BORDER.get());
+    BORDER.set(b);
+    b
+}
+
+/// The border from a window size and its client size, if they look like a normal window (a real
+/// client, borders no thicker than a resize frame); else `last`.
+fn border_from(window: (i32, i32), client: (i32, i32), last: Option<(i32, i32)>) -> Option<(i32, i32)> {
+    const MAX: i32 = 64;
+    let (bw, bh) = (window.0 - client.0, window.1 - client.1);
+    let normal = client.0 >= 2 * MAX && client.1 >= 2 * MAX && (0..=MAX).contains(&bw) && (0..=MAX).contains(&bh);
+    if normal { Some((bw, bh)) } else { last }
 }
 
 type TimerProc =unsafe extern "system" fn(HWND, u32, usize, u32);
@@ -1099,6 +1151,16 @@ unsafe fn grab_client(top: HWND, (w, h): (i32, i32)) -> Option<Vec<u8>> {
     let _ = DeleteDC(mem);
     ReleaseDC(None, screen);
     px
+}
+
+/// Whether the cover check can tell a frame moved by `shift` from one that is not.
+fn checkable(shift: (i32, i32)) -> bool {
+    shift.0.abs() >= CHECK_SCALE || shift.1.abs() >= CHECK_SCALE
+}
+
+/// `v / CHECK_SCALE`, rounded to the nearest shrunk pixel.
+fn shrunk(v: i32) -> i32 {
+    (v + v.signum() * CHECK_SCALE / 2) / CHECK_SCALE
 }
 
 /// How many rows of an `h`-row client the cover check reads: the top quarter (nav, title buttons
@@ -1541,6 +1603,84 @@ mod tests {
         assert_eq!(mean_diff(&stale, &cover, 16, 16, (4, 0)), 0.0);
         // and pushed up-left (the start of a left drag)
         assert_eq!(mean_diff(&pic(4), &cover, 16, 16, (-4, 0)), 0.0);
+    }
+
+    /// While a window comes back from minimized its rects can still be the minimized ones; the
+    /// border must come from the last normal measurement, not from those.
+    #[test]
+    fn the_minimum_size_border_ignores_a_minimized_window() {
+        assert_eq!(border_from((916, 608), (900, 600), None), Some((16, 8)));
+        assert_eq!(border_from((160, 28), (0, 0), Some((16, 8))), Some((16, 8)), "minimized rects");
+        assert_eq!(border_from((160, 28), (144, 19), Some((16, 8))), Some((16, 8)), "a minimized caption");
+        assert_eq!(border_from((1060, 628), (900, 600), Some((16, 8))), Some((16, 8)), "too thick for a frame");
+        assert_eq!(border_from((160, 28), (0, 0), None), None, "nothing known: add nothing");
+        assert_eq!(border_from((1832, 1216), (1800, 1200), Some((16, 8))), Some((32, 16)), "a DPI change is taken");
+    }
+
+    /// A size command whose loop never starts must not turn a later title-bar move into a
+    /// synced drag.
+    #[test]
+    fn a_size_command_without_a_loop_does_not_carry_over_to_a_move() {
+        let mut m = machine();
+        m.on_size_command(WMSZ_LEFT, false);
+        m.size_command_done();
+        assert_eq!(m.on_enter_loop(), None);
+        assert_eq!(m.phase, Phase::Idle);
+        assert!(m.host.posts.is_empty() && !m.host.grown && !m.host.cover_up);
+        // and the normal case still begins
+        m.on_size_command(WMSZ_LEFT, false);
+        assert_eq!(m.on_enter_loop(), Some(WMSZ_LEFT));
+        // three failed drags, or a maximized window: no sync
+        m.on_size_command(WMSZ_LEFT, true);
+        assert_eq!(m.on_enter_loop(), None);
+    }
+
+    /// A move or size started while the last drag is still ending is not ours: the last drag's
+    /// loop rect must not snap it back.
+    #[test]
+    fn a_loop_started_while_the_last_drag_ends_is_not_snapped_back() {
+        let mut m = live(WMSZ_RIGHT);
+        let to = rect(300, 200, 1500, 960);
+        m.on_sizing(to, Instant::now());
+        let a = m.on_exit(); // still waiting for the step: the drag ends after its answer
+        settle(&mut m, a);
+        ack_last(&mut m);
+        assert_eq!(m.phase, Phase::Ending);
+        // the size loop's stale rect: held moved on since
+        let stale = m.loop_rect.expect("the loop rect is kept until a new loop");
+        assert_ne!(stale, m.held);
+        assert_eq!(m.on_enter_loop(), None, "a title-bar move while ending");
+        assert_eq!(m.keep_on_move(stale), None, "the move is left alone");
+        ack_last(&mut m);
+        assert_idle(&m);
+        assert_eq!(m.loop_rect, None);
+    }
+
+    /// Hand back and the end of a drag drop the loop rect too.
+    #[test]
+    fn the_loop_rect_is_dropped_when_the_drag_is_over() {
+        let mut m = live(WMSZ_LEFT);
+        m.on_sizing(rect(250, 200, 1400, 960), Instant::now());
+        assert!(m.loop_rect.is_some());
+        let a = m.abort("dpi change");
+        settle(&mut m, a);
+        assert_eq!(m.loop_rect, None);
+    }
+
+    /// A webview origin that moves less than one shrunk pixel cannot be checked: no cover, and the
+    /// drag still runs.
+    #[test]
+    fn a_shift_under_the_check_resolution_gets_no_cover() {
+        assert!(!checkable((-3, 0)) && !checkable((0, 2)) && !checkable((0, 0)));
+        assert!(checkable((-4, 0)) && checkable((1, 40)));
+        assert_eq!((shrunk(6), shrunk(-6), shrunk(5), shrunk(-2), shrunk(0)), (2, -2, 1, -1, 0));
+        let mut m = machine();
+        m.host.win = rect(MONITOR.left - 8 + 2, MONITOR.top + 1, 1400, 960); // the client 2 px and 1 px off the corner
+        begin(&mut m, WMSZ_LEFT);
+        ack_last(&mut m);
+        assert!(!m.host.cover_up && !m.covered, "no cover for a 2 px shift");
+        ack_last(&mut m);
+        assert_eq!(m.phase, Phase::Live, "no check to wait for");
     }
 
     /// A 16x16 picture, light with a dark band 4 rows tall from row `top`.
