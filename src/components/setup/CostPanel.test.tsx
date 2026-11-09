@@ -46,24 +46,35 @@ describe("CostPanel", () => {
     }
   });
 
-  it("ranks by dollars with where it applies, tokens x turns and the weekly total", () => {
+  it("leads with one headline in tokens, then ranks rows by tokens", () => {
     render(<CostPanel report={report(rows)} items={items} />);
     expect(screen.getByRole("heading", { name: "What your setup costs" })).toBeInTheDocument();
-    expect(screen.getByText("~$287")).toBeInTheDocument();
+    const head = document.querySelector("[data-cost-headline]")!;
+    expect(head).toHaveTextContent("30k tokens load with every message");
+
     const lis = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(lis).toHaveLength(3);
-    // The report arrives sorted; the panel keeps that order.
-    expect(lis[0]).toHaveTextContent("CLAUDE.md");
-    expect(lis[0]).toHaveTextContent("~$21");
-    expect(lis[0]).toHaveTextContent("Chats in heavens-casino - 8.8k tokens x 12k turns");
-    expect(lis[1]).toHaveTextContent("Other connected tools (19)");
-    expect(lis[2]).toHaveTextContent("All chats - 2.8k tokens x 22k turns");
+    // Ranked by tokens over the window: tools 114M, then CLAUDE.md 107M, then the rule 62M.
+    expect(lis[0]).toHaveTextContent("Other connected tools (19)");
+    expect(lis[0]).toHaveTextContent("114M /wk");
+    expect(lis[0]).toHaveTextContent("Chats that connect them - 7.3k per message");
+    expect(lis[1]).toHaveTextContent("CLAUDE.md");
+    expect(lis[1]).toHaveTextContent("107M /wk");
+    expect(lis[1]).toHaveTextContent("Chats in heavens-casino - 8.8k per message");
+    expect(lis[2]).toHaveTextContent("All chats - 2.8k per message");
+  });
+
+  it("shows no dollars on screen: they live in the hover", () => {
+    const { container } = render(<CostPanel report={report(rows)} items={items} />);
+    expect(container.textContent).not.toContain("$");
+    expect(document.querySelector("[data-cost-headline]")).toHaveAttribute("title", "Estimate: about $287 a week at API prices, last 7 days.");
+    expect(document.querySelector('[data-cost-row="i1"]')?.getAttribute("title")).toMatch(/8,804 tokens with every message.*Estimate: about \$21 a week/);
   });
 
   it("says estimate once and carries no explanation, pills or Live tag", () => {
     const { container } = render(<CostPanel report={report(rows)} items={items} />);
     expect(container.textContent?.match(/Estimate/g)).toHaveLength(1);
-    expect(container.textContent).toContain("Estimate, last 7 days. 30k tokens load in every chat.");
+    expect(container.textContent).toContain("Estimate, last 7 days.");
     expect(container.textContent).not.toMatch(/\bLive\b/);
     expect(container.querySelector(".chip, [class*='rounded-full'][class*='px-']")).toBeNull();
   });
@@ -78,27 +89,24 @@ describe("CostPanel", () => {
   });
 
   it("shows only the four biggest", () => {
-    const many = Array.from({ length: 9 }, (_, i) => row({ name: `n${i}`, usdWeek: 9 - i }));
+    const many = Array.from({ length: 9 }, (_, i) => row({ name: `n${i}`, tokens: 1000 - i * 10 }));
     render(<CostPanel report={report(many)} items={items} />);
     expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(4);
   });
 
-  it("shows sizes instead of dollars when nothing could be priced", () => {
-    const sizes = [row({ name: "big", tokens: 900, usdWeek: 0, usdLoaded: 0 }), row({ name: "small", tokens: 10, usdWeek: 0, usdLoaded: 0 })];
-    const { container } = render(<CostPanel report={report(sizes, { turns: 0, usdWeek: 0, incomplete: true })} items={items} />);
+  it("shows per-message sizes, with no weekly figure, when there are no chats yet", () => {
+    const sizes = [row({ name: "big", tokens: 900, turns: 0, usdWeek: 0 }), row({ name: "small", tokens: 10, turns: 0, usdWeek: 0 })];
+    const { container } = render(<CostPanel report={report(sizes, { turns: 0, usdWeek: 0 })} items={items} />);
     expect(container.textContent).not.toContain("$");
-    expect(container.textContent).toContain("900");
-    expect(container.textContent).toContain("No chats yet, so sizes only.");
+    expect(container.textContent).not.toContain("/wk");
+    const lis = within(screen.getByRole("list")).getAllByRole("listitem");
+    expect(lis[0]).toHaveTextContent("900 each");
+    expect(document.querySelector("[data-cost-headline]")).not.toHaveAttribute("title");
   });
 
-  it("says when some chats could not be priced", () => {
-    render(<CostPanel report={report(rows, { incomplete: true })} items={items} />);
-    expect(screen.getByText(/Some chats could not be priced/)).toBeInTheDocument();
-  });
-
-  it("shows when an on-demand item only has a body", () => {
-    const scoped = row({ id: "i1", name: "ts-only", kind: "rule", tokens: 0, turns: 0, bodyTokens: 300, usdWeek: 0.5, usdUsed: 0.5, uses: 2 });
-    render(<CostPanel report={report([scoped])} items={items} />);
-    expect(screen.getByText(/300 tokens when used/)).toBeInTheDocument();
+  it("leaves on-demand items to their own lists", () => {
+    const onDemand = row({ id: "i1", name: "brand", kind: "skill", tokens: 0, turns: 0, bodyTokens: 7300 });
+    const { container } = render(<CostPanel report={report([onDemand])} items={items} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

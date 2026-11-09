@@ -6,6 +6,7 @@ import type { KeyboardEvent } from "react";
 import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import type { SetupItem } from "../../lib/setup-types";
 import { ConflictChip, copyText, KindTile, ScopeChip, SecretsChip, StateChip, TagChip, WarningMark } from "./parts";
+import { useItemCost } from "./CostContext";
 
 interface ItemProps {
   item: SetupItem;
@@ -65,6 +66,7 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
   const shown = item.chips.slice(0, MAX_CHIPS);
   const more = item.chips.length - shown.length;
   const showState = item.enabled.state !== "on" && item.enabled.state !== "none" && item.enabled.label;
+  const cost = useItemCost(item.id);
   return (
     <div className="item-wrap group relative h-full">
       <Card
@@ -86,6 +88,11 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
             <span className="line-clamp-2 text-body text-ink-2">{item.description}</span>
           ) : (
             <span className="text-body text-ink-2 opacity-70">No description</span>
+          )}
+          {cost && (
+            <span data-item-cost title={cost.hover} className="truncate text-caption text-ink-2">
+              <span className="d d-small text-ink">{cost.figure}</span> {cost.unit}
+            </span>
           )}
           <span className="mt-auto flex flex-wrap items-center gap-1.5 pt-0.5">
             <ScopeChip scope={item.scope} label={item.scopeLabel} />
@@ -111,6 +118,7 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
  * use it, because they lift.
  */
 export const ItemRow = memo(function ItemRow({ item, onOpen, mono }: ItemProps & { mono?: boolean }) {
+  const cost = useItemCost(item.id);
   return (
     <button
       type="button"
@@ -126,6 +134,11 @@ export const ItemRow = memo(function ItemRow({ item, onOpen, mono }: ItemProps &
       {item.usedBy !== null && (
         <span className="shrink-0 text-caption text-ink-2">
           {item.usedBy === 0 ? "Not used" : `Used by ${item.usedBy}`}
+        </span>
+      )}
+      {cost && (
+        <span data-item-cost title={cost.hover} className="shrink-0 text-caption text-ink-2">
+          <span className="d d-small text-ink">{cost.figure}</span> {cost.unit}
         </span>
       )}
       <ScopeChip scope={item.scope} label={item.scopeLabel} />
