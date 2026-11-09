@@ -1142,6 +1142,23 @@ impl Confine {
     }
 }
 
+/// Is the server entry Claude Code's command stored the one Atlas asked for? The fields that
+/// decide what runs or where it connects must match: `type` (a command entry without one is
+/// `stdio`), `command`, `args`, `url`, `env` and `headers` (missing and `{}`/`[]` are the same).
+/// Other fields the command adds on its own are allowed.
+pub(crate) fn cli_entry_matches(stored: &Value, asked: &Value) -> bool {
+    let kind = |e: &Value| match e.get("type").and_then(Value::as_str) {
+        Some(t) => Some(t.to_ascii_lowercase()),
+        None => e.get("command").map(|_| "stdio".to_string()),
+    };
+    let field = |e: &Value, k: &str, empty: Value| e.get(k).filter(|v| !v.is_null()).cloned().unwrap_or(empty);
+    let empty_obj = || Value::Object(serde_json::Map::new());
+    kind(stored) == kind(asked)
+        && ["command", "url"].iter().all(|k| field(stored, k, Value::Null) == field(asked, k, Value::Null))
+        && field(stored, "args", Value::Array(vec![])) == field(asked, "args", Value::Array(vec![]))
+        && ["env", "headers"].iter().all(|k| field(stored, k, empty_obj()) == field(asked, k, empty_obj()))
+}
+
 /// Size and modified time of a file, for the "did it move?" look right before a swap.
 pub(crate) type FileSig = Option<(u64, Option<SystemTime>)>;
 
@@ -1627,7 +1644,7 @@ pub fn create_apply_with(kind: &str, name: &str, event: Option<&str>, text: &str
             // matters is that the server is there with the same command and args, and that no
             // other server moved.
             let added = servers.and_then(|s| s.get(name));
-            let ok = added.is_some_and(|e| e.get("command") == entry_for_cli.get("command") && e.get("args") == entry_for_cli.get("args"))
+            let ok = added.is_some_and(|e| cli_entry_matches(e, &entry_for_cli))
                 && servers.is_some_and(|s| old_servers.iter().all(|(k, v)| s.get(k) == Some(v)));
             if !ok {
                 return refuse("Claude Code's command ran, but the file does not show the new server as expected. Atlas's earlier copy is in its backups. Please check .claude.json.");
@@ -2042,5 +2059,31 @@ pub fn rename_item(d: &Discovery, id: &str, new_name: &str, root: &Path, backups
             }
         }
         _ => refuse("Atlas can rename skills, agents, commands, rules and output styles."),
+    }
+}
+
+#[cfg(test)]
+mod cli_entry_tests {
+    use super::cli_entry_matches;
+    use serde_json::json;
+
+    #[test]
+    fn a_command_entry_may_gain_fields_but_not_change_what_runs() {
+        let asked = json!({"command": "node", "args": ["x.js"]});
+        assert!(cli_entry_matches(&json!({"type": "stdio", "command": "node", "args": ["x.js"], "env": {}}), &asked));
+        assert!(!cli_entry_matches(&json!({"command": "node", "args": ["y.js"]}), &asked));
+        assert!(!cli_entry_matches(&json!({"command": "node", "args": ["x.js"], "env": {"A": "1"}}), &asked));
+        assert!(!cli_entry_matches(&json!({"type": "http", "command": "node", "args": ["x.js"]}), &asked));
+    }
+
+    #[test]
+    fn http_and_sse_entries_are_compared_on_type_url_env_and_headers() {
+        let asked = json!({"type": "http", "url": "https://a.example/mcp", "env": {}});
+        assert!(cli_entry_matches(&json!({"type": "http", "url": "https://a.example/mcp"}), &asked), "a missing env equals an empty one");
+        assert!(!cli_entry_matches(&json!({"type": "http", "url": "https://evil.example/mcp"}), &asked));
+        assert!(!cli_entry_matches(&json!({"type": "sse", "url": "https://a.example/mcp"}), &asked));
+        assert!(!cli_entry_matches(&json!({"type": "http", "url": "https://a.example/mcp", "env": {"K": "v"}}), &asked));
+        assert!(!cli_entry_matches(&json!({"type": "http", "url": "https://a.example/mcp", "headers": {"Authorization": "x"}}), &asked));
+        assert!(!cli_entry_matches(&json!({}), &asked));
     }
 }

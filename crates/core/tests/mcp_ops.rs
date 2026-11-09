@@ -853,3 +853,36 @@ fn the_card_for_a_restore_or_a_hook_turned_back_on_shows_what_comes_back() {
     assert!(card.after.is_some_and(|a| a.contains("hooks")), "the card must show the settings that come back");
     assert!(card.note.unwrap_or_default().contains("This change runs commands"));
 }
+
+// Re-review 3 #1: the card for a restore never reads a file outside the Claude folder and projects.
+#[test]
+fn the_card_for_a_restore_does_not_read_a_file_outside_what_atlas_manages() {
+    let e = env();
+    let outside = e._t.path().join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    let secret = outside.join("private.md");
+    fs::write(&secret, "# not for the queue file\n").unwrap();
+    plant_backup(&e, "1900000000000-0001-p", "rule", &secret, "# planted\n");
+    let card = ops(&e, "assistant").preview(&Write::RestoreBackup { backup_id: "1900000000000-0001-p".into() }).unwrap();
+    assert!(card.before.is_none(), "read the file outside: {:?}", card.before);
+    // A file inside still shows what is there now.
+    let inside = e.config.join("rules").join("inside.md");
+    fs::write(&inside, "# here now\n").unwrap();
+    plant_backup(&e, "1900000000000-0002-p", "rule", &inside, "# older\n");
+    let card = ops(&e, "assistant").preview(&Write::RestoreBackup { backup_id: "1900000000000-0002-p".into() }).unwrap();
+    assert_eq!(card.before.as_deref(), Some("# here now\n"));
+}
+
+// Re-review 3 #3: the code-folder check compares canonical paths, so another spelling of the
+// Claude folder (here: different letter case on Windows) cannot hide a deep hooks folder.
+#[cfg(windows)]
+#[test]
+fn a_backup_in_a_deep_code_folder_is_refused_however_the_claude_folder_is_spelled() {
+    let e = env();
+    let o = direct(&e);
+    let shouted = PathBuf::from(e.config.to_string_lossy().to_uppercase());
+    let deep = shouted.join("hooks").join("sub").join("x.md");
+    plant_backup(&e, "1900000000000-0001-p", "rule", &deep, "# words only\n");
+    refused_as_code(o.apply(&Write::RestoreBackup { backup_id: "1900000000000-0001-p".into() }));
+    assert!(!e.config.join("hooks").join("sub").join("x.md").exists());
+}
