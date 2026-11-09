@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { IndexProgress } from "./IndexProgress";
+import { CATCH_UP_CARD_DELAY_MS, IndexProgress } from "./IndexProgress";
 import type { IndexProgress as Progress, UsageStatus } from "../lib/types";
 
 const status = (over: Partial<UsageStatus> = {}): UsageStatus => ({
@@ -59,14 +59,40 @@ describe("IndexProgress", () => {
     expect(screen.getByText("Looking for sessions...")).toBeInTheDocument();
   });
 
-  it("is quieter on later passes", () => {
-    render(<IndexProgress status={status({ state: "indexing", firstIndexDone: true })} progress={progress()} />);
-    expect(screen.getByText("Catching up with your latest sessions")).toBeInTheDocument();
-    expect(screen.queryByText(/This happens once/)).not.toBeInTheDocument();
+  it("is quieter on later passes, and shows them only once they run long", () => {
+    vi.useFakeTimers();
+    try {
+      render(<IndexProgress status={status({ state: "indexing", firstIndexDone: true })} progress={progress()} />);
+      expect(screen.queryByText("Catching up with your latest sessions")).not.toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(CATCH_UP_CARD_DELAY_MS));
+      expect(screen.getByText("Catching up with your latest sessions")).toBeInTheDocument();
+      expect(screen.queryByText(/This happens once/)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never blinks for a quick catch-up pass (a window drag used to start one)", () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(<IndexProgress status={status()} progress={null} />);
+      rerender(<IndexProgress status={status({ state: "indexing" })} progress={progress({ phase: "scanning", filesTotal: 0 })} />);
+      expect(container).toBeEmptyDOMElement();
+      act(() => vi.advanceTimersByTime(5));
+      rerender(<IndexProgress status={status()} progress={null} />);
+      act(() => vi.advanceTimersByTime(CATCH_UP_CARD_DELAY_MS * 2));
+      expect(container).toBeEmptyDOMElement();
+      // The next pass starts its own clock.
+      rerender(<IndexProgress status={status({ state: "indexing" })} progress={progress()} />);
+      act(() => vi.advanceTimersByTime(CATCH_UP_CARD_DELAY_MS - 1));
+      expect(container).toBeEmptyDOMElement();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("never exceeds 100 percent", () => {
-    render(<IndexProgress status={status({ state: "indexing" })} progress={progress({ bytesDone: 9, bytesTotal: 3 })} />);
+    render(<IndexProgress status={status({ state: "indexing", firstIndexDone: false })} progress={progress({ bytesDone: 9, bytesTotal: 3 })} />);
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "100");
   });
 

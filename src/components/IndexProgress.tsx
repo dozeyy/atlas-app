@@ -1,8 +1,28 @@
+import { useEffect, useState } from "react";
 import { WarningCircle } from "@phosphor-icons/react";
 import { Button } from "./controls";
 import { formatBytes } from "../lib/labels";
 import { exact } from "../lib/usage";
 import type { IndexProgress as Progress, UsageStatus } from "../lib/types";
+
+/**
+ * A later (catch-up) pass shows its card only once it has run this long. Most catch-ups
+ * finish in a few milliseconds; showing the card for those made it blink in and out and
+ * shove the page down and back (seen on every window drag, which also started a pass).
+ */
+export const CATCH_UP_CARD_DELAY_MS = 800;
+
+/** True once `active` has stayed true for `delayMs`; false again as soon as it drops. */
+function useAfterDelay(active: boolean, delayMs: number): boolean {
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    setLate(false);
+    if (!active) return;
+    const t = window.setTimeout(() => setLate(true), delayMs);
+    return () => window.clearTimeout(t);
+  }, [active, delayMs]);
+  return active && late;
+}
 
 /**
  * What the usage engine is doing, said plainly. Renders nothing while it is idle and
@@ -17,6 +37,8 @@ export function IndexProgress({
   progress: Progress | null;
   onRetry?: () => void;
 }) {
+  const catchingUp = status?.state === "indexing" && status.firstIndexDone;
+  const slowCatchUp = useAfterDelay(catchingUp, CATCH_UP_CARD_DELAY_MS);
   if (!status) return null;
 
   if (status.state === "error") {
@@ -55,6 +77,7 @@ export function IndexProgress({
   }
 
   if (status.state !== "indexing") return null;
+  if (catchingUp && !slowCatchUp) return null;
 
   const total = progress?.bytesTotal ?? 0;
   const done = progress?.bytesDone ?? 0;
