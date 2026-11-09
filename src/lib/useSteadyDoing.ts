@@ -46,6 +46,33 @@ export function useSteadyDoing(live: NowDoing): { doing: NowDoing; swapKey: numb
   return { doing: shown.doing, swapKey: shown.key };
 }
 
+/** A helper's phase word stays up at least this long before the next one replaces it. */
+export const PHASE_HOLD_MS = 2000;
+
+/**
+ * A word that changes with the live feed (a helper's phase: Reading, Testing, ...) shown steadily:
+ * a new word waits until the current one has been up for `holdMs`, then the newest word wins (the
+ * ones in between are skipped, never queued). `swapKey` changes only when the shown word does, so
+ * the line re-mounts (and animates) once per swap and never on a repeat of the same word.
+ */
+export function useHeldWord(live: string, holdMs = PHASE_HOLD_MS): { text: string; swapKey: number } {
+  const [shown, setShown] = useState({ text: live, key: 0 });
+  const since = useRef(performance.now());
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  useEffect(() => {
+    if (live === shown.text) return;
+    const wait = Math.max(0, since.current + holdMs - performance.now());
+    const t = setTimeout(() => {
+      const next = liveRef.current;
+      since.current = performance.now();
+      setShown((p) => (p.text === next ? p : { text: next, key: p.key + 1 }));
+    }, wait);
+    return () => clearTimeout(t);
+  }, [live, shown.text, holdMs]);
+  return { text: shown.text, swapKey: shown.key };
+}
+
 /**
  * A progress fill (0 to 1) that is always set to its newest value but only animates its move at
  * most once per CALM_MS, and never under reduced motion. The first value never animates.

@@ -11,7 +11,7 @@ import { modelEffort, progressOf, statusOf, typeName } from "../../lib/helperPro
 import type { Progress, Status } from "../../lib/helperProgress";
 import type { NowChat, NowHelper } from "../../lib/nowTypes";
 import { useClimb, useClock } from "../../lib/useNow";
-import { useCalmFill, useSteadyDoing } from "../../lib/useSteadyDoing";
+import { useCalmFill, useHeldWord } from "../../lib/useSteadyDoing";
 import { compact, plural, tokenHint } from "../../lib/usage";
 
 /** Oldest first, and a helper with no start time after the ones that have one. Never changes while running. */
@@ -74,7 +74,7 @@ function HelperRow({ helper, now }: { helper: NowHelper; now: number }) {
   const model = modelEffort(helper);
   const goal = helper.goal ?? helper.name;
   return (
-    <li className="ht-row card" data-done={helper.done || undefined} aria-label={`${name}: ${goal}`}>
+    <li className="ht-row card" data-done={helper.done || undefined}>
       <AgentAvatar type={helper.agentType} size={32} />
       <div className="ht-id">
         <p className="ht-head">
@@ -94,7 +94,7 @@ function HelperRow({ helper, now }: { helper: NowHelper; now: number }) {
         <p className="ht-prog-text">{helper.done ? "Finished" : progress.text}</p>
         <p className="nc-cap">{plural(helper.toolCalls, "tool call")}</p>
       </div>
-      <PhaseWord status={status} phaseKey={helper.done ? "done" : "live"} done={helper.done} />
+      <PhaseWord phase={helper.phase} status={status} done={helper.done} />
       <p className="d d-small ht-elapsed">{helper.startedMs === null ? "" : clock(now - helper.startedMs)}</p>
       <p className="d d-small ht-tokens" data-opt="2" title={tokenHint(helper.tokens, nowCost(helper.costUsd, false))}>
         {compact(Math.round(tokens))}
@@ -103,12 +103,30 @@ function HelperRow({ helper, now }: { helper: NowHelper; now: number }) {
   );
 }
 
-/** The phase word, or the quiet-for-a-while line. A new word swaps in at most once per CALM_MS. */
-function PhaseWord({ status, phaseKey, done }: { status: Status; phaseKey: string; done: boolean }) {
-  const { doing, swapKey } = useSteadyDoing({ kind: "tool", verb: done ? "Done" : status.text, target: phaseKey });
+/**
+ * The phase word, or the quiet-for-a-while line. The phase word is held for PHASE_HOLD_MS before the
+ * next one replaces it (it flips on nearly every call otherwise). The quiet line shows at once and
+ * its minute count changes in place, so the line never re-mounts when only the count moves.
+ */
+function PhaseWord({ phase, status, done }: { phase: string; status: Status; done: boolean }) {
+  const held = useHeldWord(phase);
+  if (done) {
+    return (
+      <p className="ht-status" data-tone="phase" key="done">
+        Done
+      </p>
+    );
+  }
+  if (status.tone !== "phase") {
+    return (
+      <p className="ht-status" data-tone={status.tone} title={status.text} key="stuck">
+        {status.text}
+      </p>
+    );
+  }
   return (
-    <p className="ht-status" data-tone={done ? "phase" : status.tone} title={doing.verb} key={swapKey}>
-      {done ? "Done" : doing.verb}
+    <p className="ht-status" data-tone="phase" title={held.text} key={`phase-${held.swapKey}`}>
+      {held.text}
     </p>
   );
 }

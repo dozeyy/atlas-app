@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use atlas_core::cache::pricing_file;
 use atlas_core::now::finish::{Finished, NotifyTracker};
-use atlas_core::now::{NowConfig, NowEngine, NowSink, NowSnapshot, TYPICAL_DAYS};
+use atlas_core::now::{NowConfig, NowEngine, NowSink, NowSnapshot, TypicalAnswer, TYPICAL_DAYS};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
@@ -105,7 +105,12 @@ impl NowHost {
                 // (the usage engine starts just after this one) and never per update.
                 let handle = app.clone();
                 let cfg = NowConfig::new(roots.projects_dir.clone(), prices).with_typical(Arc::new(move || {
-                    handle.state::<Arc<AppState>>().usage.engine().ok().and_then(|e| e.typical_runs(TYPICAL_DAYS))
+                    // No usage engine yet (it starts just after this one) is "not ready", not a failure.
+                    match handle.state::<Arc<AppState>>().usage.engine().map(|e| e.typical_runs(TYPICAL_DAYS)) {
+                        Ok(Ok(Some(runs))) => TypicalAnswer::Ready(runs),
+                        Ok(Err(_)) => TypicalAnswer::Failed,
+                        Ok(Ok(None)) | Err(_) => TypicalAnswer::NotReady,
+                    }
                 }));
                 let engine = Arc::new(NowEngine::start(cfg, Arc::new(TauriNowSink::new(app.clone()))));
                 *cur = Some(Running { roots: roots.clone(), engine });

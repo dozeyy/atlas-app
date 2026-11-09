@@ -425,7 +425,7 @@ fn chrono_ms(iso: &str) -> i64 {
 fn typical_runs_are_medians_per_kind_of_helper_and_skip_runs_with_no_tool_call() {
     let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
     // A reach far enough back that the fixture's fixed 2026 stamps never age out of the test.
-    let runs = fx.engine.typical_runs(36_500).expect("the cache is read");
+    let runs = fx.engine.typical_runs(36_500).expect("the query runs").expect("the cache is read");
     let of = |t: &str| runs.iter().find(|r| r.agent_type == t).unwrap_or_else(|| panic!("no runs of {t}"));
     // Explore: a1 made 3 calls, e5 made 1, f6 made 3; the median of the three is 3.
     assert_eq!((of("Explore").runs, of("Explore").calls), (3, 3));
@@ -433,5 +433,52 @@ fn typical_runs_are_medians_per_kind_of_helper_and_skip_runs_with_no_tool_call()
     // c3, d4 made no tool call: not a run to compare against.
     assert_eq!(runs.iter().map(|r| r.runs).sum::<u32>(), 4);
     // Nothing in the last day: no finished runs that recent.
-    assert!(fx.engine.typical_runs(1).unwrap().is_empty());
+    assert!(fx.engine.typical_runs(1).unwrap().unwrap().is_empty());
+}
+
+/// One assistant line of a helper with `tools` tool calls, written at `ts`.
+fn helper_line(session: &str, agent: &str, msg: &str, ts: &str, tools: usize) -> String {
+    let uses: Vec<String> =
+        (0..tools).map(|i| format!(r#"{{"type":"tool_use","id":"toolu_{msg}_{i}","name":"Read","input":{{}}}}"#)).collect();
+    format!(
+        r#"{{"type":"assistant","uuid":"u-{msg}","sessionId":"{session}","timestamp":"{ts}","cwd":"/fixture/agents","isSidechain":true,"requestId":"req_{msg}","message":{{"id":"msg_{msg}","type":"message","role":"assistant","model":"claude-haiku-5-5","content":[{}],"usage":{{"input_tokens":20,"output_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":500}}}},"agentId":"{agent}"}}"#,
+        uses.join(",")
+    )
+}
+
+#[test]
+fn a_helper_that_was_resumed_or_went_quiet_for_long_is_not_one_typical_run() {
+    let work = tempfile::tempdir().unwrap();
+    copy_tree(&fixture("claude-agents"), work.path());
+    let subs = work.path().join("projects").join("-fx-agents").join(SB).join("subagents");
+    let write = |agent: &str, lines: &[String]| {
+        std::fs::write(subs.join(format!("agent-{agent}.jsonl")), lines.join("\n") + "\n").unwrap();
+        std::fs::write(subs.join(format!("agent-{agent}.meta.json")), r#"{"agentType":"Explore","description":"x"}"#).unwrap();
+    };
+    // g7 was sent another message hours later: two lifetimes in one file, one tool-call total.
+    write(
+        "g7",
+        &[
+            helper_line(SB, "g7", "G1", "2026-11-06T09:01:00.000Z", 2),
+            helper_line(SB, "g7", "G2", "2026-11-06T09:02:00.000Z", 2),
+            helper_line(SB, "g7", "G3", "2026-11-06T13:00:00.000Z", 2),
+        ],
+    );
+    let fx = start(work.path(), Tz::Fixed(0));
+    let runs = fx.engine.typical_runs(36_500).unwrap().unwrap();
+    let explore = runs.iter().find(|r| r.agent_type == "Explore").unwrap();
+    assert_eq!((explore.runs, explore.calls), (3, 3), "g7 is left out: it is not a single run");
+
+    // h8 is one continuous stretch (a minute apart): it counts.
+    write(
+        "h8",
+        &[
+            helper_line(SB, "h8", "H1", "2026-11-06T09:01:00.000Z", 3),
+            helper_line(SB, "h8", "H2", "2026-11-06T09:02:00.000Z", 3),
+        ],
+    );
+    fx.rescan();
+    let runs = fx.engine.typical_runs(36_500).unwrap().unwrap();
+    let explore = runs.iter().find(|r| r.agent_type == "Explore").unwrap();
+    assert_eq!(explore.runs, 4);
 }

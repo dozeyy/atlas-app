@@ -150,6 +150,16 @@ describe("Now", () => {
     expect(screen.queryByRole("region", { name: "Helpers at work" })).toBeNull();
   });
 
+  it("a chat whose own turn ended but whose helpers are working is running, with every helper listed", async () => {
+    const six = Array.from({ length: 6 }, (_, i) => helper({ id: `h${i}`, goal: `Job ${i}`, startedMs: Date.now() - (6 - i) * 60_000 }));
+    mount(snap({ chats: [chat({ doing: { kind: "helper", verb: "Waiting on 6 helpers", target: null }, helpers: six })] }));
+    const running = await screen.findByRole("region", { name: "Running" });
+    expect(within(running).getByText("Waiting on 6 helpers", { selector: ".nc-verb" })).toBeInTheDocument();
+    const list = await screen.findByRole("region", { name: "Helpers at work" });
+    expect(list.querySelectorAll(".ht-row")).toHaveLength(6);
+    expect(screen.queryByRole("region", { name: "Waiting for you" })).toBeNull();
+  });
+
   it("keeps running, waiting and finished chats in three separate groups", async () => {
     mount(
       snap({

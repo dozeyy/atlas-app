@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { HelperTracker } from "./HelperTracker";
-import { modelEffort, progressOf, statusOf, STUCK_MS, typeName } from "../../lib/helperProgress";
+import { FILL_CAP, modelEffort, progressOf, statusOf, STUCK_MS, typeName } from "../../lib/helperProgress";
+import { PHASE_HOLD_MS } from "../../lib/useSteadyDoing";
 import type { NowChat, NowHelper } from "../../lib/nowTypes";
 
 const T0 = Date.parse("2026-11-09T12:00:00Z");
@@ -59,6 +60,23 @@ describe("progress words", () => {
   it("uses the helper's own plan once it has moved: Step N of M", () => {
     const p = progressOf(helper({ plan: { done: 2, total: 5 } }));
     expect(p).toMatchObject({ kind: "plan", text: "Step 3 of 5", fill: 0.4 });
+  });
+
+  it("never fills a plan to the end while the helper still runs: only finishing completes the trail", () => {
+    // Every step ticked, helper not yet ended: still capped, and still "Step 5 of 5".
+    const p = progressOf(helper({ plan: { done: 5, total: 5 } }));
+    expect(p).toMatchObject({ kind: "plan", text: "Step 5 of 5", fill: FILL_CAP });
+    expect(progressOf(helper({ plan: { done: 4, total: 5 } })).fill).toBeCloseTo(0.8);
+    expect(progressOf(helper({ plan: { done: 1, total: 5 } })).fill).toBeCloseTo(0.2);
+  });
+
+  it("says just started, not a percentage, before a twentieth of a typical run", () => {
+    // 0 calls against a median of 20 is nothing to report.
+    expect(progressOf(helper({ toolCalls: 0 }))).toMatchObject({ kind: "typical", text: "Just started", fill: 0 });
+    // 1 call of 40 is 2.5 %: still just started. 2 of 40 is 5 %: the first percentage, 10.
+    const t = { calls: 40, ms: 100_000, runs: 9 };
+    expect(progressOf(helper({ toolCalls: 1, typical: t })).text).toBe("Just started");
+    expect(progressOf(helper({ toolCalls: 2, typical: t })).text).toBe("About 10% of a typical run");
   });
 
   it("compares tool calls with a typical run, in tens", () => {
@@ -163,11 +181,25 @@ describe("the list", () => {
     const a = helper({ id: "a", goal: "Second one", startedMs: T0 - 10_000 });
     const b = helper({ id: "b", goal: "First one", startedMs: T0 - 50_000 });
     const { rerender } = render(<HelperTracker chats={[chat([a, b])]} />);
-    expect(screen.getAllByRole("listitem").map((li) => li.getAttribute("aria-label"))).toEqual(["Code reviewer: First one", "Code reviewer: Second one"]);
+    expect(Array.from(document.querySelectorAll(".ht-goal")).map((g) => g.textContent)).toEqual(["First one", "Second one"]);
     expect(document.querySelector(".ht-chat")).toBeNull();
     rerender(<HelperTracker chats={[chat([a]), chat([b], { sessionId: "s2", title: "Other chat" })]} />);
     expect(screen.getByText("Fix the build", { selector: ".ht-chat" })).toBeInTheDocument();
     expect(screen.getByText("Other chat", { selector: ".ht-chat" })).toBeInTheDocument();
+  });
+
+  it("lets a screen reader read the row: no label that replaces its progress, status and model", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    render(<HelperTracker chats={[chat([helper()])]} />);
+    const li = screen.getByRole("listitem");
+    expect(li).not.toHaveAttribute("aria-label");
+    expect(li).not.toHaveAttribute("aria-labelledby");
+    for (const text of ["About 60% of a typical run", "12 tool calls", "Reading", "Opus 5.5 · high"]) {
+      expect(li.textContent).toContain(text);
+    }
+    // The decorative trail stays out of the reading order.
+    expect(li.querySelector(".ht-trail")).toHaveAttribute("aria-hidden", "true");
   });
 
   it("is not drawn without a helper, and starts no timer", () => {
@@ -230,6 +262,59 @@ describe("calm motion", () => {
     expect(fills.filter((f) => f.anim).length).toBeLessThanOrEqual(1);
     // The initial word plus at most one animated swap.
     expect(statusNodes.size).toBeLessThanOrEqual(2);
+  });
+
+  it("holds a phase word for its minimum time, then shows the newest one (never a queue)", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    const at = (phase: string) => <HelperTracker chats={[chat([helper({ phase })])]} />;
+    const { rerender } = render(at("Reading"));
+    const first = document.querySelector(".ht-status")!;
+    // The word flips straight away on every call: it still reads Reading until the hold is up.
+    act(() => void vi.advanceTimersByTime(300));
+    rerender(at("Testing"));
+    act(() => void vi.advanceTimersByTime(300));
+    rerender(at("Changing files"));
+    act(() => void vi.advanceTimersByTime(PHASE_HOLD_MS - 700));
+    expect(document.querySelector(".ht-status")).toBe(first);
+    expect(first.textContent).toBe("Reading");
+    // Then the newest word replaces it once, skipping the one in between.
+    act(() => void vi.advanceTimersByTime(200));
+    const next = document.querySelector(".ht-status")!;
+    expect(next.textContent).toBe("Changing files");
+    expect(next).not.toBe(first);
+    // And that word is held for the full time in turn.
+    rerender(at("Reading"));
+    act(() => void vi.advanceTimersByTime(PHASE_HOLD_MS - 400));
+    expect(document.querySelector(".ht-status")!.textContent).toBe("Changing files");
+    act(() => void vi.advanceTimersByTime(400));
+    expect(document.querySelector(".ht-status")!.textContent).toBe("Reading");
+  });
+
+  it("a word that comes straight back before its hold ends never swaps at all", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    const at = (phase: string) => <HelperTracker chats={[chat([helper({ phase })])]} />;
+    const { rerender } = render(at("Reading"));
+    const first = document.querySelector(".ht-status")!;
+    act(() => void vi.advanceTimersByTime(500));
+    rerender(at("Testing"));
+    act(() => void vi.advanceTimersByTime(500));
+    rerender(at("Reading"));
+    act(() => void vi.advanceTimersByTime(PHASE_HOLD_MS * 2));
+    expect(document.querySelector(".ht-status")).toBe(first);
+  });
+
+  it("the minute count of the quiet line changes in place: the line is never re-mounted by the clock", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    render(<HelperTracker chats={[chat([helper({ lastLineMs: T0 - STUCK_MS - 1_000 })])]} />);
+    const line = screen.getByText("No progress for 5 min", { selector: ".ht-status" });
+    act(() => void vi.advanceTimersByTime(60_000));
+    const same = screen.getByText("No progress for 6 min", { selector: ".ht-status" });
+    expect(same).toBe(line);
+    act(() => void vi.advanceTimersByTime(60_000));
+    expect(screen.getByText("No progress for 7 min", { selector: ".ht-status" })).toBe(line);
   });
 
   it("never animates the fill under reduced motion", () => {

@@ -54,24 +54,18 @@
   color: var(--ink-2);
 }
 
-/* Room the chat cards always keep (a short one-row card), and the least the helper list gets:
-   its head and two rows. With helpers out, the Running group asks for both at once and the
-   Waiting / Finished band below gives way (it scrolls inside itself). */
+/* Room the chat cards always keep (a short one-row card). */
 .now-run {
   --card-min: 88px;
   --stack-min: calc(var(--n, 1) * var(--card-min) + (var(--n, 1) - 1) * 16px);
-  --ht-min: 156px;
 }
 .now-run:has(.now-grid) {
   --stack-min: 224px;
 }
+/* With helpers out the group is as tall as its cards and its rows, never a box that scrolls
+   inside itself: the page scrolls instead (the main panel), and every row is always there. */
 .now-run:has(.ht) {
-  flex: 1 0 calc(20px + 8px + var(--stack-min) + 8px + var(--ht-min));
-}
-/* The band is the quieter group: with helpers out it shrinks to a head and a row or two. */
-.now-run:has(.ht) + .now-band {
-  min-height: 0;
-  max-height: clamp(112px, 18vh, 200px);
+  flex: 0 0 auto;
 }
 
 .now-stack {
@@ -772,6 +766,37 @@ html.reduced .nc-sweep.is-on::after {
   }
 }
 
+/* Very short and narrow (a small window, or the main panel's scrollbar taking its 8 px when
+   helpers are out): the same single row, the trail dropped, the verb never cut in two. */
+@container nowcard (max-height: 150px) and (max-width: 720px) {
+  .nc-body {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) auto auto;
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "head doing numbers clock";
+    align-items: center;
+    gap: 0 14px;
+  }
+  .nc-trail,
+  .nc-doing .nc-sweep {
+    display: none;
+  }
+  .nc-tile {
+    width: 36px;
+  }
+  .nc-doing-row {
+    gap: 10px;
+  }
+  .now-card .nc-verb {
+    font-size: 16px;
+  }
+  .now-card .nc-spend-fig {
+    font-size: 24px;
+  }
+  .now-card .nc-title {
+    font-size: 15px;
+  }
+}
+
 /* Narrow but tall: stack the parts. */
 @container nowcard (min-height: 236px) and (max-width: 620px) {
   .nc-body {
@@ -842,13 +867,11 @@ html.reduced .nc-sweep.is-on::after {
     box-shadow: 0 0 0 12px transparent;
   }
 }
-/* Helpers at work: one 56 px row per helper under the chat cards. Up to six rows show, then the
-   list scrolls inside itself. The fill and the phase word are the only things that move, and each
+/* Helpers at work: one 56 px row per helper under the chat cards. Every row shows: the list grows
+   and the page scrolls. The fill and the phase word are the only things that move, and each
    moves at most once per second (HelperTracker.tsx); the spark is the only mark of completion. */
 .ht {
-  /* The list gives room back to the chat cards first (its rows scroll inside), down to two rows. */
-  flex: 0 1 auto;
-  min-height: var(--ht-min);
+  flex: none;
   container: ht / inline-size;
   min-width: 0;
   display: flex;
@@ -857,14 +880,9 @@ html.reduced .nc-sweep.is-on::after {
 }
 
 .ht-rows {
-  flex: 0 1 auto;
-  min-height: 0;
-  max-height: 376px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-right: 4px;
 }
 
 .ht-group {

@@ -54,10 +54,24 @@ pub const TYPICAL_REFRESH: Duration = Duration::from_secs(30 * 60);
 /// A source that said "not ready yet" (the cache is still being built) is asked again after this.
 /// The question is only a status check until the cache is ready, so it can be short.
 pub const TYPICAL_RETRY: Duration = Duration::from_secs(5);
+/// A source that failed (a query error, a panic) is asked again only after this: the failure is not
+/// going away in seconds, and the question is a real query.
+pub const TYPICAL_FAILED_RETRY: Duration = Duration::from_secs(10 * 60);
+
+/// What the source said.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypicalAnswer {
+    /// The finished runs of each kind of helper.
+    Ready(Vec<TypicalRun>),
+    /// Not yet (the cache is still being built): ask again soon.
+    NotReady,
+    /// The question itself failed: ask again much later.
+    Failed,
+}
 
 /// Where the typical runs come from: the finished runs of each kind of helper (the usage
-/// cache). `None` means the source is not ready yet. Called on its own short-lived thread.
-pub type TypicalSource = Arc<dyn Fn() -> Option<Vec<TypicalRun>> + Send + Sync>;
+/// cache). Called on its own short-lived thread.
+pub type TypicalSource = Arc<dyn Fn() -> TypicalAnswer + Send + Sync>;
 
 #[derive(Clone)]
 pub struct NowConfig {
@@ -84,6 +98,23 @@ struct TypicalCell {
     by_type: HashMap<String, TypicalRun>,
     next_at: Option<Instant>,
     in_flight: bool,
+}
+
+/// Ends a question to the typical-run source: clears `in_flight` however the question ends, and
+/// after a panic (no answer came) holds the next question back by the long wait.
+struct Asking {
+    cell: Arc<Mutex<TypicalCell>>,
+    at: Instant,
+}
+
+impl Drop for Asking {
+    fn drop(&mut self) {
+        let mut c = self.cell.lock().unwrap_or_else(|p| p.into_inner());
+        c.in_flight = false;
+        if thread::panicking() {
+            c.next_at = Some(self.at + TYPICAL_FAILED_RETRY);
+        }
+    }
 }
 
 /// Where updates go. The app turns them into an event for the page.
@@ -299,19 +330,26 @@ impl State {
         }
         let cell = Arc::clone(&self.typical);
         let spawned = thread::Builder::new().name("atlas-now-typical".into()).spawn(move || {
+            // Whatever happens below, even a panic in the source, `in_flight` is cleared.
+            let asking = Asking { cell: Arc::clone(&cell), at };
             let answer = source();
-            let mut c = cell.lock().unwrap_or_else(|p| p.into_inner());
-            c.in_flight = false;
-            match answer {
-                Some(runs) => {
-                    c.by_type = runs.into_iter().map(|r| (r.agent_type.clone(), r)).collect();
-                    c.next_at = Some(at + TYPICAL_REFRESH);
+            {
+                let mut c = cell.lock().unwrap_or_else(|p| p.into_inner());
+                match answer {
+                    TypicalAnswer::Ready(runs) => {
+                        c.by_type = runs.into_iter().map(|r| (r.agent_type.clone(), r)).collect();
+                        c.next_at = Some(at + TYPICAL_REFRESH);
+                    }
+                    TypicalAnswer::NotReady => c.next_at = Some(at + TYPICAL_RETRY),
+                    TypicalAnswer::Failed => c.next_at = Some(at + TYPICAL_FAILED_RETRY),
                 }
-                None => c.next_at = Some(at + TYPICAL_RETRY),
             }
+            drop(asking);
         });
         if spawned.is_err() {
-            self.typical.lock().unwrap_or_else(|p| p.into_inner()).in_flight = false;
+            let mut c = self.typical.lock().unwrap_or_else(|p| p.into_inner());
+            c.in_flight = false;
+            c.next_at = Some(at + TYPICAL_FAILED_RETRY);
         }
     }
 
@@ -515,5 +553,52 @@ impl State {
             recent: self.recent.clone(),
             watching: self.cfg.projects_dir.is_dir(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg_with(source: TypicalSource) -> NowConfig {
+        NowConfig::new(PathBuf::from("."), PriceTable::seed()).with_typical(source)
+    }
+
+    /// Ask once and wait for the question thread to finish; return (in_flight, wait until next ask).
+    fn ask(source: TypicalSource) -> (bool, Duration) {
+        let st = State::new(cfg_with(source));
+        let at = Instant::now();
+        st.refresh_typical(at);
+        let t0 = Instant::now();
+        loop {
+            {
+                let c = st.typical.lock().unwrap_or_else(|p| p.into_inner());
+                if !c.in_flight
+                    && let Some(next) = c.next_at
+                {
+                    return (c.in_flight, next - at);
+                }
+            }
+            assert!(t0.elapsed() < Duration::from_secs(5), "the question never settled");
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn not_ready_asks_again_soon_and_a_failure_waits_much_longer() {
+        let (_, wait) = ask(Arc::new(|| TypicalAnswer::NotReady));
+        assert_eq!(wait, TYPICAL_RETRY);
+        let (_, wait) = ask(Arc::new(|| TypicalAnswer::Failed));
+        assert_eq!(wait, TYPICAL_FAILED_RETRY);
+        assert!(TYPICAL_FAILED_RETRY >= TYPICAL_RETRY * 60);
+        let (_, wait) = ask(Arc::new(|| TypicalAnswer::Ready(Vec::new())));
+        assert_eq!(wait, TYPICAL_REFRESH);
+    }
+
+    #[test]
+    fn a_panic_in_the_source_clears_the_question_and_backs_off() {
+        let (in_flight, wait) = ask(Arc::new(|| panic!("the source blew up")));
+        assert!(!in_flight, "a panic must not leave the question open forever");
+        assert_eq!(wait, TYPICAL_FAILED_RETRY);
     }
 }

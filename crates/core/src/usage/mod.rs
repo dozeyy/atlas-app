@@ -424,13 +424,13 @@ impl UsageEngine {
     }
 
     /// The typical run of each kind of helper over the last `days` days, for the Now tracker.
-    /// `None` while the first pass over the transcripts is still running (the medians would be
-    /// of a partly read history).
-    pub fn typical_runs(&self, days: u32) -> Option<Vec<query::TypicalRun>> {
+    /// `Ok(None)` while the first pass over the transcripts is still running (the medians would be
+    /// of a partly read history); `Err` when the query itself failed.
+    pub fn typical_runs(&self, days: u32) -> Result<Option<Vec<query::TypicalRun>>, String> {
         if !matches!(self.status().state, State::Idle | State::ReadOnly) {
-            return None;
+            return Ok(None);
         }
-        self.read(|c, x| query::typical_runs(c, x, days)).ok()
+        self.read(|c, x| query::typical_runs(c, x, days)).map(Some)
     }
 
     /// The local day it is now (the day the app's periods end on).

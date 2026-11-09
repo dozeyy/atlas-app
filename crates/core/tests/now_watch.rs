@@ -164,7 +164,7 @@ fn a_helper_appears_with_its_own_name_and_spend() {
 fn fake_typical(runs: u32, asked: Arc<std::sync::atomic::AtomicU32>) -> atlas_core::now::TypicalSource {
     Arc::new(move || {
         asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Some(vec![atlas_core::usage::query::TypicalRun { agent_type: "Explore".into(), calls: 20, ms: 90_000, runs }])
+        atlas_core::now::TypicalAnswer::Ready(vec![atlas_core::usage::query::TypicalRun { agent_type: "Explore".into(), calls: 20, ms: 90_000, runs }])
     })
 }
 

@@ -12,6 +12,8 @@ import type { NowHelper } from "./nowTypes";
 export const STUCK_MS = 5 * 60_000;
 /** While a helper runs, its fill never passes this: only finishing completes the trail. */
 export const FILL_CAP = 0.9;
+/** Below this share of a typical run the line says "Just started" instead of a percentage. */
+export const JUST_STARTED = 0.05;
 
 export type ProgressKind = "plan" | "typical" | "over" | "none";
 
@@ -46,7 +48,9 @@ export function progressOf(h: NowHelper): Progress {
     const { done, total } = h.plan;
     return {
       kind: "plan",
-      fill: Math.min(1, done / total),
+      // Capped like every other fill: a helper whose steps are all ticked is still running until
+      // it ends, and only finishing completes the trail.
+      fill: Math.min(FILL_CAP, done / total),
       text: `Step ${Math.min(done + 1, total)} of ${total}`,
     };
   }
@@ -54,8 +58,11 @@ export function progressOf(h: NowHelper): Progress {
   if (t && t.calls > 0) {
     const hint = `A typical ${typeName(h.agentType).toLowerCase()} run: ${t.calls} tool calls, ${formatDuration(t.ms)} (median of ${t.runs} runs).`;
     if (h.toolCalls >= t.calls) return { kind: "over", fill: FILL_CAP, text: "Longer than a typical run", hint };
-    const pct = Math.min(90, Math.max(10, Math.round((h.toolCalls / t.calls) * 10) * 10));
-    return { kind: "typical", fill: Math.min(FILL_CAP, h.toolCalls / t.calls), text: `About ${pct}% of a typical run`, hint };
+    const share = h.toolCalls / t.calls;
+    // Almost nothing done yet: a percentage would be a made-up number.
+    if (share < JUST_STARTED) return { kind: "typical", fill: share, text: "Just started", hint };
+    const pct = Math.min(90, Math.max(10, Math.round(share * 10) * 10));
+    return { kind: "typical", fill: Math.min(FILL_CAP, share), text: `About ${pct}% of a typical run`, hint };
   }
   return { kind: "none", fill: null, text: "No past runs to compare" };
 }

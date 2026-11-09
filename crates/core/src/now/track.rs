@@ -60,6 +60,9 @@ struct PlanTrack {
     steps: Vec<StepState>,
     /// A step was completed, or the active step changed after the list was first seen.
     moved: bool,
+    /// A TaskUpdate named a task number that is not one of 1..=steps: the ids are not the plain
+    /// 1..n this reads them as, so no step count is claimed (the page falls back to the typical run).
+    irregular: bool,
 }
 
 impl PlanTrack {
@@ -87,7 +90,10 @@ impl PlanTrack {
             PlanOp::Add => self.edit(|s| s.push(StepState::Pending)),
             PlanOp::Update { id, status } => {
                 // Task ids count up from 1 in the order they were created.
-                let Some(i) = id.parse::<usize>().ok().and_then(|n| n.checked_sub(1)) else { return };
+                let Some(i) = id.parse::<usize>().ok().and_then(|n| n.checked_sub(1)).filter(|i| *i < self.steps.len()) else {
+                    self.irregular = true;
+                    return;
+                };
                 let to = match status.as_str() {
                     "completed" => StepState::Done,
                     "in_progress" => StepState::Active,
@@ -123,7 +129,7 @@ impl PlanTrack {
 
     /// "Step 3 of 6": two or more steps, and it has moved.
     fn count(&self) -> Option<PlanCount> {
-        (self.steps.len() >= 2 && self.moved).then(|| PlanCount { done: self.done(), total: self.steps.len() as u32 })
+        (self.steps.len() >= 2 && self.moved && !self.irregular).then(|| PlanCount { done: self.done(), total: self.steps.len() as u32 })
     }
 }
 
@@ -165,6 +171,37 @@ pub struct FileTrack {
     /// The model id and effort level this helper's newest lines say, if they say them.
     model: Option<String>,
     effort: Option<String>,
+    /// The newest line's time before the one being read (the helper's last activity then).
+    prev_ts: Option<i64>,
+    /// Where a new run may have begun (a message to the helper after its turn ended).
+    marks: VecDeque<RunMark>,
+}
+
+/// A point where a helper may have begun a new run: a message to it, or new calls, after its turn
+/// ended. Whether it really did is decided when the row is built (`Session::run_of`), because the
+/// parent's task-notification may be read after the helper's own line. A message that arrives
+/// while the helper is mid-turn (the lead steering it) is not a mark: it is the same run.
+struct RunMark {
+    ts: i64,
+    prev_ts: Option<i64>,
+    /// Its previous turn had ended cleanly.
+    after_end: bool,
+    /// The file's totals at that point: the run's own are what has come since.
+    calls: u32,
+    tokens: u64,
+    cost: f64,
+    priced: usize,
+}
+
+/// How many run marks (and notices per helper) are kept.
+const MAX_MARKS: usize = 16;
+
+/// What the row shows of a helper's current run.
+struct RunView {
+    first_ts: Option<i64>,
+    calls: u32,
+    tokens: u64,
+    cost: Option<f64>,
 }
 
 impl FileTrack {
@@ -199,7 +236,36 @@ impl FileTrack {
             plan: PlanTrack::default(),
             model: None,
             effort: None,
+            prev_ts: None,
+            marks: VecDeque::new(),
         }
+    }
+
+    /// Rows that have a price (cost known).
+    fn priced(&self) -> usize {
+        self.rows.len().saturating_sub(self.unpriced as usize)
+    }
+
+    /// Note that a new run may have begun here (see `RunMark`). Nothing to mark before the first call.
+    fn mark_run(&mut self, at: Option<i64>, after_end: bool) {
+        let Some(ts) = at else { return };
+        if self.calls == 0 {
+            return;
+        }
+        if self.marks.len() >= MAX_MARKS {
+            // Make room by dropping a steering message before a certain restart.
+            let at = self.marks.iter().position(|m| !m.after_end).unwrap_or(0);
+            self.marks.remove(at);
+        }
+        self.marks.push_back(RunMark {
+            ts,
+            prev_ts: self.prev_ts,
+            after_end,
+            calls: self.calls,
+            tokens: self.tokens,
+            cost: self.cost,
+            priced: self.priced(),
+        });
     }
 
     fn reset(&mut self) {
@@ -347,7 +413,7 @@ pub struct Session {
     steps: VecDeque<StepRec>,
     touched: Vec<NowFile>,
     /// Helpers a `<task-notification>` in this chat says are over: agent id -> when it was recorded.
-    ended_helpers: HashMap<String, i64>,
+    ended_helpers: HashMap<String, Vec<i64>>,
 }
 
 fn mask(s: &str) -> String {
@@ -421,6 +487,7 @@ impl Session {
         let is_sub = self.files[fi].is_sub;
         if let Some(t) = p.ts_ms {
             let f = &mut self.files[fi];
+            f.prev_ts = f.last_ts;
             f.first_ts.get_or_insert(t);
             f.last_ts = Some(f.last_ts.map_or(t, |o| o.max(t)));
         }
@@ -431,7 +498,15 @@ impl Session {
         }
         for n in &p.notices {
             if ENDED_STATUSES.contains(&n.status.as_str()) {
-                self.ended_helpers.entry(n.agent_id.clone()).or_insert_with(|| p.ts_ms.unwrap_or_else(now_ms));
+                // Every notice is kept and the newest wins: a helper resumed after one notice and
+                // then killed or failed has a newer one, and an older one alone would leave it
+                // looking alive.
+                let at = p.ts_ms.unwrap_or_else(now_ms);
+                let log = self.ended_helpers.entry(n.agent_id.clone()).or_default();
+                if log.len() >= MAX_MARKS {
+                    log.remove(0);
+                }
+                log.push(at);
             }
         }
         match p.role {
@@ -449,9 +524,16 @@ impl Session {
                 if p.interrupted {
                     self.files[fi].ended = true;
                 } else {
+                    let was_ended = self.files[fi].ended;
                     self.files[fi].ended = false;
                     if !is_sub {
                         self.prompt_ts = p.ts_ms.or(self.prompt_ts);
+                    } else {
+                        // A message to a helper whose turn had ended is a new run; one while it
+                        // is mid-turn (the lead steering it, a reminder, a notification) is the
+                        // same run, unless the parent recorded the helper's end in between (a
+                        // killed helper has no clean end line). `run_of` decides.
+                        self.files[fi].mark_run(p.ts_ms, was_ended);
                     }
                 }
             }
@@ -496,6 +578,7 @@ impl Session {
         if is_sub && p.effort.is_some() {
             self.files[fi].effort = p.effort.clone();
         }
+        let mut repeated = false;
         if let Some(m) = p.usage {
             if !is_sub && !m.model.is_empty() {
                 self.model = Some(m.model.clone());
@@ -521,6 +604,7 @@ impl Session {
             let f = &mut self.files[fi];
             let key = if m.key.is_empty() { format!("#{}", f.rows.len()) } else { m.key.clone() };
             if let Some(old) = f.rows.insert(key, Row { tokens: row.tokens, cost: row.cost }) {
+                repeated = true;
                 f.tokens = f.tokens.saturating_sub(old.tokens);
                 match old.cost {
                     Some(c) => f.cost = (f.cost - c).max(0.0),
@@ -534,6 +618,12 @@ impl Session {
             }
         }
         let ts = p.ts_ms.unwrap_or(0);
+        // A new message of the helper after its turn ended (a lead's message reaches it as a
+        // line the reader skips, so this is how a resume shows): possibly a new run. A repeat of
+        // a message already counted is not new.
+        if is_sub && self.files[fi].ended && !repeated {
+            self.files[fi].mark_run(p.ts_ms, true);
+        }
         if p.tools.is_empty() {
             let end = matches!(p.stop_reason.as_deref(), Some("end_turn" | "stop_sequence" | "max_tokens" | "refusal"));
             self.files[fi].ended = end;
@@ -617,7 +707,34 @@ impl Session {
         let newest = f.last_ts;
         let live = |sig: Option<i64>| sig.filter(|t| newest.is_none_or(|n| n <= *t + 2_000));
         let by_line = (f.ended && f.pending.is_empty()).then(|| f.last_ts.unwrap_or(f.mtime_ms));
-        [live(self.ended_helpers.get(&f.agent_id).copied()), live(f.meta_finished_ms), by_line].into_iter().flatten().min()
+        let notice = self.ended_helpers.get(&f.agent_id).and_then(|log| log.iter().max().copied());
+        [live(notice), live(f.meta_finished_ms), by_line].into_iter().flatten().min()
+    }
+
+    /// This helper's current run: the one that began at its newest real restart. A mark is a
+    /// restart when the helper's turn had ended before it, or the parent recorded a notice for the
+    /// helper between its last activity and the mark. A helper resumed hours later starts its
+    /// clock, calls and spend over; one the lead only steered mid-turn keeps going as one run.
+    fn run_of(&self, f: &FileTrack) -> RunView {
+        let notices = self.ended_helpers.get(&f.agent_id);
+        let restart = |m: &RunMark| {
+            m.after_end
+                || notices.is_some_and(|log| log.iter().any(|n| m.prev_ts.is_none_or(|p| *n + 2_000 >= p) && *n <= m.ts))
+        };
+        match f.marks.iter().rev().find(|m| restart(m)) {
+            Some(m) => RunView {
+                first_ts: Some(m.ts),
+                calls: f.calls.saturating_sub(m.calls),
+                tokens: f.tokens.saturating_sub(m.tokens),
+                cost: (f.priced() > m.priced).then(|| (f.cost - m.cost).max(0.0)),
+            },
+            None => RunView {
+                first_ts: f.first_ts,
+                calls: f.calls,
+                tokens: f.tokens,
+                cost: (f.rows.len() > f.unpriced as usize).then_some(f.cost),
+            },
+        }
     }
 
     /// A helper is running until it ends (`finished_at`); with no end signal it is taken to be
@@ -654,20 +771,21 @@ impl Session {
         } else {
             Some(doing_of(&f.pending).unwrap_or_else(|| Doing { kind: "think".into(), verb: "Thinking".into(), target: None }))
         };
+        let run = self.run_of(f);
         NowHelper {
             id: f.agent_id.clone(),
             name: f.name.clone().unwrap_or_else(|| "Helper".to_string()),
             doing,
-            tokens: f.tokens,
-            cost_usd: (f.rows.len() as u32 > f.unpriced).then_some(f.cost),
-            started_ms: f.first_ts,
+            tokens: run.tokens,
+            cost_usd: run.cost,
+            started_ms: run.first_ts,
             done,
             agent_type: f.agent_type.clone(),
             goal: f.goal.clone(),
-            tool_calls: f.calls,
+            tool_calls: run.calls,
             plan: f.plan.count(),
             typical: None,
-            phase: f.phase().to_string(),
+            phase: if run.calls == 0 { "Getting started" } else { f.phase() }.to_string(),
             last_line_ms: Some(f.last_activity_ms()).filter(|t| *t > 0),
             open_call: if done { None } else { f.open_call() },
             model: f.model.clone(),
@@ -701,7 +819,14 @@ impl Session {
         } else if let Some(d) = doing_of(pending) {
             d
         } else if main.is_some_and(|m| m.ended) {
-            wait_doing("wait", "Waiting for you")
+            // The chat ended its own turn but its helpers are still at work (they were started to
+            // run on their own): it is still working, on them. It waits for you only once they are done.
+            if out > 0 {
+                let verb = if out == 1 { "Waiting on a helper".to_string() } else { format!("Waiting on {out} helpers") };
+                wait_doing("helper", &verb)
+            } else {
+                wait_doing("wait", "Waiting for you")
+            }
         } else if main.is_none() && let Some(h) = helpers.iter().find(|h| !h.done).and_then(|h| h.doing.clone()) {
             h
         } else {
@@ -1156,6 +1281,177 @@ mod tests {
         more.push(tool("h2", "Edit", r#"{"file_path":"y","old_string":"a","new_string":"b"}"#, "2026-11-08T10:01:00.000Z"));
         let (_d, s) = with_helper(&[notice("completed", "2026-11-08T10:00:06.000Z")], &more, META);
         assert_eq!(running(&s, now_after()), 1);
+    }
+
+    #[test]
+    fn a_chat_that_ended_its_turn_is_still_working_while_its_helpers_are() {
+        // The chat started helpers that run on their own, got the starts back and ended its turn.
+        let parent_done = [result("task1"), end("2026-11-08T10:00:09.000Z")];
+        let working = [tool("h1", "Bash", r#"{"command":"cargo build"}"#, "2026-11-08T10:00:03.000Z")];
+        let (_d, s) = with_helper(&parent_done, &working, META);
+        let c = s.chat(now_after());
+        assert_eq!((c.state.as_str(), c.doing.verb.as_str(), c.doing.kind.as_str()), ("working", "Waiting on a helper", "helper"));
+        assert_eq!(c.helpers.len(), 1);
+        // Once the helper is done the chat waits for you again.
+        let (_d, s) = with_helper(
+            // (the notice is a user line in the chat, so the chat's own end comes after it)
+            &[result("task1"), notice("completed", "2026-11-08T10:00:10.000Z"), end("2026-11-08T10:00:11.000Z")],
+            &working,
+            META,
+        );
+        let c = s.chat(now_after());
+        assert_eq!((c.state.as_str(), c.doing.verb.as_str()), ("waiting", "Waiting for you"));
+    }
+
+    #[test]
+    fn a_helper_resumed_then_killed_is_ended_by_its_newest_notice() {
+        let lines = [
+            tool("h1", "Read", r#"{"file_path":"x"}"#, "2026-11-08T10:00:02.000Z"),
+            result("h1"),
+            end("2026-11-08T10:00:05.000Z"),
+            // Sent another message half an hour later, working again...
+            prompt("2026-11-08T10:30:00.000Z"),
+            tool("h2", "Bash", r#"{"command":"cargo build"}"#, "2026-11-08T10:30:10.000Z"),
+        ];
+        // ...with only the first notice on record it is running.
+        let (_d, s) = with_helper(&[notice("completed", "2026-11-08T10:00:06.000Z")], &lines, META);
+        assert_eq!(running(&s, now_after()), 1);
+        // The second run was killed with no clean end line: the newer notice ends it.
+        let both = [notice("completed", "2026-11-08T10:00:06.000Z"), notice("killed", "2026-11-08T10:31:00.000Z")];
+        let (_d, s) = with_helper(&both, &lines, META);
+        assert_eq!(running(&s, now_after()), 0);
+        // Notices read in any order: the newest is kept.
+        let swapped = [notice("killed", "2026-11-08T10:31:00.000Z"), notice("completed", "2026-11-08T10:00:06.000Z")];
+        let (_d, s) = with_helper(&swapped, &lines, META);
+        assert_eq!(running(&s, now_after()), 0);
+    }
+
+    #[test]
+    fn a_resumed_helper_starts_its_clock_calls_and_spend_over() {
+        let (_d, s) = with_helper(
+            &[],
+            &[
+                prompt("2026-11-08T10:00:01.000Z"),
+                tool("h1", "Read", r#"{"file_path":"x"}"#, "2026-11-08T10:00:02.000Z"),
+                result("h1"),
+                tool("h2", "Read", r#"{"file_path":"y"}"#, "2026-11-08T10:00:03.000Z"),
+                result("h2"),
+                end("2026-11-08T10:00:05.000Z"),
+                // A day later it is sent another message.
+                prompt("2026-11-09T10:00:00.000Z"),
+                tool("h3", "Grep", r#"{"pattern":"z"}"#, "2026-11-09T10:00:10.000Z"),
+            ],
+            META,
+        );
+        let h = &s.chat(now_after()).helpers[0];
+        assert_eq!(h.tool_calls, 1);
+        assert_eq!(h.started_ms, crate::usage::time::parse_iso_ms("2026-11-09T10:00:00.000Z"));
+        assert_eq!(h.tokens, 115);
+        assert_eq!(h.phase, "Reading");
+        assert!(!h.done);
+    }
+
+    #[test]
+    fn messages_to_a_helper_mid_turn_do_not_restart_its_run() {
+        // The lead steers a working helper again and again (and reminders arrive as text lines):
+        // nothing ended in between, so it is one run with every call counted.
+        let (_d, s) = with_helper(
+            &[],
+            &[
+                prompt("2026-11-08T10:00:01.000Z"),
+                tool("h1", "Read", r#"{"file_path":"x"}"#, "2026-11-08T10:00:02.000Z"),
+                result("h1"),
+                prompt("2026-11-08T10:10:00.000Z"),
+                tool("h2", "Read", r#"{"file_path":"y"}"#, "2026-11-08T10:10:05.000Z"),
+                prompt("2026-11-08T10:20:00.000Z"),
+                tool("h3", "Read", r#"{"file_path":"z"}"#, "2026-11-08T10:20:05.000Z"),
+            ],
+            META,
+        );
+        let h = &s.chat(now_after()).helpers[0];
+        assert_eq!(h.tool_calls, 3);
+        assert_eq!(h.started_ms, crate::usage::time::parse_iso_ms("2026-11-08T10:00:01.000Z"));
+        assert_eq!(h.tokens, 3 * 115);
+    }
+
+    #[test]
+    fn a_helper_resumed_by_a_line_the_reader_skips_still_starts_a_new_run() {
+        // The lead's message reaches a finished helper as an injected (meta) user line, and the
+        // helper may answer with a line of text before it makes a call.
+        let meta = r#"{"type":"user","isMeta":true,"timestamp":"2026-11-08T10:30:00.000Z","message":{"role":"user","content":"more work"}}"#.to_string();
+        let said = r#"{"type":"assistant","timestamp":"2026-11-08T10:30:05.000Z","requestId":"rsaid","message":{"id":"msaid","model":"claude-opus-5-5","stop_reason":null,"content":[{"type":"text","text":"on it"}],"usage":{"input_tokens":1,"output_tokens":1}}}"#.to_string();
+        let (_d, s) = with_helper(
+            &[],
+            &[
+                prompt("2026-11-08T10:00:01.000Z"),
+                tool("h1", "Read", r#"{"file_path":"x"}"#, "2026-11-08T10:00:02.000Z"),
+                result("h1"),
+                tool("h2", "Read", r#"{"file_path":"y"}"#, "2026-11-08T10:00:03.000Z"),
+                result("h2"),
+                end("2026-11-08T10:00:05.000Z"),
+                meta,
+                said,
+                tool("h3", "Bash", r#"{"command":"cargo build"}"#, "2026-11-08T10:30:10.000Z"),
+            ],
+            META,
+        );
+        let h = &s.chat(now_after()).helpers[0];
+        assert_eq!(h.tool_calls, 1);
+        assert_eq!(h.started_ms, crate::usage::time::parse_iso_ms("2026-11-08T10:30:05.000Z"));
+        assert!(!h.done);
+    }
+
+    #[test]
+    fn a_helper_killed_with_no_end_line_and_then_resumed_starts_a_new_run_whatever_is_read_first() {
+        let sub = [
+            prompt("2026-11-08T10:00:01.000Z"),
+            tool("h1", "Read", r#"{"file_path":"x"}"#, "2026-11-08T10:00:02.000Z"),
+            tool("h2", "Read", r#"{"file_path":"y"}"#, "2026-11-08T10:00:03.000Z"),
+            // No end line: it was killed. The lead sends it a message a day later.
+            prompt("2026-11-09T10:00:00.000Z"),
+            tool("h3", "Grep", r#"{"pattern":"z"}"#, "2026-11-09T10:00:10.000Z"),
+        ];
+        // The parent's notice is read after the helper's own lines (the files are read in either order).
+        let (d, mut s) = with_helper(&[], &sub, META);
+        assert_eq!(s.chat(now_after()).helpers[0].tool_calls, 3);
+        let main = d.path().join("s1.jsonl");
+        let mut f = std::fs::OpenOptions::new().append(true).open(&main).unwrap();
+        writeln!(f, "{}", notice("killed", "2026-11-08T10:05:00.000Z")).unwrap();
+        drop(f);
+        s.read_file(0, &Facts::new(), &PriceTable::seed(), &ReadStats::default()).unwrap();
+        let h = &s.chat(now_after()).helpers[0];
+        assert_eq!(h.tool_calls, 1);
+        assert_eq!(h.started_ms, crate::usage::time::parse_iso_ms("2026-11-09T10:00:00.000Z"));
+        assert!(!h.done);
+    }
+
+    #[test]
+    fn task_ids_that_are_not_one_to_n_give_no_step_count() {
+        let create = |id: &str, ts: &str| tool(id, "TaskCreate", r#"{"subject":"a"}"#, ts);
+        let update = |id: &str, n: &str, ts: &str| tool(id, "TaskUpdate", &format!(r#"{{"taskId":"{n}","status":"completed"}}"#), ts);
+        let (_d, s) = with_helper(
+            &[],
+            &[
+                create("c1", "2026-11-08T10:00:02.000Z"),
+                create("c2", "2026-11-08T10:00:03.000Z"),
+                update("u1", "1", "2026-11-08T10:00:04.000Z"),
+                // A number past the list: the ids are not the plain 1..n.
+                update("u2", "7", "2026-11-08T10:00:05.000Z"),
+            ],
+            META,
+        );
+        assert_eq!(s.chat(now_after()).helpers[0].plan, None);
+        let (_d, s) = with_helper(
+            &[],
+            &[
+                create("c1", "2026-11-08T10:00:02.000Z"),
+                create("c2", "2026-11-08T10:00:03.000Z"),
+                update("u1", "abc", "2026-11-08T10:00:04.000Z"),
+                update("u2", "1", "2026-11-08T10:00:05.000Z"),
+            ],
+            META,
+        );
+        assert_eq!(s.chat(now_after()).helpers[0].plan, None);
     }
 
     #[test]
