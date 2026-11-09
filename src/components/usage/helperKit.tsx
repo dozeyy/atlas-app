@@ -6,7 +6,7 @@ import type { ComponentType } from "react";
 import { Compass, Eye, Flask, Lightning, MapTrifold, Robot } from "@phosphor-icons/react";
 import type { IconProps } from "@phosphor-icons/react";
 import { CountUp } from "../CountUp";
-import { costView, formatUsd, modelLabel } from "../../lib/usage";
+import { compact, costView, formatUsd, modelLabel, tokenHint } from "../../lib/usage";
 import type { Cost, SessionRow } from "../../lib/types";
 
 // ---- names -------------------------------------------------------------------
@@ -95,19 +95,19 @@ export function AgentAvatar({ type, size = 40 }: { type: string | null; size?: n
   );
 }
 
-// ---- a cost that counts up ---------------------------------------------------
+// ---- a token figure that counts up --------------------------------------------
 
 /**
- * A cost that counts up to its figure the first time `id` shows in a launch. Screen readers
- * get the final figure and the word "estimated", never the ticks.
+ * A token figure that counts up the first time `id` shows in a launch (Will, 2026-11-08:
+ * tokens everywhere, money on hover). The hover holds the exact count and the API-price
+ * estimate; screen readers get the final figure and the estimate as words, never the ticks.
  */
-export function CostFigure({ cost, id, className = "" }: { cost: Cost; id: string; className?: string }) {
+export function TokenFigure({ tokens, cost, id, className = "" }: { tokens: number; cost: Cost; id: string; className?: string }) {
   const v = costView(cost);
-  if (v.none) return <span className={`text-ink-2 ${className}`}>{v.text}</span>;
   return (
-    <span className="tabular-nums" title="An estimate from the price list, not a bill.">
-      <CountUp value={cost.usd ?? 0} id={id} format={(n) => `${formatUsd(n)}${v.partial ? "+" : ""}`} className={className} />
-      <span className="sr-only">{`, estimated${v.partial ? ", incomplete" : ""}`}</span>
+    <span className="tabular-nums" title={tokenHint(tokens, cost)}>
+      <CountUp value={tokens} id={id} format={(n) => `${compact(Math.round(n))} tokens`} className={className} />
+      {!v.none && <span className="sr-only">{`, about ${formatUsd(cost.usd ?? 0)} at API prices, estimated${v.partial ? ", incomplete" : ""}`}</span>}
     </span>
   );
 }

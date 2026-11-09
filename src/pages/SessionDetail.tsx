@@ -8,7 +8,7 @@ import { CostText } from "../components/usage/CostText";
 import { Breakdown, ModelSplit, Stat } from "../components/usage/detailParts";
 import { HelperMap } from "../components/usage/HelperMap";
 import { HelperSlice } from "../components/usage/HelperSlice";
-import { AgentAvatar, CostFigure, ModelChip, ModelDots, sessionName } from "../components/usage/helperKit";
+import { AgentAvatar, ModelChip, ModelDots, sessionName, TokenFigure } from "../components/usage/helperKit";
 import { ReceiptPane } from "../components/usage/ReceiptPane";
 import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
 import { hasClearPeak, spendRidge, timelineBars } from "../components/usage/timelineBars";
@@ -395,7 +395,7 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
           </div>
         </div>
         <div className="shrink-0 text-right">
-          <CostFigure cost={row.cost} id={`session:${id}:cost`} className="d d-stat text-ink" />
+          <TokenFigure tokens={row.tokens.total} cost={row.cost} id={`session:${id}:tokens`} className="d d-stat text-ink" />
           {claudeCodeCostUsd !== null && <div className="text-caption text-ink-2">{`Claude Code showed ${formatUsd(claudeCodeCostUsd)}`}</div>}
         </div>
       </div>

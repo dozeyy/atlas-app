@@ -5,7 +5,7 @@ import { Bars } from "../components/charts/Bars";
 import { Ridge } from "../components/charts/Ridge";
 import { IconMotion } from "../components/IconMotion";
 import { Breakdown, ModelSplit, Stat } from "../components/usage/detailParts";
-import { AgentAvatar, CostFigure, ModelChip } from "../components/usage/helperKit";
+import { AgentAvatar, ModelChip, TokenFigure } from "../components/usage/helperKit";
 import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
 import { hasClearPeak, spendRidge, timelineBars } from "../components/usage/timelineBars";
 import { getBackend } from "../lib/ipc";
@@ -75,8 +75,8 @@ export function AgentDetailView({
     );
   }
 
-  const { agent, byModel, file, prompt, promptTruncated, sessionCost } = d.data;
-  const frac = share(agent.cost.usd ?? 0, sessionCost.usd ?? 0);
+  const { agent, byModel, file, prompt, promptTruncated, sessionTokens } = d.data;
+  const frac = share(agent.tokens.total, sessionTokens.total);
 
   return (
     <div className="@container">
@@ -103,17 +103,17 @@ export function AgentDetailView({
 
       <Card className="mt-6 grid grid-cols-1 gap-x-8 gap-y-4 px-6 py-5 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
         <div className="min-w-0">
-          <div className="text-caption font-medium text-ink-2">This helper spent about</div>
+          <div className="text-caption font-medium text-ink-2">This helper used</div>
           <div className="mt-2">
-            <CostFigure cost={agent.cost} id={`agent:${sessionId}:${agentId}:cost`} className="d d-hero text-ink" />
+            <TokenFigure tokens={agent.tokens.total} cost={agent.cost} id={`agent:${sessionId}:${agentId}:tokens`} className="d d-hero text-ink" />
           </div>
           <div className="mt-4 max-w-[28rem]">
-            <div className={`share-bar${intro ? " intro" : ""}`} role="img" aria-label={`${percent(frac)} of the session's spend`}>
+            <div className={`share-bar${intro ? " intro" : ""}`} role="img" aria-label={`${percent(frac)} of the session's tokens`}>
               <i style={{ width: `${Math.max(frac > 0 ? 2 : 0, frac * 100)}%` }} />
             </div>
             <p className="mt-2 text-body text-ink-2">
               <span className="font-medium text-ink">{percent(frac)}</span>
-              {" of this session's estimated cost. It is counted once, inside the session total."}
+              {" of this session's tokens, counted once inside the session total."}
             </p>
           </div>
         </div>
