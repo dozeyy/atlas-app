@@ -49,7 +49,7 @@
 5. The public tag points at `main` as it was when the release was published, which is just before the plugin commit lands, so browsing the tag on GitHub shows the previous `skill/`. Downloads are not affected (they use the release assets); the current plugin is always on `main`.
 6. Rerun is safe: it does the plugin sync on every run, also when the release is already published, so a push that failed after publishing is finished by rerunning. A complete published release plus an up-to-date plugin changes nothing.
 7. If it refuses, nothing was published (or, for a failed push, only the release is public and the message says to rerun); fix the cause and rerun.
-7. The script prints no secrets, handles none, and opens no windows beyond its own console. It leaves no files behind (the temp folder is removed).
+8. The script prints no secrets, handles none, and opens no windows beyond its own console. It leaves no files behind (the temp folder is removed).
 8. Test hooks, for trying the script without a real release: `-AssetsDir <folder>` and `-SourceTree <folder>` replace the download and the `origin/main` read; `-CloneUrl` clones the plugin repo from somewhere else.
 
 ## Roll back a published release
