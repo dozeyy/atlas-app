@@ -253,8 +253,9 @@ fn project_from_cwd_and_relocated() {
             .query_row("SELECT project_key FROM sessions WHERE session_id=?1", [uid(n)], |r| r.get(0))
             .unwrap()
     };
-    if cfg!(windows) {
-        assert_eq!(key(7), key(8), "C:\\X\\Proj and c:\\x\\proj are one project on Windows");
+    // Windows and macOS folders are case-insensitive by default, so `project_key` folds case there.
+    if cfg!(any(windows, target_os = "macos")) {
+        assert_eq!(key(7), key(8), "C:\\X\\Proj and c:\\x\\proj are one project on Windows and macOS");
     } else {
         assert_ne!(key(7), key(8));
     }
