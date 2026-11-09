@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getBackend } from "./ipc";
-import { last24Hours, statRange, todayTotal } from "./todayStat";
+import { hourKey, last24Hours, statRange, todayTotal } from "./todayStat";
 
 export interface TodayStat {
   total: number;
@@ -27,6 +27,7 @@ export function useTodayStat(scope: string | null): TodayStat | null {
     let debounce: ReturnType<typeof setTimeout> | undefined;
     let hourTimer: ReturnType<typeof setTimeout> | undefined;
     let retries = 0;
+    let loadedHour = "";
 
     const load = () => {
       const id = ++seq.current;
@@ -36,6 +37,7 @@ export function useTodayStat(scope: string | null): TodayStat | null {
         .then((t) => {
           if (!alive || id !== seq.current) return;
           retries = 0;
+          loadedHour = hourKey(now);
           setStat({ total: todayTotal(t.points, now), hours: last24Hours(t.points, now) });
         })
         .catch(() => {
@@ -55,6 +57,14 @@ export function useTodayStat(scope: string | null): TodayStat | null {
       }, Math.max(1000, next - n.getTime()));
     };
 
+    // A sleeping machine can miss the top-of-hour timer, so coming back to the window also
+    // refreshes when the hour (or the day) it was read in has passed.
+    const onBack = () => {
+      if (document.visibilityState !== "hidden" && hourKey(new Date()) !== loadedHour) load();
+    };
+    document.addEventListener("visibilitychange", onBack);
+    window.addEventListener("focus", onBack);
+
     load();
     armHour();
     backend
@@ -67,6 +77,8 @@ export function useTodayStat(scope: string | null): TodayStat | null {
     return () => {
       alive = false;
       seq.current++;
+      document.removeEventListener("visibilitychange", onBack);
+      window.removeEventListener("focus", onBack);
       off?.();
       if (debounce) clearTimeout(debounce);
       if (hourTimer) clearTimeout(hourTimer);

@@ -29,6 +29,8 @@ import { hasClearPeak, spendRidge, timelineBars } from "../components/usage/time
 import type { BarDatum } from "../components/charts/shared";
 import { getBackend } from "../lib/ipc";
 import { copyResume, openFolder } from "../lib/sessionActions";
+import { resumeCommand } from "../lib/sessionBrowse";
+import { useAtlas } from "../state/AtlasProvider";
 import { helperTree, type HelperNode } from "../lib/helperTree";
 import { MAIN_ID } from "../lib/helperMap";
 import { useIntro } from "../lib/motion";
@@ -407,6 +409,7 @@ export function SessionDetailView({
   onJump?: (id: string) => void;
 }) {
   const backend = getBackend();
+  const { info } = useAtlas();
   const at = siblings ? siblings.indexOf(id) : -1;
   const prevId = siblings && at > 0 ? siblings[at - 1] : null;
   const nextId = siblings && at >= 0 && at < siblings.length - 1 ? siblings[at + 1] : null;
@@ -512,6 +515,7 @@ export function SessionDetailView({
 
   const { row, agents, claudeCodeCostUsd } = d.data;
   const name = sessionName(row);
+  const resume = resumeCommand(id, row.projectPath, info.platform);
   const sessionUsd = row.cost.usd ?? 0;
   const names = new Map(agents.map((a) => [a.agentId, a.name]));
   const hasHelpers = agents.length > 0;
@@ -600,10 +604,12 @@ export function SessionDetailView({
           />
         )}
         <div className="ml-auto flex items-center gap-2">
-          <Button title="Copy the command that reopens this chat in a terminal" onClick={() => void copyResume(id, row.projectPath)}>
-            <Copy size={14} aria-hidden="true" />
-            Copy resume
-          </Button>
+          {resume && (
+            <Button title="Copy the command that reopens this chat in a terminal" onClick={() => void copyResume(resume)}>
+              <Copy size={14} aria-hidden="true" />
+              Copy resume
+            </Button>
+          )}
           {row.projectPath && (
             <Button title={`Open ${row.projectPath}`} onClick={() => void openFolder(id)}>
               <FolderOpen size={14} aria-hidden="true" />

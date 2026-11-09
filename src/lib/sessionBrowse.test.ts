@@ -69,14 +69,63 @@ describe("project colour", () => {
 });
 
 describe("resume command", () => {
-  it("goes to the folder first when it is known", () => {
-    expect(resumeCommand("abc-123", "C:/code/atlas")).toBe('cd "C:/code/atlas"\nclaude --resume abc-123');
+  const ID = "0b1c2d3e-4f50-6789-abcd-ef0123456789";
+
+  it("is one PowerShell line on Windows, in single quotes", () => {
+    expect(resumeCommand(ID, "C:\\code\\atlas", "windows")).toBe(
+      `Set-Location -LiteralPath 'C:\\code\\atlas'; claude --resume ${ID}`,
+    );
+  });
+  it("keeps a folder on another drive as it is (Set-Location changes drive)", () => {
+    expect(resumeCommand(ID, "D:\\Games\\My Project", "windows")).toBe(
+      `Set-Location -LiteralPath 'D:\\Games\\My Project'; claude --resume ${ID}`,
+    );
+  });
+  it("is one POSIX line on macOS and Linux", () => {
+    const want = `cd '/Users/will/My Code' && claude --resume ${ID}`;
+    expect(resumeCommand(ID, "/Users/will/My Code", "macos")).toBe(want);
+    expect(resumeCommand(ID, "/Users/will/My Code", "linux")).toBe(want);
   });
   it("is just the resume line without a folder", () => {
-    expect(resumeCommand("abc-123", "")).toBe("claude --resume abc-123");
-    expect(resumeCommand("abc-123", null)).toBe("claude --resume abc-123");
+    for (const p of [undefined, null, "", "   "]) {
+      expect(resumeCommand(ID, p, "windows")).toBe(`claude --resume ${ID}`);
+      expect(resumeCommand(ID, p, "macos")).toBe(`claude --resume ${ID}`);
+    }
   });
-  it("never lets a quote through", () => {
-    expect(resumeCommand("x", 'C:/a"b')).toBe('cd "C:/ab"\nclaude --resume x');
+
+  it("leaves $, backtick and % alone in single quotes", () => {
+    expect(resumeCommand(ID, "C:\\a $env:X `b %PATH%", "windows")).toBe(
+      `Set-Location -LiteralPath 'C:\\a $env:X \`b %PATH%'; claude --resume ${ID}`,
+    );
+    expect(resumeCommand(ID, "/a/$HOME/`id`", "linux")).toBe(`cd '/a/$HOME/\`id\`' && claude --resume ${ID}`);
+  });
+  it("doubles a single quote for PowerShell, curly ones too", () => {
+    expect(resumeCommand(ID, "C:\\Will's", "windows")).toBe(`Set-Location -LiteralPath 'C:\\Will''s'; claude --resume ${ID}`);
+    expect(resumeCommand(ID, "C:\\Will\u2019s", "windows")).toBe(
+      `Set-Location -LiteralPath 'C:\\Will\u2019\u2019s'; claude --resume ${ID}`,
+    );
+  });
+  it("escapes a single quote for POSIX as '\\''", () => {
+    expect(resumeCommand(ID, "/home/o'neil", "linux")).toBe(`cd '/home/o'\\''neil' && claude --resume ${ID}`);
+  });
+  it("keeps a double quote, which is a legal mac folder name character", () => {
+    expect(resumeCommand(ID, '/Users/a"b', "macos")).toBe(`cd '/Users/a"b' && claude --resume ${ID}`);
+    expect(resumeCommand(ID, 'C:\\a"b', "windows")).toBe(`Set-Location -LiteralPath 'C:\\a"b'; claude --resume ${ID}`);
+  });
+
+  it("offers nothing for an id with anything but letters, digits, - and _", () => {
+    for (const bad of ["", "a b", "a;b", "$(x)", "a\nb", "`id`", "a'b", "../x", "x --dangerously"]) {
+      expect(resumeCommand(bad, "C:\\a", "windows")).toBeNull();
+      expect(resumeCommand(bad, null, "linux")).toBeNull();
+    }
+  });
+  it("offers nothing for a folder with a line break, or a POSIX folder that is not absolute", () => {
+    expect(resumeCommand(ID, "C:\\a\nb", "windows")).toBeNull();
+    expect(resumeCommand(ID, "/a\rb", "linux")).toBeNull();
+    expect(resumeCommand(ID, "-rf", "linux")).toBeNull();
+    expect(resumeCommand(ID, "relative/dir", "macos")).toBeNull();
+  });
+  it("is always a single line", () => {
+    expect(resumeCommand(ID, "C:\\a b", "windows")).not.toMatch(/[\r\n]/);
   });
 });

@@ -26,6 +26,54 @@ describe("hour keys", () => {
   });
 });
 
+describe("hour keys at midnight and across clock changes", () => {
+  const labelOrder = (k: string) => {
+    const [d, h] = k.split("T");
+    const [y, m, dd] = d.split("-").map(Number);
+    return Date.UTC(y, m - 1, dd) / 3_600_000 + Number(h); // a label's place on the 24-per-day grid
+  };
+
+  it("steps back over midnight", () => {
+    const keys = last24Keys(new Date(2026, 10, 9, 0, 20));
+    expect(keys[23]).toBe("2026-11-09T00");
+    expect(keys[22]).toBe("2026-11-08T23");
+    expect(keys[0]).toBe("2026-11-08T01");
+  });
+
+  it("has 24 distinct, consecutive labels on the day the clocks go back (US, 1 Nov 2026)", () => {
+    const keys = last24Keys(new Date(2026, 10, 1, 2, 30));
+    expect(new Set(keys).size).toBe(24);
+    expect(keys[0]).toBe("2026-10-31T03");
+    expect(keys[23]).toBe("2026-11-01T02");
+  });
+
+  it("has 24 distinct, consecutive labels on the day the clocks go forward (US, 8 Mar 2026), the skipped hour as a zero slot", () => {
+    const keys = last24Keys(new Date(2026, 2, 8, 4, 10));
+    expect(new Set(keys).size).toBe(24);
+    expect(keys[0]).toBe("2026-03-07T05");
+    expect(keys).toContain("2026-03-08T02");
+    expect(last24Hours([pt("2026-03-08T01", 5), pt("2026-03-08T03", 7)], new Date(2026, 2, 8, 4, 10)).slice(-4)).toEqual([5, 0, 7, 0]);
+  });
+
+  it("depends only on the wall-clock hour, so a half-hour offset or minutes change nothing", () => {
+    expect(last24Keys(new Date(2026, 10, 8, 14, 0))).toEqual(last24Keys(new Date(2026, 10, 8, 14, 59, 59)));
+  });
+
+  it("is 24 consecutive labels ending at the current hour for every hour of 2026", () => {
+    for (let day = 0; day < 365; day++) {
+      for (let h = 0; h < 24; h++) {
+        const now = new Date(2026, 0, 1 + day, h, 15);
+        if (now.getHours() !== h) continue; // an hour the local zone skips
+        const keys = last24Keys(now);
+        expect(keys[23]).toBe(hourKey(now));
+        for (let i = 1; i < 24; i++) {
+          if (labelOrder(keys[i]) - labelOrder(keys[i - 1]) !== 1) throw new Error(`gap in ${keys.join(" ")}`);
+        }
+      }
+    }
+  });
+});
+
 describe("today's total", () => {
   it("adds only today's hours and ignores cache reads", () => {
     const pts = [pt("2026-11-07T23", 500), pt("2026-11-08T00", 100), pt("2026-11-08T13", 250)];

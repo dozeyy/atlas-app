@@ -7,7 +7,8 @@ import { TokenText } from "./TokenText";
 import { timelineBars } from "./timelineBars";
 import { getBackend } from "../../lib/ipc";
 import { copyResume } from "../../lib/sessionActions";
-import { projectTone, shareOfMax } from "../../lib/sessionBrowse";
+import { projectTone, resumeCommand, shareOfMax } from "../../lib/sessionBrowse";
+import { useAtlas } from "../../state/AtlasProvider";
 import { useFetched } from "../../lib/useUsage";
 import { formatWhen, plural } from "../../lib/usage";
 import type { SessionRow } from "../../lib/types";
@@ -22,6 +23,8 @@ const H = 30;
  */
 export function PickUp({ row, onOpen }: { row: SessionRow; onOpen: (id: string) => void }) {
   const backend = getBackend();
+  const { info } = useAtlas();
+  const resume = resumeCommand(row.sessionId, row.projectPath, info.platform);
   const detail = useFetched(() => backend.sessionDetail(row.sessionId), [row.sessionId]);
   const values = useMemo(
     () => timelineBars(detail.data?.timeline ?? [], row.durationMs).map((b) => b.value),
@@ -70,13 +73,11 @@ export function PickUp({ row, onOpen }: { row: SessionRow; onOpen: (id: string) 
         })}
       </svg>
       <div className="pick-actions">
-        <IconButton
-          aria-label="Copy resume command"
-          title="Copy resume command"
-          onClick={() => void copyResume(row.sessionId, row.projectPath)}
-        >
-          <Copy size={16} aria-hidden="true" />
-        </IconButton>
+        {resume && (
+          <IconButton aria-label="Copy resume command" title="Copy resume command" onClick={() => void copyResume(resume)}>
+            <Copy size={16} aria-hidden="true" />
+          </IconButton>
+        )}
         <Button variant="primary" onClick={() => onOpen(row.sessionId)}>
           Open
           <ArrowRight size={14} aria-hidden="true" />

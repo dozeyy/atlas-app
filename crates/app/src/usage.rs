@@ -366,15 +366,59 @@ pub async fn session_open_folder(state: Shared<'_>, session_id: String) -> Resul
         .map_err(|e| e.to_string())?
 }
 
-/// The stored project path, if it is a folder that still exists.
+/// The stored project path, if it is a local folder that still exists. The path is data from a
+/// chat file, so it is held to a strict shape before anything is launched with it:
+/// absolute (an option-looking `-x` or a relative name is never handed to a program), not a
+/// network path (opening `\\host\share` makes Windows send the user's credentials to that host),
+/// and resolved to the real folder (`..` and links followed) without the `\\?\` verbatim prefix.
+/// The caller passes it as a single argument to the opener; being absolute it can never begin
+/// with `-`, which is why no `--` is added (xdg-open rejects one).
 fn project_dir(stored: Option<&str>) -> Result<std::path::PathBuf, String> {
     let stored = stored.map(str::trim).filter(|s| !s.is_empty()).ok_or("This chat has no project folder.")?;
-    let dir = std::path::PathBuf::from(stored);
-    if dir.is_dir() {
-        Ok(dir)
+    if stored.starts_with('-') || is_network_path(stored) {
+        return Err("That is not a folder on this computer.".into());
+    }
+    let path = std::path::Path::new(stored);
+    if !path.is_absolute() {
+        return Err("That is not a folder on this computer.".into());
+    }
+    let real = path.canonicalize().map_err(|_| "That folder is gone.".to_string())?;
+    let real = plain_path(real)?;
+    if real.is_dir() {
+        Ok(real)
     } else {
         Err("That folder is gone.".into())
     }
+}
+
+/// UNC (`\\host\share`), device (`\\.\`) and verbatim (`\\?\`) forms all start with two slashes.
+/// On Windows `//` means the same; elsewhere only a backslash pair is odd.
+fn is_network_path(s: &str) -> bool {
+    s.starts_with("\\\\") || (cfg!(windows) && s.starts_with("//"))
+}
+
+/// `canonicalize` on Windows returns `\\?\C:\x`; drop the prefix for a drive path (Explorer and
+/// the rest of the app expect that form) and refuse any verbatim path that is not a drive.
+#[cfg(windows)]
+fn plain_path(p: std::path::PathBuf) -> Result<std::path::PathBuf, String> {
+    let s = p.to_string_lossy().into_owned();
+    match s.strip_prefix(r"\\?\") {
+        None => Ok(p),
+        Some(rest) => {
+            let b = rest.as_bytes();
+            if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
+                Ok(std::path::PathBuf::from(rest))
+            } else {
+                // \\?\UNC\host\share (a link or mapped drive that ends on the network) and the rest.
+                Err("That is not a folder on this computer.".into())
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn plain_path(p: std::path::PathBuf) -> Result<std::path::PathBuf, String> {
+    Ok(p)
 }
 
 fn reveal(path: &std::path::Path) -> Result<(), String> {
@@ -400,8 +444,47 @@ mod tests {
         assert!(project_dir(None).is_err());
         assert!(project_dir(Some("  ")).is_err());
         assert!(project_dir(Some("Z:/definitely/not/here/atlas")).is_err());
-        let here = std::env::current_dir().unwrap();
+        let here = std::env::current_dir().unwrap().canonicalize().unwrap();
+        let here = plain_path(here).unwrap();
         assert_eq!(project_dir(Some(here.to_str().unwrap())).unwrap(), here);
+    }
+
+    #[test]
+    fn a_path_that_is_not_an_absolute_local_folder_is_refused() {
+        // An option for the opener, and names relative to wherever the app happens to be running.
+        for bad in ["-rf", "-", "--version", "src", "./src", "..", "crates/app"] {
+            assert!(project_dir(Some(bad)).is_err(), "{bad}");
+        }
+        // Network, device and verbatim forms: opening them can leak the user's credentials.
+        for bad in [r"\\host\share\x", r"\\?\C:\Windows", r"\\?\UNC\host\share", r"\\.\C:\", "//host/share/x"] {
+            assert!(project_dir(Some(bad)).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_file_is_not_a_folder() {
+        let file = std::env::current_exe().unwrap();
+        assert!(project_dir(Some(file.to_str().unwrap())).is_err());
+    }
+
+    #[test]
+    fn dots_are_resolved_and_no_verbatim_prefix_is_left() {
+        let here = plain_path(std::env::current_dir().unwrap().canonicalize().unwrap()).unwrap();
+        let up = here.join("..");
+        let got = project_dir(Some(up.to_str().unwrap())).unwrap();
+        assert_eq!(got, plain_path(up.canonicalize().unwrap()).unwrap());
+        assert!(!got.to_string_lossy().starts_with(r"\\?\"));
+        assert!(!got.components().any(|c| matches!(c, std::path::Component::ParentDir)));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn only_a_drive_form_survives_plain_path() {
+        use std::path::PathBuf;
+        assert_eq!(plain_path(PathBuf::from(r"\\?\C:\Users\x")).unwrap(), PathBuf::from(r"C:\Users\x"));
+        assert_eq!(plain_path(PathBuf::from(r"C:\Users\x")).unwrap(), PathBuf::from(r"C:\Users\x"));
+        assert!(plain_path(PathBuf::from(r"\\?\UNC\host\share\x")).is_err());
+        assert!(plain_path(PathBuf::from(r"\\?\Volume{1234}\x")).is_err());
     }
 
     #[test]
