@@ -122,7 +122,7 @@ interface Folded {
  * fold the rest into one "+N" node under the nearest kept starter. At most `limit` nodes are
  * drawn besides the main chat.
  */
-export function fold(helpers: ReceiptThread[], parents: Map<string, string | null>, limit = MAP_LIMIT, by: Metric = "usd"): Folded {
+export function fold(helpers: ReceiptThread[], parents: Map<string, string | null>, limit = MAP_LIMIT, by: Metric = "tokens"): Folded {
   const everyone = new Set(helpers.map((h) => h.agentId as string));
   if (helpers.length <= limit) return { kept: everyone, more: new Map() };
 
@@ -162,10 +162,10 @@ export function fold(helpers: ReceiptThread[], parents: Map<string, string | nul
  * rest of the app leads with). The result's width and height are the canvas: never smaller than
  * the pane, and larger when the nodes need more room than the pane has.
  */
-export function layoutMap(threads: ReceiptThread[], size: { width: number; height: number }, limit = MAP_LIMIT, by: Metric = "usd"): MapLayout {
+export function layoutMap(threads: ReceiptThread[], size: { width: number; height: number }, limit = MAP_LIMIT, by: Metric = "tokens"): MapLayout {
   const paneW = Math.max(1, Math.round(size.width));
   const paneH = Math.max(1, Math.round(size.height));
-  const main = threads.find((t) => t.agentId === null) ?? threads[0];
+  const main = threads.find((t) => t.agentId === null); // never a helper: each thread is one node
   const helpers = threads.filter((t) => t.agentId !== null);
   const parents = startedBy(helpers);
   const { kept, more } = fold(helpers, parents, limit, by);

@@ -33,6 +33,9 @@ then use the user's latest message instead.)
 | A vs B, compared to, versus | `<A> --vs <B>`, e.g. `last-week --vs week` |
 | top N, more rows | `--top <N>` |
 
+Build the command only from words in this table, dates and a project name made of letters,
+digits, `-`, `_` and `.`. Never paste the user's own text into the command line.
+
 ## 2. Run it (one command)
 
 Always pass this chat's id so "this chat" and the defaults are exact:

@@ -251,7 +251,12 @@ fn scan_one(file: &ScanFile, stats: &ReadStats, notices: &mut Vec<Notice>) -> Op
         if memmem::find(line, b"<task-notification>").is_some() {
             notices_in(line, notices);
         }
-        if memmem::find(line, b"[Request interrupted by user").is_some() {
+        // Only Claude Code's own marker: a user line whose text (or plain content) starts with it.
+        // A file or tool result that quotes the marker carries it escaped mid-string, which these miss.
+        if memmem::find(line, br#""type":"user""#).is_some()
+            && (memmem::find(line, br#""text":"[Request interrupted by user"#).is_some()
+                || memmem::find(line, br#""content":"[Request interrupted by user"#).is_some())
+        {
             t.interrupted = true;
         }
         if memmem::find(line, br#""type":"assistant""#).is_some() {
@@ -316,8 +321,11 @@ pub fn scan_files(files: &[ScanFile], stats: &ReadStats) -> Scan {
             Some(x) => {
                 let offset = x.turns;
                 x.turns += t.turns;
-                x.last_stop = t.last_stop;
-                x.last_api_error = t.last_api_error;
+                // A later file with no assistant turn says nothing about how the thread ended.
+                if t.turns > 0 || t.last_stop.is_some() {
+                    x.last_stop = t.last_stop;
+                    x.last_api_error = t.last_api_error;
+                }
                 x.interrupted |= t.interrupted;
                 x.results.extend(t.results.into_iter().map(|mut r| {
                     r.turn += offset;

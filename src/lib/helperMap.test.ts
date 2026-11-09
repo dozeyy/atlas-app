@@ -100,7 +100,7 @@ describe("helper map: spend", () => {
   });
 
   it("grows a node with what it spent", () => {
-    const m = layoutMap(many(12), SIZE);
+    const m = layoutMap(many(12), SIZE, undefined, "usd");
     const helpers = m.nodes.filter((n) => n.kind === "helper").sort((a, b) => a.usd - b.usd);
     for (let i = 1; i < helpers.length; i++) expect(helpers[i].r).toBeGreaterThanOrEqual(helpers[i - 1].r);
     expect(helpers[helpers.length - 1].r).toBeGreaterThan(helpers[0].r);
@@ -137,7 +137,7 @@ describe("helper map: one helper, none, and many", () => {
 
   it("folds the smallest spenders into one +N node past the limit, and still adds up", () => {
     const ts = many(56);
-    const m = layoutMap(ts, SIZE);
+    const m = layoutMap(ts, SIZE, undefined, "usd");
     const more = m.nodes.filter((n) => n.kind === "more");
     expect(more).toHaveLength(1);
     expect(m.nodes.filter((n) => n.kind !== "root").length).toBeLessThanOrEqual(MAP_LIMIT);
@@ -198,7 +198,7 @@ describe("helper map: tokens", () => {
     const small = m.nodes.find((n) => n.id === "dear-but-small");
     expect(big?.tokens).toBe(900_000);
     expect(big?.r ?? 0).toBeGreaterThan(small?.r ?? 99);
-    const byMoney = layoutMap(ts, SIZE);
+    const byMoney = layoutMap(ts, SIZE, undefined, "usd");
     expect(byMoney.nodes.find((n) => n.id === "dear-but-small")?.r ?? 0).toBeGreaterThan(byMoney.nodes.find((n) => n.id === "cheap-but-big")?.r ?? 99);
     // The fold keeps the biggest by tokens.
     const hs = Array.from({ length: 6 }, (_, i) => thread(`h${i}`, null, 6 - i, { tokens: (i + 1) * 100 }));

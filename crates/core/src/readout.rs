@@ -12,8 +12,14 @@ use crate::usage::query::Period;
 /// (the same shape as `compact()` in the front end).
 pub fn compact_tokens(n: u64) -> String {
     fn one(v: f64, unit: &str) -> String {
-        // One decimal below 10 of the unit, none above; never "1.0k".
-        let s = if v < 10.0 { format!("{v:.1}") } else { format!("{v:.0}") };
+        // One decimal below 10 of the unit, none above; never "1.0k". Round half up like the
+        // front end's Math.round (format! rounds 9.95 to "9.9", the app shows "10k").
+        let s = if v < 10.0 {
+            let r = (v * 10.0).round() / 10.0;
+            if r < 10.0 { format!("{r:.1}") } else { format!("{r:.0}") }
+        } else {
+            format!("{:.0}", v.round())
+        };
         format!("{}{unit}", s.strip_suffix(".0").unwrap_or(&s))
     }
     match n {
@@ -79,6 +85,8 @@ mod tests {
         assert_eq!(compact_tokens(1_000), "1k");
         assert_eq!(compact_tokens(1_234), "1.2k");
         assert_eq!(compact_tokens(7_300), "7.3k");
+        assert_eq!(compact_tokens(9_950), "10k"); // same as the app's Math.round, not "9.9k"
+        assert_eq!(compact_tokens(1_250), "1.3k");
         assert_eq!(compact_tokens(98_765), "99k");
         assert_eq!(compact_tokens(123_456), "123k");
         assert_eq!(compact_tokens(999_499), "999k");
