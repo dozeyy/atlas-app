@@ -109,6 +109,72 @@ describe("TipLayer", () => {
     expect(btn.getAttribute("title")).toMatch(/^117k tokens/);
   });
 
+  it("a click puts the tip away and the focus it causes does not bring it back", () => {
+    mount();
+    const btn = screen.getByRole("button", { name: "Open" });
+    fireEvent.pointerOver(btn);
+    act(() => void vi.advanceTimersByTime(500));
+    expect(tipBox()).toHaveAttribute("data-open");
+    fireEvent.pointerDown(btn);
+    act(() => btn.focus());
+    fireEvent.click(btn);
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(tipBox()).not.toHaveAttribute("data-open");
+    // A new element "entered" without the pointer moving (the screen changed under it) is not a hover.
+    const swapped = btn.cloneNode(true) as HTMLElement;
+    btn.replaceWith(swapped);
+    fireEvent.pointerOver(swapped);
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(tipBox()).not.toHaveAttribute("data-open");
+    // Moving away and coming back works as before.
+    fireEvent.pointerOver(swapped, { clientX: 60, clientY: 60 });
+    act(() => void vi.advanceTimersByTime(500));
+    expect(tipBox()).toHaveAttribute("data-open");
+  });
+
+  it("a click then leaving and returning shows the tip again", () => {
+    mount();
+    const btn = screen.getByRole("button", { name: "Open" });
+    fireEvent.pointerOver(btn);
+    act(() => void vi.advanceTimersByTime(500));
+    fireEvent.pointerDown(btn);
+    act(() => btn.blur());
+    fireEvent.pointerOut(btn, { relatedTarget: document.body });
+    fireEvent.pointerOver(btn, { clientX: 80, clientY: 80 });
+    act(() => void vi.advanceTimersByTime(500));
+    expect(tipBox()).toHaveAttribute("data-open");
+  });
+
+  it("a shortcut key puts an open tip away", () => {
+    mount();
+    const btn = screen.getByRole("button", { name: "Open" });
+    fireEvent.pointerOver(btn);
+    act(() => void vi.advanceTimersByTime(500));
+    fireEvent.keyDown(document.body, { key: "Control", ctrlKey: true });
+    expect(tipBox()).toHaveAttribute("data-open");
+    fireEvent.keyDown(document.body, { key: "7", ctrlKey: true });
+    expect(tipBox()).not.toHaveAttribute("data-open");
+  });
+
+  it("changing the screen puts an open tip away", () => {
+    const { rerender } = render(
+      <div>
+        <button title="Wrapped (Ctrl+7)">Wrapped</button>
+        <TipLayer resetKey="dashboard" />
+      </div>,
+    );
+    fireEvent.pointerOver(screen.getByRole("button", { name: "Wrapped" }));
+    act(() => void vi.advanceTimersByTime(500));
+    expect(tipBox()).toHaveAttribute("data-open");
+    rerender(
+      <div>
+        <button title="Wrapped (Ctrl+7)">Wrapped</button>
+        <TipLayer resetKey="wrapped" />
+      </div>,
+    );
+    expect(tipBox()).not.toHaveAttribute("data-open");
+  });
+
   it("keeps an icon-only control's name while its title is parked", () => {
     mount();
     const close = screen.getByRole("button", { name: "Close" });

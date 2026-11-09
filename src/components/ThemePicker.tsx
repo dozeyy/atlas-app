@@ -6,10 +6,10 @@ import { Row, Toggle } from "./controls";
 
 type Pinned = "light" | "silver" | "dark";
 
-const CHOICES: { value: Pinned; label: string; hint: string }[] = [
-  { value: "light", label: "Light", hint: "Warm paper, clay accents." },
-  { value: "silver", label: "Silver", hint: "Cool grey, easy on the eyes." },
-  { value: "dark", label: "Dark", hint: "Deep graphite for low light." },
+const CHOICES: { value: Pinned; label: string }[] = [
+  { value: "light", label: "Light" },
+  { value: "silver", label: "Silver" },
+  { value: "dark", label: "Dark" },
 ];
 
 function subscribeOs(cb: () => void) {
@@ -112,7 +112,6 @@ export function ThemePicker({
                   <Preview theme={c.value} />
                   <span className="theme-card-label">
                     <span className="text-body font-semibold text-ink">{c.label}</span>
-                    <span className="theme-card-hint text-caption text-ink-2">{c.hint}</span>
                   </span>
                 </span>
               </button>
@@ -122,11 +121,7 @@ export function ThemePicker({
       </div>
       <Row
         label={matchLabel(platform)}
-        hint={
-          following
-            ? `Following your computer. It is ${showing} right now.`
-            : "Off. Atlas stays on the theme you picked."
-        }
+        hint={following ? `Showing ${showing}` : undefined}
       >
         <Toggle
           label={matchLabel(platform)}

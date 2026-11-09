@@ -1975,6 +1975,11 @@ html.reduced .nav-item:active .nav-face {
   padding: 0 8px;
   overflow-x: hidden;
   overflow-y: auto;
+  /* A heading never ends up cut in half at the edge: what runs past the bottom fades out, and the
+     padding lets the last row scroll clear of the fade. */
+  padding-bottom: 24px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
 }
 .rcpt-line {
   display: block;

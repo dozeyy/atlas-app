@@ -177,16 +177,22 @@ export function Card({
 export function Row({
   label,
   hint,
+  tip,
   children,
 }: {
   label: string;
+  /** Data shown under the label (a path, a count). Never a sentence of explanation. */
   hint?: ReactNode;
+  /** A hover for a setting that is truly unclear. */
+  tip?: string;
   children?: ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-6 border-b border-line px-5 py-4 last:border-b-0">
       <div className="min-w-0">
-        <div className="text-body font-medium text-ink">{label}</div>
+        <div className="text-body font-medium text-ink" title={tip}>
+          {label}
+        </div>
         {hint && <div className="mt-0.5 text-body text-ink-2">{hint}</div>}
       </div>
       {children && <div className="shrink-0">{children}</div>}
