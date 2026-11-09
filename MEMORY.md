@@ -317,3 +317,19 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Real-render bug found by screenshot: the heat grid's last column, ring and "Nov"/"Today" labels were clipped at the SVG edge; the svg now has 4 px of padding (HEAT_PAD).
 - Card is drawn from live tokens (follows light/dark/silver), at 2x; canvas cannot set the CASL axis so its figure is plain Recursive 760. Save goes through `wrapped_save_card`.
 - Verified: tsc clean, 755 vitest pass, debug exe (custom-protocol) on the demo fixture, shots in docs/shots/wrapped-summit/ (dark + light, 12 slides each at 1280x800, opener + card at 900x600). Demo fixture has 12 slides; the rest (skill, helper, tool, shorter story, long names) are model-tested only, not rendered. shotTour.ts WRAPPED_SLIDES 15, mac-check expects 61 pictures (not run: needs a Mac/CI).
+
+## 2026-11-09 - Wrapped Summit verified + review fixes (638d970)
+- Verified 70c99eb in the debug exe on the demo fixture: 12 slides clean at 1280x800 and 916x609 (the window minimum), dark and light; hovers are specific; keys, buttons and the trail spark are correct; the saved PNG is byte-identical to the canvas; reduced motion is fade-only.
+- Review fixes in 638d970:
+  - The slide index is clamped when the slides shrink.
+  - The longest and biggest chats are never the same chat.
+  - The project is named on one slide only.
+  - A range across a year boundary shows both years.
+  - timesText rounds before it branches; weekday ties use a tolerance.
+  - The novels line and its hover share one value.
+  - Hours under 1 a day get no tip.
+- Gotcha: the huge Recursive glyph's content box reaches past `line-height: .85` and over the kicker. The text span gets `pointer-events: none`, and a sibling `.sm-fig-hit` carries the title.
+- Gotcha: `ATLAS_REDUCE_MOTION` affects only the splash. For the main window use `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--force-prefers-reduced-motion`.
+- Gotcha: in a native save dialog the file-name edit is control id 1001 (WM_SETTEXT, then BM_CLICK on Save).
+- Not seen in the app: the same-chat skip, year-boundary ranges, short stories under 7 days, the skill/helper/tool slides, Silver, 150% DPI. Unit tests only.
+- No first-launch Christmas intro into Wrapped exists yet (Phase 7). The only route in is the title-bar gift button.
