@@ -65,10 +65,6 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
           );
         })}
       </ol>
-
-      <p className="mt-auto pt-3 text-caption text-ink-2" title={total || undefined}>
-        Estimate, {windowLabel(report)}.
-      </p>
     </section>
   );
 }

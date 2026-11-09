@@ -51,11 +51,11 @@ export function CollectionView({
   const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS, showWorktrees: includeWorktrees });
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
-  const heading = useRef<HTMLHeadingElement>(null);
   const kinds = tileKinds(tile);
   const single = kinds.length === 1 ? kinds[0]! : null;
 
-  useEffect(() => heading.current?.focus({ preventScroll: true }), []);
+  // No page header any more: keyboard focus starts in the search box.
+  useEffect(() => search.current?.focus({ preventScroll: true }), []);
 
   const patch = useCallback((p: Partial<Filters>) => {
     setFilters((f) => ({ ...f, ...p }));
@@ -136,7 +136,7 @@ export function CollectionView({
   const clearAll = () => patch({ ...DEFAULT_FILTERS, showWorktrees: filters.showWorktrees });
 
   return (
-    <div className="fade-in flex flex-1 flex-col">
+    <div className="fade-in flex min-h-0 flex-1 flex-col">
       <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-3">
         <Button onClick={onBack}>
           <IconMotion motion="nudge">
@@ -144,11 +144,8 @@ export function CollectionView({
           </IconMotion>
           Back to Toolkit
         </Button>
-        <h2 ref={heading} tabIndex={-1} className="d d-title min-w-0 flex-1 text-ink outline-none">
-          {tileTitle(tile)}
-        </h2>
         {creatable && (
-          <Button variant="primary" onClick={() => onCreate(creatable)}>
+          <Button variant="primary" className="ml-auto" onClick={() => onCreate(creatable)}>
             <IconMotion motion="pop">
               <Plus />
             </IconMotion>
@@ -170,7 +167,7 @@ export function CollectionView({
         placeholder={`Search ${tileTitle(tile).toLowerCase()}`}
       />
 
-      <div ref={list} onKeyDown={onListKey} className="flex flex-1 flex-col">
+      <div ref={list} onKeyDown={onListKey} className="-mx-2 -mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pt-2">
         {items.length === 0 ? (
           <p className="rounded-card border border-dashed border-line-strong px-5 py-8 text-center text-body text-ink-2">
             Nothing here yet.

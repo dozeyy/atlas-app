@@ -142,9 +142,11 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
   const noFolder = !snap.root.dirExists;
   const jsonNote = CLAUDE_JSON_NOTE[snap.root.claudeJsonState];
 
+  // The page frame is exactly one window tall, so a list can scroll inside itself. The home
+  // can be taller than the window; its own bottom padding keeps the last row off the edge.
   return (
     <CostProvider report={cost}>
-    <div ref={top} className="flex flex-1 flex-col">
+    <div ref={top} className={`flex flex-1 flex-col ${tile ? "min-h-0" : "pb-[var(--gutter-y)]"}`}>
       {error && (
         <p role="alert" className="mb-4 flex items-start gap-2 rounded-card bg-warning-tint px-4 py-3 text-body text-warning">
           <Info size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />

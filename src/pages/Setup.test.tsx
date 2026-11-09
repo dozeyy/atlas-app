@@ -67,7 +67,8 @@ async function open(b: Backend) {
 
 async function openTile(label: string) {
   await userEvent.click(await screen.findByRole("button", { name: new RegExp(`^${label}, \\d+$`) }));
-  return screen.findByRole("heading", { level: 2, name: label });
+  // A tile has no page header: the search box ("Search skills") is what says which one is open.
+  return screen.findByPlaceholderText(`Search ${label.toLowerCase()}`);
 }
 
 async function openTilesReady() {
@@ -113,6 +114,7 @@ describe("Setup page: main view", () => {
     expect(text).not.toMatch(/\bLive\b/);
     expect(text).not.toMatch(/Coming soon/i);
     expect(text).not.toMatch(/things set up across/);
+    expect(text).not.toMatch(/\/\//); // a code comment that slipped into the markup would print here
   });
 
   it("has no Recently changed or Worth a look section, only the tiles", async () => {
@@ -132,11 +134,11 @@ describe("Setup page: main view", () => {
       [...root.querySelectorAll<HTMLElement>(".press")].filter((e) => /content-visibility|overflow-hidden|\btruncate\b/.test(e.className)).map((e) => e.getAttribute("aria-label") ?? e.textContent);
     expect(bad(document)).toEqual([]);
     await userEvent.click(await screen.findByRole("button", { name: /^More, \d+$/ }));
-    await screen.findByRole("heading", { level: 2, name: "More" });
+    await screen.findByPlaceholderText("Search more");
     expect(bad(document)).toEqual([]);
     await userEvent.click(screen.getByRole("button", { name: "Back to Toolkit" }));
     await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
-    await screen.findByRole("heading", { level: 2, name: "Skills" });
+    await screen.findByPlaceholderText("Search skills");
     expect(bad(document)).toEqual([]);
   });
 
@@ -213,6 +215,9 @@ describe("Setup page: a collection", () => {
   it("opens a tile as its own view with a way back that returns focus to the tile", async () => {
     await open(backend);
     await openTile("Skills");
+    // No page header: a plain back control, and nothing else says which page this is.
+    expect(screen.queryByRole("heading", { level: 2, name: "Skills" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to Toolkit" })).toBeInTheDocument();
     expect(screen.getByText("commit-helper")).toBeInTheDocument();
     expect(screen.queryByText("code-reviewer")).not.toBeInTheDocument();
     expect(screen.queryByRole("progressbar", { name: "Toolkit progress" })).not.toBeInTheDocument();
@@ -417,7 +422,7 @@ describe("Setup page: edit", () => {
     return { dialog, ta: ta as HTMLTextAreaElement };
   }
 
-  it("keeps Save off until something changes, then saves with a backup toast", async () => {
+  it("keeps Save off until something changes, then saves with one toast", async () => {
     const { dialog, ta } = await openEditor("Skills", /skill deep-research/);
     const save = within(dialog).getByRole("button", { name: /^Save/ });
     await waitFor(() => expect(within(dialog).getByText("Looks good.")).toBeInTheDocument());
@@ -426,7 +431,7 @@ describe("Setup page: edit", () => {
     fireEvent.input(ta, { target: { value: ta.value + "\nOne more line.\n" } });
     await waitFor(() => expect(save).toBeEnabled());
     await userEvent.click(save);
-    expect(await screen.findByText(/Saved deep-research\. The old version is backed up\./)).toBeInTheDocument();
+    expect(await screen.findByText("Saved deep-research.")).toBeInTheDocument();
   });
 
   it("disables Save and says what is wrong, with the line, while the text is invalid", async () => {
@@ -634,7 +639,11 @@ describe("Setup page: a skill's files and actions", () => {
     const save = within(dialog).getByRole("button", { name: /^Save/ });
     await waitFor(() => expect(save).toBeEnabled());
     await userEvent.click(save);
-    expect(await within(dialog).findByText("Saved. The old version is backed up.")).toBeInTheDocument();
+    // One message only: the toast. The editor keeps no second "Saved" line of its own, and no
+    // sentence explaining what Save does.
+    expect(await screen.findAllByText("Saved deep-research.")).toHaveLength(1);
+    expect(within(dialog).queryByText(/Saved/)).not.toBeInTheDocument();
+    expect(dialog.textContent).not.toMatch(/backed up|backs up|Nothing changes until/);
     expect(within(dialog).getByRole("textbox", { name: /^Editing / })).toBeInTheDocument();
     await waitFor(() => expect(within(dialog).getByRole("button", { name: /^Save/ })).toBeDisabled());
   });

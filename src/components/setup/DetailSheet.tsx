@@ -12,7 +12,7 @@ import { Preview } from "./Preview";
 import { getBackend } from "../../lib/ipc";
 import { splitFrontmatter } from "../../lib/markdown";
 import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
-import { isPerCall, rowFor, usdHover, windowLabel } from "../../lib/setup-cost";
+import { isPerCall, rowFor, usdHover } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
 import type { CostReport, CostRow, MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
 import { Chip, ConflictChip, copyText, formatDate, formatSize, KindTile, ScopeChip, StateChip, TagChip } from "./parts";
@@ -125,10 +125,9 @@ function CostSection({ row, report }: { row: CostRow; report: CostReport }) {
   if (rows.length === 0) return null;
   return (
     <Section title="What it costs">
-      <Facts rows={rows} />
-      <p className="mt-3 text-caption text-ink-2" title={usd || undefined}>
-        Estimate, {windowLabel(report)}.
-      </p>
+      <div title={usd || undefined}>
+        <Facts rows={rows} />
+      </div>
     </Section>
   );
 }
@@ -497,7 +496,6 @@ export function DetailSheet({
                 {item.locked}
               </p>
             )}
-            {editing && <p className="text-body text-ink-2">Editing. Nothing changes until you press Save.</p>}
           </div>
         )}
 
