@@ -31,23 +31,33 @@
 - Trust model: the launcher downloads `atlas-usage-*` from the release tagged `v<plugin version>` and runs it only if its SHA-256 equals the line pinned in the plugin's own `checksums.txt`. The publish script re-checks exactly that before anything goes public.
 
 ## Publish to the public repo (after the workflow finishes)
-1. Wait for the release workflow to go green, and for its last step to push `Pin skill checksums for vX.Y.Z` to `main` (the step prints a warning instead if it could not; then pin by hand with `tools/pin-skill-checksums.ps1` and push).
-2. From the repo root, on your PC:
+1. Wait for the release workflow to go green. The pin step (`Pin skill checksums for vX.Y.Z`, pushed to `main`) runs **before** the staging release is made, and a failed pin fails the job, so a green run means the pin is on `main` and the staging prerelease exists.
+2. From the repo root, on your PC (needs `gh` signed in, `git`, `tar` and `node`):
    ```
    powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish-public.ps1 -Version X.Y.Z -DryRun
    powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish-public.ps1 -Version X.Y.Z
    ```
-   `-DryRun` downloads and verifies, then only says what it would do (it writes nothing anywhere).
-3. What the script does, in order: downloads the staging assets from `dozeyy/atlas-app`; reads `skill/`, `marketplace.json`, `tauri.conf.json` and the notes as committed on `origin/main` (never your working tree); then **refuses on any mismatch** of:
-   - a required asset missing, empty, or an unexpected file present;
+   `-DryRun` does the download, every check and the read of the public repo for real, and only says what the write steps (create or fix the draft, clone, publish, push) would do. It changes nothing in either repo.
+3. Trust: the staging release is only a transport, so nothing in it is believed on its own. CI signs `SHA256SUMS.txt` with the update key (`SHA256SUMS.txt.sig`); the script checks that with real Ed25519 (`tools/verify-minisign.mjs`, Node's own crypto) against the public key in `crates/app/tauri.conf.json` **on `origin/main`**, so replacing a file in the staging release cannot get past it without the private key. The second anchor is the three `atlas-usage-*` hashes pinned in the plugin's `checksums.txt` on `main`.
+4. What the script does, in order: downloads the staging assets; reads `skill/`, `marketplace.json` and `tauri.conf.json` as committed on `origin/main` (never your working tree); then **refuses on any mismatch** of:
+   - a required asset (12 files) missing or empty, or an unexpected file present;
+   - the signature on `SHA256SUMS.txt`, then every file (installers, dmg, bundles, `.sig` files, `latest.json`, `atlas-usage-*`) against that signed list;
    - the three `atlas-usage-*` hashes against the pinned lines in `checksums.txt`;
-   - `SHA256SUMS.txt` against every asset;
-   - `latest.json`: version, the four platform entries, each URL equal to `https://github.com/dozeyy/atlas/releases/download/vX.Y.Z/<file>`, each signature equal to its `.sig` file, and each `.sig` made by the key whose public half is in `tauri.conf.json` (a CI throwaway key is refused). The script compares key ids; the app itself checks the signature cryptographically when it updates.
-   Then: creates the `vX.Y.Z` release in `dozeyy/atlas` as a **draft** and uploads the assets; clones `dozeyy/atlas` `main` fresh, replaces `skill/` and `.claude-plugin/marketplace.json`, adds the `CHANGELOG.md` entry (notes from `docs/release-notes/X.Y.Z.md`), commits and pushes; and **publishes the release last**, so `latest.json` never points at assets that are not there yet.
-4. Rerun is safe: an existing draft is reused, only missing assets are uploaded (none is replaced), a plugin already in `main` makes no commit, and a published release is only topped up with a missing asset.
-5. If it refuses, nothing was published; fix the cause (usually a missing pin or a wrong key) and rerun.
-6. The script prints no secrets, handles none, and opens no windows beyond its own console. It leaves no files behind (the temp folder is removed).
-7. Test hooks, for trying the script without a real release: `-AssetsDir <folder>` and `-SourceTree <folder>` replace the download and the `origin/main` read.
+   - each update bundle against its `.sig` (a bundle signed with a CI throwaway key or any other key fails);
+   - `latest.json`: version, the four platform entries, each URL equal to `https://github.com/dozeyy/atlas/releases/download/vX.Y.Z/<file>`, each signature equal to its `.sig` file.
+   Then it reads the public `vX.Y.Z` release and compares each asset there by state, size and sha256. A **draft** with a stale or unexpected asset gets it deleted and re-uploaded; a **published** release holding anything that is not the verified file makes the script stop (see Roll back). Next it creates the draft (or reuses it), uploads what is missing, clones `dozeyy/atlas` `main` fresh, replaces `skill/` and `.claude-plugin/marketplace.json`, adds the `CHANGELOG.md` entry after the first `<!-- releases -->` line (stopping if that line is missing), and commits locally. Then it **publishes the release, then pushes the plugin commit**: `latest.json` and the plugin never point at assets that are not there yet. The release notes are the ones inside `latest.json` (the notes in `docs/release-notes/X.Y.Z.md` at build time), so the release page, the update tooltip and the changelog agree.
+5. Rerun is safe: it does the plugin sync on every run, also when the release is already published, so a push that failed after publishing is finished by rerunning. A complete published release plus an up-to-date plugin changes nothing.
+6. If it refuses, nothing was published (or, for a failed push, only the release is public and the message says to rerun); fix the cause and rerun.
+7. The script prints no secrets, handles none, and opens no windows beyond its own console. It leaves no files behind (the temp folder is removed).
+8. Test hooks, for trying the script without a real release: `-AssetsDir <folder>` and `-SourceTree <folder>` replace the download and the `origin/main` read; `-CloneUrl` clones the plugin repo from somewhere else.
+
+## Roll back a published release
+The script never edits a published release's files. If one was published wrong:
+1. `gh release edit vX.Y.Z --repo dozeyy/atlas --draft` turns it back into a draft (installed apps stop seeing it; `latest.json` is no longer served).
+2. Fix the cause (a bad pin, a rebuilt asset), re-run the workflow for the tag so the staging copy is correct, or simply delete the wrong asset: `gh release delete-asset vX.Y.Z <file> --repo dozeyy/atlas -y`.
+3. Run `tools/publish-public.ps1 -Version X.Y.Z` again: it replaces the stale assets of the draft with the verified ones and publishes it.
+4. A plugin commit that was already pushed is fixed the same way: edit `skill/` here, merge, and rerun the script (it syncs `skill/` every time). `git revert` on the public repo's `main` also works if the plugin itself must go back right now.
+To pull a version entirely, delete the release (`gh release delete vX.Y.Z --repo dozeyy/atlas --yes`) and leave the tag; installed apps simply see no update.
 
 ## Cut a release
 1. Set the same version in `crates/app/tauri.conf.json`, `crates/app/Cargo.toml` (and the workspace crates) and `skill/.claude-plugin/plugin.json`. The workflow refuses a tag that disagrees with either file.
@@ -57,15 +67,15 @@
 ## Who gets the signing key, and what publishes
 The `gate` job in `release.yml` decides once whether a run is official: a push of a `v*` tag whose commit is in `main`'s history. Only then does the Publish job run. The Windows and macOS jobs never see a secret: they always sign with a throwaway update key made on the runner. The Publish job is the only one in the `release` environment; it signs the two update bundles (`Atlas_X.Y.Z_x64-setup.exe`, `Atlas.app.tar.gz`) again with the real key, replacing the throwaway `.sig` files, before it writes `latest.json`. A manual run (`workflow_dispatch`) on any branch, or a tag cut from a branch, still builds everything and publishes nothing, and a branch workflow cannot read the key because the environment accepts only `v*` tags.
 ## When the checksums are not pinned
-The last step writes to `main`, so it checks first and, if a check fails, prints a warning and leaves `main` alone (the Release is already out and stays out):
+The pin step writes to `main`, so it checks first. Since nothing is staged before it succeeds, a failed check **fails the job** (no staging release, nothing to publish) instead of warning:
 - the tagged commit is not in `main`'s history (the gate already refuses to publish such a tag; this is a second check);
 - `main`'s `plugin.json` is not at this version any more;
 - a newer version than this one is already in `checksums.txt`.
 
-It always runs `tools/pin-skill-checksums.ps1` as it is on `main` (never the tag's copy) and never with `-Force`: a version already pinned with other hashes stops the step with an error. Pin by hand with the same script if a warning left you without the pin.
+It always runs `tools/pin-skill-checksums.ps1` as it is on `main` (never the tag's copy) and never with `-Force`: a version already pinned with other hashes stops the step with an error. The step is safe to rerun (the same hashes change nothing), and so is the staging step after it (it replaces the files of an existing staging release). To recover, fix the cause (merge the release commit, set the plugin version) and rerun the failed workflow run, or pin by hand with the same script and push.
 
 ## What a release holds
-`Atlas-Setup-Windows-x64.exe`, `Atlas-macOS.dmg`, `atlas-usage-windows-x64.exe`, `atlas-usage-macos-universal`, `atlas-usage-linux-x64`, `SHA256SUMS.txt`, `latest.json`, plus the update bundles with their `.sig` files (`Atlas_X.Y.Z_x64-setup.exe`, `Atlas.app.tar.gz`). The MSI is not published. Nothing is code signed yet, so Windows SmartScreen and macOS Gatekeeper will warn on first run.
+`Atlas-Setup-Windows-x64.exe`, `Atlas-macOS.dmg`, `atlas-usage-windows-x64.exe`, `atlas-usage-macos-universal`, `atlas-usage-linux-x64`, `SHA256SUMS.txt` and `SHA256SUMS.txt.sig` (the list, signed with the update key), `latest.json`, plus the update bundles with their `.sig` files (`Atlas_X.Y.Z_x64-setup.exe`, `Atlas.app.tar.gz`). The MSI is not published. Nothing is code signed yet, so Windows SmartScreen and macOS Gatekeeper will warn on first run.
 
 ## Build Atlas Setup locally
 `powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-setup.ps1` builds everything and prints the path (`target\release\bundle\setup\Atlas-Setup-Windows-x64.exe`). It signs the update bundle when the key file above exists (on a release the workflow runs it with a throwaway key and signs the real bundles later, in the Publish job).
