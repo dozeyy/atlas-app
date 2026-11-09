@@ -289,6 +289,50 @@ describe("buildSlides", () => {
     expect(s.filter((x) => /Encyclopaedia/.test(x.compare?.text ?? "")).length).toBeLessThanOrEqual(1);
   });
 
+  it("compares each thing once and each number once, whichever ladder it sits on", () => {
+    // 67 active days of 70: a Regular. The days slide compares the 67 days; the type slide must not
+    // compare them again, nor reach for a thing (Apollo 11) another slide already used.
+    const d = data({
+      activeDays: 67,
+      spanDays: 70,
+      hours: flatHours(),
+      tokens: 9_000_000,
+      busiest: { day: "2026-10-27", tokens: 1_200_000, sessions: 9 },
+      habits: habits({ chats: 100, shortChats: 20, longChats: 5, chatTokens: 8_000_000, allTokens: 100, helperTokens: 5 }),
+    });
+    const s = buildSlides(d);
+    const type = s.find((x) => x.id === "type");
+    expect(type?.figure).toBe("Regular");
+    expect(type?.compare).toBeUndefined();
+    const texts = s.flatMap((x) => (x.compare ? [x.compare.text] : []));
+    expect(texts.filter((t) => /Apollo 11/.test(t)).length).toBeLessThanOrEqual(1);
+    // No two lines name the same thing, however the ladder words it.
+    const things = texts.map((t) => t.replace(/^.*?\d[\d.,]*[kM]?\s+/, "").replace(/^(one|the whole)\s+/i, ""));
+    expect(new Set(things).size).toBe(things.length);
+  });
+
+  it("never leaves a coder-type comparison without a subject", () => {
+    const owl = buildSlides(data({ hours: [...new Array<number>(21).fill(1), 9_000_000, 9_000_000, 9_000_000], hoursDays: 31 })).find((x) => x.id === "type");
+    expect(owl?.figure).toBe("Night Owl");
+    for (const x of [owl]) if (x?.compare) expect(x.compare.text).not.toMatch(/^(That|It|This|These|Those)\b/);
+    const loyal = buildSlides(data({ projects: [{ label: "atlas", value: 95 }, { label: "site", value: 5 }], tokens: 100 })).find((x) => x.id === "type");
+    if (loyal?.compare) expect(loyal.compare.text).not.toMatch(/^(That|It|This)\b/);
+  });
+
+  it("gives a lone tool its graphic: the terminal chart, with one row", () => {
+    const tool = buildSlides(data({ tools: [item("Edit", "tool", 8, 1)] })).find((x) => x.id === "tool");
+    expect(tool?.chart?.kind).toBe("terminal");
+    expect(tool?.chart && tool.chart.kind === "terminal" ? tool.chart.rows : []).toHaveLength(1);
+    const short = buildSlides(data({ activeDays: 3, skills: [], agents: [], tools: [item("Bash", "tool", 20, 2)] })).find((x) => x.id === "tool");
+    expect(short?.chart?.kind).toBe("terminal");
+  });
+
+  it("explains nothing on the card slide: no line, only the picture and the saved status", () => {
+    const end = buildSlides(data()).at(-1);
+    expect(end?.id).toBe("card");
+    expect(end?.line).toBe("");
+    for (const x of buildSlides(data())) expect(x.line, x.id).not.toMatch(/nothing is sent|saved as a picture/i);
+  });
   it("never shows a chat name or prompt text on a poster line", () => {
     const s = buildSlides(
       data({

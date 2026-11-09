@@ -378,7 +378,59 @@ export function tileBoxes(
 
 /** Whether a tile is big enough to hold a label of `chars` characters at `px` design units. */
 export function tileFits(t: Box, chars: number, px: number): boolean {
-  return t.w >= chars * px * 0.62 + 28 && t.h >= px + 30;
+  return t.w >= chars * px * TILE_ADVANCE + 28 && t.h >= px + 30;
+}
+
+/** A tile label's character plus its tracking, as a share of the font size (the real width, measured in the app). */
+const TILE_ADVANCE = 0.76;
+
+/** The label sizes a project tile tries, largest first (design units; 18 stays readable at the smallest window). */
+export const TILE_PX = [22, 20, 18] as const;
+const TILE_BIG_PX = 40;
+/** Space a rotated label needs along its tile, and across it, beyond the text itself. */
+const TURN_PAD = 40;
+
+export interface ProjectTile {
+  box: Box;
+  /** The whole label: the biggest tile says its weight, the others their full name. */
+  text: string;
+  px: number;
+  /** Written bottom to top along a tall, narrow tile. */
+  turn: boolean;
+}
+
+function planTile(box: Box, text: string, big: boolean): { px: number; turn: boolean } | null {
+  const sizes = big ? [TILE_BIG_PX] : TILE_PX;
+  for (const px of sizes) if (tileFits(box, text.length, px)) return { px, turn: false };
+  if (big) return null;
+  for (const px of sizes) if (box.h >= text.length * px * TILE_ADVANCE + TURN_PAD && box.w >= px + 36) return { px, turn: true };
+  return null;
+}
+
+/**
+ * The project tiles with a label that is never cut and never missing: every tile shows its whole text,
+ * across the tile or turned along it. If a tile is too small for either, the smallest project leaves
+ * the picture (the tiles are sized by the projects shown) until every tile fits.
+ */
+export function projectTiles(
+  rows: { value: number; name: string }[],
+  box: Box,
+  max = 6,
+): ProjectTile[] {
+  const top = rows.slice(0, max);
+  for (let n = top.length; n >= 1; n--) {
+    const shown = top.slice(0, n);
+    const boxes = tileBoxes(
+      shown.map((r) => r.value),
+      box,
+    );
+    const tiles = boxes.map((b, i) => {
+      const text = i === 0 ? compact(shown[0].value) : shown[i].name;
+      return { box: b, text, ...(planTile(b, text, i === 0) ?? { px: 0, turn: false }) };
+    });
+    if (n === 1 || tiles.every((t) => t.px > 0)) return tiles;
+  }
+  return [];
 }
 
 // ---- skill: a podium ---------------------------------------------------------------------------------------
@@ -536,6 +588,57 @@ export function commandBars(
     };
   });
   return { bars, cap };
+}
+
+// ---- tool, only one: a dot for every run -----------------------------------------------------------------------------
+
+export interface RunDot {
+  x: number;
+  y: number;
+  r: number;
+}
+
+/** The most dots one tool's runs are drawn as. */
+export const RUN_DOTS_MAX = 48;
+/** The room the chip "1 dot = N runs" takes at the bottom, when a dot stands for more than one run. */
+const RUN_CHIP_H = 46;
+
+/**
+ * One tool and nothing to set it against: its runs as circles under its command line, one dot per
+ * run until there are more than RUN_DOTS_MAX, then one dot per 2, 5, 10, 20, 50 ... runs (the chip
+ * says which). The dots fill the room below `barBottom` in the roomiest grid.
+ */
+export function runDots(
+  uses: number,
+  b: HeroBox,
+  barBottom: number,
+): { unit: number; dots: RunDot[] } {
+  let unit = 1;
+  for (let p = 1; uses / unit > RUN_DOTS_MAX; p *= 10) {
+    for (const m of [1, 2, 5]) {
+      unit = m * p;
+      if (uses / unit <= RUN_DOTS_MAX) break;
+    }
+  }
+  const n = Math.max(1, Math.round(uses / unit));
+  const y0 = barBottom + 24;
+  const y1 = b.floor - (unit > 1 ? RUN_CHIP_H : 0);
+  const room = Math.max(1, y1 - y0);
+  let best = { cols: n, cell: 0 };
+  for (let cols = 1; cols <= n; cols++) {
+    const cell = Math.min(b.w / cols, room / Math.ceil(n / cols));
+    if (cell > best.cell + 1e-6) best = { cols, cell };
+  }
+  const { cols, cell } = best;
+  const rows = Math.ceil(n / cols);
+  const r = Math.max(5, Math.min(n <= 12 ? 52 : 34, cell / 2 - 9));
+  const top = y0 + (room - rows * cell) / 2;
+  const dots = Array.from({ length: n }, (_, i) => ({
+    x: cell * ((i % cols) + 0.5),
+    y: top + cell * (Math.floor(i / cols) + 0.5),
+    r,
+  }));
+  return { unit, dots };
 }
 
 // ---- busiest day: spikes ---------------------------------------------------------------------------------------------

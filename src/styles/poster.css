@@ -671,23 +671,10 @@ html[data-input="keyboard"] .pr-strip-text:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px 16px;
   width: min(100%, 880px);
   flex: none;
-}
-
-.pr-card-note {
-  flex: 1 1 280px;
-  min-width: 0;
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  line-height: 24px;
-  text-transform: uppercase;
-  color: var(--p-fg);
 }
 
 .pr-card-save {

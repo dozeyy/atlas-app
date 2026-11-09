@@ -14,6 +14,9 @@ import {
   hourCells,
   lollipops,
   podiumLayout,
+  projectTiles,
+  runDots,
+  RUN_DOTS_MAX,
   skyline,
   spikeLayout,
   tileBoxes,
@@ -343,5 +346,75 @@ describe("the trail", () => {
     const t = trailLayout("2024-01-05", 900, BOX);
     for (let i = 1; i < t.marks.length; i++)
       expect(t.marks[i].x - t.marks[i - 1].x).toBeGreaterThanOrEqual(60);
+  });
+});
+
+describe("runDots (one tool: a dot for every run)", () => {
+  const barBottom = BOX.ceil + 66;
+  it("is one dot per run while there are few, and says nothing about a unit", () => {
+    const r = runDots(8, BOX, barBottom);
+    expect(r.unit).toBe(1);
+    expect(r.dots).toHaveLength(8);
+  });
+  it("caps the dots and names how many runs a dot is worth, rounding a unit to 1, 2 or 5 x 10^n", () => {
+    for (const uses of [49, 100, 4_213, 76_804, 9_999_999]) {
+      const r = runDots(uses, BOX, barBottom);
+      expect(r.dots.length, `${uses}`).toBeLessThanOrEqual(RUN_DOTS_MAX);
+      expect(r.dots.length, `${uses}`).toBeGreaterThanOrEqual(1);
+      expect(String(r.unit), `${uses}`).toMatch(/^[125]0*$/);
+      expect(Math.abs(r.dots.length * r.unit - uses) / uses, `${uses}`).toBeLessThan(0.1);
+    }
+    expect(runDots(76_804, BOX, barBottom).unit).toBe(2000);
+  });
+  it("keeps every dot inside the box, below the command line, clear of the chip, and apart", () => {
+    for (const uses of [1, 3, 8, 30, 48, 76_804]) {
+      const r = runDots(uses, BOX, barBottom);
+      const bottom = BOX.floor - (r.unit > 1 ? 46 : 0);
+      for (const d of r.dots) {
+        expect(d.x - d.r, `${uses}`).toBeGreaterThanOrEqual(0);
+        expect(d.x + d.r, `${uses}`).toBeLessThanOrEqual(BOX.w);
+        expect(d.y - d.r, `${uses}`).toBeGreaterThanOrEqual(barBottom);
+        expect(d.y + d.r, `${uses}`).toBeLessThanOrEqual(bottom + 0.01);
+      }
+      for (let i = 0; i < r.dots.length; i++)
+        for (let j = i + 1; j < r.dots.length; j++)
+          expect(Math.hypot(r.dots[i].x - r.dots[j].x, r.dots[i].y - r.dots[j].y), `${uses}`).toBeGreaterThanOrEqual(r.dots[i].r + r.dots[j].r);
+    }
+  });
+});
+
+describe("projectTiles (every tile shows its whole label)", () => {
+  const AREA = { x: 0, y: 26, w: 760, h: 324 };
+  const names = ["maple-api", "field-notes", "budget-bot", "pixel-garden", "dotfiles", "x"];
+  const rows = (values: number[]) => values.map((value, i) => ({ value, name: names[i] }));
+  it("labels each tile in full: across it, or turned along a tall narrow one", () => {
+    const tiles = projectTiles(rows([6.3e6, 2.1e6, 1.6e6, 1.2e6, 0.4e6]), AREA);
+    expect(tiles.length).toBeGreaterThanOrEqual(2);
+    expect(tiles[0].text).toBe("6.3M");
+    tiles.slice(1).forEach((t, i) => {
+      expect(t.text).toBe(names[i + 1]);
+      expect(t.px).toBeGreaterThanOrEqual(18);
+      const need = t.text.length * t.px * 0.62;
+      if (t.turn) expect(t.box.h).toBeGreaterThanOrEqual(need + 40);
+      else expect(t.box.w).toBeGreaterThanOrEqual(need + 28);
+    });
+  });
+  it("lets the smallest project leave rather than cut a name or leave a tile bare", () => {
+    const tiles = projectTiles(rows([9e6, 8e6, 7e6, 6e6, 5e6, 1]), AREA);
+    expect(tiles.every((t) => t.px >= 18)).toBe(true);
+    expect(tiles.map((t) => t.text)).not.toContain("x");
+  });
+  it("keeps the tiles inside the area and never overlapping", () => {
+    const tiles = projectTiles(rows([6.3e6, 2.1e6, 1.6e6, 1.2e6, 0.4e6]), AREA);
+    for (const t of tiles) {
+      expect(t.box.x).toBeGreaterThanOrEqual(AREA.x - 0.01);
+      expect(t.box.x + t.box.w).toBeLessThanOrEqual(AREA.x + AREA.w + 0.01);
+      expect(t.box.y + t.box.h).toBeLessThanOrEqual(AREA.y + AREA.h + 0.01);
+    }
+  });
+  it("is a single labelled tile for a single project", () => {
+    const t = projectTiles(rows([5e6]), AREA);
+    expect(t).toHaveLength(1);
+    expect(t[0].px).toBeGreaterThan(0);
   });
 });
