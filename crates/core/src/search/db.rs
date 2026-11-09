@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, OpenFlags};
 use sha2::{Digest, Sha256};
 
-pub const SCHEMA_VERSION: i64 = 1;
+/// 2: `msgs.origin` (who wrote a user line).
+pub const SCHEMA_VERSION: i64 = 2;
 /// Bump when `extract` or `mask` change what gets stored: every install re-reads once.
-pub const PARSER_VERSION: &str = "1";
+pub const PARSER_VERSION: &str = "2";
 
 /// Where the search file lives. Real ledgers share `<data>/search.sqlite`; every other root
 /// (fixtures, `--config-dir` folders) gets its own file so it never mixes into the real one.
@@ -56,7 +57,8 @@ CREATE TABLE msgs(
   session_id TEXT NOT NULL,
   agent_id   TEXT,
   role       INTEGER NOT NULL,
-  ts         INTEGER
+  ts         INTEGER,
+  origin     INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX msgs_uuid ON msgs(uuid);
 CREATE INDEX msgs_file ON msgs(file_id);
@@ -89,6 +91,13 @@ fn try_open(db: &Path) -> Result<Connection, DbError> {
     if v == 0 {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA)?;
+        tx.execute_batch(&format!("PRAGMA user_version={SCHEMA_VERSION}"))?;
+        tx.commit()?;
+    } else if v == 1 {
+        // Schema 1 -> 2: the new column. Old rows read as "unknown"; the parser version
+        // changed too, so the indexer wipes and re-reads everything once in the background.
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch("ALTER TABLE msgs ADD COLUMN origin INTEGER NOT NULL DEFAULT 0")?;
         tx.execute_batch(&format!("PRAGMA user_version={SCHEMA_VERSION}"))?;
         tx.commit()?;
     }
@@ -133,13 +142,27 @@ pub fn set_meta(conn: &Connection, key: &str, value: &str) {
 pub fn wipe(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "DELETE FROM msgs; DELETE FROM sfiles; DELETE FROM meta WHERE key IN ('last_indexed_at','first_index_done'); \
-         INSERT INTO fts(fts) VALUES('delete-all');",
+         DELETE FROM fts;",
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `wipe` must empty the text table too: with its old statement ('delete-all' is only for
+    /// contentless tables) the batch failed after the rows were gone, the old text stayed, and
+    /// every row written afterwards hit a duplicate rowid ("constraint failed").
+    #[test]
+    fn wipe_empties_the_text_table_so_rows_can_be_written_again() {
+        let d = tempfile::tempdir().unwrap();
+        let c = open_writer(&d.path().join("s.sqlite")).unwrap();
+        c.execute("INSERT INTO fts(rowid,text) VALUES(1,'old words')", []).unwrap();
+        wipe(&c).unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM fts WHERE fts MATCH 'old'", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+        c.execute("INSERT INTO fts(rowid,text) VALUES(1,'new words')", []).unwrap();
+    }
 
     #[test]
     fn creates_schema_and_fts5_is_available() {

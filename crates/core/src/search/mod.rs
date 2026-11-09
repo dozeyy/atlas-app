@@ -621,7 +621,7 @@ struct FileCtx<'a> {
 fn flush(conn: &mut Connection, ctx: &mut FileCtx<'_>, batch: &mut Vec<extract::Message>, offset: u64, dupes: &mut u64) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     {
-        let mut ins = tx.prepare_cached("INSERT OR IGNORE INTO msgs(uuid, file_id, session_id, agent_id, role, ts) VALUES(?1,?2,?3,?4,?5,?6)")?;
+        let mut ins = tx.prepare_cached("INSERT OR IGNORE INTO msgs(uuid, file_id, session_id, agent_id, role, ts, origin) VALUES(?1,?2,?3,?4,?5,?6,?7)")?;
         let mut fts = tx.prepare_cached("INSERT INTO fts(rowid, text) VALUES(?1, ?2)")?;
         for m in batch.drain(..) {
             if ctx.project.is_none() {
@@ -633,7 +633,7 @@ fn flush(conn: &mut Connection, ctx: &mut FileCtx<'_>, batch: &mut Vec<extract::
             } else {
                 (m.session_id.unwrap_or_else(|| ctx.task.folder_session.clone()), None)
             };
-            let n = ins.execute(params![m.uuid, ctx.task.file_id, session, agent, (m.role == "assistant") as i64, m.ts])?;
+            let n = ins.execute(params![m.uuid, ctx.task.file_id, session, agent, (m.role == "assistant") as i64, m.ts, m.origin])?;
             if n == 1 {
                 fts.execute(params![tx.last_insert_rowid(), m.text])?;
             } else {

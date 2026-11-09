@@ -7,6 +7,7 @@
 
 mod fmt;
 mod render;
+mod repeats;
 mod scope;
 
 use std::ffi::OsString;
@@ -23,6 +24,7 @@ const HELP: &str = "atlas-usage - Claude Code token usage, same numbers as the A
 
 USAGE
   atlas-usage [SCOPE...] [--vs SCOPE] [options]
+  atlas-usage repeats | offer-note ...   what you keep asking Claude for (run: atlas-usage repeats --help)
 
 SCOPE (words may be combined: \"project last-week\")
   chat                this chat (default when nothing else is given)
@@ -189,6 +191,18 @@ struct Ctx {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // `repeats` and `offer-note` are the plugin skill's no-app path (src/repeats.rs).
+    if let Some(cmd) = args.first().filter(|a| matches!(a.as_str(), "repeats" | "offer-note")).cloned() {
+        match repeats::run(&cmd, args[1..].to_vec()) {
+            Ok(Some(out)) => println!("{out}"),
+            Ok(None) => println!("{}", repeats::HELP),
+            Err(e) => {
+                eprintln!("atlas-usage: {}", fmt::plain(&e));
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     let opts = match parse_args(args) {
         Ok(o) => o,
         Err(e) if e.is_empty() => {

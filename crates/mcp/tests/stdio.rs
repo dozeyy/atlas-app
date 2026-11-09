@@ -135,14 +135,31 @@ fn id_of(c: &mut Client, kind: &str, name: &str) -> String {
 }
 
 #[test]
-fn lists_the_eleven_tools_with_descriptions_and_schemas() {
+fn lists_every_tool_with_descriptions_and_schemas() {
     let sb = Sandbox::new();
     let mut c = Client::start(&sb, &[]);
     let r = c.request("tools/list", json!({}));
     let tools = r["result"]["tools"].as_array().unwrap();
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     names.sort();
-    assert_eq!(names, ["create_item", "delete_item", "get_usage_summary", "list_backups", "list_items", "read_item", "rename_item", "restore_backup", "toggle_hook", "toggle_mcp_server", "update_item"]);
+    assert_eq!(
+        names,
+        [
+            "create_item",
+            "delete_item",
+            "find_repeated_requests",
+            "get_usage_summary",
+            "list_backups",
+            "list_items",
+            "note_skill_offer",
+            "read_item",
+            "rename_item",
+            "restore_backup",
+            "toggle_hook",
+            "toggle_mcp_server",
+            "update_item"
+        ]
+    );
     for t in tools {
         assert!(t["description"].as_str().is_some_and(|d| d.len() > 30), "{t}");
         assert_eq!(t["inputSchema"]["type"], "object", "{t}");

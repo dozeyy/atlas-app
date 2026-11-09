@@ -33,6 +33,8 @@ Code: `crates/mcp` (server, usage summary), `crates/core/src/{ops,pending,connec
 | `get_usage_summary` | no | Tokens, estimated cost, per model, top projects and chats for today / yesterday / 7d / 30d / month / all. |
 | `list_backups` | no | Backups, newest first, with who made them. |
 | `restore_backup` | yes | Undo from a backup; refuses to overwrite a file changed again since. |
+| `find_repeated_requests` | no | Groups what the person typed in past chats (no AI, no network). Optional `like` (the request in front of Claude), `days`, `project`, `limit`. Returns `groups` (`id`, `count`, `sessions`, `days`, `representative`, `examples`, `meetsBar`, `offer`), `likeMatch`, `likeOffer`, `offersOff`, `offerBar`. |
+| `note_skill_offer` | no (Atlas data only) | Remembers the answer to an offer to make a skill: `answer` offered, declined, made or never, with `groupId` or `like`, and `skillName` for made. Writes ids only to `habits.json`. |
 
 Inputs are camelCase (`newName`, `backupId`). A failed call returns an MCP tool error with one plain
 sentence, never a protocol error.
@@ -159,6 +161,25 @@ Settings, "Claude Code" section. Commands: `mcp_status`, `mcp_connect`, `mcp_dis
 - macOS: `Contents/Resources/atlas-mcp` through `tauri.macos-bundle.conf.json` (passed with
   `--config` in the workflows; not auto-merged so plain `cargo test` does not need the file).
 - Atlas finds it next to the running exe, or in `../Resources`, and registers the absolute path.
+
+## Repeated requests (find_repeated_requests, note_skill_offer)
+
+Used only by the plugin skill `atlas-repeats` (`docs/specs/skill-library.md`, D30-D55). There is no
+Habits screen in the app.
+
+- Source: the chat search index (`msgs.origin` 0 or 1 only: what was typed, never assistant text,
+  helper chats or pasted tool output). Read-only; a missing or old index returns one plain sentence.
+- Grouping is deterministic: normalize, 5-gram shingles, 64-hash MinHash, banded candidates, then
+  exact Jaccard >= 0.55 against the group's first member (no chaining). A group id is the first 16
+  hex of the SHA-256 of that normalized first wording. Bar to offer: 5 asks across 3 chats on 2
+  days within 90 days, or 3 asks in this chat; constants in `habits::cluster::Thresholds`.
+- `habits.json` (Atlas data folder, atomic writes, schema-versioned): per group id its answer,
+  time, optional skill name and `aliases` (ids of member wordings, so a group whose first wording
+  changes is still recognised), plus a global `offersOff`. It never holds prompt text.
+- Without the app: the same two operations are `atlas-usage repeats [--like TEXT] --json` and
+  `atlas-usage offer-note <id|-> <made|declined|off>` in the plugin's CLI, on the same core code and
+  the same `habits.json`. The CLI reads the app's index when it is usable, else reads the transcripts
+  itself into `<cache dir>/search.sqlite`.
 
 ## Console windows
 

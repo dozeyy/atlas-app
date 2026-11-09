@@ -10,6 +10,7 @@
 pub mod cache;
 pub mod connect;
 pub mod fsutil;
+pub mod habits;
 pub mod history;
 pub mod launch;
 pub mod layout;

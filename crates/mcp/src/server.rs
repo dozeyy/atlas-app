@@ -20,6 +20,8 @@ use serde_json::{Value, json};
 
 use crate::usage::Usage;
 
+mod habits_tools;
+
 const INSTRUCTIONS: &str = "Atlas reads and manages the user's Claude Code setup: skills, agents, slash commands, rules, output styles, hooks, MCP servers, instructions (CLAUDE.md) and settings. Start with list_items to find ids, then read_item. Every change is backed up first and can be undone with restore_backup. Secrets (keys, tokens, passwords) are never shown: a value you see as dots is hidden, never write the dots back. Items that hold secrets can be read but not edited here.";
 
 #[derive(Clone)]
@@ -28,6 +30,8 @@ pub struct AtlasServer {
     /// Some(queue folder) = propose mode.
     propose: Option<PathBuf>,
     usage: Arc<Usage>,
+    /// Repeated requests (`habits_tools`); set with `with_habits`.
+    habits: Option<Arc<atlas_core::habits::Habits>>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -169,7 +173,12 @@ fn fail(msg: impl Into<String>) -> CallToolResult {
 
 impl AtlasServer {
     pub fn new(ops: Ops, propose: Option<PathBuf>, usage: Usage) -> AtlasServer {
-        AtlasServer { ops: Arc::new(ops), propose, usage: Arc::new(usage), tool_router: Self::tool_router() }
+        AtlasServer { ops: Arc::new(ops), propose, usage: Arc::new(usage), habits: None, tool_router: Self::tool_router() + Self::habits_router() }
+    }
+
+    pub fn with_habits(mut self, habits: atlas_core::habits::Habits) -> AtlasServer {
+        self.habits = Some(Arc::new(habits));
+        self
     }
 
     /// Run blocking work (file IO, the write lock, the usage index) off the async thread.

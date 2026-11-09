@@ -22,9 +22,20 @@ pub struct Message {
     pub cwd: Option<String>,
     pub ts: Option<i64>,
     pub role: &'static str,
+    /// Who wrote a user line: `ORIGIN_UNKNOWN`, `ORIGIN_HUMAN` or `ORIGIN_MACHINE` (an
+    /// assistant line is always unknown). Repeated-request grouping counts only typed prompts.
+    pub origin: u8,
     /// Masked, capped, with no control characters.
     pub text: String,
 }
+
+/// An older line, or one with no marker either way.
+pub const ORIGIN_UNKNOWN: u8 = 0;
+/// `origin.kind == "human"`: the person typed it.
+pub const ORIGIN_HUMAN: u8 = 1;
+/// Not typed: a task notification, a peer message, a scheduled or system prompt, a compact
+/// summary, or a line from a headless `claude -p` run.
+pub const ORIGIN_MACHINE: u8 = 2;
 
 #[derive(Deserialize)]
 struct Block {
@@ -58,7 +69,26 @@ struct Line {
     timestamp: Option<String>,
     #[serde(rename = "isMeta")]
     is_meta: Option<bool>,
+    /// `{"kind": "human" | "task-notification" | "peer" | ...}`; kept loose so a new shape
+    /// is read as "unknown" instead of failing the whole line.
+    origin: Option<serde_json::Value>,
+    #[serde(rename = "promptSource")]
+    prompt_source: Option<String>,
+    #[serde(rename = "isCompactSummary")]
+    is_compact_summary: Option<bool>,
+    entrypoint: Option<String>,
     message: Option<Inner>,
+}
+
+fn origin_of(l: &Line) -> u8 {
+    let kind = l.origin.as_ref().and_then(|o| o.get("kind").and_then(|k| k.as_str()).or_else(|| o.as_str()));
+    if kind.is_some_and(|k| k != "human") || l.prompt_source.as_deref() == Some("system") || l.is_compact_summary == Some(true) || l.entrypoint.as_deref() == Some("sdk-cli") {
+        return ORIGIN_MACHINE;
+    }
+    if kind == Some("human") {
+        return ORIGIN_HUMAN;
+    }
+    ORIGIN_UNKNOWN
 }
 
 /// Cheap byte-level test before any JSON work: is this a user or assistant line that can
@@ -88,6 +118,7 @@ pub fn parse(line: &[u8]) -> Option<Message> {
     if l.is_meta == Some(true) {
         return None;
     }
+    let origin = if role == "user" { origin_of(&l) } else { ORIGIN_UNKNOWN };
     let raw = match l.message?.content? {
         Content::Text(t) => t,
         Content::Blocks(bs) => {
@@ -116,6 +147,7 @@ pub fn parse(line: &[u8]) -> Option<Message> {
         cwd: l.cwd,
         ts: l.timestamp.as_deref().and_then(parse_iso_ms),
         role,
+        origin,
         text,
     })
 }
@@ -167,6 +199,25 @@ mod tests {
         assert!(parse(br#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"x"}]}}"#).is_none());
         assert!(parse(br#"{"type":"user","message":{"content":"   "}}"#).is_none());
         assert!(parse(b"not json at all").is_none());
+    }
+
+    #[test]
+    fn who_wrote_a_user_line() {
+        let line = |extra: &str| format!(r#"{{"type":"user","uuid":"u",{extra}"message":{{"content":"fix the build"}}}}"#);
+        let o = |extra: &str| parse(line(extra).as_bytes()).unwrap().origin;
+        assert_eq!(o(r#""origin":{"kind":"human"},"#), ORIGIN_HUMAN);
+        assert_eq!(o(r#""origin":{"kind":"task-notification"},"#), ORIGIN_MACHINE);
+        assert_eq!(o(r#""origin":{"kind":"peer"},"#), ORIGIN_MACHINE);
+        assert_eq!(o(r#""promptSource":"system","#), ORIGIN_MACHINE);
+        assert_eq!(o(r#""isCompactSummary":true,"#), ORIGIN_MACHINE);
+        assert_eq!(o(r#""entrypoint":"sdk-cli","#), ORIGIN_MACHINE);
+        // A typed prompt in a headless run is still not typed at a keyboard.
+        assert_eq!(o(r#""origin":{"kind":"human"},"entrypoint":"sdk-cli","#), ORIGIN_MACHINE);
+        // No marker, or a normal entrypoint: unknown (older lines), counted as typed later.
+        assert_eq!(o(""), ORIGIN_UNKNOWN);
+        assert_eq!(o(r#""entrypoint":"claude-desktop","#), ORIGIN_UNKNOWN);
+        let a = br#"{"type":"assistant","origin":{"kind":"human"},"message":{"content":[{"type":"text","text":"ok"}]}}"#;
+        assert_eq!(parse(a).unwrap().origin, ORIGIN_UNKNOWN);
     }
 
     #[test]

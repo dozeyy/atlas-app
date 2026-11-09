@@ -17,9 +17,10 @@ mod usage;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+use atlas_core::habits::Habits;
 use atlas_core::launch::LaunchArgs;
 use atlas_core::ops::Ops;
-use atlas_core::paths::{self, ConfigInputs, resolve_config_root};
+use atlas_core::paths::{self, ConfigInputs, ConfigSource, resolve_config_root};
 use atlas_core::setup::{DiscoveryInputs, default_managed_dir};
 use rmcp::ServiceExt;
 use rmcp::transport::stdio;
@@ -61,6 +62,9 @@ fn main() {
     let local_data = paths::local_data_dir(args.data_dir.as_deref(), atlas_env.as_deref(), &home, &cwd).unwrap_or_else(|| data_dir.clone());
 
     let queue = propose.map(|d| d.map(|d| paths::absolutize(&d, &home, &cwd)).unwrap_or_else(|| data_dir.join("pending-changes")));
+    // The chat index the app keeps (read-only here); a `--config-dir` folder has its own file.
+    let index = atlas_core::search::db::search_file(&local_data, &root.projects_dir, root.source != ConfigSource::Flag);
+    let habits = Habits::new(index, data_dir.clone());
     let usage = usage::Usage::new(root.projects_dir.clone(), root.dir.clone(), local_data);
     let inputs = DiscoveryInputs { root: root.clone(), home, managed_dir: default_managed_dir(), include_worktrees: false, sandboxed: false };
     // Direct mode ("mcp") may not plant anything that runs commands; propose mode records every
@@ -73,7 +77,7 @@ fn main() {
 
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("async runtime");
     let code = rt.block_on(async move {
-        let server = server::AtlasServer::new(ops, queue, usage);
+        let server = server::AtlasServer::new(ops, queue, usage).with_habits(habits);
         match server.serve(stdio()).await {
             Ok(running) => match running.waiting().await {
                 Ok(_) => 0,
