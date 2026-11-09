@@ -5,6 +5,7 @@ import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
 import { MockBackend } from "../lib/mock";
+import { resetUpdateStore } from "../lib/updateStore";
 
 function mount(prep?: (b: MockBackend) => void) {
   localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "settings" }));
@@ -20,6 +21,7 @@ function mount(prep?: (b: MockBackend) => void) {
 }
 
 beforeEach(() => {
+  resetUpdateStore();
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
 });
@@ -47,12 +49,36 @@ describe("Settings", () => {
     expect(screen.getByText("Version")).toBeInTheDocument();
   });
 
+  it("About shows the version and a Check for updates button that answers in plain words", async () => {
+    const backend = mount();
+    const rail = await screen.findByRole("navigation", { name: "Settings sections" });
+    await userEvent.click(within(rail).getByRole("button", { name: "About" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Check for updates" }));
+    expect(await screen.findByText("You have the latest version.")).toBeInTheDocument();
+    expect(backend.updates.checks).toBe(1);
+
+    backend.updates.available = { version: "0.2.0", notes: "", current: "0.1.0" };
+    await userEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    expect(await screen.findByText("Version 0.2.0 is ready.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Update and restart" })).toBeInTheDocument();
+  });
+
   it("turns Keep running when closed on and off", async () => {
     mount();
     const sw = await screen.findByRole("switch", { name: "Keep running when closed" });
     expect(sw).toHaveAttribute("aria-checked", "false");
     await userEvent.click(sw);
     await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").closeToTray).toBe(true));
+  });
+
+  it("keeps the finished-chat notice off until it is switched on, and says what it cannot see", async () => {
+    mount();
+    const sw = await screen.findByRole("switch", { name: "Tell me when a chat finishes" });
+    expect(sw).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByText(/cannot tell when a chat is only waiting for you to allow something/)).toBeInTheDocument();
+    await userEvent.click(sw);
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").notifyOnFinish).toBe(true));
+    expect(sw).toHaveAttribute("aria-checked", "true");
   });
 
   it("steps how many versions History keeps, inside 10 to 200", async () => {

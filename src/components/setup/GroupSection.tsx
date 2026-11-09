@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import { Button } from "../controls";
-import { permissionBuckets, type Group } from "../../lib/setup-model";
+import { permissionBuckets, scopeRuns, type Group } from "../../lib/setup-model";
 import { ItemCard, ItemRow } from "./ItemViews";
 import { KindTile } from "./parts";
 import type { SetupItem } from "../../lib/setup-types";
@@ -22,13 +22,26 @@ function ShowMore({ hidden, onClick }: { hidden: number; onClick: () => void }) 
 function Cards({ items, onOpen, onDelete }: { items: SetupItem[]; onOpen: (id: string) => void; onDelete?: (item: SetupItem) => void }) {
   const [all, setAll] = useState(false);
   const list = all ? items : items.slice(0, CARD_CAP);
+  // When the list mixes places (Global, a project, a plugin), each place gets its own small heading.
+  const runs = scopeRuns(list);
+  const headed = runs.length > 1;
   return (
     <>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))] gap-3">
-        {list.map((i) => (
-          <ItemCard key={i.id} item={i} onOpen={onOpen} onDelete={onDelete} />
-        ))}
-      </div>
+      {runs.map((r) => (
+        <div key={r.label} className={headed ? "mb-5 last:mb-0" : undefined}>
+          {headed && (
+            <h3 className="mb-2 flex items-baseline gap-2 text-body font-medium text-ink-2">
+              {r.label}
+              <span className="font-normal">{r.items.length}</span>
+            </h3>
+          )}
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))] gap-3">
+            {r.items.map((i) => (
+              <ItemCard key={i.id} item={i} onOpen={onOpen} onDelete={onDelete} />
+            ))}
+          </div>
+        </div>
+      ))}
       {!all && items.length > CARD_CAP && <ShowMore hidden={items.length - CARD_CAP} onClick={() => setAll(true)} />}
     </>
   );

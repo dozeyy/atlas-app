@@ -167,3 +167,45 @@ fn a_missing_folder_is_not_an_error() {
     assert!(!s.watching && s.chats.is_empty() && s.last.is_none());
     engine.stop();
 }
+
+#[test]
+fn finished_chats_are_listed_newest_first_without_a_fake_token_total() {
+    let rig = start(|p| {
+        for (name, title, mins) in [("one", "First chat", 90u64), ("two", "Second chat", 30), ("three", "Third chat", 200)] {
+            let f = p.join("proj-a").join(format!("{name}.jsonl"));
+            append(&f, &format!(r#"{{"type":"custom-title","customTitle":"{title}"}}"#));
+            append(&f, &tool(name, "Read", r#"{"file_path":"x"}"#));
+            let t = SystemTime::now() - Duration::from_secs(mins * 60);
+            File::options().write(true).open(&f).unwrap().set_modified(t).unwrap();
+        }
+    });
+    let (snap, _) = wait_for(&rig, Duration::from_secs(5), |s| s.recent.len() == 3).expect("three finished chats");
+    assert!(snap.chats.is_empty());
+    let titles: Vec<_> = snap.recent.iter().map(|r| r.title.clone().unwrap_or_default()).collect();
+    assert_eq!(titles, ["Second chat", "First chat", "Third chat"]);
+    assert_eq!(snap.last.as_ref().map(|l| l.session_id.as_str()), Some("two"));
+    assert!(snap.recent.iter().all(|r| r.tokens.is_none()), "only the tail was read");
+    rig.engine.stop();
+}
+
+#[test]
+fn a_chat_that_ends_its_turn_flips_to_waiting_and_the_tracker_reports_it_once() {
+    use atlas_core::now::finish::NotifyTracker;
+    let rig = start(|p| {
+        let f = p.join("proj-a").join("live.jsonl");
+        append(&f, &prompt());
+        append(&f, &tool("t1", "Edit", r#"{"file_path":"C:\\w\\app\\a.ts"}"#));
+    });
+    let (first, _) = wait_for(&rig, Duration::from_secs(5), |s| s.chats.first().is_some_and(|c| c.state == "working")).expect("working");
+    let mut tracker = NotifyTracker::new();
+    assert!(tracker.observe(&first).is_empty());
+    let live = rig.projects.join("proj-a").join("live.jsonl");
+    append(&live, r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"OUTPUT"}]}}"#);
+    append(&live, &end_turn());
+    let (second, _) = wait_for(&rig, Duration::from_secs(5), |s| s.chats.first().is_some_and(|c| c.state == "waiting")).expect("waiting");
+    let got = tracker.observe(&second);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].kind, "done");
+    assert!(!format!("{got:?}").contains("TOPSECRET"), "no prompt or reply text in what is announced");
+    rig.engine.stop();
+}

@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { CaretRight, List } from "@phosphor-icons/react";
 import { IconButton } from "./controls";
 import { HelpSheet } from "./HelpSheets";
-import { APP_MENU } from "../lib/appMenu";
+import { APP_MENU, modName } from "../lib/appMenu";
+import { onNativeMenu } from "../lib/ipc";
 import type { MenuEntry, SheetId } from "../lib/appMenu";
 import { useAtlas } from "../state/AtlasProvider";
+import { openPalette } from "../state/paletteStore";
 
 const ITEMS = '[role="menuitem"]';
 
@@ -25,7 +27,7 @@ const siblings = (el: Element | null) => itemsOf(el?.closest('[role="menu"]'));
  * What is in it is data (APP_MENU), so another menu is one more entry there.
  */
 export function AppMenu() {
-  const { info } = useAtlas();
+  const { info, setView } = useAtlas();
   const [open, setOpen] = useState(false);
   const [sub, setSub] = useState<string | null>(null);
   const [sheet, setSheet] = useState<SheetId | null>(null);
@@ -42,6 +44,26 @@ export function AppMenu() {
     itemsOf(root.current?.querySelector(`[data-menu="${sub}"]`))[0]?.focus({ preventScroll: true });
   }, [sub]);
   const menuId = useId();
+
+  // macOS menu bar (macmenu.rs): Settings goes to its page, About and Help open the same sheets.
+  useEffect(() => {
+    const sheets = new Set<string>(APP_MENU.flatMap((m) => m.items ?? []).map((m) => m.sheet ?? ""));
+    let off: (() => void) | undefined;
+    let alive = true;
+    onNativeMenu((id) => {
+      if (id === "settings") setView("settings");
+      else if (sheets.has(id)) setSheet(id as SheetId);
+    })
+      .then((fn) => {
+        if (alive) off = fn;
+        else fn();
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, [setView]);
 
   const close = useCallback((refocus: boolean) => {
     setOpen(false);
@@ -109,6 +131,12 @@ export function AppMenu() {
     setSheet(s);
   };
 
+  // The palette puts focus back where it was when it closes, so the button gets it first.
+  const jump = () => {
+    close(true);
+    openPalette();
+  };
+
   const onKey = (e: KeyboardEvent) => {
     const at = document.activeElement;
     const list = siblings(at);
@@ -172,10 +200,11 @@ export function AppMenu() {
         aria-expanded={parent ? sub === m.id : undefined}
         className="app-menu-item"
         onPointerEnter={() => setSub(parent ? m.id : null)}
-        onClick={() => (m.sheet ? pick(m.sheet) : setSub(m.id))}
+        onClick={() => (m.action === "palette" ? jump() : m.sheet ? pick(m.sheet) : setSub(m.id))}
       >
         <span>{m.label}</span>
         {parent && <CaretRight size={14} aria-hidden="true" />}
+        {m.action === "palette" && <span className="app-menu-hint">{modName(info.platform)}+K</span>}
       </button>
     );
   };
@@ -185,7 +214,7 @@ export function AppMenu() {
       <IconButton
         ref={trigger}
         aria-label="Menu"
-        title="Menu (Alt)"
+        title={info.platform === "macos" ? "Menu" : "Menu (Alt)"}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}

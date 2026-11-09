@@ -9,6 +9,7 @@ import { mockSetupSnapshot } from "../lib/setup-mock";
 import { reloadSetup, resetSetupStore } from "../state/setupStore";
 import { CELEBRATE_MS, CHECKLIST_DONE_KEY } from "../components/setup/TopSlot";
 import { resetToasts } from "../state/toastStore";
+import { clearPendingToolkitItem, openToolkitItemNext, peekPendingToolkitItem } from "../lib/nav";
 import type { SetupSnapshot } from "../lib/setup-types";
 
 // CodeMirror needs real layout; the viewer and editor are checked in the running app instead.
@@ -27,7 +28,15 @@ vi.mock("../lib/codemirror", () => ({
     ta.setAttribute("aria-label", opts.label);
     ta.addEventListener("input", () => opts.onChange(ta.value));
     el.appendChild(ta);
-    return { focus: () => ta.focus(), markLine: () => {}, destroy: () => ta.remove() };
+    return {
+      focus: () => ta.focus(),
+      markLine: () => {},
+      setText: (t: string) => {
+        ta.value = t;
+        opts.onChange(t);
+      },
+      destroy: () => ta.remove(),
+    };
   },
 }));
 
@@ -70,6 +79,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute("data-theme");
   resetSetupStore();
   resetToasts();
+  clearPendingToolkitItem();
   backend = new Backend();
 });
 afterEach(() => {
@@ -496,6 +506,110 @@ describe("Setup page: edit", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Show secrets and edit" }));
     expect(await within(dialog).findByRole("textbox", { name: /^Editing / })).toBeInTheDocument();
     expect(within(dialog).getByText("Secret values are showing while you edit.")).toBeInTheDocument();
+  });
+});
+
+describe("Setup page: a skill's files and actions", () => {
+  async function openSkill(card: RegExp) {
+    await open(backend);
+    await openTile("Skills");
+    await userEvent.click(await screen.findByRole("button", { name: card }));
+    return screen.findByRole("dialog");
+  }
+  async function edit(dialog: HTMLElement) {
+    await userEvent.click(within(dialog).getByRole("button", { name: "Edit" }));
+    return (await within(dialog).findByRole("textbox", { name: /^Editing / })) as HTMLTextAreaElement;
+  }
+
+  it("opens the item the quick jump asked for", async () => {
+    const snap = await backend.setupSnapshot();
+    const id = snap.items.find((i) => i.kind === "skill" && i.name === "deep-research")!.id;
+    openToolkitItemNext(id);
+    await open(backend);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getAllByText("deep-research").length).toBeGreaterThan(0);
+    expect(peekPendingToolkitItem()).toBeNull();
+  });
+
+  it("stays in the editor after saving and says it saved", async () => {
+    const dialog = await openSkill(/skill deep-research/);
+    const ta = await edit(dialog);
+    fireEvent.input(ta, { target: { value: ta.value + "\nOne more line.\n" } });
+    const save = within(dialog).getByRole("button", { name: /^Save/ });
+    await waitFor(() => expect(save).toBeEnabled());
+    await userEvent.click(save);
+    expect(await within(dialog).findByText("Saved. The old version is backed up.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("textbox", { name: /^Editing / })).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: /^Save/ })).toBeDisabled());
+  });
+
+  it("shows the description as a field that edits the file's header", async () => {
+    const dialog = await openSkill(/skill deep-research/);
+    const ta = await edit(dialog);
+    const name = within(dialog).getByLabelText("Name");
+    expect(name).toBeDisabled();
+    const desc = within(dialog).getByLabelText("Description");
+    expect(desc).toHaveValue("Research a topic across sources and write it up.");
+    fireEvent.change(desc, { target: { value: "Find sources fast" } });
+    await waitFor(() => expect(ta.value).toContain("description: Find sources fast\n"));
+    expect(ta.value).toContain("name: deep-research\n");
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: /^Save/ })).toBeEnabled());
+  });
+
+  it("switches between a skill's files and asks before dropping edits", async () => {
+    const dialog = await openSkill(/skill commit-helper/);
+    const ta = await edit(dialog);
+    const tabs = within(dialog).getByRole("tablist", { name: "Files in this skill" });
+    const [main, other] = within(tabs).getAllByRole("tab");
+    expect(main).toHaveTextContent("SKILL.md");
+    expect(other).toHaveTextContent("references/style.md");
+
+    fireEvent.input(ta, { target: { value: ta.value + "\nunsaved" } });
+    await userEvent.click(other!);
+    const ask = await screen.findByRole("alertdialog", { name: "Discard your changes?" });
+    await userEvent.click(within(ask).getByRole("button", { name: "Keep editing" }));
+    expect(main).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.click(other!);
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Discard" }));
+    const second = await within(dialog).findByRole("textbox", { name: "Editing commit-helper references/style.md" });
+    expect(second).toBeInTheDocument();
+    // The header fields belong to SKILL.md only.
+    expect(within(dialog).queryByLabelText("Description")).not.toBeInTheDocument();
+  });
+
+  it("opens a supporting file straight from the list of files", async () => {
+    const dialog = await openSkill(/skill commit-helper/);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Edit references/style.md" }));
+    expect(await within(dialog).findByRole("textbox", { name: "Editing commit-helper references/style.md" })).toBeInTheDocument();
+  });
+
+  it("shows the file in its folder and opens it in the default editor", async () => {
+    const dialog = await openSkill(/skill deep-research/);
+    const id = (await backend.setupSnapshot()).items.find((i) => i.name === "deep-research")!.id;
+    await userEvent.click(within(dialog).getByRole("button", { name: "Show in folder" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Open in editor" }));
+    expect(backend.opened).toEqual([
+      { id, file: undefined, open: false },
+      { id, file: undefined, open: true },
+    ]);
+  });
+
+  it("duplicates a skill under a new name and refuses one that exists", async () => {
+    const dialog = await openSkill(/skill deep-research/);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Duplicate" }));
+    const ask = await screen.findByRole("dialog", { name: "Duplicate skill" });
+    const box = within(ask).getByLabelText("Name of the copy");
+    expect(box).toHaveValue("deep-research-copy");
+
+    fireEvent.change(box, { target: { value: "commit-helper" } });
+    expect(within(ask).getByText("You already have a skill with that name.")).toBeInTheDocument();
+    expect(within(ask).getByRole("button", { name: "Duplicate" })).toBeDisabled();
+
+    fireEvent.change(box, { target: { value: "deep-research-copy" } });
+    await userEvent.click(within(ask).getByRole("button", { name: "Duplicate" }));
+    expect(await screen.findByText("Made deep-research-copy as a copy of deep-research.")).toBeInTheDocument();
+    expect((await backend.setupSnapshot()).items.some((i) => i.name === "deep-research-copy")).toBe(true);
   });
 });
 

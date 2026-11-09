@@ -5,6 +5,7 @@ import type {
   CreateKind,
   DeleteOutcome,
   Draft,
+  DuplicateOutcome,
   ItemKind,
   MaskedRange,
   Problem,
@@ -14,6 +15,7 @@ import type {
   SetupItem,
   SetupProject,
   SetupSnapshot,
+  SkillFile,
   SourceView,
   UndoOutcome,
 } from "./setup-types";
@@ -294,48 +296,104 @@ export class MockSetupWorld {
     return { id, text, language: langFor(i), truncated: false, maskedRanges: ranges, size: raw.length, lineEnding: "LF", bom: false };
   }
 
-  raw(id: string, reveal: boolean): RawEdit {
+  /** The key a file of an item is kept under: the item's own text, or a supporting file of a skill. */
+  private key(i: SetupItem, file?: string): string {
+    if (!file || file === "SKILL.md") return i.id;
+    if (i.kind !== "skill" || !i.attachments.includes(file)) throw new Error("That file is not part of this skill.");
+    return `${i.id}::${file}`;
+  }
+
+  raw(id: string, reveal: boolean, file?: string): RawEdit {
     const i = this.find(id);
-    const text = this.texts.get(id) ?? "";
-    const hidden = i.hasSecrets && !reveal;
+    const k = this.key(i, file);
+    const support = k !== id;
+    const text = this.texts.get(k) ?? (support ? `# ${file}\n\nNotes the skill points to.\n` : "");
+    const hidden = i.hasSecrets && !reveal && !support;
     return {
       id,
       text: hidden ? "" : text,
-      language: langFor(i),
-      stamp: String(this.stamps.get(id) ?? 1),
+      language: support ? (file!.endsWith(".json") ? "json" : "markdown") : langFor(i),
+      stamp: String(this.stamps.get(k) ?? 1),
       lineEnding: "LF",
       bom: false,
-      path: i.path ?? "",
-      hasSecrets: i.hasSecrets,
+      path: support ? `${i.path?.replace(/[^/\\]+$/, "") ?? ""}${file}` : (i.path ?? ""),
+      hasSecrets: !support && i.hasSecrets,
       needsReveal: hidden,
-      folderName: i.kind === "skill" ? i.name : null,
+      folderName: i.kind === "skill" && !support ? i.name : null,
     };
   }
 
-  validate(id: string, text: string): Problem[] {
+  validate(id: string, text: string, file?: string): Problem[] {
     const i = this.find(id);
+    const support = this.key(i, file) !== id;
+    if (support) return file!.endsWith(".json") ? problemsFor("json", null, text) : [];
     return problemsFor(langFor(i), i.kind === "skill" ? i.name : null, text);
   }
 
-  save(id: string, text: string, stamp: string, force: boolean): SaveReply {
+  save(id: string, text: string, stamp: string, force: boolean, file?: string): SaveReply {
     const i = this.find(id);
+    const k = this.key(i, file);
     if (!i.editable) throw new Error(i.locked ?? "Atlas will not change this.");
-    if (!force && stamp !== String(this.stamps.get(id) ?? 1)) return { status: "conflict", stamp: null, backupId: null };
-    const bad = this.validate(id, text);
+    if (!force && stamp !== String(this.stamps.get(k) ?? 1)) return { status: "conflict", stamp: null, backupId: null };
+    const bad = this.validate(id, text, file);
     if (bad.length) throw new Error(bad[0]!.message);
-    const next = (this.stamps.get(id) ?? 1) + 1;
-    this.texts.set(id, text);
-    this.stamps.set(id, next);
-    i.modifiedMs = Date.now();
-    i.size = text.length;
+    const next = (this.stamps.get(k) ?? 1) + 1;
+    this.texts.set(k, text);
+    this.stamps.set(k, next);
+    if (k === id) {
+      i.modifiedMs = Date.now();
+      i.size = text.length;
+    }
     this.changed();
     return { status: "saved", stamp: String(next), backupId: `mock-save-${++this.serial}` };
   }
 
+  /** The files in a skill's folder, SKILL.md first. */
+  skillFiles(id: string): SkillFile[] {
+    const i = this.find(id);
+    if (i.kind !== "skill" || !i.path) return [];
+    const main: SkillFile = { rel: "SKILL.md", size: (this.texts.get(id) ?? "").length, language: "markdown", main: true, editable: true };
+    const rest = i.attachments.map<SkillFile>((rel) => ({
+      rel,
+      size: (this.texts.get(`${id}::${rel}`) ?? "").length || 120,
+      language: rel.endsWith(".json") ? "json" : "markdown",
+      main: false,
+      editable: /\.(md|txt|json|ya?ml)$/i.test(rel),
+    }));
+    return [main, ...rest];
+  }
+
+  /** Copy a user skill to a new folder name; its files come along. */
+  duplicate(id: string, name: string): DuplicateOutcome {
+    const src = this.find(id);
+    const nm = name.trim();
+    if (src.kind !== "skill" || src.scope !== "user") throw new Error("Only your own skills can be duplicated.");
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(nm)) throw new Error("Use lowercase letters, numbers and dashes for the name.");
+    if (this.items.some((x) => x.kind === "skill" && x.scope === "user" && x.name === nm)) {
+      throw new Error(`There is already a skill called "${nm}". Atlas will not overwrite it.`);
+    }
+    const saved = n;
+    n = 2000 + this.serial + this.items.length;
+    const created = item("skill", "user", nm, {
+      enabled: { state: "on", label: "On", raw: null },
+      description: src.description,
+      attachments: [...src.attachments],
+      path: `C:/Users/you/.claude/skills/${nm}/SKILL.md`,
+    });
+    n = saved;
+    this.items.push(created);
+    this.texts.set(created.id, (this.texts.get(id) ?? "").replace(/^name:.*$/m, `name: ${nm}`));
+    this.stamps.set(created.id, 1);
+    this.serial++;
+    this.changed();
+    return { name: nm, path: created.path ?? "" };
+  }
+
   /** Tests: change the "file" without the editor knowing. */
-  touch(id: string, text?: string) {
-    this.stamps.set(id, (this.stamps.get(id) ?? 1) + 1);
-    if (text !== undefined) this.texts.set(id, text);
+  touch(id: string, text?: string, file?: string) {
+    const k = file ? `${id}::${file}` : id;
+    this.stamps.set(k, (this.stamps.get(k) ?? 1) + 1);
+    if (text !== undefined) this.texts.set(k, text);
   }
 
   delete(id: string): DeleteOutcome {

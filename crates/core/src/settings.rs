@@ -61,6 +61,8 @@ pub struct Settings {
     pub launch_animation: bool,
     /// Closing the window hides Atlas to the tray instead of quitting (default off).
     pub close_to_tray: bool,
+    /// A desktop notification when a running chat finishes or waits for input (default off).
+    pub notify_on_finish: bool,
     /// How many versions of each file History keeps (10 to 200, default 50).
     pub history_keep_versions: u32,
     /// Keys this version does not know, kept as they were.
@@ -78,6 +80,7 @@ impl Default for Settings {
             sandbox: false,
             launch_animation: true,
             close_to_tray: false,
+            notify_on_finish: false,
             history_keep_versions: DEFAULT_KEEP_VERSIONS,
             extra: Map::new(),
         }
@@ -91,7 +94,7 @@ pub fn clamp_keep_versions(n: u32) -> u32 {
     n.clamp(10, 200)
 }
 
-const KNOWN: [&str; 8] = [
+const KNOWN: [&str; 9] = [
     "schemaVersion",
     "theme",
     "lastView",
@@ -99,6 +102,7 @@ const KNOWN: [&str; 8] = [
     "sandbox",
     "launchAnimation",
     "closeToTray",
+    "notifyOnFinish",
     "historyKeepVersions",
 ];
 
@@ -125,6 +129,7 @@ impl Settings {
         let launch_animation =
             take("launchAnimation").and_then(|v| v.as_bool()).unwrap_or(d.launch_animation);
         let close_to_tray = take("closeToTray").and_then(|v| v.as_bool()).unwrap_or(d.close_to_tray);
+        let notify_on_finish = take("notifyOnFinish").and_then(|v| v.as_bool()).unwrap_or(d.notify_on_finish);
         let history_keep_versions = take("historyKeepVersions")
             .and_then(|v| v.as_u64())
             .map(|n| clamp_keep_versions(n.min(u32::MAX as u64) as u32))
@@ -140,6 +145,7 @@ impl Settings {
             sandbox,
             launch_animation,
             close_to_tray,
+            notify_on_finish,
             history_keep_versions,
             extra: map,
         })
@@ -264,6 +270,18 @@ mod tests {
         assert!(text.contains("\"closeToTray\": true"), "{text}");
         assert!(load(d.path()).settings.close_to_tray);
         assert!(!load(d.path()).settings.extra.contains_key("closeToTray"));
+    }
+
+    #[test]
+    fn notify_on_finish_defaults_off_and_persists() {
+        assert!(!Settings::default().notify_on_finish);
+        assert!(!Settings::from_json("{}").unwrap().notify_on_finish);
+        assert!(!Settings::from_json(r#"{"notifyOnFinish":1}"#).unwrap().notify_on_finish);
+        let d = tempdir().unwrap();
+        save(d.path(), &Settings { notify_on_finish: true, ..Settings::default() }).unwrap();
+        assert!(fs::read_to_string(path_in(d.path())).unwrap().contains("\"notifyOnFinish\": true"));
+        assert!(load(d.path()).settings.notify_on_finish);
+        assert!(!load(d.path()).settings.extra.contains_key("notifyOnFinish"));
     }
 
     #[test]

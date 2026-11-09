@@ -63,13 +63,27 @@ export interface NowLast {
   project: string;
   model: string | null;
   endedMs: number;
+  /** Tokens the chat used, when Atlas read the whole chat; null when only its tail was read. */
+  tokens: number | null;
 }
 
 export interface NowSnapshot {
   chats: NowChat[];
+  /** The newest finished chat (the first of `recent`). */
   last: NowLast | null;
+  /** The few chats that finished most recently, newest first. */
+  recent: NowLast[];
   /** Atlas has a Claude folder to watch. */
   watching: boolean;
 }
 
-export const EMPTY_NOW: NowSnapshot = { chats: [], last: null, watching: true };
+/** A chat Atlas watched working has stopped: it finished (`done`) or asked a question (`ask`). */
+export interface NowFinished {
+  sessionId: string;
+  name: string;
+  project: string;
+  kind: "done" | "ask";
+  workedMs: number | null;
+}
+
+export const EMPTY_NOW: NowSnapshot = { chats: [], last: null, recent: [], watching: true };

@@ -402,6 +402,22 @@ impl UsageEngine {
         self.read(|c, x| query::scope_report(c, x, a))
     }
 
+    /// Every token counted in the ledger so far, all models and days, as the Dashboard counts
+    /// tokens (input, output and cache writes; cache reads are shown apart). It is the setup
+    /// program's live line while it reads. One scan of the small hourly table; 0 while the
+    /// cache is not ready.
+    pub fn tokens_so_far(&self) -> u64 {
+        self.read(|c, _| {
+            c.query_row(
+                "SELECT COALESCE(SUM(input + output + cw5m + cw1h), 0) FROM usage_hour",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+        })
+        .map(|n| n.max(0) as u64)
+        .unwrap_or(0)
+    }
+
     /// The first local day with recorded usage.
     pub fn first_day(&self) -> Result<Option<String>, String> {
         self.read(|c, _| query::first_day(c))

@@ -21,6 +21,7 @@ export function TextEditor({
   onCancel,
   onDirtyChange,
   hint,
+  above,
 }: {
   initial: string;
   language: string;
@@ -34,6 +35,8 @@ export function TextEditor({
   onCancel: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   hint?: ReactNode;
+  /** Fields drawn over the editor that read and change the same text. */
+  above?: (api: { text: string; setText: (next: string) => void }) => ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<Editor | null>(null);
@@ -133,6 +136,7 @@ export function TextEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {above?.({ text, setText: (next) => editor.current?.setText?.(next) })}
       <div ref={host} data-editor className="h-[min(440px,52vh)] min-h-[260px] overflow-hidden rounded-card border border-line-strong bg-surface" />
 
       <div aria-live="polite" className="min-h-6">

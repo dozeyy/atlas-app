@@ -156,7 +156,9 @@ describe("Dashboard", () => {
 describe("Sessions", () => {
   it("lists sessions with cost estimates and loads more on request", async () => {
     mount("data", "sessions");
-    const rows = await screen.findAllByRole("button", { name: /tokens/ });
+    // The newest chat also has a card above the list; count the list's own rows.
+    const inList = (all: HTMLElement[]) => all.filter((b) => b.closest(".session-grid"));
+    const rows = inList(await screen.findAllByRole("button", { name: /tokens/ }));
     expect(rows.length).toBe(50);
     expect(screen.getByText(/Showing 50 of/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Show more" }));

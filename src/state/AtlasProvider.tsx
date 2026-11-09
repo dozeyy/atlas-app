@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from "react";
 import { getBackend } from "../lib/ipc";
 import { applyTheme } from "../lib/theme";
+import { pushToast } from "./toastStore";
 import type { AppInfo, Theme, View } from "../lib/types";
 
 interface AtlasContext {
@@ -11,6 +12,7 @@ interface AtlasContext {
   setTheme: (t: Theme) => void;
   setLaunchAnimation: (on: boolean) => void;
   setCloseToTray: (on: boolean) => void;
+  setNotifyOnFinish: (on: boolean) => void;
   setHistoryKeep: (n: number) => void;
   setSandbox: (enabled: boolean) => Promise<void>;
   chooseConfigDir: () => Promise<void>;
@@ -95,6 +97,28 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     [backend, run],
   );
 
+  const setNotifyOnFinish = useCallback(
+    (on: boolean) => void run(backend.updateSettings({ notifyOnFinish: on })),
+    [backend, run],
+  );
+
+  // A chat Atlas watched working has stopped. Rust only sends this while the setting is on;
+  // the toast is the in-window half (a desktop notice covers the window being behind).
+  useEffect(() => {
+    let dead = false;
+    let off: (() => void) | undefined;
+    backend
+      .onNowFinished((f) => {
+        pushToast({ message: f.kind === "ask" ? `${f.name} has a question for you` : `${f.name} finished`, tone: "info", ms: 6_000 });
+      })
+      .then((fn) => (dead ? fn() : (off = fn)))
+      .catch(() => {});
+    return () => {
+      dead = true;
+      off?.();
+    };
+  }, [backend]);
+
   const setHistoryKeep = useCallback(
     (n: number) => void run(backend.updateSettings({ historyKeepVersions: n })),
     [backend, run],
@@ -108,6 +132,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       setTheme,
       setLaunchAnimation,
       setCloseToTray,
+      setNotifyOnFinish,
       setHistoryKeep,
       setSandbox: (enabled) => run(backend.setSandbox(enabled)),
       chooseConfigDir: () => run(backend.chooseConfigDir()),
@@ -115,7 +140,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       openConfigDir: () => backend.openConfigDir().catch(() => {}),
       openDataDir: () => backend.openDataDir().catch(() => {}),
     }),
-    [info, view, setView, setTheme, setLaunchAnimation, setCloseToTray, setHistoryKeep, run, backend],
+    [info, view, setView, setTheme, setLaunchAnimation, setCloseToTray, setNotifyOnFinish, setHistoryKeep, run, backend],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

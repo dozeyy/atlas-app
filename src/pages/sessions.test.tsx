@@ -70,7 +70,8 @@ describe("Sessions toolbar", () => {
   it("says how many chats there are, and 'N of M' when narrowed", async () => {
     mount();
     await screen.findAllByRole("button", { name: /tokens/ });
-    const all = await screen.findByText(/^[\d,]+ chats$/);
+    // The day bands say "N chats" too; the toolbar's count is the live one.
+    const all = await screen.findByText(/^[\d,]+ chats$/, { selector: "[aria-live]" });
     const n = Number(all.textContent!.replace(/[^\d]/g, ""));
     expect(n).toBeGreaterThan(50);
     await userEvent.type(searchbox(), "zzzz-nothing");
@@ -170,5 +171,42 @@ describe("Sessions: search inside chats", () => {
     await userEvent.type(searchbox(), "zzzz-nothing");
     expect(await screen.findByText(/did not work just now/)).toBeInTheDocument();
     expect(await screen.findByText("No chats match")).toBeInTheDocument();
+  });
+});
+
+describe("Sessions: the first view", () => {
+  it("opens with the newest chat as a card and the list under day bands", async () => {
+    mount();
+    const card = await screen.findByRole("region", { name: "Pick up where you left off" });
+    expect(within(card).getByRole("button", { name: "Copy resume command" })).toBeInTheDocument();
+    // At least one band, named for its day, holding rows.
+    const bands = document.querySelectorAll(".day-section");
+    expect(bands.length).toBeGreaterThan(0);
+    expect(bands[0].querySelector(".day-name")?.textContent).toMatch(/^(Today|Yesterday|[A-Z][a-z]+( \d+)?(, \d{4})?)$/);
+    expect(bands[0].querySelectorAll(".session-grid > li").length).toBeGreaterThan(0);
+  });
+
+  it("drops the card as soon as a search narrows the list", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    await userEvent.type(searchbox(), "zz");
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Pick up where you left off" })).not.toBeInTheDocument());
+  });
+
+  it("walks to the next chat with Alt+Down and copies the resume command", async () => {
+    const written: string[] = [];
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t: string) => void written.push(t) }, configurable: true });
+    mount();
+    const card = await screen.findByRole("region", { name: "Pick up where you left off" });
+    await userEvent.click(within(card).getByRole("button", { name: "Open" }));
+    const title = await screen.findByRole("heading", { level: 2 });
+    const first = title.textContent;
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(screen.getByRole("heading", { level: 2 }).textContent).not.toBe(first));
+    await userEvent.click(screen.getByRole("button", { name: /Copy resume/ }));
+    await waitFor(() => expect(written.length).toBe(1));
+    expect(written[0]).toMatch(/claude --resume [A-Za-z0-9_-]+$/);
+    expect(written[0]).not.toMatch(/[\r\n]/); // one line, safe to paste
+    expect(await screen.findByText("Resume command copied")).toBeInTheDocument();
   });
 });

@@ -2,7 +2,10 @@ import { useEffect, useRef } from "react";
 import { WarningCircle } from "@phosphor-icons/react";
 import { useSidebar } from "./lib/useSidebar";
 import { NAV, Sidebar } from "./components/Sidebar";
+import { CommandPalette } from "./components/CommandPalette";
 import { TitleBar } from "./components/TitleBar";
+import { openPalette } from "./state/paletteStore";
+import { refreshPaletteData } from "./lib/usePaletteData";
 import { TipLayer } from "./components/TipLayer";
 import { ToastHost } from "./components/Toasts";
 import { useAtlas } from "./state/AtlasProvider";
@@ -32,11 +35,24 @@ export function App() {
   const Page = PAGES[view];
   const { collapsed, toggle: toggleSidebar } = useSidebar();
 
-  // Ctrl/Cmd + 1..7 jumps between sections; Ctrl/Cmd + B shows or hides the sidebar.
+  // Ctrl/Cmd + 1..7 jumps between sections; Ctrl/Cmd + B shows or hides the sidebar;
+  // Ctrl/Cmd + K opens the quick jump.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = info.platform === "macos" ? e.metaKey : e.ctrlKey;
       if (!mod || e.altKey || e.shiftKey) return;
+      if (e.key.toLowerCase() === "k") {
+        // An editor that took Ctrl+K for itself keeps it.
+        if (e.defaultPrevented) return;
+        // Not over another dialog (the quick jump's own panel is the one dialog that may be up).
+        const over = Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"]')).some(
+          (d) => !d.closest(".qj-root"),
+        );
+        if (over) return;
+        e.preventDefault();
+        openPalette();
+        return;
+      }
       if (e.key.toLowerCase() === "b") {
         e.preventDefault();
         toggleSidebar();
@@ -51,6 +67,12 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [info.platform, setView, toggleSidebar]);
+
+  // The quick jump's lists are read a moment after start, so Ctrl+K opens already full.
+  useEffect(() => {
+    const t = setTimeout(() => void refreshPaletteData(), 1200);
+    return () => clearTimeout(t);
+  }, []);
 
   // After a route change, keyboard and screen-reader users land on the new page.
   useEffect(() => {
@@ -85,6 +107,7 @@ export function App() {
           </div>
         </main>
       </div>
+      <CommandPalette />
       <ToastHost />
       <TipLayer />
     </div>

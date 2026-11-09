@@ -12,6 +12,7 @@ import { TypeTiles } from "../components/setup/TypeTiles";
 import { CostProvider } from "../components/setup/CostContext";
 import { countByKind, itemsForTile, MORE_KINDS, type TileId } from "../lib/setup-model";
 import { useSetupCost } from "../lib/useSetupCost";
+import { clearPendingToolkitItem, onNavRequest, peekPendingToolkitItem } from "../lib/nav";
 import type { CreateKind, SetupItem, SetupProject, SetupSnapshot } from "../lib/setup-types";
 import { reloadSetup, startSetup, useSetup } from "../state/setupStore";
 import { useAtlas } from "../state/AtlasProvider";
@@ -120,6 +121,19 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
       if (id) document.querySelector<HTMLElement>(`[data-tile="${id}"]`)?.focus({ preventScroll: true });
     });
   }, [tile]);
+
+  // The quick jump (Ctrl+K) leaves "open this item" behind: take it when the page appears, or
+  // right away when the page is already on screen.
+  const takePending = useCallback(() => {
+    const id = peekPendingToolkitItem();
+    if (!id) return;
+    clearPendingToolkitItem();
+    if (byId.has(id)) setSelectedId(id);
+  }, [byId]);
+  useEffect(() => {
+    takePending();
+    return onNavRequest(takePending);
+  }, [takePending]);
 
   const noFolder = !snap.root.dirExists;
   const jsonNote = CLAUDE_JSON_NOTE[snap.root.claudeJsonState];

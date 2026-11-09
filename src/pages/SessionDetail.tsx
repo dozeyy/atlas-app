@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowBendDownRight, ArrowLeft, CaretRight, ChatsCircle, Clock, Hash, UsersThree, Wrench } from "@phosphor-icons/react";
-import { Button, Card, SegmentedControl } from "../components/controls";
+import {
+  ArrowBendDownRight,
+  ArrowLeft,
+  CaretDown,
+  CaretRight,
+  CaretUp,
+  ChatsCircle,
+  Clock,
+  Copy,
+  FolderOpen,
+  Hash,
+  UsersThree,
+  Wrench,
+} from "@phosphor-icons/react";
+import { Button, Card, IconButton, SegmentedControl } from "../components/controls";
 import { Bars } from "../components/charts/Bars";
 import { Ridge } from "../components/charts/Ridge";
 import { IconMotion } from "../components/IconMotion";
@@ -10,16 +23,21 @@ import { HelperMap } from "../components/usage/HelperMap";
 import { HelperSlice } from "../components/usage/HelperSlice";
 import { AgentAvatar, ModelChip, ModelDots, sessionName, TokenFigure } from "../components/usage/helperKit";
 import { ReceiptPane } from "../components/usage/ReceiptPane";
+import { SessionTools, useSessionItems } from "../components/usage/SessionTools";
 import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
 import { hasClearPeak, spendRidge, timelineBars } from "../components/usage/timelineBars";
+import type { BarDatum } from "../components/charts/shared";
 import { getBackend } from "../lib/ipc";
+import { copyResume, openFolder } from "../lib/sessionActions";
+import { resumeCommand } from "../lib/sessionBrowse";
+import { useAtlas } from "../state/AtlasProvider";
 import { helperTree, type HelperNode } from "../lib/helperTree";
 import { MAIN_ID } from "../lib/helperMap";
 import { useIntro } from "../lib/motion";
 import { useFetched, useLiveReload } from "../lib/useUsage";
 import { compact, exact, formatDuration, formatUsd, formatWhen, headline, percent, plural, share } from "../lib/usage";
 import { AgentDetailView, typeLabel } from "./AgentDetail";
-import type { AgentSummary, TranscriptItem } from "../lib/types";
+import type { AgentSummary, SessionDetail, TranscriptItem } from "../lib/types";
 
 type Tab = "receipt" | "helpers" | "messages" | "details";
 
@@ -261,8 +279,152 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
   );
 }
 
-export function SessionDetailView({ id, onBack }: { id: string; onBack: () => void }) {
+/** The Details tab: numbers first, then a row to jump to any section, then the sections. */
+function DetailsTab({
+  id,
+  d,
+  scope,
+  bins,
+  spend,
+}: {
+  id: string;
+  d: SessionDetail;
+  scope: "all" | "main";
+  bins: BarDatum[];
+  spend: BarDatum[];
+}) {
+  const { row, byModel, agents, main, files } = d;
+  const total = row.tokens;
+  const toolCalls = main.toolCalls + agents.reduce((s, a) => s + a.toolCalls, 0);
+  const groups = useSessionItems(id);
+  const hasItems = groups.some((g) => g.items.length > 0);
+
+  const jumps: { key: string; label: string }[] = [{ key: "tokens", label: "Tokens" }];
+  if (spend.length > 1) jumps.push({ key: "spend", label: "Spend" });
+  if (bins.length > 0) jumps.push({ key: "timeline", label: "Timeline" });
+  if (byModel.length > 1) jumps.push({ key: "models", label: "Models" });
+  if (hasItems) jumps.push({ key: "tools", label: "Tools" });
+  jumps.push({ key: "files", label: "Files" });
+
+  const jump = (key: string) => document.getElementById(`sd-${key}`)?.scrollIntoView({ block: "start" });
+
+  return (
+    <>
+      {jumps.length >= 4 && (
+        <nav aria-label="Jump to" className="jump-row">
+          {jumps.map((j) => (
+            <button key={j.key} type="button" className="jump-chip" onClick={() => jump(j.key)}>
+              {j.label}
+            </button>
+          ))}
+        </nav>
+      )}
+      <div className="details-grid">
+        <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-4 @3xl:col-span-2">
+          <Stat label="Tokens" sub={total.cacheRead > 0 ? `plus ${compact(total.cacheRead)} cache reads` : undefined}>
+            <span title={exact(headline(total))}>{compact(headline(total))}</span>
+          </Stat>
+          <Stat
+            label="Messages"
+            icon={<Hash size={14} aria-hidden="true" />}
+            sub={row.subagentMessages > 0 ? `${exact(row.subagentMessages)} from helpers` : undefined}
+          >
+            {exact(row.messages)}
+          </Stat>
+          <Stat label="Tool calls" icon={<Wrench size={14} aria-hidden="true" />}>
+            {exact(toolCalls)}
+          </Stat>
+          <Stat label="Helpers" icon={<UsersThree size={14} aria-hidden="true" />} sub={agents.length === 0 ? "Just you and Claude" : undefined}>
+            {exact(agents.length)}
+          </Stat>
+        </div>
+
+        <section id="sd-tokens" aria-label="Token breakdown" className="jump-target min-w-0">
+          <h3 className="rcpt-head">Token breakdown</h3>
+          <Breakdown t={scope === "main" ? main.tokens : total} />
+        </section>
+
+        {spend.length > 1 && (
+          <section id="sd-spend" aria-label="Spend as it ran" className="jump-target min-w-0">
+            <h3 className="rcpt-head">Spend as it ran</h3>
+            <Card className="px-4 py-3">
+              <Ridge id={`session:${id}:spend`} data={spend} label="Spend as it ran" height={120} summit={hasClearPeak(spend.map((s) => s.value))} />
+            </Card>
+          </section>
+        )}
+
+        {bins.length > 0 && (
+          <section id="sd-timeline" aria-label="Tokens through the session" className="jump-target min-w-0">
+            <h3 className="rcpt-head">Tokens through the session</h3>
+            <Card className="px-4 py-3">
+              <Bars id={`session:${id}:bars`} data={bins} label="Tokens through the session" formatTick={compact} />
+            </Card>
+          </section>
+        )}
+
+        {byModel.length > 1 && (
+          <section id="sd-models" aria-label="By model" className="jump-target min-w-0">
+            <h3 className="rcpt-head">By model</h3>
+            <ModelSplit rows={byModel} />
+          </section>
+        )}
+
+        {hasItems && (
+          <section id="sd-tools" aria-label="Tools and skills" className="jump-target min-w-0 @3xl:col-span-2">
+            <h3 className="rcpt-head">Tools and skills</h3>
+            <SessionTools groups={groups} />
+          </section>
+        )}
+
+        <section id="sd-files" aria-label="Files" className="jump-target min-w-0">
+          <h3 className="rcpt-head">{`Files (${files.length})`}</h3>
+          <Card>
+            <ul className="max-h-40 divide-y divide-line overflow-y-auto">
+              {files.map((f) => (
+                <li key={f.path} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
+                  <code className="selectable min-w-0 flex-1 break-all text-caption text-ink">{f.path}</code>
+                  {f.isSubagent && <span className="text-caption text-ink-2">helper</span>}
+                  {f.missing && <span className="text-caption text-warning">removed from disk</span>}
+                </li>
+              ))}
+            </ul>
+          </Card>
+          <code className="selectable mt-2 block break-all text-caption text-ink-2">{row.projectPath}</code>
+        </section>
+      </div>
+    </>
+  );
+}
+
+export function SessionDetailView({
+  id,
+  onBack,
+  siblings,
+  onJump,
+}: {
+  id: string;
+  onBack: () => void;
+  /** The sessions in the list this one was opened from, in order: Alt+Up / Alt+Down walk them. */
+  siblings?: string[];
+  onJump?: (id: string) => void;
+}) {
   const backend = getBackend();
+  const { info } = useAtlas();
+  const at = siblings ? siblings.indexOf(id) : -1;
+  const prevId = siblings && at > 0 ? siblings[at - 1] : null;
+  const nextId = siblings && at >= 0 && at < siblings.length - 1 ? siblings[at + 1] : null;
+  useEffect(() => {
+    if (!onJump) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const to = e.key === "ArrowUp" ? prevId : e.key === "ArrowDown" ? nextId : null;
+      if (!to) return;
+      e.preventDefault();
+      onJump(to);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onJump, prevId, nextId]);
   const d = useFetched(() => backend.sessionDetail(id), [id]);
   useLiveReload(d.reload);
   // The receipt reads the chat's files once and is then kept, so it is not reloaded with every
@@ -351,11 +513,10 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
     );
   }
 
-  const { row, byModel, agents, main, files, claudeCodeCostUsd } = d.data;
-  const total = row.tokens;
+  const { row, agents, claudeCodeCostUsd } = d.data;
   const name = sessionName(row);
+  const resume = resumeCommand(id, row.projectPath, info.platform);
   const sessionUsd = row.cost.usd ?? 0;
-  const toolCalls = main.toolCalls + agents.reduce((s, a) => s + a.toolCalls, 0);
   const names = new Map(agents.map((a) => [a.agentId, a.name]));
   const hasHelpers = agents.length > 0;
   const shownTab: Tab = tab === "helpers" && !hasHelpers ? "receipt" : tab;
@@ -405,7 +566,7 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
         </div>
       </div>
 
-      <div className="mt-4 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div className="mt-4 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2">
         <SegmentedControl label="Session view" value={shownTab} onChange={choose} options={tabs} />
         {shownTab === "helpers" && (
           <div className="flex items-center gap-2">
@@ -442,6 +603,35 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
             ]}
           />
         )}
+        <div className="ml-auto flex items-center gap-2">
+          {resume && (
+            <Button title="Copy the command that reopens this chat in a terminal" onClick={() => void copyResume(resume)}>
+              <Copy size={14} aria-hidden="true" />
+              Copy resume
+            </Button>
+          )}
+          {row.projectPath && (
+            <Button title={`Open ${row.projectPath}`} onClick={() => void openFolder(id)}>
+              <FolderOpen size={14} aria-hidden="true" />
+              Open folder
+            </Button>
+          )}
+          {onJump && siblings && at >= 0 && (
+            <>
+              <IconButton
+                aria-label="Previous session"
+                title="Previous session (Alt+Up)"
+                disabled={!prevId}
+                onClick={() => prevId && onJump(prevId)}
+              >
+                <CaretUp size={16} aria-hidden="true" />
+              </IconButton>
+              <IconButton aria-label="Next session" title="Next session (Alt+Down)" disabled={!nextId} onClick={() => nextId && onJump(nextId)}>
+                <CaretDown size={16} aria-hidden="true" />
+              </IconButton>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="session-pane @container">
@@ -472,74 +662,7 @@ export function SessionDetailView({ id, onBack }: { id: string; onBack: () => vo
           </div>
         )}
 
-        {shownTab === "details" && (
-          <div className="details-grid">
-            <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-4 @3xl:col-span-2">
-              <Stat label="Tokens" sub={total.cacheRead > 0 ? `plus ${compact(total.cacheRead)} cache reads` : undefined}>
-                <span title={exact(headline(total))}>{compact(headline(total))}</span>
-              </Stat>
-              <Stat
-                label="Messages"
-                icon={<Hash size={14} aria-hidden="true" />}
-                sub={row.subagentMessages > 0 ? `${exact(row.subagentMessages)} from helpers` : undefined}
-              >
-                {exact(row.messages)}
-              </Stat>
-              <Stat label="Tool calls" icon={<Wrench size={14} aria-hidden="true" />}>
-                {exact(toolCalls)}
-              </Stat>
-              <Stat label="Helpers" icon={<UsersThree size={14} aria-hidden="true" />} sub={agents.length === 0 ? "Just you and Claude" : undefined}>
-                {exact(agents.length)}
-              </Stat>
-            </div>
-
-            <section aria-label="Token breakdown" className="min-w-0">
-              <h3 className="rcpt-head">Token breakdown</h3>
-              <Breakdown t={scope === "main" ? main.tokens : total} />
-            </section>
-
-            {spend.length > 1 && (
-              <section aria-label="Spend as it ran" className="min-w-0">
-                <h3 className="rcpt-head">Spend as it ran</h3>
-                <Card className="px-4 py-3">
-                  <Ridge id={`session:${id}:spend`} data={spend} label="Spend as it ran" height={120} summit={hasClearPeak(spend.map((s) => s.value))} />
-                </Card>
-              </section>
-            )}
-
-            {bins.length > 0 && (
-              <section aria-label="Tokens through the session" className="min-w-0">
-                <h3 className="rcpt-head">Tokens through the session</h3>
-                <Card className="px-4 py-3">
-                  <Bars id={`session:${id}:bars`} data={bins} label="Tokens through the session" formatTick={compact} />
-                </Card>
-              </section>
-            )}
-
-            {byModel.length > 1 && (
-              <section aria-label="By model" className="min-w-0">
-                <h3 className="rcpt-head">By model</h3>
-                <ModelSplit rows={byModel} />
-              </section>
-            )}
-
-            <section aria-label="Files" className="min-w-0">
-              <h3 className="rcpt-head">{`Files (${files.length})`}</h3>
-              <Card>
-                <ul className="max-h-40 divide-y divide-line overflow-y-auto">
-                  {files.map((f) => (
-                    <li key={f.path} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
-                      <code className="selectable min-w-0 flex-1 break-all text-caption text-ink">{f.path}</code>
-                      {f.isSubagent && <span className="text-caption text-ink-2">helper</span>}
-                      {f.missing && <span className="text-caption text-warning">removed from disk</span>}
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-              <code className="selectable mt-2 block break-all text-caption text-ink-2">{row.projectPath}</code>
-            </section>
-          </div>
-        )}
+        {shownTab === "details" && <DetailsTab id={id} d={d.data} scope={scope} bins={bins} spend={spend} />}
       </div>
     </div>
   );

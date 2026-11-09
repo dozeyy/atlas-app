@@ -255,3 +255,6 @@ px vite build); without it the exe loads devUrl :1420, which another agent's vit
 - Root cause of "the spin does not match the lines": hand was a CSS keyframe, arcs/spokes were separate CSS animations with different easing. Fix: one rAF clock per graphic (src/lib/wrappedClock.ts seg/easings/beats + useClock.ts); dialFrame/spokeFrame are pure functions of t, so hand angle and arc/spoke length come from one eased value (unit-tested). Real-exe 10-frame bursts confirmed sync. Undrawn dial rings are hidden with opacity 0 (round caps draw a dot for a zero dash).
 - Lessons: an SVG hand with data-a pivots wrong (.wr-gfx svg [data-a] sets transform-box fill-box); use a transform attribute without data-a.
 - Proof: tsc clean, vitest 652/652, clippy -D warnings and cargo test green.
+
+## 2026-11-09 - mac-check tour pictures by window id
+- Tour pictures are now taken of the Atlas window by its window id, not the whole screen. The small pass opens the skills list. Run 42581627718 passed: 36/36 pictures (28 at 1280x677, 8 at 900x600), every page scrolls, and the menus, Cmd+W/Q, dmg and atlas-usage checks all pass. Gatekeeper still rejects a downloaded copy, as expected for an ad-hoc signature.

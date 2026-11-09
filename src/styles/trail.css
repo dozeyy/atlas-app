@@ -493,13 +493,159 @@
 .app-menu-item[aria-expanded="true"] {
   background: var(--raised);
 }
-.app-menu-item:focus-visible {
+html[data-input="keyboard"] .app-menu-item:focus-visible {
   background: var(--raised);
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline: none;
 }
 html.reduced .app-menu {
   animation: none;
+}
+.app-menu-hint {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+/* ---- Quick jump (Ctrl+K) ------------------------------------------------------------------- */
+.qj-root {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 16px 16px;
+}
+.qj-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+}
+.qj-panel {
+  position: relative;
+  display: flex;
+  width: min(640px, 100%);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sheet);
+  background: var(--bg);
+  box-shadow: var(--shadow-pop);
+}
+.qj-field {
+  display: flex;
+  height: 56px;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.qj-lens {
+  flex: none;
+  color: var(--ink-2);
+}
+.qj-input {
+  height: 100%;
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: 16px;
+  outline: none;
+}
+.qj-input::placeholder {
+  color: var(--ink-2);
+}
+.qj-key {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.qj-list {
+  max-height: min(432px, calc(100vh - 12vh - 56px - 32px));
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  list-style: none;
+}
+.qj-row {
+  position: relative;
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-radius: var(--r-control);
+  cursor: pointer;
+}
+.qj-row[aria-selected="true"] {
+  background: var(--accent-tint);
+}
+.qj-row[aria-selected="true"]::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.qj-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--r-control);
+  background: var(--raised);
+  color: var(--ink-2);
+}
+.qj-row[aria-selected="true"] .qj-icon {
+  background: var(--surface);
+  color: var(--accent-text);
+}
+.qj-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.qj-title,
+.qj-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qj-title {
+  color: var(--ink);
+  font-size: 14px;
+}
+.qj-sub {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.qj-hit {
+  font-weight: 700;
+}
+.qj-meta {
+  flex: none;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.qj-none {
+  margin: 0;
+  padding: 24px 16px;
+  color: var(--ink-2);
+  font-size: 14px;
+  text-align: center;
 }
 .options-panel {
   position: absolute;
@@ -628,6 +774,178 @@ html.reduced .side-main {
   background: #b32619;
 }
 
+/* ---- Sessions: the pick-up card, day bands, project dots, token hairlines ------------------- */
+.proj-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+}
+.tok-bar {
+  display: inline-block;
+  width: 40px;
+  height: 4px;
+  margin-left: 8px;
+  border-radius: 2px;
+  background: var(--line);
+  vertical-align: middle;
+  overflow: hidden;
+}
+.tok-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+.tok-bar-wide {
+  display: block;
+  width: 100%;
+  margin: 2px 0 0;
+}
+/* The Details tab's jump row: sticks to the top of the pane while the sections scroll under it. */
+.jump-row {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 -8px 12px;
+  padding: 0 8px 8px;
+  background: var(--bg);
+}
+.jump-chip {
+  padding: 4px 10px;
+  border-radius: var(--r-control);
+  font-size: var(--text-caption);
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ink-2);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.jump-chip:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+.jump-chip:active {
+  background: color-mix(in srgb, var(--raised) 85%, var(--ink));
+}
+.jump-target {
+  scroll-margin-top: 44px;
+}
+.pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 16px;
+  margin-bottom: 16px;
+  padding-right: 16px;
+  animation: t-rise 260ms var(--ease-out) backwards;
+}
+.pick-main {
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 16px 0 16px 20px;
+  border-radius: var(--r-card) 0 0 var(--r-card);
+}
+.pick-main > span {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pick-kicker {
+  font-size: var(--text-caption);
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.pick-title {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.pick-meta {
+  font-size: var(--text-caption);
+  line-height: 16px;
+  color: var(--ink-2);
+}
+.pick-meta > i {
+  margin: 0 6px;
+  font-style: normal;
+  opacity: 0.6;
+}
+.pick-strip {
+  flex: none;
+}
+.pick-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@container (max-width: 640px) {
+  .pick-strip {
+    display: none;
+  }
+  .pick {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+.day-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 36px;
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+.day-section + .day-section > .day-head {
+  border-top: 1px solid var(--line);
+}
+.day-section:first-child > .day-head {
+  border-radius: var(--r-card) var(--r-card) 0 0;
+}
+.day-name {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.day-count,
+.day-total {
+  font-size: var(--text-caption);
+  line-height: 16px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.day-total {
+  margin-left: auto;
+}
+.day-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.day-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
 /* ---- Session rows in columns (container = the page, so the sidebar's width counts) ---------- */
 .session-grid {
   display: grid;
@@ -713,11 +1031,93 @@ html.reduced .side-main {
   display: flex;
   justify-content: flex-end;
 }
+.nav-settings-row .nav-solo {
+  margin-left: auto;
+}
 .side-collapsed .nav-settings-row {
   justify-content: center;
 }
+/* Folded: the update icon stacks above Settings, both centred. */
+.side-collapsed .nav-settings-row {
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.side-collapsed .nav-settings-row .nav-solo {
+  margin-left: 0;
+}
+.nav-settings-row {
+  align-items: center;
+  gap: 4px;
+}
 .nav-settings-row .nav-item {
   width: 36px;
+}
+/* Today readout: fills the foot between the update icon and Settings; hidden when folded. */
+.today-stat {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: left;
+  container-type: inline-size;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.today-stat:hover {
+  background: color-mix(in srgb, var(--raised) 80%, transparent);
+}
+.today-face {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  height: 100%;
+  padding: 0 8px 0 10px;
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.today-stat:active .today-face {
+  transform: scale(var(--press-scale));
+}
+.today-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.today-label {
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 500;
+}
+.today-value {
+  font-size: 15px;
+  line-height: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.today-spark {
+  flex: none;
+}
+.today-base {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.today-area {
+  fill: var(--accent-tint);
+  stroke: none;
+}
+@container (max-width: 96px) {
+  .today-spark {
+    display: none;
+  }
+}
+.side-collapsed .today-stat {
+  display: none;
 }
 .nav-settings-row .nav-face {
   justify-content: center;
@@ -1053,9 +1453,9 @@ svg.chart {
 .chart-wrap {
   position: relative;
 }
-.chart-wrap:focus-visible,
-.chart-focus:focus-visible {
-  outline: 2px solid var(--accent-text);
+html[data-input="keyboard"] .chart-wrap:focus-visible,
+html[data-input="keyboard"] .chart-focus:focus-visible {
+  outline: 2px solid var(--focus-ring);
   outline-offset: 4px;
   border-radius: 6px;
 }
@@ -1368,8 +1768,8 @@ svg.chart {
 .item-wrap:hover .x-del-face {
   translate: 0 var(--lift);
 }
-.x-del:focus-visible {
-  outline: 2px solid var(--focus, var(--accent));
+html[data-input="keyboard"] .x-del:focus-visible {
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -1591,8 +1991,8 @@ html.reduced .nav-item:active .nav-face {
 .rcpt-line-btn:hover {
   background: var(--raised);
 }
-.rcpt-line-btn:focus-visible {
-  outline: 2px solid var(--accent-text);
+html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 .rcpt-bar > i {
@@ -1886,4 +2286,135 @@ html.reduced .map-node:focus-visible .map-body {
 /* A bubble on the helper map shows focus with its own ring, not the page-wide box (that rule is outside the layer). */
 .map-node:focus-visible {
   outline: none;
+}
+
+/* ---- Update icon (sidebar footer) ------------------------------------------------------------ */
+/* One 36 px square at the bottom-left, mirroring Settings. The button is a fixed box; the face
+   inside carries the tint and the press, so the hit box never moves. Blue (--info) is the
+   update colour and nothing else. */
+.upd-btn {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 10px;
+  color: var(--info);
+  cursor: pointer;
+}
+html[data-input="keyboard"] .upd-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.upd-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+  animation: upd-in var(--dur-spring) var(--ease-spring) both;
+}
+.upd-btn:hover .upd-face {
+  background: var(--info-tint);
+}
+.upd-btn:active .upd-face {
+  transform: scale(var(--press-scale));
+}
+@keyframes upd-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+.upd-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+.upd-ring circle {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.upd-track {
+  stroke: var(--info);
+  opacity: 0.22;
+}
+.upd-arc {
+  stroke: var(--info);
+  transition: stroke-dashoffset var(--dur) linear;
+}
+.upd-spin .upd-arc {
+  stroke-dasharray: 24 70;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: upd-turn 900ms linear infinite;
+}
+@keyframes upd-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.upd-pop {
+  position: fixed;
+  z-index: 60;
+  width: 248px;
+  max-width: calc(100vw - 16px);
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-lift);
+  animation: upd-pop-in var(--dur) var(--ease-out) both;
+}
+@keyframes upd-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.upd-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.upd-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.upd-bad {
+  color: var(--danger);
+}
+.upd-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .upd-face,
+  .upd-pop {
+    animation: none;
+  }
+  .upd-spin .upd-arc {
+    animation: none;
+  }
+}
+html.reduced .upd-face,
+html.reduced .upd-pop {
+  animation: none;
+}
+html.reduced .upd-spin .upd-arc {
+  animation: none;
 }
