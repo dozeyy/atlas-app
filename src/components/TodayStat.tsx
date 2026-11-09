@@ -23,7 +23,7 @@ export function TodayStat() {
       type="button"
       className="today-stat hover-host"
       title={exactText}
-      aria-label={`Today, ${exactText}. Open Dashboard`}
+      aria-label={`Today ${exact(stat.total)}. Open Dashboard`}
       onClick={() => setView("dashboard")}
     >
       <span className="today-face">

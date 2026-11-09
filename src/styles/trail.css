@@ -627,6 +627,178 @@ html.reduced .side-main {
   background: #b32619;
 }
 
+/* ---- Sessions: the pick-up card, day bands, project dots, token hairlines ------------------- */
+.proj-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+}
+.tok-bar {
+  display: inline-block;
+  width: 40px;
+  height: 4px;
+  margin-left: 8px;
+  border-radius: 2px;
+  background: var(--line);
+  vertical-align: middle;
+  overflow: hidden;
+}
+.tok-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+.tok-bar-wide {
+  display: block;
+  width: 100%;
+  margin: 2px 0 0;
+}
+/* The Details tab's jump row: sticks to the top of the pane while the sections scroll under it. */
+.jump-row {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 -8px 12px;
+  padding: 0 8px 8px;
+  background: var(--bg);
+}
+.jump-chip {
+  padding: 4px 10px;
+  border-radius: var(--r-control);
+  font-size: var(--text-caption);
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ink-2);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.jump-chip:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+.jump-chip:active {
+  background: color-mix(in srgb, var(--raised) 85%, var(--ink));
+}
+.jump-target {
+  scroll-margin-top: 44px;
+}
+.pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 16px;
+  margin-bottom: 16px;
+  padding-right: 16px;
+  animation: t-rise 260ms var(--ease-out) backwards;
+}
+.pick-main {
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 16px 0 16px 20px;
+  border-radius: var(--r-card) 0 0 var(--r-card);
+}
+.pick-main > span {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pick-kicker {
+  font-size: var(--text-caption);
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.pick-title {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.pick-meta {
+  font-size: var(--text-caption);
+  line-height: 16px;
+  color: var(--ink-2);
+}
+.pick-meta > i {
+  margin: 0 6px;
+  font-style: normal;
+  opacity: 0.6;
+}
+.pick-strip {
+  flex: none;
+}
+.pick-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@container (max-width: 640px) {
+  .pick-strip {
+    display: none;
+  }
+  .pick {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+.day-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 36px;
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+.day-section + .day-section > .day-head {
+  border-top: 1px solid var(--line);
+}
+.day-section:first-child > .day-head {
+  border-radius: var(--r-card) var(--r-card) 0 0;
+}
+.day-name {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.day-count,
+.day-total {
+  font-size: var(--text-caption);
+  line-height: 16px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.day-total {
+  margin-left: auto;
+}
+.day-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.day-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
 /* ---- Session rows in columns (container = the page, so the sidebar's width counts) ---------- */
 .session-grid {
   display: grid;

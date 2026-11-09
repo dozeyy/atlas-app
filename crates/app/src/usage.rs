@@ -351,6 +351,32 @@ pub async fn pricing_reveal(state: Shared<'_>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || reveal(&path)).await.map_err(|e| e.to_string())?
 }
 
+/// Open the folder a chat was run in. The page sends only the session id: the path comes from the
+/// cache and must still be a folder on disk, so the page can never ask for an arbitrary location.
+#[tauri::command]
+pub async fn session_open_folder(state: Shared<'_>, session_id: String) -> Result<(), String> {
+    let dir = blocking(state.usage.engine(), move |e| {
+        let detail = e.session_detail(&session_id)?;
+        Ok(detail.map(|d| d.row.project_path))
+    })
+    .await?;
+    let dir = project_dir(dir.as_deref())?;
+    tauri::async_runtime::spawn_blocking(move || crate::commands::open_in_file_manager(&dir))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The stored project path, if it is a folder that still exists.
+fn project_dir(stored: Option<&str>) -> Result<std::path::PathBuf, String> {
+    let stored = stored.map(str::trim).filter(|s| !s.is_empty()).ok_or("This chat has no project folder.")?;
+    let dir = std::path::PathBuf::from(stored);
+    if dir.is_dir() {
+        Ok(dir)
+    } else {
+        Err("That folder is gone.".into())
+    }
+}
+
 fn reveal(path: &std::path::Path) -> Result<(), String> {
     use std::process::Command;
     if !path.exists() {
@@ -368,6 +394,15 @@ fn reveal(path: &std::path::Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_existing_folder_can_be_opened() {
+        assert!(project_dir(None).is_err());
+        assert!(project_dir(Some("  ")).is_err());
+        assert!(project_dir(Some("Z:/definitely/not/here/atlas")).is_err());
+        let here = std::env::current_dir().unwrap();
+        assert_eq!(project_dir(Some(here.to_str().unwrap())).unwrap(), here);
+    }
 
     #[test]
     fn a_title_bar_focus_flip_is_not_a_return() {
