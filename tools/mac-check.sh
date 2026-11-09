@@ -252,11 +252,14 @@ fi
 # ---- 5. atlas-usage on the made-up chats, and the skill's launcher ----------------------------
 if [ -x "$CLI" ]; then
   note "atlas-usage archs: $(lipo -archs "$CLI" 2>/dev/null)"
-  run_cli() { # name args...
-    local name=$1
+  run_cli() { # name args... (on failure, the exit code and stderr go into the summary too)
+    local name=$1 rc
     shift
     env -u CLAUDE_CONFIG_DIR HOME="$FXHOME" "$CLI" --config-dir "$FXHOME/.claude" --cache-dir "$T/cli-cache" "$@" \
       >"$OUT/cli/$name.txt" 2>"$OUT/cli/$name.err"
+    rc=$?
+    [ "$rc" -eq 0 ] || { note "atlas-usage $* exited $rc:"; tail -n 15 "$OUT/cli/$name.err" | sed "s#$T#<tmp>#g" | while IFS= read -r l; do note "  $l"; done; }
+    return "$rc"
   }
   run_cli today && ok "atlas-usage (today) runs" || bad "atlas-usage failed (cli/today.err)"
   run_cli week-vs week --vs last-week && ok "atlas-usage week --vs last-week runs" || bad "atlas-usage week --vs failed"
