@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
-import { Graphic, heatBand, smooth, tileBoxes, wavePath } from "./graphics";
+import { dialFrame, dialModel, Graphic, heatBand, smooth, SPINES_LABEL_BELOW, spineGeometry, SPOKE, SPOKE_LEAD, SPOKE_RING, spokeFrame, spokeGeometry, spokeTimeline, tileBoxes, TRAIL_CLEAR, trailMarks, wavePath } from "./graphics";
 import type { SlideChart } from "../../lib/wrappedModel";
 
 const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ label: `item-${i}`, value: (n - i) * 10, note: `${(n - i) * 10} uses` }));
@@ -75,6 +75,41 @@ describe("every hero graphic", () => {
     expect(small.textContent).not.toContain("more");
   });
 
+  it("keeps every book and the label inside the box, at any count", () => {
+    for (const count of [1, 5, 12, 13, 360, 999, 1011, 1012, 6400, 1e6]) {
+      const g = spineGeometry(count);
+      const top = 330 - g.shown * g.step; // y of the highest book
+      expect(top, String(count)).toBeGreaterThanOrEqual(g.label ? 24 : 4);
+      expect(g.height, String(count)).toBeGreaterThan(10);
+      const { container } = render(<Graphic chart={{ kind: "spines", count }} />);
+      for (const r of Array.from(container.querySelectorAll("g.g-book > rect"))) {
+        const y = Number(r.getAttribute("y"));
+        expect(y, String(count)).toBeGreaterThanOrEqual(0);
+        expect(y + Number(r.getAttribute("height")), String(count)).toBeLessThanOrEqual(332);
+      }
+      const label = container.querySelector("text");
+      if (label) expect(Number(label.getAttribute("y")), String(count)).toBeGreaterThanOrEqual(14);
+    }
+  });
+
+  it("drops the 'more' label when the rest is as big as the figure beside it", () => {
+    const { container } = render(<Graphic chart={{ kind: "spines", count: 6400 }} />);
+    expect(container.textContent).not.toContain("more");
+    expect(container.querySelectorAll(".g-book")).toHaveLength(12);
+    expect(spineGeometry(SPINES_LABEL_BELOW + 12).label).toBe(false);
+    expect(spineGeometry(SPINES_LABEL_BELOW + 11).label).toBe(true);
+  });
+  it("skips a trail month mark that would touch the flag or Today", () => {
+    // 2026-07-09 + 122 days: Nov 1 is day 115, 51 units short of Today, so it goes; Aug to Oct stay.
+    const marks = trailMarks("2026-07-09", 122).map((m) => m.label);
+    expect(marks).toEqual(["Aug", "Sep", "Oct"]);
+    for (const m of trailMarks("2025-01-01", 700)) {
+      expect(m.x - 56).toBeGreaterThanOrEqual(TRAIL_CLEAR);
+      expect(1000 - 56 - m.x).toBeGreaterThanOrEqual(TRAIL_CLEAR);
+    }
+    // A mark just inside the clear zone from the start is skipped too (Aug 1 is day 1 of a 31-day walk from Jul 31).
+    expect(trailMarks("2026-07-31", 31)).toEqual([]);
+  });
   it("puts the podium in 2-1-3 order with the winner marked and the rest as tags", () => {
     const { container } = render(<Graphic chart={CHARTS[7]} />);
     const pods = Array.from(container.querySelectorAll(".g-pod"));
@@ -112,6 +147,118 @@ describe("every hero graphic", () => {
   });
 });
 
+describe("the weekday dial geometry", () => {
+  const DATA = [[4, 9, 3, 2, 8, 1, 0], [0, 0, 0, 0, 0, 0, 0], [5, 5, 5, 5, 5, 5, 5], [1, 0, 0, 0, 0, 0, 100], [100, 1, 1, 1, 1, 1, 1]];
+  const deg = (x: number, y: number) => ((Math.atan2(x, -y) * 180) / Math.PI + 360) % 360;
+
+  it("puts every label on its spoke's own line, clear of the longest spoke and the ring by a fixed gap", () => {
+    for (const values of DATA) {
+      const geo = spokeGeometry(values);
+      expect(geo).toHaveLength(7);
+      geo.forEach((s, i) => {
+        // The label is centred on the spoke's angle (to a thousandth of a degree).
+        expect(Math.abs((deg(s.lx, s.ly) - s.angle + 540) % 360 - 180), `label ${i} angle`).toBeLessThan(0.001);
+        // The spoke at 100% ends at start + maxLen; the ring sits past it; the label's nearest edge past the ring by the gap.
+        expect(s.len).toBeGreaterThanOrEqual(SPOKE.minLen);
+        expect(s.len).toBeLessThanOrEqual(SPOKE.maxLen);
+        expect(SPOKE_RING).toBeGreaterThanOrEqual(SPOKE.start + SPOKE.maxLen + SPOKE.ringGap);
+        expect(s.labelInner, `label ${i} edge`).toBeGreaterThanOrEqual(SPOKE_RING + SPOKE.gap - 1e-9);
+        // The label box stays inside the drawing.
+        expect(Math.abs(s.lx) + SPOKE.labelW / 2).toBeLessThanOrEqual(SPOKE.half);
+        expect(Math.abs(s.ly) + SPOKE.labelH / 2).toBeLessThanOrEqual(SPOKE.half);
+      });
+    }
+  });
+
+  it("keeps the seven label boxes apart", () => {
+    const geo = spokeGeometry([4, 9, 3, 2, 8, 1, 0]);
+    for (let i = 0; i < 7; i++) {
+      for (let j = i + 1; j < 7; j++) {
+        const dx = Math.abs(geo[i].lx - geo[j].lx) - SPOKE.labelW;
+        const dy = Math.abs(geo[i].ly - geo[j].ly) - SPOKE.labelH;
+        expect(Math.max(dx, dy), `${i} and ${j}`).toBeGreaterThanOrEqual(4);
+      }
+    }
+  });
+
+  it("draws the bars and the labels from that geometry", () => {
+    const { container } = render(<Graphic chart={{ kind: "spokes", values: [4, 9, 3, 2, 8, 1, 0] }} />);
+    const geo = spokeGeometry([4, 9, 3, 2, 8, 1, 0]);
+    const texts = Array.from(container.querySelectorAll("text"));
+    expect(texts.map((t) => t.textContent)).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+    texts.forEach((t, i) => {
+      expect(Number(t.getAttribute("x"))).toBeCloseTo(geo[i].lx, 6);
+      expect(Number(t.getAttribute("y"))).toBeCloseTo(geo[i].ly, 6);
+    });
+    const bars = Array.from(container.querySelectorAll("rect.g-spoke"));
+    bars.forEach((b, i) => {
+      expect(b.parentElement?.getAttribute("transform")).toBe(`rotate(${geo[i].angle})`);
+      expect(Number(b.getAttribute("y"))).toBeCloseTo(-(SPOKE.start + geo[i].len), 6);
+    });
+  });
+
+  it("runs the hand and every spoke on one value: each spoke is full the moment the hand is on it, the busiest last", () => {
+    for (const values of DATA) {
+      const tl = spokeTimeline(values);
+      const topAngle = (tl.top / 7) * 360;
+      // The hand ends exactly on the busiest spoke.
+      expect(spokeFrame(values, 1).hand).toBeCloseTo(topAngle, 9);
+      expect(spokeFrame(values, 1).grow.every((g) => g === 1)).toBe(true);
+      expect(spokeFrame(values, 0).grow.every((g) => g === 0)).toBe(true);
+      expect(tl.arrive[tl.top]).toBe(1);
+      expect(Math.max(...tl.arrive)).toBe(1);
+      for (let i = 0; i < 7; i++) {
+        if (i === tl.top) continue;
+        // The hand's angle at the instant spoke i is full is that spoke's angle.
+        const h = tl.arrive[i];
+        const handThen = spokeFrame(values, h).hand;
+        expect(Math.abs((((handThen - (i / 7) * 360 + 180) % 360) + 360) % 360 - 180), `spoke ${i}`).toBeLessThan(1e-9);
+        expect(spokeFrame(values, h).grow[i]).toBe(1);
+        // And it was still empty a lead before.
+        expect(spokeFrame(values, h - SPOKE_LEAD / 360).grow[i]).toBe(0);
+        // The busiest spoke lands after every other one.
+        expect(h).toBeLessThan(1);
+      }
+    }
+  });
+});
+
+describe("the sitting dial timeline", () => {
+  it("draws exactly the turn the hand has made, at every moment", () => {
+    for (const hours of [0.2, 3, 12, 14.5, 30, 47.9, 60, 96]) {
+      const m = dialModel(hours);
+      for (const p of [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1]) {
+        const f = dialFrame(m, p);
+        // Turns drawn by the rings = turns the hand has made.
+        const drawn = m.fills.reduce((s, fill, k) => s + (fill - f.offsets[k]), 0);
+        expect(drawn, `${hours} h at ${p}`).toBeCloseTo(p * m.turns, 9);
+        expect(f.hand / 360, `${hours} h at ${p}`).toBeCloseTo(p * m.turns, 9);
+        // A ring draws only once the hand is on its lap.
+        m.fills.forEach((fill, k) => {
+          if (f.hand / 360 <= k) expect(f.offsets[k]).toBe(fill);
+        });
+      }
+      // The hand ends on the sitting's own angle and every ring is full.
+      expect(dialFrame(m, 1).offsets.every((o) => Math.abs(o) < 1e-9)).toBe(true);
+      expect(dialFrame(m, 1).hand % 360).toBeCloseTo(m.end, 6);
+    }
+    expect(dialModel(14.5).end).toBeCloseTo(((14.5 % 12) / 12) * 360, 9);
+  });
+
+  it("turns the hand about the dial centre by an SVG attribute, so no CSS origin can move the pivot", () => {
+    const { container } = render(<Graphic chart={{ kind: "dial", hours: 5 }} />);
+    const hand = container.querySelector("svg > g[transform^='rotate(']")!;
+    expect(hand.hasAttribute("data-a")).toBe(false);
+    // Tests run with reduced motion, so the clock has already landed on t = 1: five hours is 150 degrees.
+    expect(hand.getAttribute("transform")).toMatch(/^rotate\(150(\.00)? 150 150\)$/);
+    const spokes = render(<Graphic chart={{ kind: "spokes", values: [4, 9, 3, 2, 8, 1, 0] }} />).container;
+    const sh = Array.from(spokes.querySelectorAll("svg > g")).find((g) => g.getAttribute("transform")?.startsWith("rotate(") && g.querySelector("line"))!;
+    expect(sh.hasAttribute("data-a")).toBe(false);
+    // Busiest is Tuesday, 360/7 degrees round.
+    expect(Number(sh.getAttribute("transform")!.match(/rotate\(([-\d.]+)\)/)![1])).toBeCloseTo(360 / 7, 1);
+  });
+});
+
 describe("the graphic helpers", () => {
   it("draws a wave that never leaves the range of its points", () => {
     const pts: [number, number][] = [[0, 50], [10, 10], [20, 90], [30, 40]];
@@ -134,6 +281,17 @@ describe("the graphic helpers", () => {
     expect(heatBand(10, active)).toBe(1);
     expect(heatBand(100, active)).toBe(5);
     expect(heatBand(5, [])).toBe(0);
+  });
+
+  it("gives every tile its full name and hint in a hover, so a clipped tile still says who it is", () => {
+    const rows = [
+      { label: "Origin Client (Games Godot)", name: "Origin Client", hint: "Games Godot", value: 60 },
+      { label: "Origin Client (Minecraft Mods)", name: "Origin Client", hint: "Minecraft Mods", value: 40 },
+    ];
+    const { container } = render(<Graphic chart={{ kind: "tiles", rows }} />);
+    const tiles = [...container.querySelectorAll(".g-tile-in")];
+    expect(tiles.map((t) => t.getAttribute("title"))).toEqual(["Origin Client (Games Godot)", "Origin Client (Minecraft Mods)"]);
+    expect(tiles.map((t) => t.querySelector(".g-tile-name")?.textContent)).toEqual(["Origin Client", "Origin Client"]);
   });
 
   it("slices tiles so their areas follow their values and fill the box", () => {

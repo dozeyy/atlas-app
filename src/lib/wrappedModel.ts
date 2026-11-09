@@ -33,7 +33,7 @@ export interface WrappedData {
   /** Every skill use in the range, for the Toolsmith rule (`skills` is only the top few). */
   skillUses: number;
   /** `label` is unique (a folder name two projects share gets its parent); `name` is the folder name alone. */
-  projects: { label: string; value: number; name?: string }[];
+  projects: { label: string; value: number; name?: string; hint?: string }[];
   models: { label: string; value: number }[];
   /** The chat that ran longest by the clock. */
   longest: SessionRow | null;
@@ -55,6 +55,10 @@ export interface Row {
   label: string;
   value: number;
   note?: string;
+  /** The bare name when label carries a hint to tell two of the same name apart. */
+  name?: string;
+  /** What sets this row apart from another of the same name (a folder's parent). */
+  hint?: string;
 }
 
 /**
@@ -510,22 +514,22 @@ function typeCompare(d: WrappedData, id: string): Comparison | undefined {
   const at = (hours: number[]) => hours.reduce((s, x) => s + (d.hours[x] ?? 0), 0);
   switch (id) {
     case "owl":
-      return compareTokens(at(NIGHT_HOURS), { lead: "Your nights add up to about" }) ?? undefined;
+      return compareTokens(at(NIGHT_HOURS), { lead: "Nights add up to about" }) ?? undefined;
     case "bird":
-      return compareTokens(at(EARLY_HOURS), { lead: "Your early mornings add up to about" }) ?? undefined;
+      return compareTokens(at(EARLY_HOURS), { lead: "Mornings add up to about" }) ?? undefined;
     case "delegator":
-      return h ? (compareTokens(h.helperTokens, { lead: "Helper work adds up to about" }) ?? undefined) : undefined;
+      return h ? (compareTokens(h.helperTokens, { lead: "Helpers add up to about" }) ?? undefined) : undefined;
     case "marathoner":
       // Each long chat ran two hours or more, so this is a floor.
-      return h ? (compare("hours", (h.longChats * LONG_CHAT_HOURS), { lead: "Your long chats alone run at least" }) ?? undefined) : undefined;
+      return h ? (compare("hours", (h.longChats * LONG_CHAT_HOURS), { lead: "Long chats run at least", atLeast: true }) ?? undefined) : undefined;
     case "sprinter":
-      return h ? (compare("count", h.shortChats, { lead: "Your quick chats number about" }) ?? undefined) : undefined;
+      return h ? (compare("count", h.shortChats, { lead: "Quick chats number about" }) ?? undefined) : undefined;
     case "toolsmith":
-      return compare("count", d.skillUses, { lead: "Your skill uses number about" }) ?? undefined;
+      return compare("count", d.skillUses, { lead: "Skill uses number about" }) ?? undefined;
     case "loyalist":
-      return d.projects[0] ? (compareTokens(d.projects[0].value, { lead: "That project alone is about" }) ?? undefined) : undefined;
+      return d.projects[0] ? (compareTokens(d.projects[0].value, { lead: "That project is about" }) ?? undefined) : undefined;
     default:
-      return compare("days", d.activeDays, { lead: "Your active days add up to about" }) ?? undefined;
+      return compare("days", d.activeDays, { lead: "That is about" }) ?? undefined;
   }
 }
 
@@ -576,7 +580,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       unit: rounded === 1 ? "novel" : "novels",
       line: "That is quite a shelf.",
       hint: novelsHint(d.tokens),
-      compare: compare("hours", readingHours(d.tokens), { lead: "Reading it all takes about" }) ?? undefined,
+      compare: compare("hours", readingHours(d.tokens), { lead: "Reading takes about" }) ?? undefined,
       chart: { kind: "spines", count: rounded },
     });
   }
@@ -608,7 +612,7 @@ export function buildSlides(d: WrappedData): Slide[] {
         d.longestStreak > 1
           ? `Your best run: ${plural(d.longestStreak, "day")} in a row${d.streak > 1 ? `. You are ${plural(d.streak, "day")} into the next one` : ""}.`
           : `Out of ${plural(d.spanDays, "day")}.`,
-      compare: compare("days", d.activeDays, { lead: "Active days add up to about" }) ?? undefined,
+      compare: compare("days", d.activeDays, { lead: "That is about" }) ?? undefined,
       chart: heatChart(d),
       celebrate: pop(d.longestStreak >= 3),
     });
@@ -616,7 +620,10 @@ export function buildSlides(d: WrappedData): Slide[] {
 
   if (!short && d.biggest && headline(d.biggest.tokens) > 0) {
     const big = headline(d.biggest.tokens);
-    const chats = d.habits && d.habits.chats > 0 ? d.habits.chats : d.sessions;
+    // The average covers the same chats the count does: the numerator is those chats' own tokens,
+    // never the range total (which also holds chats that are gone from disk).
+    const h = d.habits;
+    const avg = h && h.chats > 1 && h.chatTokens > 0 ? h.chatTokens / h.chats : 0;
     out.push({
       id: "biggest",
       tone: "accent",
@@ -627,7 +634,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       line: `${chatName(d.biggest)}, in ${d.biggest.projectName}. One chat did all that.`,
       hint: `${exact(big)} tokens in one chat. The Longest sitting slide goes by time; this one goes by tokens.`,
       compare: compareTokens(big, { lead: "That one chat is about" }) ?? undefined,
-      chart: chats > 1 ? { kind: "tower", value: big, avg: d.tokens / chats } : undefined,
+      chart: avg > 0 ? { kind: "tower", value: big, avg } : undefined,
     });
   }
 
@@ -651,9 +658,9 @@ export function buildSlides(d: WrappedData): Slide[] {
       tone: "plain",
       layout: "stack",
       kicker: "Your biggest project",
-      figure: top.label,
+      figure: top.name ?? top.label,
       line: `${share(d.projects, top.value)}% of the tokens you can see by project.${share(d.projects, top.value) >= 50 ? " Clear favorite." : ""}`,
-      compare: compareTokens(top.value, { lead: "That project alone is about" }) ?? undefined,
+      compare: compareTokens(top.value, { lead: "That project is about" }) ?? undefined,
       chart: d.projects.length > 1 ? { kind: "tiles", rows: d.projects } : undefined,
     });
   }
@@ -676,7 +683,7 @@ export function buildSlides(d: WrappedData): Slide[] {
         kicker,
         figure: top.id,
         line: `Used ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}. You know what works.`,
-        compare: uses(top.uses, "That many uses add up to about"),
+        compare: uses(top.uses, "That is about"),
         chart,
       };
     }
@@ -696,7 +703,7 @@ export function buildSlides(d: WrappedData): Slide[] {
         kicker: d.skills.length > 1 ? `Your top ${d.skills.length} skills, counted down` : "Favorite skill",
         figure: top.id,
         line: `Number one: used ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}.`,
-        compare: uses(top.uses, "That many uses add up to about"),
+        compare: uses(top.uses, "That is about"),
         chart: skillChart(),
       });
     }
@@ -709,7 +716,7 @@ export function buildSlides(d: WrappedData): Slide[] {
         kicker: "Your go-to helper",
         figure: top.id,
         line: `Called on ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}. Reliable.`,
-        compare: uses(top.uses, "That many calls add up to about"),
+        compare: uses(top.uses, "That is about"),
         chart: d.agents.length > 1 ? { kind: "lollipop", rows: itemRows(d.agents) } : undefined,
       });
     }
@@ -723,7 +730,7 @@ export function buildSlides(d: WrappedData): Slide[] {
         figure: exact(crowd.agentCount),
         unit: "helpers",
         line: `${chatName(crowd)}, in ${crowd.projectName}. A whole crew.`,
-        compare: compare("crew", crowd.agentCount, { lead: "Enough helpers to fill" }) ?? undefined,
+        compare: compare("crew", crowd.agentCount, { lead: "Enough helpers to fill", atLeast: true }) ?? undefined,
         chart: { kind: "burst", count: crowd.agentCount },
       });
     }
@@ -736,7 +743,7 @@ export function buildSlides(d: WrappedData): Slide[] {
         kicker: "Go-to tool",
         figure: top.id,
         line: `Run ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}. Old faithful.`,
-        compare: uses(top.uses, "That many runs add up to about"),
+        compare: uses(top.uses, "That is about"),
         chart: d.tools.length > 1 ? { kind: "bubbles", rows: itemRows(d.tools) } : undefined,
       });
     }
@@ -768,7 +775,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       figure: WEEKDAYS[top],
       line: `${share(week.map((v) => ({ value: v })), week[top])}% of an average week's tokens land on a ${WEEKDAYS[top]}. Plan around it.`,
       hint: `${compact(week[top])} tokens on an average ${WEEKDAYS[top]} since ${shortDay(d.from)}, counting every ${WEEKDAYS[top]} in that time.`,
-      compare: compareTokens(week[top], { lead: `An average ${WEEKDAYS[top]} is about` }) ?? undefined,
+      compare: compareTokens(week[top], { lead: `A ${WEEKDAYS[top]} is about` }) ?? undefined,
       chart: { kind: "spokes", values: week },
     });
   }
@@ -782,7 +789,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       kicker: "Your prime time",
       figure: hourLabel(peak),
       line: `Most of your tokens land around then, ${partOfDay(peak)}. That is your hour.`,
-      compare: compareTokens(d.hours[peak], { lead: `Every ${hourLabel(peak)} hour added up is about` }) ?? undefined,
+      compare: compareTokens(d.hours[peak], { lead: `${hourLabel(peak)} adds up to about` }) ?? undefined,
       chart: { kind: "strip", values: d.hours },
     });
   }

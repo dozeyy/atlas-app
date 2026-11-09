@@ -19,15 +19,6 @@ export function transitionFor(index: number, last: number): Transition {
 /** Entrances wait this long (ms) while the curtain covers the stage; keep in step with wr-sweep. */
 export const CURTAIN_LEAD = 300;
 
-/** True when focus is there because of the keyboard (Tab), not because a mouse click left it on a button. */
-export function keyboardFocused(el: Element): boolean {
-  try {
-    return el.matches(":focus-visible");
-  } catch {
-    return false;
-  }
-}
-
 /** How long the stage hides its overflow after a change, so nothing in flight can raise a scrollbar. */
 const MOVING_MS = 1300;
 
@@ -54,16 +45,26 @@ export function Story({ cover, slides }: { cover: ReactNode; slides: Slide[] }) 
 
   useEffect(() => {
     let spaceDown = false;
+    // Whether the person got to the focused control with the keyboard. :focus-visible cannot say:
+    // WebView2 can flip it to true after any key event, even on a button a mouse click focused. So
+    // it is tracked here instead: a Tab (or Shift+Tab) says "keyboard", any pointer press says "mouse".
+    let tabbed = false;
+    const onPointer = () => {
+      tabbed = false;
+    };
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Tab") tabbed = true;
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== " ") return;
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
       // Space on a control you Tabbed to presses it. A control a mouse click left focused (a title-bar
       // or caption button) must not: Space belongs to the story, so it is swallowed there.
-      if (e.key === " " && t && t.closest('button, a, [role="button"]') && keyboardFocused(t)) return;
+      if (e.key === " " && t && t.closest('button, a, [role="button"]') && tabbed) return;
       if (document.querySelector('[role="dialog"],[role="alertdialog"]')) return;
       e.preventDefault();
+      // Holding a key repeats it; one press is one move, so the repeats are swallowed, not stepped.
+      if (e.repeat) return;
       if (e.key === " ") spaceDown = true;
       setAt((cur) => {
         const to = Math.min(last, Math.max(0, cur.i + (e.key === "ArrowLeft" ? -1 : 1)));
@@ -76,14 +77,19 @@ export function Story({ cover, slides }: { cover: ReactNode; slides: Slide[] }) 
       spaceDown = false;
       e.preventDefault();
     };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("keyup", onUp);
+    window.addEventListener("pointerdown", onPointer, true);
+    window.addEventListener("mousedown", onPointer, true);
+    // Capture phase on the window, so the story sees the key before any control does and its
+    // preventDefault stops a focused button from being pressed.
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("keyup", onUp, true);
     return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("pointerdown", onPointer, true);
+      window.removeEventListener("mousedown", onPointer, true);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keyup", onUp, true);
     };
   }, [last]);
-
   const first = useRef(true);
   useEffect(() => {
     if (first.current) {

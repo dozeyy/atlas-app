@@ -38,9 +38,9 @@ describe("Story keys", () => {
     // A mouse click leaves focus on the button; Space must advance the story and not press it again.
     await userEvent.click(button);
     expect(caption).toHaveBeenCalledTimes(1);
-    // jsdom has no focus-visible heuristic (every focused element matches), so say what a real
-    // engine says after a mouse click: not keyboard-focused.
-    vi.spyOn(button, "matches").mockImplementation(() => false);
+    // WebView2 can report :focus-visible as true after a key event even on a clicked button; the
+    // story must not rely on it, so say the engine claims keyboard focus and it still advances.
+    vi.spyOn(button, "matches").mockImplementation((q: string) => q === ":focus-visible");
     const down = fireEvent.keyDown(button, { key: " " });
     expect(down).toBe(false); // default prevented, so the button is not pressed
     expect(position()).toBe("2 of 4");
@@ -53,15 +53,37 @@ describe("Story keys", () => {
     expect(position()).toBe("2 of 4");
   });
 
-  it("leaves Space alone on a button you reached with the keyboard", () => {
+  it("leaves Space alone on a button you reached with Tab", () => {
     mount();
     const button = screen.getByRole("button", { name: "Minimize" });
-    const spy = vi.spyOn(button, "matches").mockImplementation((q: string) => q === ":focus-visible");
+    fireEvent.keyDown(button, { key: "Tab" });
     expect(fireEvent.keyDown(button, { key: " " })).toBe(true);
     expect(position()).toBe("1 of 4");
-    spy.mockRestore();
   });
 
+  it("swallows Space again once the mouse touches the page after a Tab", async () => {
+    mount();
+    const button = screen.getByRole("button", { name: "Minimize" });
+    fireEvent.keyDown(button, { key: "Tab" });
+    await userEvent.click(button);
+    expect(fireEvent.keyDown(button, { key: " " })).toBe(false);
+    expect(position()).toBe("2 of 4");
+  });
+
+  it("moves one slide per press: held keys that repeat are swallowed, not stepped", () => {
+    mount();
+    const body = document.body;
+    expect(fireEvent.keyDown(body, { key: " " })).toBe(false);
+    expect(position()).toBe("2 of 4");
+    for (let n = 0; n < 5; n++) expect(fireEvent.keyDown(body, { key: " ", repeat: true })).toBe(false);
+    for (let n = 0; n < 5; n++) fireEvent.keyDown(body, { key: "ArrowRight", repeat: true });
+    expect(position()).toBe("2 of 4");
+    fireEvent.keyUp(body, { key: " " });
+    fireEvent.keyDown(body, { key: "ArrowRight" });
+    expect(position()).toBe("3 of 4");
+    fireEvent.keyDown(body, { key: "ArrowLeft", repeat: true });
+    expect(position()).toBe("3 of 4");
+  });
   it("advances once, not twice, on Space with the figure's hover stop focused", async () => {
     mount();
     await userEvent.click(screen.getByRole("button", { name: "Start" }));

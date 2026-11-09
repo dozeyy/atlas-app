@@ -144,7 +144,7 @@ describe("Wrapped", () => {
     const fig = document.querySelector(".wr-fig") as HTMLElement;
     expect(fig.getAttribute("title") ?? "").toMatch(/0\.75 words per token[\s\S]*An estimate/);
     expect(fig.getAttribute("aria-label")).toMatch(/An estimate/);
-    expect(document.querySelector(".wr-compare")?.textContent).toMatch(/^Reading it all takes about /);
+    expect(document.querySelector(".wr-compare")?.textContent).toMatch(/^Reading takes about /);
   });
 
   it("puts one comparison on every slide but the card, each with its source in the hover", async () => {

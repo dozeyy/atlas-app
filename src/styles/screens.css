@@ -580,10 +580,6 @@
 .intro .g-draw-slow {
   animation-duration: 1500ms;
 }
-.intro .g-draw-dial {
-  animation-duration: 900ms;
-  --gs: 380ms;
-}
 .g-draw:not([stroke-dasharray]) {
   stroke-dasharray: 1 1;
 }
@@ -729,23 +725,7 @@
   animation-delay: calc(var(--g0) + 500ms + var(--i, 0) * var(--gs));
 }
 
-/* dial */
-.g-hand {
-  rotate: var(--turn, 0deg);
-  transform-box: view-box !important;
-  transform-origin: 50% 50% !important;
-}
-.intro .g-hand {
-  animation-name: g-hand;
-  animation-duration: 1500ms;
-  animation-timing-function: cubic-bezier(0.45, 0, 0.2, 1);
-  animation-delay: calc(var(--g0) + 200ms);
-}
-@keyframes g-hand {
-  from {
-    rotate: -360deg;
-  }
-}
+/* dial and weekday spokes: on the slide clock (wrappedClock.ts, written by useClock), no CSS timing here */
 
 /* tiles */
 .g-tile {
@@ -778,21 +758,51 @@
     align-items: center;
     padding: 4px 12px;
   }
-  .g-tile-name {
+  .g-tile-txt {
     flex: 1 1 0;
-    min-width: 0;
+  }
+  .g-tile-name {
+    font-size: 13px;
+    line-height: 16px;
+    -webkit-line-clamp: 1;
+  }
+  .g-tile-hint {
+    font-size: 11px;
+    line-height: 14px;
   }
   .g-tile-pct {
     flex: none;
     font-size: 18px;
   }
 }
+/* Too short for two lines: the name alone (the hint stays in the hover). */
+@container (max-height: 46px) {
+  .g-tile-hint {
+    display: none;
+  }
+}
+.g-tile-txt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* The name wraps to two lines before it is cut; the hint (a folder's parent) sits under it. */
 .g-tile-name {
+  display: -webkit-box;
   overflow: hidden;
   color: var(--ink);
   font-size: 15px;
   line-height: 20px;
   font-weight: 600;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.g-tile-hint {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1015,13 +1025,6 @@
   animation-duration: 640ms;
   animation-timing-function: var(--ease-spring);
   --gs: 40ms;
-}
-
-/* spokes */
-.intro .g-spoke {
-  animation-name: g-rise;
-  animation-duration: 560ms;
-  --gs: 140ms;
 }
 
 /* donut */

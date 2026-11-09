@@ -172,6 +172,8 @@ export interface WrappedHabits {
   mostHelpers: SessionRow | null;
   /** The chat with the most tokens in all (its whole length); null when the range has no chat. */
   biggest: SessionRow | null;
+  /** Whole-chat tokens of exactly those `chats` (not chats that are gone), for a true average. */
+  chatTokens: number;
 }
 
 export type ItemKind = "skill" | "agent" | "tool";

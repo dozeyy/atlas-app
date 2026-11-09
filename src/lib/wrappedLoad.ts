@@ -12,43 +12,73 @@ const quiet = <T,>(p: Promise<T>, fallback: T): Promise<T> => p.catch(() => fall
 
 const WORDS = /[A-Za-z0-9]+/g;
 
-/**
- * Two projects can share a folder name (the same name under two parents). A legend that says
- * "Origin Client" twice cannot be read, so a colliding label gets the short part of its folder key
- * that sets it apart: the key is the project's path with every symbol turned into a dash, so what is
- * left once the shared start of the path and the folder's own name are cut is its parent.
- * Without a usable parent it falls back to a count, "(2)".
- */
-export function uniqueLabels<T extends { key: string; label: string }>(rows: T[]): T[] {
-  const groups = new Map<string, T[]>();
-  for (const r of rows) groups.set(r.label, [...(groups.get(r.label) ?? []), r]);
-  const out = new Map<T, string>();
-  for (const [label, group] of groups) {
-    if (group.length < 2) continue;
-    const own = (label.match(WORDS) ?? []).map((w) => w.toLowerCase());
-    const parents = group.map((r) => {
-      const words = r.key.match(WORDS) ?? [];
-      const tail = words.slice(words.length - own.length).map((w) => w.toLowerCase());
-      return own.length > 0 && words.length > own.length && tail.every((w, i) => w === own[i]) ? words.slice(0, words.length - own.length) : words;
-    });
-    let shared = 0;
-    while (parents.every((p) => p.length > shared + 1 && p[shared] === parents[0][shared])) shared++;
-    const hints = parents.map((p) => p.slice(shared).slice(-2).join(" "));
-    const distinct = new Set(hints).size === hints.length && hints.every((h) => h.length > 0);
-    group.forEach((r, i) => out.set(r, `${label} (${distinct ? hints[i] : i + 1})`));
-  }
-  return rows.map((r) => (out.has(r) ? { ...r, label: out.get(r)! } : r));
+/** Longest hint, in words: it has to fit under a name in a small tile. */
+const HINT_WORDS = 2;
+
+/** The words of a folder key, minus the folder's own name at the end; null when the key does not end in it. */
+function parentWords(key: string, label: string): string[] | null {
+  const own = (label.match(WORDS) ?? []).map((w) => w.toLowerCase());
+  const words = key.match(WORDS) ?? [];
+  if (own.length === 0 || words.length <= own.length) return null;
+  const tail = words.slice(words.length - own.length);
+  return tail.every((w, i) => w.toLowerCase() === own[i]) ? words.slice(0, words.length - own.length) : null;
 }
 
-function seriesTotals(t: Timeline | null, label: (key: string, name: string) => string, top = 5, byFolder = false): { label: string; value: number; name: string }[] {
+/**
+ * Two projects can share a folder name (the same name under two parents). A legend that says
+ * "Origin Client" twice cannot be read, so a colliding row gets a `hint`: the words of its folder
+ * path that set it apart (the key is the project's path with every symbol turned into a dash). Only
+ * the words that differ count: what every colliding path shares at the start or the end is left out.
+ * `label` becomes "Name (hint)"; `name` and the bare label stay readable for a headline.
+ * When there are no words that differ (one path is the other's parent), the name's folder is not at
+ * the end of its key (a non-ASCII name, a renamed project), or the hints cannot be told apart, the
+ * rows are counted instead: "Name (1)", "Name (2)".
+ */
+export function uniqueLabels<T extends { key: string; label: string }>(rows: T[]): (T & { hint?: string })[] {
+  const groups = new Map<string, T[]>();
+  for (const r of rows) groups.set(r.label, [...(groups.get(r.label) ?? []), r]);
+  const out = new Map<T, { label: string; hint: string }>();
+  for (const [label, group] of groups) {
+    if (group.length < 2) continue;
+    const parents = group.map((r) => parentWords(r.key, label));
+    const hints = differing(parents);
+    group.forEach((r, i) => {
+      const hint = hints ? hints[i] : String(i + 1);
+      out.set(r, { label: `${label} (${hint})`, hint });
+    });
+  }
+  return rows.map((r) => (out.has(r) ? { ...r, ...out.get(r)! } : r));
+}
+
+/** Per path, the words that set it apart from the others; null when that is not possible. */
+function differing(parents: (string[] | null)[]): string[] | null {
+  if (parents.some((p) => p === null)) return null;
+  const ps = parents as string[][];
+  const lower = ps.map((p) => p.map((w) => w.toLowerCase()));
+  const shortest = Math.min(...ps.map((p) => p.length));
+  let head = 0;
+  while (head < shortest && lower.every((p) => p[head] === lower[0][head])) head++;
+  let tail = 0;
+  while (tail < shortest - head && lower.every((p) => p[p.length - 1 - tail] === lower[0][lower[0].length - 1 - tail])) tail++;
+  const hints = ps.map((p) => p.slice(head, p.length - tail).slice(-HINT_WORDS).join(" "));
+  const distinct = new Set(hints.map((h) => h.toLowerCase())).size === hints.length;
+  return distinct && hints.every((h) => h.length > 0) ? hints : null;
+}
+
+function seriesTotals(
+  t: Timeline | null,
+  label: (key: string, name: string) => string,
+  top = 5,
+  byFolder = false,
+): { label: string; value: number; name: string; hint?: string }[] {
   const rows = (t?.series ?? [])
     .map((s) => ({ key: s.key, label: label(s.key, s.label), name: label(s.key, s.label), value: s.points.reduce((n, p) => n + headline(p.tokens), 0) }))
     .filter((r) => r.value > 0)
     .sort((a, b) => b.value - a.value);
   const shown = rows.slice(0, top);
-  return (byFolder ? uniqueLabels(shown) : shown).map(({ label: l, value, name }) => ({ label: l, value, name }));
+  const out: { label: string; value: number; name: string; hint?: string }[] = byFolder ? uniqueLabels(shown) : shown;
+  return out.map(({ label: l, value, name, hint }) => ({ label: l, value, name, ...(hint ? { hint } : {}) }));
 }
-
 /**
  * Everything the story needs, from the same queries the other screens use. Returns null when there
  * is no usage at all. A part that fails is left out; the story is built from what is there.

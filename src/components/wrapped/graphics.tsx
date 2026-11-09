@@ -1,8 +1,11 @@
-import { useId } from "react";
+import { useId, useRef } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { compact, formatDuration } from "../../lib/usage";
 import { hourLabel, peakHour, shortDay, WEEKDAYS, WEEKDAYS_SHORT } from "../../lib/wrappedModel";
 import type { Row, SlideChart } from "../../lib/wrappedModel";
+import { beatAt, seg } from "../../lib/wrappedClock";
+import type { Beat } from "../../lib/wrappedClock";
+import { useClock } from "./useClock";
 
 // The hero graphics: one hand-written SVG (or a little CSS-drawn HTML where there is text to set)
 // per kind of slide. They take the model's real numbers and nothing else. Every piece that moves
@@ -91,11 +94,24 @@ export function Ridge({ values }: { values: number[] }) {
 
 const SPINE_TONES = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"];
 
-/** Books lying in a stack, dropped in one by one; more than a dozen are said, not drawn. */
-export function Spines({ count }: { count: number }) {
+/** Past this many left over, the big figure beside the stack already says it; no label. */
+export const SPINES_LABEL_BELOW = 1000;
+
+/** Where the stack and its label sit inside the 400 x 360 box, so nothing leaves it. */
+export function spineGeometry(count: number): { shown: number; more: number; step: number; height: number; label: boolean } {
+  const base = 330;
   const shown = Math.max(1, Math.min(12, count));
   const more = count - shown;
-  const H = 26;
+  const label = more > 0 && more < SPINES_LABEL_BELOW;
+  // The label needs a band above the top book (text is about 16 high), so the books shrink to fit.
+  const room = label ? 40 : 10;
+  const step = Math.min(28, (base - room) / shown);
+  return { shown, more, step, height: step - 2, label };
+}
+
+/** Books lying in a stack, dropped in one by one; more than a dozen are said, not drawn. */
+export function Spines({ count }: { count: number }) {
+  const { shown, more, step, height: H, label } = spineGeometry(count);
   const base = 330;
   return (
     <svg className="g-svg" viewBox="0 0 400 360" role="img" aria-label={`A stack of ${count} novels`}>
@@ -103,19 +119,19 @@ export function Spines({ count }: { count: number }) {
       {Array.from({ length: shown }, (_, i) => {
         const w = 230 + ((i * 53) % 90);
         const x = 200 - w / 2 + (((i * 37) % 31) - 15);
-        const y = base - (i + 1) * (H + 2);
+        const y = base - (i + 1) * step;
         const top = i === shown - 1;
         return (
           <g key={i} className="g-book" data-a style={vars({ "--i": i, "--tilt": `${((i * 7) % 5) - 2}deg` })}>
             <rect x={x} y={y} width={w} height={H} rx="4" fill={top ? "var(--accent)" : SPINE_TONES[i % SPINE_TONES.length]} />
-            <rect x={x + 12} y={y + 7} width="26" height="3" rx="1.5" fill="var(--surface)" opacity="0.7" />
-            <rect x={x + 12} y={y + 14} width="16" height="3" rx="1.5" fill="var(--surface)" opacity="0.5" />
+            <rect x={x + 12} y={y + H * 0.27} width="26" height="3" rx="1.5" fill="var(--surface)" opacity="0.7" />
+            <rect x={x + 12} y={y + H * 0.54} width="16" height="3" rx="1.5" fill="var(--surface)" opacity="0.5" />
             <rect x={x + w - 22} y={y} width="3" height={H} fill="var(--surface)" opacity="0.45" />
           </g>
         );
       })}
-      {more > 0 && (
-        <text x="200" y={base - shown * (H + 2) - 14} textAnchor="middle" className="g-text g-text-2" data-a style={vars({ "--i": shown })}>
+      {label && (
+        <text x="200" y={base - shown * step - 14} textAnchor="middle" className="g-text g-text-2" data-a style={vars({ "--i": shown })}>
           and {compact(more)} more
         </text>
       )}
@@ -139,6 +155,17 @@ function monthMarks(from: string, days: number): { at: number; label: string }[]
   return out;
 }
 
+/** Room a month label needs on each side: a mark closer than this to the flag or to Today is skipped. */
+export const TRAIL_CLEAR = 60;
+
+/** The month marks that fit between the flag and Today without touching either label. */
+export function trailMarks(from: string, days: number, width = 1000, pad = 56): { at: number; label: string; x: number }[] {
+  const xAt = (k: number) => pad + (k / Math.max(1, days)) * (width - pad * 2);
+  return monthMarks(from, days)
+    .map((m) => ({ ...m, x: xAt(m.at) }))
+    .filter((m) => m.x - pad >= TRAIL_CLEAR && width - pad - m.x >= TRAIL_CLEAR);
+}
+
 /** A winding trail from the oldest chat to today, with a mark at each month you walked past. */
 export function Trail({ from, to, days }: Of<"trail">) {
   const W = 1000;
@@ -148,7 +175,7 @@ export function Trail({ from, to, days }: Of<"trail">) {
   const pts: [number, number][] = [];
   for (let x = pad; x <= W - pad; x += 20) pts.push([x, yAt(x)]);
   const d = pts.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x} ${y.toFixed(1)}`).join("");
-  const marks = monthMarks(from, days);
+  const marks = trailMarks(from, days, W, pad);
   const end = pts[pts.length - 1];
   return (
     <svg className="g-svg" viewBox="0 0 1000 150" role="img" aria-label={`A trail of ${days} days from ${shortDay(from)} to ${shortDay(to)}`}>
@@ -274,44 +301,91 @@ export function Tower({ value, avg }: Of<"tower">) {
 
 // ---- longest sitting: a dial ---------------------------------------------------------------
 
-/** A twelve-hour dial; each full lap is a ring, the last ring stops where the sitting did. */
-export function Dial({ hours }: Of<"dial">) {
+export interface DialModel {
+  /** Full laps drawn and the share of the next lap. */
+  laps: number;
+  rest: number;
+  /** How much of each ring is drawn (1 for a full lap, `rest` for the last). */
+  fills: number[];
+  /** Turns the hand makes in all: the sum of what the rings draw. */
+  turns: number;
+  /** Where the hand ends, degrees clockwise from twelve. */
+  end: number;
+}
+
+export function dialModel(hours: number): DialModel {
   const laps = Math.floor(hours / 12);
   const rest = (hours % 12) / 12;
   const rings = Math.min(4, laps + (rest > 0 ? 1 : 0));
-  const angle = rest > 0 ? rest * 360 : 0;
+  const fills = Array.from({ length: rings }, (_, k) => (k < laps ? 1 : rest));
+  const turns = fills.reduce((s, f) => s + f, 0);
+  return { laps, rest, fills, turns, end: (turns * 360) % 360 };
+}
+
+/**
+ * One frame of the dial from its eased progress p (0..1): the hand and every ring are read from
+ * the same p, so the arc a ring has drawn is always the turn the hand has made. Ring k draws while
+ * the hand is on lap k; `offsets` are the rings' stroke-dashoffsets (0 = fully drawn).
+ */
+export function dialFrame(m: DialModel, p: number): { hand: number; offsets: number[] } {
+  const travelled = p * m.turns;
+  return { hand: travelled * 360, offsets: m.fills.map((f, k) => f - Math.min(f, Math.max(0, travelled - k))) };
+}
+
+const DIAL_BEATS: Beat[] = [{ id: "sweep", start: 0, end: 1, ease: "inOutCubic" }];
+/** A longer sitting takes longer to sweep, up to a ceiling. */
+export const dialMs = (m: DialModel): number => Math.min(2600, 1100 + 450 * m.turns);
+
+/** A twelve-hour dial; each full lap is a ring, the last ring stops where the sitting did. */
+export function Dial({ hours, delay = 0 }: Of<"dial"> & { delay?: number }) {
+  const m = dialModel(hours);
   const gap = 15;
+  const hand = useRef<SVGGElement>(null);
+  const rings = useRef<(SVGCircleElement | null)[]>([]);
+  useClock(dialMs(m), delay, (t) => {
+    const f = dialFrame(m, beatAt(DIAL_BEATS, "sweep", t));
+    hand.current?.setAttribute("transform", `rotate(${f.hand.toFixed(2)} 150 150)`);
+    f.offsets.forEach((o, k) => {
+      const ring = rings.current[k];
+      if (!ring) return;
+      ring.style.setProperty("stroke-dashoffset", o.toFixed(4));
+      // A round cap draws a dot even for a zero-length dash: a ring the hand has not reached stays hidden.
+      ring.style.opacity = o >= m.fills[k] ? "0" : "";
+    });
+  });
   return (
     <svg className="g-svg" viewBox="0 0 300 300" role="img" aria-label={`A sitting of ${formatDuration(hours * 3_600_000)}`}>
-      <circle cx="150" cy="150" r="136" fill="var(--surface)" stroke="var(--line-strong)" strokeWidth="2" />
+      <circle cx="150" cy="150" r="136" fill="var(--surface)" stroke="var(--line-strong)" strokeWidth="2" className="g-fade" data-a />
       {Array.from({ length: 12 }, (_, k) => {
         const a = (k / 12) * Math.PI * 2;
         const r1 = k % 3 === 0 ? 112 : 120;
         return <line key={k} x1={150 + Math.sin(a) * r1} y1={150 - Math.cos(a) * r1} x2={150 + Math.sin(a) * 128} y2={150 - Math.cos(a) * 128} stroke="var(--ink-2)" strokeWidth={k % 3 === 0 ? 4 : 2} strokeLinecap="round" />;
       })}
-      {Array.from({ length: rings }, (_, k) => {
-        const full = k < laps;
-        const r = 100 - k * gap;
+      {m.fills.map((f, k) => {
+        const full = k < m.laps;
         return (
           <circle
             key={k}
+            ref={(el) => {
+              rings.current[k] = el;
+            }}
             cx="150"
             cy="150"
-            r={r}
+            r={100 - k * gap}
             fill="none"
             pathLength={1}
             stroke={full ? "var(--accent)" : "var(--chart-1)"}
             strokeWidth="11"
             strokeLinecap="round"
-            strokeDasharray={full ? "1 1" : `${rest} 1`}
+            strokeDasharray={full ? "1 1" : `${f} 1`}
             transform="rotate(-90)" /* about the ring's own centre: .wr-gfx svg [data-a] sets the box and origin, so no centre here */
-            className="g-draw g-draw-dial"
             data-a
-            style={vars({ "--i": k, "--dash": full ? 1 : rest, opacity: full ? 0.55 : 1 })}
+            opacity={full ? 0.55 : 1}
           />
         );
       })}
-      <g className="g-hand" data-a style={vars({ "--turn": `${angle}deg`, "--i": Math.max(0, rings - 1) })}>
+      {/* No data-a on the hand: a CSS origin would move its pivot. It turns about the centre dot, in the SVG's own units. */}
+      <g ref={hand} transform={`rotate(${m.end} 150 150)`}>
         <line x1="150" y1="150" x2="150" y2="46" stroke="var(--ink)" strokeWidth="5" strokeLinecap="round" />
       </g>
       <circle cx="150" cy="150" r="9" fill="var(--ink)" />
@@ -360,8 +434,11 @@ export function Tiles({ rows }: { rows: Row[] }) {
     <div className="g-tiles" role="img" aria-label={rows.map((r) => `${r.label} ${Math.round((r.value / total) * 100)}%`).join(", ")}>
       {rows.map((r, i) => (
         <div key={r.label} className="g-tile" data-first={i === 0 ? "" : undefined} data-a style={vars({ left: `${boxes[i].x}%`, top: `${boxes[i].y}%`, width: `${boxes[i].w}%`, height: `${boxes[i].h}%`, "--c": FILL[i % FILL.length], "--i": i })}>
-          <div className="g-tile-in">
-            <span className="g-tile-name">{r.label}</span>
+          <div className="g-tile-in" title={r.label}>
+            <span className="g-tile-txt">
+              <span className="g-tile-name">{r.name ?? r.label}</span>
+              {r.hint && <span className="g-tile-hint">{r.hint}</span>}
+            </span>
             <span className="g-tile-pct">{Math.round((r.value / total) * 100)}%</span>
           </div>
         </div>
@@ -549,30 +626,139 @@ export function Spike({ values, peak, first, last }: Of<"spike">) {
 
 // ---- weekday: seven spokes -----------------------------------------------------------------
 
-/** Seven spokes round a hub, Monday at the top, each as long as that weekday is busy; they sweep out clockwise. */
-export function Spokes({ values }: { values: number[] }) {
+/**
+ * The weekday dial's measurements, one source for the drawing and the tests. Everything is in the
+ * SVG's units round the hub at (0, 0). A spoke is a bar from `start` to `start + len`; the dashed
+ * ring is the 100% mark, just outside the longest spoke could ever be; each label sits on its
+ * spoke's own line, past the ring by `gap` plus half its own size along that line.
+ */
+export const SPOKE = { hub: 26, start: 32, minLen: 12, maxLen: 64, width: 22, ringGap: 10, gap: 10, labelW: 38, labelH: 20, half: 160 } as const;
+const SPOKE_END = SPOKE.start + SPOKE.maxLen;
+export const SPOKE_RING = SPOKE_END + SPOKE.ringGap;
+
+export interface SpokeSpec {
+  /** Degrees clockwise from twelve. */
+  angle: number;
+  len: number;
+  /** Label centre. */
+  lx: number;
+  ly: number;
+  /** Distance from the hub to the label's centre, and to its nearest edge along the spoke's line. */
+  labelR: number;
+  labelInner: number;
+}
+
+/** How far a label box reaches from its centre along the direction `angle`. */
+function labelReach(angle: number): number {
+  const a = (angle * Math.PI) / 180;
+  return (Math.abs(Math.sin(a)) * SPOKE.labelW) / 2 + (Math.abs(Math.cos(a)) * SPOKE.labelH) / 2;
+}
+
+export function spokeGeometry(values: number[]): SpokeSpec[] {
   const max = Math.max(1, ...values);
-  const top = values.indexOf(Math.max(...values));
+  return values.map((v, i) => {
+    const angle = (i / 7) * 360;
+    const len = SPOKE.minLen + (Math.max(0, v) / max) * (SPOKE.maxLen - SPOKE.minLen);
+    const reach = labelReach(angle);
+    const labelR = SPOKE_RING + SPOKE.gap + reach;
+    const a = (angle * Math.PI) / 180;
+    return { angle, len, lx: Math.sin(a) * labelR, ly: -Math.cos(a) * labelR, labelR, labelInner: labelR - reach };
+  });
+}
+
+/**
+ * The weekday dial on one clock. A hand starts a full turn before the busiest weekday and whips
+ * round to land on it; spoke i finishes growing at the moment the hand reaches its angle (it
+ * grows over the `lead` degrees before), so the busiest spoke is the last to land, with the hand.
+ */
+export function spokeTimeline(values: number[]): { top: number; startAngle: number; arrive: number[] } {
+  const top = Math.max(0, values.indexOf(Math.max(...values)));
+  const topAngle = (top / 7) * 360;
+  const startAngle = topAngle - 360;
+  // How far round the hand's 360 degrees each spoke is (the busiest one is at the very end).
+  const arrive = values.map((_, i) => {
+    const rel = (((i / 7) * 360 - startAngle) % 360 + 360) % 360;
+    return (rel === 0 ? 360 : rel) / 360;
+  });
+  return { top, startAngle, arrive };
+}
+
+/** Degrees of hand travel over which a spoke grows, ending as the hand reaches it. */
+export const SPOKE_LEAD = 26;
+
+/** One frame of the weekday dial from the eased hand progress h (it may overshoot 1 and come back). */
+export function spokeFrame(values: number[], h: number): { hand: number; grow: number[] } {
+  const tl = spokeTimeline(values);
+  return {
+    hand: tl.startAngle + 360 * h,
+    grow: tl.arrive.map((u) => seg(h, u - SPOKE_LEAD / 360, u)),
+  };
+}
+
+const SPOKE_BEATS: Beat[] = [{ id: "whip", start: 0, end: 1, ease: "spring" }];
+export const SPOKES_MS = 2100;
+
+/** Seven spokes round a hub, Monday at the top, each as long as that weekday is busy; a hand whips round and lands on the busiest. */
+export function Spokes({ values, delay = 0 }: { values: number[]; delay?: number }) {
+  const geo = spokeGeometry(values);
+  const tl = spokeTimeline(values);
+  const hand = useRef<SVGGElement>(null);
+  const bars = useRef<(SVGRectElement | null)[]>([]);
+  const labels = useRef<(SVGTextElement | null)[]>([]);
+  useClock(SPOKES_MS, delay, (t) => {
+    const f = spokeFrame(values, beatAt(SPOKE_BEATS, "whip", t));
+    hand.current?.setAttribute("transform", `rotate(${f.hand.toFixed(2)})`);
+    f.grow.forEach((g, i) => {
+      const bar = bars.current[i];
+      if (bar) {
+        bar.style.transform = `scale(1, ${Math.max(g, 0.001).toFixed(3)})`;
+        bar.style.opacity = g > 0 ? "1" : "0";
+      }
+      const label = labels.current[i];
+      if (label) label.style.opacity = (0.25 + 0.75 * g).toFixed(3);
+    });
+  });
   return (
-    <svg className="g-svg" viewBox="-150 -150 300 300" role="img" aria-label={`Tokens by weekday, busiest on ${WEEKDAYS[top] ?? "none"}`}>
-      <circle cx="0" cy="0" r="30" fill="none" stroke="var(--line-strong)" strokeWidth="2" />
-      <circle cx="0" cy="0" r="124" fill="none" stroke="var(--line)" strokeWidth="1.5" strokeDasharray="2 7" strokeLinecap="round" />
-      {values.map((v, i) => {
-        const a = (i / 7) * 360;
-        const len = 14 + (Math.max(0, v) / max) * 78;
-        const rad = ((a - 90) * Math.PI) / 180;
-        return (
-          <g key={i}>
-            <g transform={`rotate(${a})`}>
-              <rect x="-11" y={-(36 + len)} width="22" height={len} rx="11" fill={i === top ? "var(--accent)" : "var(--bar-rest)"} className="g-spoke" data-a style={vars({ "--i": i })} />
-            </g>
-            <text x={Math.cos(rad) * 136} y={Math.sin(rad) * 136 + 5} textAnchor="middle" className="g-text" fontWeight={i === top ? 700 : 500}>
-              {WEEKDAYS_SHORT[i]}
-            </text>
+    <svg className="g-svg" viewBox={`${-SPOKE.half} ${-SPOKE.half} ${SPOKE.half * 2} ${SPOKE.half * 2}`} role="img" aria-label={`Tokens by weekday, busiest on ${WEEKDAYS[tl.top] ?? "none"}`}>
+      <circle cx="0" cy="0" r={SPOKE.hub} fill="none" stroke="var(--line-strong)" strokeWidth="2" className="g-fade" data-a />
+      <circle cx="0" cy="0" r={SPOKE_RING} fill="none" stroke="var(--line)" strokeWidth="1.5" strokeDasharray="2 7" strokeLinecap="round" className="g-fade" data-a />
+      {geo.map((s, i) => (
+        <g key={i}>
+          <g transform={`rotate(${s.angle})`}>
+            <rect
+              ref={(el) => {
+                bars.current[i] = el;
+              }}
+              x={-SPOKE.width / 2}
+              y={-(SPOKE.start + s.len)}
+              width={SPOKE.width}
+              height={s.len}
+              rx={SPOKE.width / 2}
+              fill={i === tl.top ? "var(--accent)" : "var(--bar-rest)"}
+              className="g-spoke"
+              data-a
+            />
           </g>
-        );
-      })}
-      <circle cx="0" cy="0" r="5" fill="var(--ink-2)" />
+          <text
+            ref={(el) => {
+              labels.current[i] = el;
+            }}
+            x={s.lx}
+            y={s.ly}
+            textAnchor="middle"
+            dominantBaseline="central"
+            className="g-text"
+            fontWeight={i === tl.top ? 700 : 500}
+          >
+            {WEEKDAYS_SHORT[i]}
+          </text>
+        </g>
+      ))}
+      {/* No data-a on the hand, so it turns about the hub (0, 0) in the SVG's own units. */}
+      <g ref={hand} transform={`rotate(${tl.startAngle + 360})`}>
+        <line x1="0" y1={-SPOKE.hub} x2="0" y2={-(SPOKE_RING - 6)} stroke="var(--ink)" strokeWidth="3.5" strokeLinecap="round" />
+      </g>
+      <circle cx="0" cy="0" r="6" fill="var(--ink)" />
     </svg>
   );
 }
@@ -721,7 +907,8 @@ export function Badge({ name, score, traits }: Of<"badge">) {
 
 // ---- the switch ----------------------------------------------------------------------------
 
-export function Graphic({ chart }: { chart: SlideChart }): ReactNode {
+/** `delay` is when the slide's clock starts (ms after mount): the graphics that run on it wait for the figure to land. */
+export function Graphic({ chart, delay = 0 }: { chart: SlideChart; delay?: number }): ReactNode {
   switch (chart.kind) {
     case "ridge":
       return <Ridge values={chart.values} />;
@@ -734,7 +921,7 @@ export function Graphic({ chart }: { chart: SlideChart }): ReactNode {
     case "tower":
       return <Tower {...chart} />;
     case "dial":
-      return <Dial {...chart} />;
+      return <Dial {...chart} delay={delay} />;
     case "tiles":
       return <Tiles rows={chart.rows} />;
     case "podium":
@@ -748,7 +935,7 @@ export function Graphic({ chart }: { chart: SlideChart }): ReactNode {
     case "spike":
       return <Spike {...chart} />;
     case "spokes":
-      return <Spokes values={chart.values} />;
+      return <Spokes values={chart.values} delay={delay} />;
     case "strip":
       return <DayStrip values={chart.values} />;
     case "donut":

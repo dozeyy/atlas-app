@@ -266,6 +266,7 @@ fn wrapped_habits_split_helper_work_from_the_chats_and_find_the_busiest_crowd() 
     let big = h.biggest.expect("a chat");
     assert_eq!(big.session_id, by_tokens.rows[0].session_id);
     assert_eq!(big.tokens.total, 4721);
+    assert_eq!(h.chat_tokens, rows.iter().map(|r| r.tokens.total).sum::<u64>(), "the average's numerator covers the same five chats");
 
     // A range with nothing in it says so instead of inventing a chat.
     let none = fx.engine.wrapped_habits("2001-01-01", "2001-01-02").unwrap();
@@ -288,6 +289,32 @@ fn wrapped_habits_leave_out_chats_that_are_gone_from_disk() {
     assert_ne!(h.biggest.as_ref().map(|r| r.session_id.as_str()), Some(SA), "nor can it be the biggest");
     // Tokens are what was spent, whether or not the transcript survives.
     assert_eq!(h.all_tokens, fx.one("SELECT SUM(input+output+cw5m+cw1h) FROM messages") as u64);
+    // But the per-chat average covers the four chats it counts: numerator and denominator are the
+    // same set, so the chat that is gone does not inflate it.
+    let present = fx.one("SELECT SUM(input+output+cw5m+cw1h) FROM session_model m JOIN sessions s ON s.session_id = m.session_id WHERE s.missing = 0") as u64;
+    assert_eq!(h.chat_tokens, present);
+    assert!(h.chat_tokens < h.all_tokens, "the gone chat's tokens are in the total, not in the average");
+}
+
+#[test]
+fn the_biggest_chat_breaks_a_tie_on_the_older_chat_then_the_id() {
+    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let c = rw(&fx);
+    // Make every chat spend the same: one session_model row each, equal tokens.
+    c.execute_batch(
+        "DELETE FROM session_model; \
+         INSERT INTO session_model (session_id, model, speed, geo, service_tier, price_tier, input, output, cw5m, cw1h, cr, web_search, web_fetch, messages) \
+         SELECT session_id, 'claude-opus-5-5', 'standard', '', 'standard', 0, 100, 0, 0, 0, 0, 0, 0, messages FROM sessions;",
+    )
+    .unwrap();
+    let oldest: String = c.query_row("SELECT session_id FROM sessions ORDER BY first_ts ASC, session_id ASC LIMIT 1", [], |r| r.get(0)).unwrap();
+    let h = fx.engine.wrapped_habits("2000-01-01", "2100-12-31").unwrap();
+    assert_eq!(h.biggest.map(|r| r.session_id), Some(oldest.clone()), "the older chat wins a tie, like the most-helpers rule");
+    // Same start too: the smaller id wins.
+    c.execute("UPDATE sessions SET first_ts = (SELECT MAX(first_ts) FROM sessions)", []).unwrap();
+    let smallest: String = c.query_row("SELECT MIN(session_id) FROM sessions", [], |r| r.get(0)).unwrap();
+    let h = fx.engine.wrapped_habits("2000-01-01", "2100-12-31").unwrap();
+    assert_eq!(h.biggest.map(|r| r.session_id), Some(smallest));
 }
 
 #[test]

@@ -102,7 +102,7 @@ export function SlideView({ slide, index, lead = 0 }: { slide: SlideSpec; index:
       </div>
       {slide.chart && (
         <div className="wr-gfx" data-kind={slide.chart.kind}>
-          <Graphic chart={slide.chart} />
+          <Graphic chart={slide.chart} delay={lead + figureDelay(slide) + 120} />
         </div>
       )}
     </div>

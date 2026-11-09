@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { PointerEvent } from "react";
 import { SidebarSimple } from "@phosphor-icons/react";
 import { AppMenu } from "./AppMenu";
 import { IconButton } from "./controls";
@@ -87,14 +88,18 @@ function CaptionButtons() {
   }, [backend]);
 
   const act = (a: "minimize" | "toggle-maximize" | "close") => () => void backend.windowControl(a).catch(() => {});
+  // A mouse press must not leave a caption button holding keyboard focus: after a minimize and a
+  // restore, Space would press it again instead of going to the page. (Keyboard use never fires a
+  // pointer-up, so a Tab-focused button keeps its focus.)
+  const letGo = (e: PointerEvent<HTMLButtonElement>) => e.currentTarget.blur();
   return (
     <div className="caption-buttons">
-      <button type="button" className="caption-btn" aria-label="Minimize" onClick={act("minimize")}>
+      <button type="button" className="caption-btn" aria-label="Minimize" onClick={act("minimize")} onPointerUp={letGo}>
         <svg {...GLYPH}>
           <path d="M0 5.5h10" />
         </svg>
       </button>
-      <button type="button" className="caption-btn" aria-label={maximized ? "Restore" : "Maximize"} onClick={act("toggle-maximize")}>
+      <button type="button" className="caption-btn" aria-label={maximized ? "Restore" : "Maximize"} onClick={act("toggle-maximize")} onPointerUp={letGo}>
         {maximized ? (
           <svg {...GLYPH}>
             <path d="M2.5 2.5V.5h7v7h-2" />
@@ -106,7 +111,7 @@ function CaptionButtons() {
           </svg>
         )}
       </button>
-      <button type="button" className="caption-btn caption-close" aria-label="Close" onClick={act("close")}>
+      <button type="button" className="caption-btn caption-close" aria-label="Close" onClick={act("close")} onPointerUp={letGo}>
         <svg {...GLYPH}>
           <path d="M0 0l10 10M10 0L0 10" />
         </svg>

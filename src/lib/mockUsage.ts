@@ -592,7 +592,7 @@ export class MockUsage {
       if (s.agents.length > 0 && (!most || s.agents.length > most.agents.length || (s.agents.length === most.agents.length && s.startedAt < most.startedAt))) most = s;
     }
     let big: MockSession | null = null;
-    for (const s of list) if (!big || s.tokens.total > big.tokens.total) big = s;
+    for (const s of list) if (!big || s.tokens.total > big.tokens.total || (s.tokens.total === big.tokens.total && s.startedAt < big.startedAt)) big = s;
     return {
       biggest: big ? publicRow(big) : null,
       chats: list.length,
@@ -601,6 +601,7 @@ export class MockUsage {
       allTokens: list.reduce((n, s) => n + s.tokens.total, 0),
       helperTokens,
       mostHelpers: most ? publicRow(most) : null,
+      chatTokens: list.reduce((n, s) => n + s.tokens.total, 0),
     };
   }
 
