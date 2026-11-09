@@ -188,25 +188,92 @@ pub struct SaveReply {
 
 /// The editable text of one item. Text holding secrets is left out until `reveal`.
 #[tauri::command]
-pub async fn setup_item_raw(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, reveal: Option<bool>) -> Result<RawEdit, String> {
+pub async fn setup_item_raw(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, reveal: Option<bool>, file: Option<String>) -> Result<RawEdit, String> {
     let (st, hub) = (state.inner().clone(), hub.inner().clone());
-    blocking(move || hub.current(&app, &st)?.read_raw(&id, reveal.unwrap_or(false)).map_err(|e| e.message())).await
+    blocking(move || hub.current(&app, &st)?.read_raw_file(&id, file.as_deref(), reveal.unwrap_or(false)).map_err(|e| e.message())).await
 }
 
 /// What is wrong with `text` as the new content of this item (empty = fine).
 #[tauri::command]
-pub async fn setup_validate(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, text: String) -> Result<Vec<Problem>, String> {
+pub async fn setup_validate(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, text: String, file: Option<String>) -> Result<Vec<Problem>, String> {
     let (st, hub) = (state.inner().clone(), hub.inner().clone());
-    blocking(move || hub.current(&app, &st)?.validate_text(&id, &text).map_err(|e| e.message())).await
+    blocking(move || hub.current(&app, &st)?.validate_text_file(&id, file.as_deref(), &text).map_err(|e| e.message())).await
+}
+
+/// The files inside a skill's folder (empty for anything else).
+#[tauri::command]
+pub async fn setup_skill_files(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String) -> Result<Vec<sw::SkillFile>, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || hub.current(&app, &st)?.skill_files(&id).map_err(|e| e.message())).await
+}
+
+/// Show an item's file in the file manager (`open` false) or open it in the default editor
+/// (`open` true). The page names an item id from the last scan, never a path; opening is
+/// limited to plain-text kinds so a script is never run by the default handler.
+#[tauri::command]
+pub async fn setup_open_file(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, file: Option<String>, open: bool) -> Result<(), String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || {
+        let path = hub.current(&app, &st)?.file_target(&id, file.as_deref()).map_err(|e| e.message())?;
+        if open { open_text_file(&path) } else { show_in_folder(&path) }
+    })
+    .await
+}
+
+const OPEN_EXTS: &[&str] = &["md", "markdown", "txt", "json", "jsonc", "yml", "yaml", "toml", "csv", "ini", "cfg"];
+
+/// Whether "open in default editor" may hand this file to the OS.
+pub(crate) fn may_open_as_text(path: &std::path::Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| OPEN_EXTS.contains(&e.to_ascii_lowercase().as_str()))
+}
+
+fn open_text_file(path: &std::path::Path) -> Result<(), String> {
+    if !may_open_as_text(path) {
+        return Err("Atlas only opens plain text files. Use Show in folder for this one.".into());
+    }
+    use std::process::Command;
+    #[cfg(windows)]
+    let r = Command::new("rundll32.exe").arg("url.dll,FileProtocolHandler").arg(path).spawn();
+    #[cfg(target_os = "macos")]
+    let r = Command::new("open").arg(path).spawn();
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let r = Command::new("xdg-open").arg(path).spawn();
+    r.map(|_| ()).map_err(|e| format!("Could not open the file: {e}"))
+}
+
+fn show_in_folder(path: &std::path::Path) -> Result<(), String> {
+    use std::process::Command;
+    #[cfg(windows)]
+    let r = Command::new("explorer.exe").arg(format!("/select,{}", path.display())).spawn();
+    #[cfg(target_os = "macos")]
+    let r = Command::new("open").arg("-R").arg(path).spawn();
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let r = Command::new("xdg-open").arg(path.parent().unwrap_or(path)).spawn();
+    r.map(|_| ()).map_err(|e| format!("Could not open the folder: {e}"))
+}
+
+/// Copy a skill under a new name into the user's own skills folder.
+#[tauri::command]
+pub async fn setup_duplicate(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, name: String) -> Result<sw::DuplicateOutcome, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || {
+        let i = st.setup_inputs(false).ok_or_else(|| "Your Claude folder is not ready yet.".to_string())?;
+        let out = hub.current(&app, &st)?.duplicate_skill(&id, &name, &i.root.dir).map_err(|e| e.message())?;
+        hub.refresh(&app, &st);
+        Ok(out)
+    })
+    .await
 }
 
 /// Save: backup, atomic write, read back. `force` overwrites a file that changed on disk.
 #[tauri::command]
-pub async fn setup_save(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, text: String, stamp: String, force: Option<bool>) -> Result<SaveReply, String> {
+// Each argument is one named field of the IPC call; bundling them would change the wire shape.
+#[allow(clippy::too_many_arguments)]
+pub async fn setup_save(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, text: String, stamp: String, force: Option<bool>, file: Option<String>) -> Result<SaveReply, String> {
     let (st, hub) = (state.inner().clone(), hub.inner().clone());
     blocking(move || {
         let d = hub.current(&app, &st)?;
-        let plan = d.save_plan(&id).map_err(|e| e.message())?;
+        let plan = d.save_plan_file(&id, file.as_deref()).map_err(|e| e.message())?;
         match sw::apply_save(&plan, &text, &stamp, force.unwrap_or(false), &backups_dir(&st)) {
             Ok(o) => {
                 hub.refresh(&app, &st);
@@ -277,4 +344,20 @@ pub async fn setup_validate_draft(state: Info<'_>, kind: String, name: String, e
         sw::validate_draft(&kind, &name, event.as_deref(), &text, &CreateCtx { root: &i.root.dir, claude_json: &i.root.claude_json }).map_err(|e| e.message())
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::may_open_as_text;
+    use std::path::Path;
+
+    #[test]
+    fn only_plain_text_files_are_handed_to_the_default_editor() {
+        for ok in ["a/SKILL.md", "x.JSON", "notes.txt", "c.yaml", "d.toml"] {
+            assert!(may_open_as_text(Path::new(ok)), "{ok}");
+        }
+        for no in ["run.ps1", "x.bat", "y.cmd", "z.exe", "s.sh", "a.js", "b.py", "noext", "link.lnk", "page.html", "x.vbs"] {
+            assert!(!may_open_as_text(Path::new(no)), "{no}");
+        }
+    }
 }

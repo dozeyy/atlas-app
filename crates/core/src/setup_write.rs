@@ -194,6 +194,12 @@ impl Discovery {
     }
 
     pub fn save_plan(&self, id: &str) -> Res<SavePlan> {
+        self.save_plan_file(id, None)
+    }
+
+    /// Like `save_plan`, but `file` (a path relative to the skill's folder, as listed by
+    /// `skill_files`) picks one of a skill's supporting files instead of its SKILL.md.
+    pub fn save_plan_file(&self, id: &str, file: Option<&str>) -> Res<SavePlan> {
         let (item, src, cap) = self.plan_unit(id)?;
         if let Some(why) = cap.locked {
             return refuse(why);
@@ -203,9 +209,19 @@ impl Discovery {
         }
         let (unit, language, folder_name) = match &src {
             SourceRef::File { path } => {
-                let folder = (item.kind == ItemKind::Skill).then(|| path.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned())).flatten();
-                (Unit::Path { path: path.clone(), is_dir: false }, language_of_path(path).to_string(), folder)
+                let target = match file {
+                    Some(rel) if item.kind == ItemKind::Skill => {
+                        let dir = path.parent().ok_or_else(|| WriteError::Refused("This skill has no folder.".into()))?;
+                        safe_join(dir, rel)?
+                    }
+                    Some(_) => return refuse("Only a skill has more than one file."),
+                    None => path.clone(),
+                };
+                let folder = (item.kind == ItemKind::Skill && target == *path).then(|| path.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned())).flatten();
+                let language = language_of_path(&target).to_string();
+                (Unit::Path { path: target, is_dir: false }, language, folder)
             }
+            SourceRef::JsonEntry { .. } if file.is_some() => return refuse("Only a skill has more than one file."),
             SourceRef::JsonEntry { file, pointer } => (Unit::Entry { file: file.clone(), pointer: pointer.clone() }, "json".to_string(), None),
             SourceRef::Text(_) => return refuse("There is no file on this computer to edit."),
         };
@@ -214,7 +230,11 @@ impl Discovery {
 
     /// The raw (unmasked) text for the editor. Only for items Atlas may edit.
     pub fn read_raw(&self, id: &str, reveal: bool) -> Res<RawEdit> {
-        let plan = self.save_plan(id)?;
+        self.read_raw_file(id, None, reveal)
+    }
+
+    pub fn read_raw_file(&self, id: &str, file: Option<&str>, reveal: bool) -> Res<RawEdit> {
+        let plan = self.save_plan_file(id, file)?;
         let raw = read_unit_text(&plan.unit).map_err(WriteError::Refused)?;
         let hidden = raw.has_secrets && !reveal;
         Ok(RawEdit {
@@ -232,9 +252,229 @@ impl Discovery {
     }
 
     pub fn validate_text(&self, id: &str, text: &str) -> Res<Vec<Problem>> {
-        let plan = self.save_plan(id)?;
+        self.validate_text_file(id, None, text)
+    }
+
+    pub fn validate_text_file(&self, id: &str, file: Option<&str>, text: &str) -> Res<Vec<Problem>> {
+        let plan = self.save_plan_file(id, file)?;
         Ok(validate(plan.kind, &plan.language, plan.folder_name.as_deref(), matches!(plan.unit, Unit::Entry { .. }), text))
     }
+
+    /// The files in a skill's folder: SKILL.md first, then the rest by path. Read only.
+    pub fn skill_files(&self, id: &str) -> Res<Vec<SkillFile>> {
+        let (item, src, _) = self.plan_unit(id)?;
+        let SourceRef::File { path } = &src else { return Ok(Vec::new()) };
+        if item.kind != ItemKind::Skill {
+            return Ok(Vec::new());
+        }
+        let dir = path.parent().ok_or_else(|| WriteError::Refused("This skill has no folder.".into()))?;
+        let main = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let mut out = Vec::new();
+        walk_skill(dir, "", 0, &mut out);
+        out.sort_by(|a, b| (b.rel == main).cmp(&(a.rel == main)).then_with(|| a.rel.to_lowercase().cmp(&b.rel.to_lowercase())));
+        for f in &mut out {
+            f.main = f.rel == main;
+        }
+        Ok(out)
+    }
+
+    /// The file on disk behind an item (or one of a skill's files) for "Show in folder" and
+    /// "Open in editor". Only what the scan found, so never a path the page made up.
+    pub fn file_target(&self, id: &str, file: Option<&str>) -> Res<PathBuf> {
+        let (item, src, _) = self.plan_unit(id)?;
+        let path = match &src {
+            SourceRef::File { path } => match file {
+                Some(rel) if item.kind == ItemKind::Skill => safe_join(path.parent().ok_or_else(|| WriteError::Refused("This skill has no folder.".into()))?, rel)?,
+                Some(_) => return refuse("Only a skill has more than one file."),
+                None => path.clone(),
+            },
+            SourceRef::JsonEntry { file, .. } => file.clone(),
+            SourceRef::Text(_) => return refuse("There is no file on this computer for this."),
+        };
+        if !path.is_file() {
+            return refuse("The file is gone.");
+        }
+        Ok(path)
+    }
+
+    /// Copy a skill into the user's own skills folder under a new name. The copy is built
+    /// beside its final place and moved in whole, and nothing existing is ever replaced.
+    pub fn duplicate_skill(&self, id: &str, new_name: &str, root: &Path) -> Res<DuplicateOutcome> {
+        let (item, src, _) = self.plan_unit(id)?;
+        let SourceRef::File { path } = &src else { return refuse("This skill has no folder to copy.") };
+        if item.kind != ItemKind::Skill {
+            return refuse("Only a skill can be duplicated.");
+        }
+        let name = new_name.trim();
+        if !valid_name(name) {
+            return refuse("Use lowercase letters, numbers and dashes for the name, like my-helper.");
+        }
+        let src_dir = path.parent().ok_or_else(|| WriteError::Refused("This skill has no folder.".into()))?;
+        let skills = root.join("skills");
+        let dest = skills.join(name);
+        if dest.exists() {
+            return refuse(format!("You already have a skill called {name}."));
+        }
+        check_write_allowed(&dest)?;
+        let (files, bytes) = tree_size(src_dir);
+        if files > DUP_MAX_FILES || bytes > DUP_MAX_BYTES {
+            return refuse("This skill is too big to copy here.");
+        }
+        fs::create_dir_all(&skills)?;
+        let tmp = skills.join(format!(".atlas-copy-{}-{}", now_ms(), COUNTER.fetch_add(1, Ordering::Relaxed) % 10_000));
+        check_write_allowed(&tmp)?;
+        let built = (|| -> Res<()> {
+            copy_tree(src_dir, &tmp, 0)?;
+            let main = tmp.join(path.file_name().unwrap_or_default());
+            if main.is_file() {
+                let old = String::from_utf8_lossy(&fs::read(&main)?).into_owned();
+                fs::write(&main, with_skill_name(&old, name))?;
+            }
+            if dest.exists() {
+                return refuse(format!("You already have a skill called {name}."));
+            }
+            fs::rename(&tmp, &dest)?;
+            Ok(())
+        })();
+        if built.is_err() {
+            let _ = fs::remove_dir_all(&tmp);
+        }
+        built?;
+        Ok(DuplicateOutcome { name: name.to_string(), path: crate::setup::display_path(&dest.join(path.file_name().unwrap_or_default())) })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFile {
+    /// Path inside the skill's folder, always with `/`.
+    pub rel: String,
+    pub size: u64,
+    pub language: String,
+    /// SKILL.md itself.
+    pub main: bool,
+    /// Text Atlas will open in the editor.
+    pub editable: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateOutcome {
+    pub name: String,
+    pub path: String,
+}
+
+const SKILL_FILES_MAX: usize = 80;
+const SKILL_DEPTH_MAX: usize = 4;
+const DUP_MAX_FILES: u64 = 400;
+const DUP_MAX_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Extensions Atlas treats as text without opening the file (the editor still refuses a
+/// file with binary content when it is opened).
+fn is_text_name(name: &str) -> bool {
+    match Path::new(name).extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()) {
+        None => true,
+        Some(e) => matches!(e.as_str(), "md" | "markdown" | "txt" | "json" | "jsonc" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "sh" | "bash" | "ps1" | "py" | "yml" | "yaml" | "toml" | "csv" | "html" | "css" | "xml" | "ini" | "cfg" | "rb" | "go" | "rs" | "lua"),
+    }
+}
+
+fn walk_skill(dir: &Path, rel: &str, depth: usize, out: &mut Vec<SkillFile>) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        if out.len() >= SKILL_FILES_MAX {
+            return;
+        }
+        let name = e.file_name().to_string_lossy().into_owned();
+        let Ok(ft) = e.file_type() else { continue };
+        let here = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
+        if ft.is_dir() {
+            if depth < SKILL_DEPTH_MAX && name != ".git" && name != "node_modules" {
+                walk_skill(&e.path(), &here, depth + 1, out);
+            }
+        } else if ft.is_file() {
+            let size = e.metadata().map(|m| m.len()).unwrap_or(0);
+            out.push(SkillFile { language: language_of_path(&e.path()).to_string(), editable: is_text_name(&name) && size <= EDIT_CAP, rel: here, size, main: false });
+        }
+    }
+}
+
+fn tree_size(p: &Path) -> (u64, u64) {
+    let (mut files, mut bytes) = (0, 0);
+    let mut stack = vec![p.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            match e.metadata() {
+                Ok(m) if m.is_dir() => stack.push(e.path()),
+                Ok(m) => {
+                    files += 1;
+                    bytes += m.len();
+                }
+                Err(_) => {}
+            }
+            if files > DUP_MAX_FILES || bytes > DUP_MAX_BYTES {
+                return (files, bytes);
+            }
+        }
+    }
+    (files, bytes)
+}
+
+/// `dir` + `rel`, refusing anything that could leave `dir`: an absolute path, `..`, a
+/// drive, or a link that points elsewhere.
+pub fn safe_join(dir: &Path, rel: &str) -> Res<PathBuf> {
+    let bad = || WriteError::Refused("That file is not inside this skill.".into());
+    if rel.is_empty() || rel.contains('\0') {
+        return Err(bad());
+    }
+    let mut out = dir.to_path_buf();
+    for part in rel.split(['/', '\\']) {
+        if part.is_empty() || part == "." || part == ".." || part.contains(':') {
+            return Err(bad());
+        }
+        out.push(part);
+    }
+    if let (Ok(real), Ok(base)) = (fs::canonicalize(&out), fs::canonicalize(dir))
+        && !real.starts_with(&base)
+    {
+        return Err(bad());
+    }
+    Ok(out)
+}
+
+/// Sets `name:` in a SKILL.md's frontmatter (adds it when missing). Text with no
+/// frontmatter is returned as it was.
+pub fn with_skill_name(text: &str, name: &str) -> String {
+    let (bom, body) = match text.strip_prefix('\u{feff}') {
+        Some(b) => ("\u{feff}", b),
+        None => ("", text),
+    };
+    let lines: Vec<&str> = body.split_inclusive('\n').collect();
+    if lines.first().is_none_or(|l| l.trim_end() != "---") {
+        return text.to_string();
+    }
+    let eol = |l: &str| if l.ends_with("\r\n") { "\r\n" } else { "\n" };
+    let mut out = String::from(bom);
+    let mut done = false;
+    let mut closed = false;
+    for (i, l) in lines.iter().enumerate() {
+        let t = l.trim_end();
+        if i > 0 && !closed && t == "---" {
+            closed = true;
+            if !done {
+                out.push_str(&format!("name: {name}{}", eol(l)));
+                done = true;
+            }
+        }
+        let is_name = i > 0 && !closed && !done && t.strip_prefix("name").is_some_and(|r| r.trim_start().starts_with(':'));
+        if is_name {
+            out.push_str(&format!("name: {name}{}", eol(l)));
+            done = true;
+        } else {
+            out.push_str(l);
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, Serialize)]
