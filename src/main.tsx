@@ -7,6 +7,7 @@ import { AtlasProvider } from "./state/AtlasProvider";
 import { getBackend } from "./lib/ipc";
 import { applyBoot } from "./lib/theme";
 import { armIntro, installIntroReveal } from "./lib/intro";
+import { installInputModality } from "./lib/inputModality";
 import { startSetup } from "./state/setupStore";
 
 const backend = getBackend();
@@ -16,6 +17,7 @@ const backend = getBackend();
 applyBoot(backend.boot());
 armIntro();
 installIntroReveal();
+installInputModality();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

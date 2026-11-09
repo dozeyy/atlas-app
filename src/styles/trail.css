@@ -493,10 +493,9 @@
 .app-menu-item[aria-expanded="true"] {
   background: var(--raised);
 }
-.app-menu-item:focus-visible {
+html[data-input="keyboard"] .app-menu-item:focus-visible {
   background: var(--raised);
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline: none;
 }
 html.reduced .app-menu {
   animation: none;
@@ -728,8 +727,78 @@ html.reduced .side-main {
 .side-collapsed .nav-settings-row .nav-solo {
   margin-left: 0;
 }
+.nav-settings-row {
+  align-items: center;
+  gap: 4px;
+}
 .nav-settings-row .nav-item {
   width: 36px;
+}
+/* Today readout: fills the foot between the update icon and Settings; hidden when folded. */
+.today-stat {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: left;
+  container-type: inline-size;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.today-stat:hover {
+  background: color-mix(in srgb, var(--raised) 80%, transparent);
+}
+.today-face {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  height: 100%;
+  padding: 0 8px 0 10px;
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.today-stat:active .today-face {
+  transform: scale(var(--press-scale));
+}
+.today-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.today-label {
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 500;
+}
+.today-value {
+  font-size: 15px;
+  line-height: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.today-spark {
+  flex: none;
+}
+.today-base {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.today-area {
+  fill: var(--accent-tint);
+  stroke: none;
+}
+@container (max-width: 96px) {
+  .today-spark {
+    display: none;
+  }
+}
+.side-collapsed .today-stat {
+  display: none;
 }
 .nav-settings-row .nav-face {
   justify-content: center;
@@ -1065,9 +1134,9 @@ svg.chart {
 .chart-wrap {
   position: relative;
 }
-.chart-wrap:focus-visible,
-.chart-focus:focus-visible {
-  outline: 2px solid var(--accent-text);
+html[data-input="keyboard"] .chart-wrap:focus-visible,
+html[data-input="keyboard"] .chart-focus:focus-visible {
+  outline: 2px solid var(--focus-ring);
   outline-offset: 4px;
   border-radius: 6px;
 }
@@ -1380,8 +1449,8 @@ svg.chart {
 .item-wrap:hover .x-del-face {
   translate: 0 var(--lift);
 }
-.x-del:focus-visible {
-  outline: 2px solid var(--focus, var(--accent));
+html[data-input="keyboard"] .x-del:focus-visible {
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -1603,8 +1672,8 @@ html.reduced .nav-item:active .nav-face {
 .rcpt-line-btn:hover {
   background: var(--raised);
 }
-.rcpt-line-btn:focus-visible {
-  outline: 2px solid var(--accent-text);
+html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 .rcpt-bar > i {
@@ -1916,8 +1985,8 @@ html.reduced .map-node:focus-visible .map-body {
   color: var(--info);
   cursor: pointer;
 }
-.upd-btn:focus-visible {
-  outline: 2px solid var(--info);
+html[data-input="keyboard"] .upd-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .upd-face {
