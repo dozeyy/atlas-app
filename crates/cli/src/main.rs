@@ -79,11 +79,23 @@ fn words(opts: &mut Opts, raw: &[String]) {
     let mut main: Vec<String> = Vec::new();
     let mut other: Vec<String> = Vec::new();
     let mut after_vs = false;
+    let mut joining = false; // "2026-11-01 to 2026-11-07" is one range, not a comparison
+    let is_date = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok();
     for w in raw.iter().flat_map(|a| a.split_whitespace()).map(|w| w.to_lowercase()) {
         let w = w.trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '.').to_string();
+        let list = if after_vs { &mut other } else { &mut main };
+        if joining && is_date(&w) {
+            let last = list.pop().unwrap_or_default();
+            list.push(format!("{last}..{w}"));
+            joining = false;
+            continue;
+        }
+        joining = false;
         match w.as_str() {
             "" => {}
-            "vs" | "versus" | "compared" | "compare" | "against" | "to" | "and" if !main.is_empty() => after_vs = true,
+            "to" | "through" | "until" | "thru" if list.last().is_some_and(|l| is_date(l)) => joining = true,
+            "to" => {}
+            "vs" | "versus" | "compared" | "compare" | "against" | "and" if !main.is_empty() => after_vs = true,
             "chat" | "session" | "conversation" | "thread" => opts.chat = true,
             "project" | "repo" | "folder" | "workspace" => opts.project = true,
             "this" if !after_vs => {}
@@ -392,6 +404,19 @@ mod tests {
         assert_eq!((o.span.as_deref(), o.vs.as_deref()), (Some("last-week"), Some("week")));
         let o = opts(&["week", "--vs", "last-week", "--project=atlas", "--top", "3"]);
         assert_eq!((o.vs.as_deref(), o.project_name.as_deref(), o.top), (Some("last-week"), Some("atlas"), 3));
+    }
+
+    #[test]
+    fn date_to_date_is_one_range_not_a_comparison() {
+        let o = opts(&["usage", "2026-11-01", "to", "2026-11-07"]);
+        assert_eq!(o.span.as_deref(), Some("2026-11-01..2026-11-07"));
+        assert_eq!(o.vs, None);
+        let o = opts(&["this week compared to last week"]);
+        assert_eq!(o.span.as_deref(), Some("week"));
+        assert_eq!(o.vs.as_deref(), Some("last-week"));
+        let o = opts(&["today and yesterday"]);
+        assert_eq!(o.span.as_deref(), Some("today"));
+        assert_eq!(o.vs.as_deref(), Some("yesterday"));
     }
 
     #[test]

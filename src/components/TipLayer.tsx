@@ -102,8 +102,12 @@ export function TipLayer() {
     };
 
     function show(el: Element) {
+      if (!el.isConnected) {
+        if (el === target) release(); // removed during the show delay: let it go now
+        return;
+      }
       const text = textOf(el).trim();
-      if (!text || !el.isConnected) return;
+      if (!text) return;
       const [first, ...others] = text.split("\n");
       head.textContent = first;
       rest.textContent = others.join("\n");
