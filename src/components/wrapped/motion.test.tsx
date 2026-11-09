@@ -1,11 +1,11 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { COUNT_BEAT, COUNT_FIRST, COUNT_STEP, figureDelay, SlideView } from "./Slide";
 import { formatCount, parseCount, SPARKS, Words } from "./motion";
 import { CURTAIN_LEAD, transitionFor } from "./Story";
 import type { Slide } from "../../lib/wrappedModel";
 
-const base: Slide = { id: "x", tone: "plain", kicker: "K", figure: "73", line: "One two three.", unit: "days" };
+const base: Slide = { id: "x", tone: "plain", layout: "stack", kicker: "K", figure: "73", line: "One two three.", unit: "days" };
 
 describe("parseCount and formatCount", () => {
   it("reads compact figures, commas and decimals, and nothing else", () => {
@@ -13,6 +13,11 @@ describe("parseCount and formatCount", () => {
     expect(parseCount("12.3k")).toEqual({ n: 12.3, decimals: 1, commas: false, suffix: "k" });
     expect(parseCount("1,234")).toEqual({ n: 1234, decimals: 0, commas: true, suffix: "" });
     for (const s of ["Jul 26", "10 d 15 h", "Tuesday", "0", "", "9 pm"]) expect(parseCount(s)).toBeNull();
+    // A year is a label, not a quantity; a thousands-separated or suffixed number near it still counts.
+    for (const s of ["2026", "1999", "2099"]) expect(parseCount(s), s).toBeNull();
+    expect(parseCount("2,026")).not.toBeNull();
+    expect(parseCount("2026k")).not.toBeNull();
+    expect(parseCount("2300")).not.toBeNull();
   });
   it("formats every step like the final figure", () => {
     const p = parseCount("12.3k")!;
@@ -34,11 +39,11 @@ describe("transitionFor", () => {
 });
 
 describe("figureDelay", () => {
-  it("lands at once, except the coder type (a drumroll) and the countdown (rows first)", () => {
+  it("lands at once, except the coder type (a drumroll) and the podium (counted down first)", () => {
     expect(figureDelay(base)).toBeLessThan(300);
     expect(figureDelay({ ...base, id: "type" })).toBeGreaterThan(1000);
     const rows = [1, 2, 3, 4, 5].map((n) => ({ label: `s${n}`, value: n }));
-    const count = figureDelay({ ...base, chart: { kind: "countdown", rows } });
+    const count = figureDelay({ ...base, chart: { kind: "podium", rows } });
     expect(count).toBe(COUNT_FIRST + 4 * COUNT_STEP + COUNT_BEAT + 120);
   });
 });
@@ -76,7 +81,7 @@ describe("SlideView", () => {
     expect(el.style.getPropertyValue("--fd")).toMatch(/^\d+ms$/);
   });
   it("puts the one celebration on the card slide only", () => {
-    const card = { title: "T", tokens: "1M", unit: "tokens", days: "1 active day of 1", tiles: [], range: "a to b", day: "2026-11-08" };
+    const card = { title: "T", tokens: "1M", unit: "tokens", days: "1 active day of 1", tiles: [], range: "a to b", day: "2026-11-08", ridge: [0, 1] };
     const { container, rerender } = render(<SlideView slide={{ ...base, id: "card", card }} index={16} />);
     expect(container.querySelectorAll(".wr-spark")).toHaveLength(SPARKS.length);
     expect(container.querySelectorAll(".wr-ring")).toHaveLength(3);

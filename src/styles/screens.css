@@ -359,17 +359,117 @@
 .wr-cover-fig {
   display: block;
 }
-.wr-chart {
-  margin-top: auto;
-  padding-top: 12px;
+/* A slide is two halves: .wr-text (kicker, figure, comparison, sentence) and .wr-gfx (the hero
+   graphic). data-layout says how they sit: split (words left), splitR (words right), center,
+   stack (words over a wide graphic) and over (a full-bleed graphic with the words laid on it). */
+.wr-slide[data-layout] {
+  display: grid;
+  align-items: center;
+  column-gap: clamp(20px, 4cqi, 48px);
+  row-gap: 12px;
+  height: 100%;
+  min-height: 400px;
+  max-height: 600px;
+  overflow: hidden;
 }
+.wr-text {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+@media (max-height: 720px) {
+  .wr-slide[data-layout] {
+    row-gap: 8px;
+    min-height: 340px;
+  }
+  .wr-text {
+    gap: 8px;
+  }
+}
+.wr-slide[data-layout="split"] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+}
+.wr-slide[data-layout="splitR"] {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+}
+.wr-slide[data-layout="splitR"] > .wr-gfx {
+  order: -1;
+}
+.wr-slide[data-layout="center"],
+.wr-slide[data-layout="stack"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: start;
+}
+.wr-slide[data-layout="stack"]:not(:has(> .wr-gfx)) {
+  grid-template-rows: auto;
+  align-content: center;
+}
+.wr-slide[data-layout="center"] .wr-text {
+  align-items: center;
+  text-align: center;
+}
+.wr-slide[data-layout="center"] .wr-compare,
+.wr-slide[data-layout="center"] .wr-aside {
+  align-self: center;
+}
+.wr-slide[data-layout="over"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: start;
+}
+.wr-slide[data-layout="over"] > .wr-text,
+.wr-slide[data-layout="over"] > .wr-gfx {
+  grid-area: 1 / 1;
+}
+.wr-slide[data-layout="over"] > .wr-text {
+  max-width: 62%;
+}
+/* The graphic fills its half; whatever it holds is laid out inside that box and cannot push the slide. */
+.wr-gfx {
+  position: relative;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 0;
+}
+.wr-gfx > * {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.wr-slide[data-layout="over"] > .wr-gfx {
+  z-index: 0;
+}
+/* The comparison: one short line under the big number. */
+.wr-compare {
+  align-self: flex-start;
+  max-width: 100%;
+  margin: 0;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  text-wrap: balance;
+  cursor: help;
+}
+
 /* A figure or a line with a "why" in its hover: the pointer says so, and a keyboard can land on it. */
 .wr-fig[title],
 .wr-fig[data-tip],
-.wr-aside {
+.wr-aside,
+.wr-card-note[title] {
   cursor: help;
 }
 .wr-fig:focus-visible,
+.wr-compare:focus-visible,
+.wr-card-note:focus-visible,
 .wr-aside:focus-visible {
   outline: 2px solid var(--accent-text);
   outline-offset: 4px;
@@ -383,77 +483,6 @@
   color: var(--ink-2);
   font-size: 14px;
   line-height: 20px;
-}
-
-/* The countdown: rows read 1 to 5 down the page and land 5 first, so the favorite arrives last. */
-.wr-count {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.wr-count > li {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 2px 12px;
-}
-.wr-count .wr-count-bar {
-  grid-column: 2 / 4;
-}
-.wr-rank {
-  font-size: 22px;
-  line-height: 24px;
-  font-weight: 760;
-  color: var(--ink-2);
-  text-align: right;
-}
-.wr-count > li[data-first] .wr-rank {
-  color: var(--accent-text);
-  font-size: 28px;
-}
-/* Rows arrive 5, 4, 3, 2 with a gap each (--cs), then a held breath (--cb) before number one slams in. */
-@keyframes wr-count-in {
-  from {
-    opacity: 0;
-    translate: 40px 0;
-    scale: 0.96;
-  }
-}
-@keyframes wr-count-win {
-  from {
-    opacity: 0;
-    translate: 0 20px;
-    scale: 0.78;
-  }
-  55% {
-    opacity: 1;
-    scale: 1.07;
-  }
-  80% {
-    scale: 0.98;
-  }
-}
-.wr-count > li {
-  transform-origin: left center;
-}
-.intro .wr-count > li {
-  animation: wr-count-in 460ms var(--ease-out) backwards;
-  animation-delay: calc(var(--t0, 0ms) + var(--cf, 640ms) + var(--r, 0) * var(--cs, 460ms));
-}
-.intro .wr-count > li[data-first] {
-  animation-name: wr-count-win;
-  animation-duration: 680ms;
-  animation-timing-function: var(--ease-spring);
-  animation-delay: calc(var(--t0, 0ms) + var(--cf, 640ms) + var(--r, 0) * var(--cs, 460ms) + var(--cb, 420ms));
-}
-.intro .wr-chart .wr-count .share-bar > i {
-  animation-delay: calc(var(--t0, 0ms) + var(--cf, 640ms) + var(--r, 0) * var(--cs, 460ms) + 160ms);
-}
-.intro .wr-chart .wr-count > li[data-first] .share-bar > i {
-  animation-delay: calc(var(--t0, 0ms) + var(--cf, 640ms) + var(--r, 0) * var(--cs, 460ms) + var(--cb, 420ms) + 200ms);
 }
 
 /* Share card: the canvas is the saved picture, shown at a size that never needs a scroll. */
@@ -510,41 +539,621 @@
   color: var(--danger);
 }
 
-.wr-bar {
-  fill: var(--bar-rest);
+/* ---- Wrapped: the hero graphics --------------------------------------------------------------
+   One hand-written SVG (or CSS-drawn HTML where there is text to set) per slide. Every piece that
+   moves carries data-a and its order in --i. Motion is transform and opacity (translate, scale,
+   rotate, opacity) except the line draws, which animate stroke-dashoffset on a pathLength of 1
+   (the one allowed exception). Reduced motion turns every data-a arrival into a fade. */
+.wr-gfx {
+  --g0: calc(var(--t0, 0ms) + var(--fd, 140ms) + 120ms);
+}
+.g-svg {
+  display: block;
+  overflow: visible;
+}
+.g-text {
+  fill: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+}
+.g-text-2 {
+  fill: var(--ink-2);
+  font-weight: 500;
+}
+.wr-gfx svg [data-a] {
   transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.intro :where(.wr-gfx) [data-a] {
+  animation-duration: 560ms;
+  animation-timing-function: var(--ease-out);
+  animation-fill-mode: backwards;
+  animation-delay: calc(var(--g0) + var(--i, 0) * var(--gs, 45ms));
+}
+
+/* Lines that draw themselves. */
+.intro .g-draw {
+  animation-name: g-draw;
+  animation-duration: 1100ms;
+  animation-timing-function: cubic-bezier(0.45, 0, 0.2, 1);
+}
+.intro .g-draw-slow {
+  animation-duration: 1500ms;
+}
+.intro .g-draw-dial {
+  animation-duration: 900ms;
+  --gs: 380ms;
+}
+.g-draw:not([stroke-dasharray]) {
+  stroke-dasharray: 1 1;
+}
+@keyframes g-draw {
+  from {
+    stroke-dashoffset: var(--dash, 1);
+  }
+}
+/* Things that pop, rise, grow, fall or fade in. */
+.intro .g-pop {
+  animation-name: g-pop;
+  animation-timing-function: var(--ease-spring);
+}
+.intro .g-pop-end {
+  animation-delay: calc(var(--g0) + 1000ms);
+}
+@keyframes g-pop {
+  from {
+    opacity: 0;
+    scale: 0.2;
+  }
+}
+.intro .g-rise {
+  animation-name: g-rise;
+  animation-duration: 700ms;
+  animation-timing-function: var(--ease-spring);
+}
+.g-rise,
+.g-spike-bar,
+.g-spoke,
+.g-ridge-back,
+.g-ridge-mid,
+.g-ridge-area,
+.g-cell-up {
+  transform-origin: 50% 100% !important;
+}
+@keyframes g-rise {
+  from {
+    opacity: 0;
+    scale: 1 0;
+  }
+}
+.intro .g-fade {
+  animation-name: t-fade;
+  animation-duration: 500ms;
+}
+
+/* ridge */
+.g-ridge {
+  inset: auto 0 0 0;
+  height: auto;
+  aspect-ratio: 1000 / 300;
+}
+.g-ridge svg,
+.g-spike svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.g-ridge-back {
+  fill: var(--chart-2);
+  opacity: 0.16;
+}
+.g-ridge-mid {
+  fill: var(--chart-3);
+  opacity: 0.26;
+}
+.g-ridge-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.intro .g-ridge-back,
+.intro .g-ridge-mid,
+.intro .g-ridge-area {
+  animation-name: g-rise;
+  animation-duration: 900ms;
+  --gs: 140ms;
+}
+.intro .g-ridge-area {
+  animation-delay: calc(var(--g0) + 300ms);
+}
+.g-summit {
+  position: absolute;
+  display: block;
+  translate: -50% -62%;
+  line-height: 0;
+}
+.intro .g-summit {
+  animation-name: g-summit;
+  animation-duration: 700ms;
+  animation-timing-function: var(--ease-spring);
+  animation-delay: calc(var(--g0) + 1100ms);
+}
+@keyframes g-summit {
+  from {
+    opacity: 0;
+    scale: 0.1;
+    rotate: -90deg;
+  }
+}
+
+/* spines */
+.intro .g-book {
+  animation-name: g-drop;
+  animation-duration: 520ms;
+  animation-timing-function: var(--ease-spring);
+  --gs: 80ms;
+}
+.g-book {
+  rotate: var(--tilt, 0deg);
+}
+@keyframes g-drop {
+  from {
+    opacity: 0;
+    translate: 0 -90px;
+  }
+}
+
+/* trail, heat, strip */
+.intro .g-cell {
+  animation-name: g-cell;
+  animation-duration: 420ms;
+  animation-timing-function: var(--ease-spring);
+  --gs: 18ms;
+}
+@keyframes g-cell {
+  from {
+    opacity: 0;
+    scale: 0.3;
+  }
+}
+.intro .g-cell-up {
+  animation-name: g-rise;
+  --gs: 26ms;
+}
+.intro .g-ring {
+  animation-name: t-fade;
+  animation-duration: 400ms;
+  --gs: 14ms;
+  animation-delay: calc(var(--g0) + 500ms + var(--i, 0) * var(--gs));
+}
+
+/* dial */
+.g-hand {
+  rotate: var(--turn, 0deg);
+  transform-box: view-box !important;
+  transform-origin: 50% 50% !important;
+}
+.intro .g-hand {
+  animation-name: g-hand;
+  animation-duration: 1500ms;
+  animation-timing-function: cubic-bezier(0.45, 0, 0.2, 1);
+  animation-delay: calc(var(--g0) + 200ms);
+}
+@keyframes g-hand {
+  from {
+    rotate: -360deg;
+  }
+}
+
+/* tiles */
+.g-tile {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 3px;
+}
+.g-tile-in {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 14px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--c) 24%, var(--surface));
+  box-shadow: inset 0 4px 0 var(--c);
+}
+.g-tile[data-first] .g-tile-in {
+  background: color-mix(in srgb, var(--accent) 34%, var(--surface));
+}
+/* A short tile (small window) puts name and share on one row instead of clipping the name away. */
+.g-tile {
+  container-type: size;
+}
+@container (max-height: 66px) {
+  .g-tile-in {
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 12px;
+  }
+  .g-tile-name {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .g-tile-pct {
+    flex: none;
+    font-size: 18px;
+  }
+}
+.g-tile-name {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-tile-pct {
+  color: var(--ink);
+  font-size: clamp(18px, 3.4cqi, 34px);
+  line-height: 1;
+  font-weight: 760;
+}
+.intro .g-tile {
+  animation-name: g-cell;
+  animation-duration: 520ms;
+  --gs: 110ms;
+}
+
+/* podium: counts down like the old list, third place first, the winner after a held breath */
+.g-podium {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.g-podium-row {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  gap: 10px;
+  min-height: 0;
+}
+.g-pod {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+.g-pod-name {
+  flex-shrink: 0;
+  text-align: center;
+  min-width: 0;
+}
+.g-pod-label {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-pod-note {
+  display: block;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 20px;
+}
+.g-pod-block {
+  display: flex;
+  justify-content: center;
+  flex-shrink: 1;
+  min-height: 44px;
+  padding-top: 8px;
+  border-radius: 14px 14px 4px 4px;
+  background: color-mix(in srgb, var(--slate) 34%, var(--surface));
   transform-origin: 50% 100%;
 }
-.wr-bar[data-peak] {
+.g-pod[data-first] .g-pod-block {
+  background: var(--accent);
+}
+.g-pod-num {
+  color: var(--ink);
+  font-size: 30px;
+  line-height: 36px;
+  font-weight: 760;
+}
+.g-pod[data-first] .g-pod-num {
+  color: var(--on-accent);
+}
+.g-podium-rest {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.g-podium-rest li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 100%;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--raised);
+  font-size: 14px;
+  line-height: 20px;
+}
+.g-podium-rest b {
+  color: var(--ink-2);
+  font-weight: 760;
+}
+.g-podium-rest span {
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-podium-rest i {
+  color: var(--ink-2);
+  font-style: normal;
+}
+.intro .wr-gfx .g-pod-block {
+  animation-name: g-rise;
+  animation-duration: 640ms;
+  animation-timing-function: var(--ease-spring);
+  animation-delay: calc(var(--t0, 0ms) + var(--cf, 640ms) + var(--r, 0) * var(--cs, 460ms));
+}
+.intro .wr-gfx .g-pod[data-first] .g-pod-block {
+  animation-delay: calc(var(--t0, 0ms) + var(--cf, 640ms) + var(--r, 0) * var(--cs, 460ms) + var(--cb, 420ms));
+}
+.intro .wr-gfx .g-pod-name {
+  animation-name: wr-land;
+  animation-duration: 480ms;
+  animation-delay: calc(var(--t0, 0ms) + var(--cf, 640ms) + var(--r, 0) * var(--cs, 460ms) + 260ms);
+}
+.intro .wr-gfx .g-pod[data-first] .g-pod-name {
+  animation-delay: calc(var(--t0, 0ms) + var(--cf, 640ms) + var(--r, 0) * var(--cs, 460ms) + var(--cb, 420ms) + 260ms);
+}
+.intro .wr-gfx .g-podium-rest li {
+  animation-name: wr-land;
+  animation-duration: 480ms;
+  animation-delay: calc(var(--t0, 0ms) + var(--cf, 640ms) + var(--r, 0) * var(--cs, 460ms));
+}
+
+/* lollipops */
+.g-stem {
+  transform-origin: 0 50% !important;
+}
+.intro .g-stem {
+  animation-name: g-stem;
+  animation-duration: 760ms;
+  --gs: 130ms;
+}
+@keyframes g-stem {
+  from {
+    scale: 0 1;
+  }
+}
+.intro .g-dot {
+  animation-name: g-dot;
+  animation-duration: 760ms;
+  --gs: 130ms;
+}
+@keyframes g-dot {
+  from {
+    opacity: 0;
+    translate: calc(var(--w) * -1) 0;
+    scale: 0.4;
+  }
+}
+.intro .g-dot-note {
+  animation-name: t-fade;
+  animation-duration: 400ms;
+  --gs: 130ms;
+  animation-delay: calc(var(--g0) + 600ms + var(--i, 0) * var(--gs));
+}
+
+/* burst */
+.intro .g-burst {
+  animation-name: g-burst;
+  animation-duration: 640ms;
+  animation-timing-function: var(--ease-spring);
+  --gs: 16ms;
+  animation-delay: calc(var(--g0) + 160ms + var(--i, 0) * var(--gs));
+}
+@keyframes g-burst {
+  from {
+    opacity: 0;
+    scale: 0;
+    translate: calc(var(--dx) * -1) calc(var(--dy) * -1);
+  }
+}
+
+/* bubbles */
+.intro .g-bubble {
+  animation-name: g-bubble;
+  animation-duration: 640ms;
+  animation-timing-function: var(--ease-spring);
+  --gs: 120ms;
+}
+@keyframes g-bubble {
+  from {
+    opacity: 0;
+    scale: 0.3;
+    translate: 0 28px;
+  }
+}
+
+/* spike */
+.g-spike {
+  inset: auto 0 0 0;
+  height: auto;
+  aspect-ratio: 1000 / 290;
+}
+.g-spike-bar {
+  fill: var(--bar-rest);
+}
+.g-spike-bar[data-peak] {
   fill: var(--accent);
 }
-.wr-bar[data-zero] {
+.g-spike-bar[data-zero] {
   fill: var(--heat-0);
 }
-.intro .wr-bar {
-  animation: t-grow 560ms var(--ease-spring) backwards;
-  animation-delay: calc(var(--t0, 0ms) + var(--fd, 140ms) + 200ms + min(var(--i, 0), 36) * 14ms);
+.intro .g-spike-bar {
+  animation-name: g-rise;
+  animation-duration: 640ms;
+  animation-timing-function: var(--ease-spring);
+  --gs: 40ms;
 }
-.wr-split {
+
+/* spokes */
+.intro .g-spoke {
+  animation-name: g-rise;
+  animation-duration: 560ms;
+  --gs: 140ms;
+}
+
+/* donut */
+.g-donut {
   display: flex;
-  gap: 3px;
-  height: 14px;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 3cqi, 28px);
+}
+.g-donut > svg {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 56%;
+  max-height: 100%;
+  aspect-ratio: 1;
+}
+.g-donut-pct {
+  fill: var(--ink);
+  font-size: 34px;
+  font-weight: 760;
+}
+.g-donut-key {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.g-donut-key li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 20px;
+}
+.g-donut-key i {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+.g-donut-key span {
   overflow: hidden;
-  border-radius: 7px;
+  color: var(--ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.wr-split > i {
+.g-donut-key b {
+  color: var(--ink-2);
+  font-weight: 700;
+}
+.intro .g-arc {
+  animation-name: g-draw;
+  animation-duration: 760ms;
+  --gs: 300ms;
+}
+.intro .g-donut-key li {
+  animation-name: wr-land;
+  animation-duration: 440ms;
+  --gs: 300ms;
+}
+
+/* badge */
+.g-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.g-badge > svg {
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: 420px;
+  min-height: 0;
+  overflow: visible;
+}
+.g-badge-ini {
+  fill: var(--on-accent);
+  font-size: 30px;
+  font-weight: 760;
+}
+.g-badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.g-badge-list li {
+  display: grid;
+  gap: 2px;
+  min-width: 128px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--raised);
+}
+.g-badge-list span {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 700;
+}
+.g-badge-list i {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  font-style: normal;
+}
+.g-badge-list em {
   display: block;
-  min-width: 6px;
-  border-radius: 3px;
-  transform-origin: left;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line-strong);
 }
-.intro .wr-split > i {
-  animation: t-segin 520ms var(--ease-expo) backwards;
-  animation-delay: calc(var(--t0, 0ms) + var(--fd, 140ms) + 200ms + var(--i, 0) * 40ms);
+.g-badge-list u {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
 }
-/* Ranked bars and split bars wait for their chart to land. */
-.intro .wr-chart .share-bar > i {
-  animation-delay: calc(var(--t0, 0ms) + var(--fd, 140ms) + 200ms + var(--i, 0) * 40ms);
+.intro .g-badge-list li {
+  animation-name: wr-land;
+  animation-duration: 480ms;
+  --gs: 140ms;
 }
 
 /* The story: progress, a stage that takes the rest of the page, and Back / Next. Never scrolls
@@ -625,9 +1234,9 @@
 }
 .wr-story-slide {
   display: flex;
+  align-items: center;
   justify-content: center;
   width: 100%;
-  margin: auto 0;
 }
 .wr-story-foot {
   display: flex;
@@ -738,12 +1347,8 @@
   animation: wr-land 480ms var(--ease-out) backwards;
   animation-delay: calc(var(--t0, 0ms) + var(--s, 0) * 80ms);
 }
-.wr-chart.wr-in,
 .wr-aside.wr-in {
   animation-delay: calc(var(--t0, 0ms) + var(--fd, 140ms) + 200ms);
-}
-.wr-chart[data-count].wr-in {
-  animation-delay: var(--t0, 0ms);
 }
 .wr-w {
   display: inline-block;
@@ -1011,10 +1616,8 @@ html.reduced .wr-unit,
 html.reduced .wr-fig,
 html.reduced .wr-card-pic,
 html.reduced .wr-prog-hit > i,
-html.reduced .intro .wr-bar,
-html.reduced .intro .wr-chart .share-bar > i,
-html.reduced .intro .wr-count > li,
-html.reduced .wr-split > i {
+html.reduced .intro :where(.wr-gfx) [data-a],
+html.reduced .wr-compare {
   animation-name: t-fade !important;
 }
 html.reduced .wr-curtain,

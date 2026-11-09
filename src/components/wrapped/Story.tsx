@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ArrowCounterClockwise } from "@phosphor-icons/react";
 import { Button } from "../controls";
@@ -18,6 +18,15 @@ export function transitionFor(index: number, last: number): Transition {
 
 /** Entrances wait this long (ms) while the curtain covers the stage; keep in step with wr-sweep. */
 export const CURTAIN_LEAD = 300;
+
+/** True when focus is there because of the keyboard (Tab), not because a mouse click left it on a button. */
+export function keyboardFocused(el: Element): boolean {
+  try {
+    return el.matches(":focus-visible");
+  } catch {
+    return false;
+  }
+}
 
 /** How long the stage hides its overflow after a change, so nothing in flight can raise a scrollbar. */
 const MOVING_MS = 1300;
@@ -44,22 +53,35 @@ export function Story({ cover, slides }: { cover: ReactNode; slides: Slide[] }) 
   const step = (by: number) => go(at.i + by);
 
   useEffect(() => {
+    let spaceDown = false;
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== " ") return;
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
-      // Space on a focused button or link presses it; do not also advance.
-      if (e.key === " " && t && (t.tagName === "BUTTON" || t.tagName === "A" || t.getAttribute("role") === "button")) return;
+      // Space on a control you Tabbed to presses it. A control a mouse click left focused (a title-bar
+      // or caption button) must not: Space belongs to the story, so it is swallowed there.
+      if (e.key === " " && t && t.closest('button, a, [role="button"]') && keyboardFocused(t)) return;
       if (document.querySelector('[role="dialog"],[role="alertdialog"]')) return;
       e.preventDefault();
+      if (e.key === " ") spaceDown = true;
       setAt((cur) => {
         const to = Math.min(last, Math.max(0, cur.i + (e.key === "ArrowLeft" ? -1 : 1)));
         return to === cur.i ? cur : { i: to, dir: to > cur.i ? "fwd" : "back" };
       });
     };
+    // The click a button makes on Space comes on key-up in some engines: that one is swallowed too.
+    const onUp = (e: KeyboardEvent) => {
+      if (e.key !== " " || !spaceDown) return;
+      spaceDown = false;
+      e.preventDefault();
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onUp);
+    };
   }, [last]);
 
   const first = useRef(true);

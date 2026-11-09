@@ -5,7 +5,7 @@ import { getBackend } from "../lib/ipc";
 import { cacheNotReady, useFetched, useUsageStatus } from "../lib/useUsage";
 import { useDaily } from "../lib/useDaily";
 import { loadWrapped } from "../lib/wrappedLoad";
-import { buildSlides, coverageLine } from "../lib/wrappedModel";
+import { buildSlides, rangeHint, rangeLabel } from "../lib/wrappedModel";
 import { compact, modelLabel, plural } from "../lib/usage";
 import { useAtlas } from "../state/AtlasProvider";
 import { PageTitle } from "../components/controls";
@@ -37,8 +37,8 @@ function Cover({ d }: { d: WrappedData }) {
             text={`${plural(d.sessions, "session")}. ${plural(d.activeDays, "active day")}.${d.streak > 1 ? ` ${plural(d.streak, "day")} in a row right now.` : ""} Ready?`}
           />
         </p>
-        <p className="max-w-[62ch] text-caption text-ink-2 wr-in" style={{ "--s": 9 } as CSSProperties}>
-          {coverageLine(d)}
+        <p className="wr-aside wr-in" style={{ "--s": 9 } as CSSProperties} title={rangeHint(d)} tabIndex={0}>
+          {rangeLabel(d)}
         </p>
       </div>
     </section>

@@ -591,7 +591,10 @@ export class MockUsage {
     for (const s of list) {
       if (s.agents.length > 0 && (!most || s.agents.length > most.agents.length || (s.agents.length === most.agents.length && s.startedAt < most.startedAt))) most = s;
     }
+    let big: MockSession | null = null;
+    for (const s of list) if (!big || s.tokens.total > big.tokens.total) big = s;
     return {
+      biggest: big ? publicRow(big) : null,
       chats: list.length,
       shortChats: list.filter((s) => s.durationMs < SHORT).length,
       longChats: list.filter((s) => s.durationMs >= LONG).length,

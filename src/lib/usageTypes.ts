@@ -170,6 +170,8 @@ export interface WrappedHabits {
   helperTokens: number;
   /** The chat that started the most helpers; null when no chat started one. */
   mostHelpers: SessionRow | null;
+  /** The chat with the most tokens in all (its whole length); null when the range has no chat. */
+  biggest: SessionRow | null;
 }
 
 export type ItemKind = "skill" | "agent" | "tool";
