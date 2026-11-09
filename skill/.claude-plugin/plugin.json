@@ -3,5 +3,7 @@
   "version": "0.1.0",
   "description": "Claude Code token usage in chat (this chat, a day, a week, a project, comparisons) with the same numbers as the Atlas app. /atlas or just ask.",
   "author": { "name": "Will Henry" },
+  "homepage": "https://github.com/dozeyy/atlas",
+  "repository": "https://github.com/dozeyy/atlas",
   "keywords": ["usage", "tokens", "cost", "atlas"]
 }

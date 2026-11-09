@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="60" viewBox="0 0 280 60" role="img" aria-label="Download Atlas">
+  <title>Download Atlas</title>
+  <rect width="280" height="60" rx="8" fill="#B4532F"/>
+  <rect x="0.5" y="0.5" width="279" height="59" rx="7.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.18"/>
+  <!-- arrow into a tray -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M52 19v17"/>
+    <path d="M44.5 29.5L52 37l7.5-7.5"/>
+    <path d="M43 43h18"/>
+  </g>
+  <text x="76" y="37" fill="#FFFFFF" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="0.2">Download Atlas</text>
+</svg>

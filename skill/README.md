@@ -28,25 +28,50 @@ significant digits (7.3k, 56.1M). Dollar figures are API-price estimates, not a 
 
 ## Install
 
-The skill needs the `atlas-usage` program (one small binary, built from `crates/cli`).
+In Claude Code:
 
-1. **Get `atlas-usage`** - either:
-   - build it: `cargo install --path crates/cli` from this repo (puts `atlas-usage` on
-     PATH via `~/.cargo/bin`), or
-   - take the prebuilt one from the `atlas-usage-<OS>` artifact of the repo's `build`
-     GitHub Action and put it on PATH (or in the skill's `bin/` folder, below).
-2. **Add the skill**, one of:
-   - **Personal skill:** copy `skill/skills/atlas/` to `~/.claude/skills/atlas/`. If
-     `atlas-usage` is not on PATH, put it at `~/.claude/skills/atlas/bin/atlas-usage`
-     (`atlas-usage.exe` on Windows).
-   - **Plugin:** `claude plugin marketplace add dozeyy/atlas` then
-     `claude plugin install atlas@atlas`. A plugin's `bin/` folder is on PATH while it is
-     enabled, so `atlas-usage` can also live in the plugin's `bin/`.
-   - **Try it without installing:** `claude --plugin-dir <this repo>/skill`.
+```
+/plugin marketplace add dozeyy/atlas
+/plugin install atlas@atlas
+```
+
+Then type `/atlas`. There is no binary to set up: the plugin's launcher uses the first of
+these it finds:
+
+1. `atlas-usage` on your PATH.
+2. A copy it saved earlier (in `cache/<plugin version>/`, in the plugin's data folder when
+   the shell has one, else inside the plugin's own folder).
+3. The Atlas app's copy, next to `atlas.exe` in its install folder (by default
+   `%LOCALAPPDATA%\Atlas\atlas-usage.exe`, Windows).
+4. Otherwise it downloads the right build for your computer, once, after the first release
+   exists: from the release tagged `v<plugin version>` of `dozeyy/atlas` (with `gh` if you are
+   signed in to it, else HTTPS only). The plugin ships `skill/skills/atlas/bin/checksums.txt`, a list of
+   `<version> <file> <sha256>` lines fixed when that version was released. The download runs
+   only if its SHA-256 equals the pinned line; otherwise it is deleted and never run. A plugin
+   version with no pinned line downloads nothing: the launcher says to update the plugin.
+
+If the download cannot work (offline, or the repo is private and `gh` is not signed in), the
+launcher prints one line saying what to do. The plugin version, the app version and the
+release tag are one number. The saved copy lives in a folder named after it, so updating the
+plugin fetches the matching build by itself and removes the older folder.
+
+**Fallback, by hand** (no plugin):
+
+- Build the program: `cargo install --path crates/cli` from this repo (it lands on PATH via
+  `~/.cargo/bin`), or take a prebuilt one from the release and put it on PATH.
+- Copy `skill/skills/atlas/` to `~/.claude/skills/atlas/`. Without the plugin there is no
+  version to download, so the launcher uses the program on PATH (or the Atlas app's copy).
+  `claude --plugin-dir <this repo>/skill` tries the plugin without installing it.
+
+**Releasing** (maintainers): with the built `atlas-usage-*` files from the same CI run in a
+folder, run `pwsh tools/pin-skill-checksums.ps1 -Dir <folder> -Version <version>` and commit
+the updated `skill/skills/atlas/bin/checksums.txt`. `-Version` must equal the version in
+`skill/.claude-plugin/plugin.json`; the script hashes the files itself and refuses to change
+the hashes of an already pinned version unless `-Force`.
 
 When Claude picks the skill up from a plain question it uses the Skill tool; if your
 permission mode asks, allow it once or add `Skill(atlas)` to `permissions.allow`. Typing
-`/atlas` needs no approval, and the skill itself allows only the `atlas-usage` command.
+`/atlas` needs no approval, and the skill itself allows only its own launcher script.
 
 The first run indexes every transcript (about a minute for a few GB); later runs take
 under a second.

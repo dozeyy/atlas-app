@@ -3,7 +3,7 @@ name: atlas
 description: Shows the user's Claude Code token usage right in the chat, with the same numbers as the Atlas app - this chat, today, this week, last week, the last 7 or 30 days, a month, a date range, this project or all time, and comparisons like last week vs this week. Charts are drawn as text bars.
 when_to_use: Use whenever the user asks about their own Claude Code usage, tokens or spend, with or without typing /atlas. Examples - "what's my usage this week", "how many tokens has this chat used", "what's my usage for this chat looking like", "usage for this project", "last week vs this week", "how much did I use today", "which models did I use most this month", "what did yesterday cost". Not for questions about API pricing in general or another person's account.
 argument-hint: "[this chat | today | yesterday | this week | last week | 7d | 30d | this month | last month | all | project | YYYY-MM-DD..YYYY-MM-DD] [vs <scope>]"
-allowed-tools: Bash(atlas-usage *), Bash("${CLAUDE_SKILL_DIR}/bin/atlas-usage" *), Bash(${CLAUDE_SKILL_DIR}/bin/atlas-usage *), PowerShell(atlas-usage *), PowerShell(& "${CLAUDE_SKILL_DIR}/bin/atlas-usage" *)
+allowed-tools: Bash(sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" *), PowerShell(powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/bin/atlas-usage.ps1" *)
 ---
 
 # Atlas usage in chat
@@ -38,16 +38,21 @@ digits, `-`, `_` and `.`. Never paste the user's own text into the command line.
 
 ## 2. Run it (one command)
 
-Always pass this chat's id so "this chat" and the defaults are exact:
+Always pass this chat's id so "this chat" and the defaults are exact. The launcher finds
+`atlas-usage` itself, or downloads it once on first use, and runs it with the words you give.
 
+Windows (PowerShell):
 ```
-atlas-usage <words> --session ${CLAUDE_SESSION_ID}
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/bin/atlas-usage.ps1" <words> --session ${CLAUDE_SESSION_ID}
 ```
 
-- If `atlas-usage` is not on PATH, run the copy next to this skill instead:
-  `"${CLAUDE_SKILL_DIR}/bin/atlas-usage" <words> --session ${CLAUDE_SESSION_ID}`
-- Use a long timeout (600000 ms). The first run indexes every transcript and can take a
-  minute; later runs take under a second.
+macOS / Linux (Bash; also works in Git Bash on Windows):
+```
+sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" <words> --session ${CLAUDE_SESSION_ID}
+```
+
+- Use a long timeout (600000 ms). The first run downloads the program and indexes every
+  transcript and can take a minute; later runs take under a second.
 - Never read transcript files yourself and never compute usage numbers by hand: the
   numbers must match the Atlas app.
 
@@ -67,10 +72,9 @@ atlas-usage <words> --session ${CLAUDE_SESSION_ID}
 
 ## If it fails
 
-- `command not found` for both: tell the user in one line that the `atlas-usage` program is
-  not installed and point them to the Atlas skill README (build with
-  `cargo install --path crates/cli` from the Atlas repo, or put the prebuilt binary in
-  `${CLAUDE_SKILL_DIR}/bin/`). Do not try to work the numbers out another way.
+- A line starting `atlas-usage:` with exit code 3 comes from the launcher (no internet, no
+  access to the download, checksum mismatch, no build for this computer). Show that line
+  as-is; it says what to do. Do not try to work the numbers out another way.
 - Any other error: show the error line as-is and suggest the closest valid scope from the
   table above.
 
