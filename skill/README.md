@@ -1,0 +1,61 @@
+# Atlas skill: your Claude Code usage in chat
+
+Type `/atlas` in a Claude Code chat to see what this chat has used, or ask in plain words
+("what's my usage this week", "how many tokens has this chat used", "usage for this
+project", "last week vs this week"); Claude picks the skill up on its own. The numbers come
+from the same engine as the Atlas app, so a day here equals that day's bar in the app.
+
+**Where it works:** Claude Code - the terminal, the desktop app's Code tab and the IDE
+extensions. It reads the transcripts Claude Code keeps on this computer, so it does **not**
+work in claude.ai web chat.
+
+**Read-only:** transcripts under `~/.claude` (or `CLAUDE_CONFIG_DIR`) are only read. The
+index lives in Atlas's own data folder (`%LOCALAPPDATA%\atlas\cli` on Windows,
+`~/Library/Application Support/atlas/cli` on macOS, `~/.local/share/atlas/cli` on Linux).
+
+## What you get
+
+- `/atlas` - this chat: headline tokens, cache reads apart, API-price estimate, main
+  thread vs helpers (subagents), model mix, the biggest helpers, activity per hour or day.
+- `/atlas this week`, `last week`, `today`, `7d`, `30d`, `this month`, `all`, a date or
+  `2026-11-02..2026-11-07` - headline, a bar per day (week or month for long ranges),
+  model mix, top projects, biggest chats.
+- `/atlas this project` (or `project last week`) - the same, for the current folder's project.
+- `/atlas last week vs this week` - side by side with the change.
+
+Tokens = input + output + cache writes; cache reads are shown apart. Numbers use 3
+significant digits (7.3k, 56.1M). Dollar figures are API-price estimates, not a bill.
+
+## Install
+
+The skill needs the `atlas-usage` program (one small binary, built from `crates/cli`).
+
+1. **Get `atlas-usage`** - either:
+   - build it: `cargo install --path crates/cli` from this repo (puts `atlas-usage` on
+     PATH via `~/.cargo/bin`), or
+   - take the prebuilt one from the `atlas-usage-<OS>` artifact of the repo's `build`
+     GitHub Action and put it on PATH (or in the skill's `bin/` folder, below).
+2. **Add the skill**, one of:
+   - **Personal skill:** copy `skill/skills/atlas/` to `~/.claude/skills/atlas/`. If
+     `atlas-usage` is not on PATH, put it at `~/.claude/skills/atlas/bin/atlas-usage`
+     (`atlas-usage.exe` on Windows).
+   - **Plugin:** `claude plugin marketplace add dozeyy/atlas` then
+     `claude plugin install atlas@atlas`. A plugin's `bin/` folder is on PATH while it is
+     enabled, so `atlas-usage` can also live in the plugin's `bin/`.
+   - **Try it without installing:** `claude --plugin-dir <this repo>/skill`.
+
+When Claude picks the skill up from a plain question it uses the Skill tool; if your
+permission mode asks, allow it once or add `Skill(atlas)` to `permissions.allow`. Typing
+`/atlas` needs no approval, and the skill itself allows only the `atlas-usage` command.
+
+The first run indexes every transcript (about a minute for a few GB); later runs take
+under a second.
+
+## Running the program directly
+
+```
+atlas-usage                      # this chat ($CLAUDE_CODE_SESSION_ID), markdown
+atlas-usage last-week --vs week  # comparison
+atlas-usage project 30d --json   # JSON for scripts
+atlas-usage --help
+```

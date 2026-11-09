@@ -235,28 +235,9 @@ impl UsageHost {
     }
 }
 
-/// Q9: the week starts where the operating system's locale says. Windows asks the
-/// user's locale; elsewhere Monday.
-pub fn week_starts_sunday() -> bool {
-    #[cfg(windows)]
-    {
-        unsafe extern "system" {
-            fn GetLocaleInfoEx(name: *const u16, lc_type: u32, data: *mut u16, len: i32) -> i32;
-        }
-        const LOCALE_IFIRSTDAYOFWEEK: u32 = 0x0000_100C;
-        const LOCALE_RETURN_NUMBER: u32 = 0x2000_0000;
-        let mut out = [0u16; 2];
-        // SAFETY: a null name means the user's default locale; `out` holds the DWORD
-        // that LOCALE_RETURN_NUMBER asks for.
-        let n = unsafe { GetLocaleInfoEx(std::ptr::null(), LOCALE_IFIRSTDAYOFWEEK | LOCALE_RETURN_NUMBER, out.as_mut_ptr(), 2) };
-        // 0 = Monday ... 6 = Sunday.
-        n != 0 && (u32::from(out[0]) | (u32::from(out[1]) << 16)) == 6
-    }
-    #[cfg(not(windows))]
-    {
-        false
-    }
-}
+/// Q9: the week starts where the operating system's locale says (one copy in core,
+/// shared with the `atlas-usage` CLI).
+pub use atlas_core::usage::time::week_starts_sunday;
 
 async fn blocking<T, F>(engine: Result<Arc<UsageEngine>, String>, f: F) -> Result<T, String>
 where
