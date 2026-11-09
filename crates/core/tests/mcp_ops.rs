@@ -206,6 +206,7 @@ fn connect_without_the_command_adds_exactly_one_key_and_disconnect_removes_it() 
     let e = env();
     let server = e.data.join("atlas-mcp.exe");
     fs::write(&server, b"stand-in").unwrap();
+    fs::write(e.data.join("atlas.exe"), b"stand-in").unwrap(); // the shipped connector sits beside the app
     let cj = e.config.join(".claude.json");
     let before: serde_json::Value = serde_json::from_slice(&fs::read(&cj).unwrap()).unwrap();
     let backups = e.data.join("setup-backups");
@@ -1169,6 +1170,8 @@ fn a_registration_to_another_copy_that_still_exists_is_left_alone() {
     let other = e.data.join("other-copy").join(a.server.file_name().unwrap());
     fs::create_dir_all(other.parent().unwrap()).unwrap();
     fs::write(&other, b"stand-in").unwrap();
+    // A real install has the app program in the same folder as the connector.
+    fs::write(other.with_file_name("atlas.exe"), b"stand-in").unwrap();
     let file = register_atlas(&a, serde_json::json!({"type": "stdio", "command": other.to_string_lossy(), "args": [], "env": {}}));
     for _ in 0..3 {
         assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::OtherCopy);
@@ -1179,6 +1182,56 @@ fn a_registration_to_another_copy_that_still_exists_is_left_alone() {
     fs::remove_file(&other).unwrap();
     assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::Repaired);
     assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "connected");
+}
+
+#[test]
+fn a_third_partys_atlas_mcp_shim_is_not_ours() {
+    let e = env();
+    let a = auto_env(&e);
+    let ctx = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
+    // What `npm i -g atlas-mcp` leaves behind: a .cmd shim with exactly the right stem.
+    let npm = e.data.join("npm");
+    fs::create_dir_all(&npm).unwrap();
+    let shim = npm.join("atlas-mcp.cmd");
+    fs::write(&shim, b"@echo off").unwrap();
+    // A program of that exact name that does not sit beside an Atlas program is not ours either.
+    let lone = e.data.join("lone").join(a.server.file_name().unwrap());
+    fs::create_dir_all(lone.parent().unwrap()).unwrap();
+    fs::write(&lone, b"stand-in").unwrap();
+    let gone_shim = if cfg!(windows) { r"C:\Users\Someone\AppData\Roaming\npm\atlas-mcp.cmd" } else { "/usr/local/bin/atlas-mcp.cmd" };
+    for command in [shim.to_string_lossy().to_string(), lone.to_string_lossy().to_string(), gone_shim.to_string()] {
+        let file = register_atlas(&a, serde_json::json!({"type": "stdio", "command": command, "args": [], "env": {}}));
+        assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "foreign", "{command}");
+        assert_eq!(connect::auto_connect(&ctx, &|| true), AutoOutcome::Foreign, "{command}");
+        let d = connect::disconnect(&ctx).expect_err("turning it off must not remove somebody else's server");
+        assert!(d.contains("left it alone"), "{d}");
+        assert_eq!(read_json(&a.cj), file, "{command}");
+    }
+    assert!(a.cli.calls().is_empty(), "no command ran");
+}
+
+#[test]
+fn an_unreadable_file_under_the_lock_stops_the_connect() {
+    let e = env();
+    let a = auto_env(&e);
+    let ctx = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
+    // The launch looked at a good file, then waits for the lock; meanwhile the file breaks.
+    let held = atlas_core::writelock::acquire(&e.data, std::time::Duration::from_secs(2)).unwrap();
+    let out = std::thread::scope(|s| {
+        let launch = s.spawn(|| connect::auto_connect(&ctx, &|| true));
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        fs::write(&a.cj, b"{ not json").unwrap();
+        drop(held);
+        launch.join().unwrap()
+    });
+    assert!(matches!(out, AutoOutcome::Skipped(_)), "{out:?}");
+    assert_eq!(fs::read(&a.cj).unwrap(), b"{ not json", "the file was left exactly as found");
+    assert!(a.cli.calls().is_empty(), "no command ran against a file Atlas could not read");
+    // The manual button refuses the same way, with a sentence rather than a silent run.
+    let err = connect::connect(&ctx).expect_err("an unreadable file is not a go-ahead");
+    assert!(err.contains("can't be read"), "{err}");
+    assert_eq!(fs::read(&a.cj).unwrap(), b"{ not json");
+    assert!(a.cli.calls().is_empty());
 }
 
 #[test]

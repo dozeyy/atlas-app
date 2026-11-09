@@ -466,15 +466,19 @@ impl AppState {
     /// the choice is put back as it was, so the page never promises a setting that the next
     /// launch will not find (an off that is lost means Atlas reconnects by itself).
     pub fn save_mcp_choice(&self, on: bool) -> Result<(), String> {
-        let before = self.mcp_auto_connect();
-        let info = self.update_settings(SettingsPatch { mcp_auto_connect: Some(on), ..Default::default() });
-        match info.settings_save_error {
-            None => Ok(()),
-            Some(_) => {
-                self.update_settings(SettingsPatch { mcp_auto_connect: Some(before), ..Default::default() });
-                Err("Atlas could not save this choice, so it left the connection to Claude Code as it was.".into())
-            }
+        let before = {
+            let mut inner = self.lock();
+            std::mem::replace(&mut inner.settings.mcp_auto_connect, on)
+        };
+        // Always write: `update_settings` skips an unchanged value, and the stored save error
+        // can still be set from an earlier failed save, which would read as this one failing.
+        self.persist();
+        if self.lock().save_error.is_none() {
+            return Ok(());
         }
+        self.lock().settings.mcp_auto_connect = before;
+        self.persist();
+        Err("Atlas could not save this choice, so it left the connection to Claude Code as it was.".into())
     }
 
     /// Closing the window hides Atlas to the tray (opt-in, default off).
@@ -861,6 +865,22 @@ mod tests {
         fs::remove_dir_all(&blocker).unwrap();
         state.save_mcp_choice(false).expect("saves once the disk allows");
         assert!(!settings::load(&tmp.path().join("data")).settings.mcp_auto_connect);
+    }
+
+    #[test]
+    fn an_old_save_failure_does_not_make_an_unchanged_choice_look_failed() {
+        let (tmp, state) = fixture(false);
+        let blocker = tmp.path().join("data").join(settings::FILE_NAME);
+        fs::create_dir_all(&blocker).unwrap();
+        // An earlier, unrelated save fails and leaves the stored error set.
+        let info = state.update_settings(SettingsPatch { show_shortcuts: Some(true), ..Default::default() });
+        assert!(info.settings_save_error.is_some());
+        fs::remove_dir_all(&blocker).unwrap();
+        // The choice is already on and the disk works now: nothing failed, so no refusal.
+        assert!(state.mcp_auto_connect());
+        state.save_mcp_choice(true).expect("a save that works must not report the old error");
+        assert!(state.info().settings_save_error.is_none());
+        assert!(settings::load(&tmp.path().join("data")).settings.mcp_auto_connect);
     }
 
     #[test]

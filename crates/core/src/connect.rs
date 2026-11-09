@@ -223,6 +223,7 @@ pub fn connect_waiting(ctx: &ConnectCtx, wait: Duration) -> Result<ConnectOutcom
     let gate = |entry: Option<&Value>| entry.filter(|e| !entry_is_ours(e, Some(ctx.server))).map(|_| AutoOutcome::Foreign);
     match connect_gated(ctx, wait, &gate)? {
         Ok(done) => Ok(done),
+        Err(AutoOutcome::Skipped(why)) => Err(why),
         Err(_) => Err(FOREIGN_MSG.into()),
     }
 }
@@ -239,10 +240,15 @@ fn connect_gated(ctx: &ConnectCtx, wait: Duration, gate: &dyn Fn(Option<&Value>)
     }
     let _guard = lock(ctx, wait)?;
     // Looked at under the lock: what was decided before waiting may no longer be true.
-    if let Ok(entry) = registered_entry(&ctx.root.claude_json)
-        && let Some(stop) = gate(entry.as_ref())
-    {
-        return Ok(Err(stop));
+    // A file that cannot be read right now (Claude Code is mid-write, or it is damaged) stops
+    // everything: no command is run against a file Atlas could not read.
+    match registered_entry(&ctx.root.claude_json) {
+        Err(e) => return Ok(Err(AutoOutcome::Skipped(e))),
+        Ok(entry) => {
+            if let Some(stop) = gate(entry.as_ref()) {
+                return Ok(Err(stop));
+            }
+        }
     }
     let cli = ctx.cli.resolve();
     let want =crate::setup::display_path(ctx.server);
@@ -339,8 +345,22 @@ fn entry_is_ours(entry: &Value, server: Option<&Path>) -> bool {
     if !is_absolute_command(cmd) {
         return false;
     }
-    let stem = Path::new(&cmd.replace('\\', "/")).file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
-    stem == "atlas-mcp"
+    // The connector Atlas ships is `atlas-mcp.exe` (extensionless on macOS). A shim with
+    // another extension (an npm global `atlas-mcp.cmd`, a script) is somebody else's.
+    let slashed = cmd.replace('\\', "/");
+    let name = slashed.rsplit('/').next().unwrap_or_default().to_lowercase();
+    if name != "atlas-mcp.exe" && name != "atlas-mcp" {
+        return false;
+    }
+    // A copy that is still there must sit beside an Atlas program, as the shipped one does (in the
+    // same folder, or `Contents/MacOS` next to a bundle's `Resources`). One that is gone is stale.
+    let path = Path::new(cmd);
+    if !path.exists() {
+        return true;
+    }
+    let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let beside = |d: &Path| ["atlas.exe", "Atlas.exe", "atlas", "Atlas"].iter().any(|n| d.join(n).is_file());
+    beside(&dir) || beside(&dir.join("..").join("MacOS"))
 }
 
 /// Should Atlas register itself automatically for this launch? Never for a `--config-dir` or
@@ -445,10 +465,9 @@ pub fn disconnect_waiting(ctx: &ConnectCtx, wait: Duration) -> Result<ConnectOut
     crate::fsutil::check_write_allowed(&ctx.root.claude_json).map_err(|e| e.to_string())?;
     let _guard = lock(ctx, wait)?;
     // Only Atlas's own entry is ever removed: a different program under the name `atlas` stays.
-    if let Ok(Some(entry)) = registered_entry(&ctx.root.claude_json)
-        && !entry_is_ours(&entry, Some(ctx.server))
-    {
-        return Err(FOREIGN_MSG.into());
+    match registered_entry(&ctx.root.claude_json)? {
+        Some(entry) if !entry_is_ours(&entry, Some(ctx.server)) => return Err(FOREIGN_MSG.into()),
+        _ => {}
     }
     let cli = ctx.cli.resolve();
     let gone = |c: &ConnectCtx| entry_gone(&c.root.claude_json);
