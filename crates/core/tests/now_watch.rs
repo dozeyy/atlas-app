@@ -32,18 +32,37 @@ fn start(setup: impl FnOnce(&Path)) -> Rig {
     Rig { _dir: dir, projects, rx, engine }
 }
 
+/// Claude Code stamps each line as it writes it: the fake writer does the same.
+fn now_iso() -> String {
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+}
+
+/// A time long gone, for transcripts that were only copied (a restore), never written to now.
+const OLD: &str = "2026-01-02T10:00:00.000Z";
+
 fn prompt() -> String {
-    r#"{"type":"user","timestamp":"2026-11-08T10:00:00.000Z","cwd":"C:\\w\\app","message":{"role":"user","content":"TOPSECRETPROMPT please"}}"#.to_string()
+    prompt_at(&now_iso())
+}
+
+fn prompt_at(ts: &str) -> String {
+    format!(r#"{{"type":"user","timestamp":"{ts}","cwd":"C:\\w\\app","message":{{"role":"user","content":"TOPSECRETPROMPT please"}}}}"#)
 }
 
 fn tool(id: &str, name: &str, input: &str) -> String {
+    tool_at(id, name, input, &now_iso())
+}
+
+fn tool_at(id: &str, name: &str, input: &str, ts: &str) -> String {
     format!(
-        r#"{{"type":"assistant","timestamp":"2026-11-08T10:00:01.000Z","cwd":"C:\\w\\app","requestId":"r{id}","message":{{"id":"m{id}","model":"claude-opus-5-5","stop_reason":"tool_use","content":[{{"type":"text","text":"TOPSECRETREPLY"}},{{"type":"tool_use","id":"{id}","name":"{name}","input":{input}}}],"usage":{{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000}}}}}}"#
+        r#"{{"type":"assistant","timestamp":"{ts}","cwd":"C:\\w\\app","requestId":"r{id}","message":{{"id":"m{id}","model":"claude-opus-5-5","stop_reason":"tool_use","content":[{{"type":"text","text":"TOPSECRETREPLY"}},{{"type":"tool_use","id":"{id}","name":"{name}","input":{input}}}],"usage":{{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000}}}}}}"#
     )
 }
 
 fn end_turn() -> String {
-    r#"{"type":"assistant","timestamp":"2026-11-08T10:00:09.000Z","requestId":"rend","message":{"id":"mend","model":"claude-opus-5-5","stop_reason":"end_turn","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":1,"output_tokens":1}}}"#.to_string()
+    format!(
+        r#"{{"type":"assistant","timestamp":"{}","requestId":"rend","message":{{"id":"mend","model":"claude-opus-5-5","stop_reason":"end_turn","content":[{{"type":"text","text":"done"}}],"usage":{{"input_tokens":1,"output_tokens":1}}}}}}"#,
+        now_iso()
+    )
 }
 
 fn append(path: &Path, line: &str) {
@@ -151,6 +170,32 @@ fn nothing_running_shows_the_last_chat_and_stays_quiet() {
     assert!((3_500_000..3_700_000).contains(&age), "{age}");
     // Idle: no further updates arrive.
     assert!(rig.rx.recv_timeout(Duration::from_millis(1500)).is_err());
+    rig.engine.stop();
+}
+
+#[test]
+fn a_restored_folder_with_fresh_write_times_shows_nothing_running() {
+    // Time Machine, Migration Assistant or a sync copies every old transcript: each gets a
+    // fresh write time, but its entries are as old as they ever were. None of them is running.
+    let rig = start(|p| {
+        for (name, title) in [("r1", "Restored one"), ("r2", "Restored two"), ("r3", "Restored three")] {
+            let f = p.join("proj-a").join(format!("{name}.jsonl"));
+            append(&f, &format!(r#"{{"type":"custom-title","customTitle":"{title}"}}"#));
+            append(&f, &prompt_at(OLD));
+            append(&f, &tool_at(name, "Read", r#"{"file_path":"x"}"#, OLD));
+        }
+    });
+    let (snap, _) = wait_for(&rig, Duration::from_secs(5), |s| s.recent.len() == 3).expect("three finished chats");
+    assert!(snap.chats.is_empty(), "restored chats shown as running: {}", snap.chats.len());
+    let age = atlas_core::usage::time::now_ms() - snap.last.as_ref().unwrap().ended_ms;
+    assert!(age > 86_400_000, "a restored chat ended when its last entry was written, not when it was copied ({age} ms)");
+
+    // The same chat, really used again: it is running.
+    let f = rig.projects.join("proj-a").join("r2.jsonl");
+    append(&f, &prompt());
+    append(&f, &tool("again", "Edit", r#"{"file_path":"C:\\w\\app\\a.ts"}"#));
+    let (snap, _) = wait_for(&rig, Duration::from_secs(5), |s| s.chats.len() == 1).expect("the reused chat runs");
+    assert_eq!(snap.chats[0].session_id, "r2");
     rig.engine.stop();
 }
 

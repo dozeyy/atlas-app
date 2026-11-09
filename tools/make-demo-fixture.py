@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Build a demo Claude folder with usage that is always "recent", for screenshots and perf runs.
 
-    python tools/make-demo-fixture.py OUT_DIR
+    python tools/make-demo-fixture.py OUT_DIR [--live]
+
+Each transcript's write time is its last entry's time, as on a machine where the chats really ran
+(a fresh write time on every file would read as "every chat is running" on the Now page).
+--live also leaves two of today's chats live (written now): one working on an edit, one waiting
+for you; their paths go to OUT_DIR/live.txt so a caller can keep them fresh.
 
 OUT_DIR gets a copy of fixtures/claude-setup/home (so the Toolkit has skills, agents, hooks and so on)
 plus about 90 days of made-up Claude Code transcripts that end today: a streak that reaches today,
@@ -100,12 +105,49 @@ def write(path, lines):
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         for ln in lines:
             f.write(json.dumps(ln, separators=(",", ":")) + "\n")
+    # Written when its last entry was, not now.
+    stamps = [ln["timestamp"] for ln in lines if "timestamp" in ln]
+    if stamps:
+        last = datetime.datetime.strptime(stamps[-1], "%Y-%m-%dT%H:%M:%S.000Z").replace(tzinfo=datetime.timezone.utc)
+        os.utime(path, (last.timestamp(), last.timestamp()))
+
+
+def append_live(path, sid, cwd, model, now, waiting):
+    """Leave a chat live: a new prompt, then a pending edit (working) or a finished reply (waiting)."""
+    asked = now - datetime.timedelta(minutes=7 if waiting else 4)
+    lines = [{
+        "type": "user", "uuid": f"ul-{sid[:8]}", "sessionId": sid, "timestamp": stamp(asked), "cwd": cwd,
+        "isSidechain": False, "version": "2.1.296", "message": {"role": "user", "content": "[demo prompt]"},
+    }]
+    if waiting:
+        content = [{"type": "text", "text": "[demo assistant text]"}]
+        stop = "end_turn"
+        at = now - datetime.timedelta(seconds=90)
+    else:
+        content = [{"type": "tool_use", "id": f"toolu_live_{sid[:8]}", "name": "Edit",
+                    "input": {"file_path": f"{cwd}/src/totals.ts", "old_string": "a", "new_string": "b"}}]
+        stop = "tool_use"
+        at = now - datetime.timedelta(seconds=20)
+    lines.append({
+        "type": "assistant", "uuid": f"al-{sid[:8]}", "sessionId": sid, "timestamp": stamp(at), "cwd": cwd,
+        "isSidechain": False, "version": "2.1.296", "requestId": f"req_live_{sid[:8]}",
+        "message": {"id": f"msg_live_{sid[:8]}", "type": "message", "role": "assistant", "model": model,
+                    "stop_reason": stop, "content": content,
+                    "usage": {"input_tokens": 40, "output_tokens": 300, "cache_creation_input_tokens": 1200,
+                              "cache_read_input_tokens": 30000}},
+    })
+    with open(path, "a", encoding="utf-8", newline="\n") as f:
+        for ln in lines:
+            f.write(json.dumps(ln, separators=(",", ":")) + "\n")
+    # Left with a fresh write time: these two are the live ones.
 
 
 def main():
-    if len(sys.argv) < 2:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    live = "--live" in sys.argv[1:]
+    if not args:
         sys.exit(__doc__)
-    out = os.path.abspath(sys.argv[1])
+    out = os.path.abspath(args[0])
     if os.path.exists(out):
         sys.exit(f"{out} already exists; pick a new folder")
     home = os.path.join(out, "home")
@@ -115,6 +157,9 @@ def main():
 
     rng = random.Random(20261108)
     now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+    # No entry is ever in the future (and the newest is a few minutes old: the past, not live).
+    latest = now - datetime.timedelta(minutes=5)
+    today = []  # (path, sid, cwd, model) of today's chats, for --live
     n_sess = 0
     for back in range(0, 91):
         day = now - datetime.timedelta(days=back)
@@ -146,10 +191,12 @@ def main():
             })
             t = start
             for i in range(n_msgs):
-                t = t + datetime.timedelta(minutes=rng.randint(1, 9), seconds=rng.randint(0, 50))
+                t = min(t + datetime.timedelta(minutes=rng.randint(1, 9), seconds=rng.randint(0, 50)), latest)
                 lines.append(msg(sid, i, t, model if rng.random() < 0.85 else "claude-haiku-5-5", cwd, rng, big))
             pdir = os.path.join(home, ".claude", "projects", "-demo-" + proj)
             write(os.path.join(pdir, sid + ".jsonl"), lines)
+            if back == 0:
+                today.append((os.path.join(pdir, sid + ".jsonl"), sid, cwd, model))
 
             # Some sessions hand work to helpers; now and then one helper hands to another.
             if rng.random() < 0.38 or back in (0, 1):
@@ -168,13 +215,18 @@ def main():
                     ht = start + datetime.timedelta(minutes=rng.randint(2, 12))
                     hl = []
                     for j in range(rng.randint(3, 12)):
-                        ht = ht + datetime.timedelta(seconds=rng.randint(20, 160))
+                        ht = min(ht + datetime.timedelta(seconds=rng.randint(20, 160)), latest)
                         hl.append(msg(sid, 100 * (h + 1) + j, ht, hm, cwd, rng, big, side=True, agent=aid))
                     base = os.path.join(pdir, sid, "subagents", f"agent-{aid}")
                     write(base + ".jsonl", hl)
                     with open(base + ".meta.json", "w", encoding="utf-8", newline="\n") as f:
                         json.dump(meta, f, separators=(",", ":"))
-    print(f"demo folder: {os.path.join(home, '.claude')}  ({n_sess} sessions)")
+    if live:
+        for (path, sid, cwd, model), waiting in zip(today[:2], (False, True)):
+            append_live(path, sid, cwd, model, now, waiting)
+        with open(os.path.join(out, "live.txt"), "w", encoding="utf-8", newline="\n") as f:
+            f.writelines(p + "\n" for p, _, _, _ in today[:2])
+    print(f"demo folder: {os.path.join(home, '.claude')}  ({n_sess} sessions{', 2 live' if live else ''})")
 
 
 if __name__ == "__main__":
