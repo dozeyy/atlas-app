@@ -184,6 +184,8 @@ if [ -d "$REL" ]; then
   wait "$pid" 2>/dev/null
   # Never in a release build: the screenshot tour.
   if strings "$(exe_of "$REL")" | grep -q 'ATLAS_SHOT_TOUR'; then bad "the release build contains the screenshot tour"; else ok "the release build has no screenshot tour in it"; fi
+  # The release frontend (dist/, built last by the universal build) must not ship the tour chunk.
+  if grep -rl 'shotTour' dist >/dev/null 2>&1; then bad "the release frontend ships the tour: $(grep -rl 'shotTour' dist | tr '\n' ' ')"; else ok "the release frontend (dist/) has no shotTour chunk"; fi
 fi
 
 # ---- 3. The screenshot tour (debug app): every page, light, dark, small -----------------------
@@ -235,6 +237,9 @@ fi
 if [ -n "$DMG" ] && [ -f "$DMG" ]; then
   if hdiutil attach -readonly -nobrowse -mountpoint "$T/dmg-mount" "$DMG" >"$OUT/dmg/attach.txt" 2>&1; then
     ls -la "$T/dmg-mount" >"$OUT/dmg/contents.txt" 2>&1
+    # Nothing on the disk image beyond what a download should hold.
+    extra=$(ls -A "$T/dmg-mount" | grep -vxE 'Atlas\.app|Applications|\.background|\.DS_Store|\.VolumeIcon\.icns|\.fseventsd' | tr '\n' ' ')
+    [ -z "$extra" ] && ok "dmg holds nothing extra" || bad "dmg holds unexpected entries: $extra(dmg/contents.txt)"
     [ -d "$T/dmg-mount/Atlas.app" ] && ok "dmg holds Atlas.app" || bad "dmg has no Atlas.app"
     [ -L "$T/dmg-mount/Applications" ] && ok "dmg has the Applications drop target" || bad "dmg has no Applications link"
     [ -f "$T/dmg-mount/.background/dmg-background.png" ] && ok "dmg has the Trail Map background" || bad "dmg has no background picture (dmg/contents.txt)"

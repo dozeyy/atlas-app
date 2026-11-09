@@ -1,10 +1,10 @@
 // WebKit screenshots of every page, the engine macOS draws Atlas with (WKWebView).
 //
 //   npm install --no-save playwright@1.64.1 && npx playwright install webkit
-//   npx vite build
-//   node tools/webkit-shots.mjs [OUT_DIR]          (default: shots-webkit)
+//   VITE_ATLAS_TOUR=1 npx vite build --outDir dist-tour     (the tour is only in a tour build)
+//   ATLAS_DIST=dist-tour node tools/webkit-shots.mjs [OUT_DIR]   (default: shots-webkit)
 //
-// Serves dist/ itself, opens it with the mock backend as macOS (`?platform=macos&tour`), and lets
+// Serves the built frontend (ATLAS_DIST, default dist/) itself, opens it with the mock backend as macOS (`?platform=macos&tour`), and lets
 // src/lib/shotTour.ts walk every page at 1280x800 and 900x600, light and dark. Fails (exit 1) on any
 // console error, page error or failed request, or when a tour does not finish. Runs the same on
 // Windows and macOS; the macOS proof run (.github/workflows/mac-check.yml) uses it.
@@ -14,11 +14,17 @@ import path from "node:path";
 import { webkit } from "playwright";
 
 const root = path.resolve(import.meta.dirname, "..");
-const dist = path.join(root, "dist");
+const dist = path.resolve(root, process.env.ATLAS_DIST || "dist");
 const out = path.resolve(process.argv[2] ?? path.join(root, "shots-webkit"));
 fs.mkdirSync(out, { recursive: true });
 if (!fs.existsSync(path.join(dist, "index.html"))) {
-  console.error("dist/index.html is missing: run `npx vite build` first.");
+  console.error(`${dist}/index.html is missing: run \`VITE_ATLAS_TOUR=1 npx vite build --outDir dist-tour\` first.`);
+  process.exit(2);
+}
+// A frontend built without the tour would wait out every timeout: say so at once instead.
+const assets = path.join(dist, "assets");
+if (!fs.existsSync(assets) || !fs.readdirSync(assets).some((f) => f.startsWith("shotTour"))) {
+  console.error(`${dist} has no screenshot tour in it: build it with VITE_ATLAS_TOUR=1.`);
   process.exit(2);
 }
 

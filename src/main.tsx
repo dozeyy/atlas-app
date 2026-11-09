@@ -31,8 +31,12 @@ createRoot(document.getElementById("root")!).render(
 startSetup();
 
 // The screenshot tour (src/lib/shotTour.ts): only a debug build started for it, or the browser
-// preview with `?tour`. Loaded on demand, so a normal start never fetches it.
-if (window.__ATLAS_TOUR__ || (!inTauri() && new URLSearchParams(window.location.search).has("tour"))) {
+// preview with `?tour`. Loaded on demand, so a normal start never fetches it, and compiled in only
+// for the dev server or a VITE_ATLAS_TOUR=1 build (vite.config.ts), so a release has no tour chunk.
+if (
+  __ATLAS_TOUR_BUILD__ &&
+  (window.__ATLAS_TOUR__ || (!inTauri() && new URLSearchParams(window.location.search).has("tour")))
+) {
   void import("./lib/shotTour").then((m) => m.startTour());
 }
 
