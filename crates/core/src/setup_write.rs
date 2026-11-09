@@ -711,19 +711,24 @@ fn remove_at(root: &mut Value, pointer: &[String]) -> Option<Removed> {
 /// Remove an entry; when it was the last child of a hook group or event, remove
 /// the emptied parents too (`hooks.<Event>[i].hooks[j]` -> group -> event).
 fn remove_entry(root: &mut Value, pointer: &[String]) -> Option<Removed> {
-    let mut removed = remove_at(root, pointer)?;
     // Only for settings hooks: [.., "hooks", Event, gi, "hooks", hi]
     let n = pointer.len();
-    if n >= 5 && pointer[n - 2] == "hooks" && pointer[0] == "hooks" {
+    let hooks_shape = n >= 5 && pointer[n - 2] == "hooks" && pointer[0] == "hooks";
+    // What a parent held before its last child went, so a restore puts back the whole group
+    // (not a group emptied by this very removal).
+    let group_before = if hooks_shape { navigate(root, &pointer[..n - 2]).cloned() } else { None };
+    let event_before = if hooks_shape { navigate(root, &pointer[..n - 3]).cloned() } else { None };
+    let mut removed = remove_at(root, pointer)?;
+    if hooks_shape {
         let group_ptr = &pointer[..n - 2];
         let group_hooks_empty = navigate(root, &pointer[..n - 1]).and_then(Value::as_array).is_some_and(Vec::is_empty);
         if group_hooks_empty
             && let Some(r) = remove_at(root, group_ptr) {
-                removed = r;
+                removed = Removed { value: group_before.unwrap_or(r.value.clone()), ..r };
                 let event_ptr = &pointer[..n - 3];
                 if navigate(root, event_ptr).and_then(Value::as_array).is_some_and(Vec::is_empty)
                     && let Some(r) = remove_at(root, event_ptr) {
-                        removed = r;
+                        removed = Removed { value: event_before.unwrap_or(r.value.clone()), ..r };
                     }
             }
     }
@@ -742,6 +747,10 @@ fn insert_back(root: &mut Value, r: &Removed) -> Result<(), String> {
             m.shift_insert(at, last.clone(), r.value.clone());
         }
         Value::Array(a) => {
+            // Putting back what is already there would run it twice.
+            if a.contains(&r.value) {
+                return Err("the same entry is already there".into());
+            }
             let at = r.index.min(a.len());
             a.insert(at, r.value.clone());
         }
@@ -797,6 +806,10 @@ struct Manifest {
     /// A hook turned off from a tool: its entry sits in this backup until it is turned back on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     parked: Option<bool>,
+    /// An entry delete that has been put back: a second restore is refused (it would duplicate
+    /// the entry). A hook that is parked again by a later toggle gets a fresh backup, not this one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    restored: Option<bool>,
 }
 
 fn now_ms() -> u64 {
@@ -931,6 +944,13 @@ fn payload_name(path: &Path) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn apply_delete(plan: &DeletePlan, backups: &Path) -> Res<DeleteOutcome> {
+    apply_delete_with(plan, backups, false)
+}
+
+/// Delete, keeping a backup. With `to_trash` a file or folder also goes to the OS trash (so it
+/// is recoverable even if Atlas's backups are wiped); if the trash can't take it, it is removed
+/// the plain way (the backup still holds it) and the outcome says so.
+pub fn apply_delete_with(plan: &DeletePlan, backups: &Path, to_trash: bool) -> Res<DeleteOutcome> {
     match &plan.unit {
         Unit::Path { path, is_dir } => {
             check_write_allowed(path)?;
@@ -976,7 +996,18 @@ pub fn apply_delete(plan: &DeletePlan, backups: &Path) -> Res<DeleteOutcome> {
                 let _ = fs::remove_dir_all(&dir);
                 return Err(e);
             }
-            let removal = if md.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) };
+            let mut note = None;
+            let trashed = to_trash && trash::delete(path).is_ok() && fs::symlink_metadata(path).is_err();
+            if to_trash && !trashed {
+                note = Some("The computer's trash could not take it, so it was removed. Atlas's backup still has it.".to_string());
+            }
+            let removal = if trashed {
+                Ok(())
+            } else if md.is_dir() {
+                fs::remove_dir_all(path)
+            } else {
+                fs::remove_file(path)
+            };
             if let Err(e) = removal {
                 // Partly removed folders are put back from the backup.
                 if md.is_dir() && path.exists() {
@@ -985,7 +1016,7 @@ pub fn apply_delete(plan: &DeletePlan, backups: &Path) -> Res<DeleteOutcome> {
                 let _ = fs::remove_dir_all(&dir);
                 return Err(e.into());
             }
-            Ok(DeleteOutcome { backup_id: id, name: plan.name.clone(), kind: plan.kind.as_str().into(), note: None })
+            Ok(DeleteOutcome { backup_id: id, name: plan.name.clone(), kind: plan.kind.as_str().into(), note })
         }
         Unit::Entry { file, pointer } => {
             check_write_allowed(file)?;
@@ -1067,16 +1098,125 @@ fn restore_path(payload_copy: &Path, dest: &Path, is_dir: bool) -> Res<()> {
     Ok(())
 }
 
-/// Undo a delete from its backup. Refuses (changing nothing) if something else
-/// now sits where the item was.
-pub fn restore(backups: &Path, backup_id: &str) -> Res<UndoOutcome> {
-    let (m, dir) = read_manifest(backups, backup_id)?;
+/// Where Atlas may write when it puts something back: the Claude folder, `.claude.json`, and the
+/// Claude files of the projects it knows. The target of a restore comes from a manifest file on
+/// disk, so it is checked against this before anything is written (a crafted manifest cannot
+/// drop a file somewhere else).
+#[derive(Debug, Clone)]
+pub struct Confine {
+    root: PathBuf,
+    claude_json: PathBuf,
+    projects: Vec<PathBuf>,
+}
+
+/// Files a project keeps outside its `.claude` folder that Atlas manages.
+const PROJECT_FILES: [&str; 4] = ["CLAUDE.md", "CLAUDE.local.md", ".mcp.json", "AGENTS.md"];
+
+impl Confine {
+    pub fn new(root: &Path, claude_json: &Path, projects: impl IntoIterator<Item = PathBuf>) -> Confine {
+        Confine { root: root.to_path_buf(), claude_json: claude_json.to_path_buf(), projects: projects.into_iter().collect() }
+    }
+
+    /// The folders and files of one discovery run.
+    pub fn from_discovery(root: &Path, claude_json: &Path, d: &Discovery) -> Confine {
+        Confine::new(root, claude_json, d.snapshot.projects.iter().map(|p| PathBuf::from(&p.path)))
+    }
+
+    pub fn allows(&self, target: &Path) -> bool {
+        use crate::fsutil::{path_inside, same_place};
+        if path_inside(target, &self.root) || same_place(target, &self.claude_json) {
+            return true;
+        }
+        self.projects.iter().any(|p| {
+            path_inside(target, &p.join(".claude"))
+                || (target.file_name().and_then(|n| n.to_str()).is_some_and(|n| PROJECT_FILES.contains(&n)) && target.parent().is_some_and(|d| same_place(d, p)))
+        })
+    }
+
+    fn check(&self, target: &Path) -> Res<()> {
+        if self.allows(target) {
+            Ok(())
+        } else {
+            refuse("That backup points outside the Claude folder and your projects, so Atlas will not write there.")
+        }
+    }
+}
+
+/// Size and modified time of a file, for the "did it move?" look right before a swap.
+pub(crate) type FileSig = Option<(u64, Option<SystemTime>)>;
+
+pub(crate) fn file_sig(p: &Path) -> FileSig {
+    let m = fs::metadata(p).ok()?;
+    Some((m.len(), m.modified().ok()))
+}
+
+/// Replace `file` (a JSON file Claude Code also writes) with `after`, which was made from
+/// `before`: back `before` up first, look again right before the swap (size, time and bytes must
+/// be what they were when `before` was read, or nothing is written), write atomically, read it
+/// back, and when `touched` names the one top-level key that changed, prove every other key is
+/// still what `before` had. Returns the backup id.
+#[allow(clippy::too_many_arguments)]
+fn guarded_swap(file: &Path, backups: &Path, label: &str, kind: &str, name: &str, before: &[u8], sig: FileSig, after: &[u8], touched: Option<&str>) -> Res<String> {
+    let (id, dir) = new_backup(backups, label)?;
+    let staged = (|| -> Res<()> {
+        fs::write(dir.join("file-before"), before)?;
+        write_manifest(
+            &dir,
+            &Manifest {
+                version: 1,
+                backup_id: id.clone(),
+                created_ms: now_ms(),
+                action: "restore".into(),
+                kind: kind.into(),
+                name: name.into(),
+                unit: "path".into(),
+                path: Some(file.to_string_lossy().into_owned()),
+                is_dir: Some(false),
+                has_file_before: Some(true),
+                ..Default::default()
+            },
+        )?;
+        Ok(())
+    })();
+    if let Err(e) = staged {
+        let _ = fs::remove_dir_all(&dir);
+        return Err(e);
+    }
+    if file_sig(file) != sig || fs::read(file).ok().as_deref() != Some(before) {
+        let _ = fs::remove_dir_all(&dir);
+        return refuse("The file changed while Atlas was getting ready. Nothing was changed; please try again.");
+    }
+    if let Err(e) = atomic_write(file, after) {
+        let _ = fs::remove_dir_all(&dir);
+        return Err(e.into());
+    }
+    let back = fs::read(file)?;
+    let intact = match touched {
+        None => true,
+        Some(key) => match (parse_json_bytes(before).ok(), parse_json_bytes(&back).ok()) {
+            (Some(Value::Object(old)), Some(Value::Object(new))) => old.iter().filter(|(k, _)| k.as_str() != key).all(|(k, v)| new.get(k) == Some(v)),
+            _ => false,
+        },
+    };
+    if back != after || !intact {
+        return refuse("Something changed the file at the same moment, so Atlas cannot be sure the change stuck. Its earlier copy is in Atlas's backups. Please check the file.");
+    }
+    Ok(id)
+}
+
+/// Undo a delete from its backup. Refuses (changing nothing) if something else now sits where
+/// the item was, if the target is outside what Atlas manages, or if the entry was already put
+/// back (a second restore would run a hook twice).
+pub fn restore(backups: &Path, backup_id: &str, confine: &Confine) -> Res<UndoOutcome> {
+    let (mut m, dir) = read_manifest(backups, backup_id)?;
     if m.action != "delete" {
         return refuse("Only a delete can be undone this way.");
     }
+    let mut new_backup_id = None;
     match m.unit.as_str() {
         "path" => {
             let dest = PathBuf::from(m.path.clone().unwrap_or_default());
+            confine.check(&dest)?;
             check_write_allowed(&dest)?;
             if fs::symlink_metadata(&dest).is_ok() {
                 return refuse("Something new is already there, so Atlas did not put the old one back over it.");
@@ -1086,24 +1226,33 @@ pub fn restore(backups: &Path, backup_id: &str) -> Res<UndoOutcome> {
         }
         "entry" => {
             let file = PathBuf::from(m.file.clone().unwrap_or_default());
+            confine.check(&file)?;
             check_write_allowed(&file)?;
+            if m.restored == Some(true) {
+                return refuse("That was already put back. Putting it back again would add it twice.");
+            }
             let removed = m.removed.clone().ok_or_else(|| WriteError::Refused("That backup is incomplete.".into()))?;
+            let sig = file_sig(&file);
             let current = fs::read(&file).map_err(|_| WriteError::Refused("The file is gone, so there is nothing to put it back into.".into()))?;
-            if Some(stamp_of(&current)) == m.after_stamp {
+            let after = if Some(stamp_of(&current)) == m.after_stamp {
                 // Untouched since the delete: put the original file back, byte for byte.
-                let before = fs::read(dir.join("file-before"))?;
-                atomic_write(&file, &before)?;
+                fs::read(dir.join("file-before"))?
             } else {
                 // The file moved on: put just this entry back where it was.
                 let style = detect_style(&current);
                 let mut v = parse_json_bytes(&current).map_err(|e| WriteError::Refused(format!("The file can't be read as JSON ({e}).")))?;
                 insert_back(&mut v, &removed).map_err(|e| WriteError::Refused(format!("Could not put it back: {e}. The original file is kept in Atlas's backups.")))?;
-                atomic_write(&file, &render_json(&v, &style))?;
-            }
+                render_json(&v, &style)
+            };
+            let top = removed.pointer.first().cloned();
+            // A safety copy of what is replaced, a last look before the swap and a read-back.
+            new_backup_id = Some(guarded_swap(&file, backups, &format!("restore-{}", m.name), &m.kind, &m.name, &current, sig, &after, top.as_deref())?);
+            m.restored = Some(true);
+            let _ = write_manifest(&dir, &m);
         }
         _ => return refuse("That backup can't be read."),
     }
-    Ok(UndoOutcome { name: m.name, kind: m.kind, backup_id: None })
+    Ok(UndoOutcome { name: m.name, kind: m.kind, backup_id: new_backup_id })
 }
 
 // ---------------------------------------------------------------------------
@@ -1409,6 +1558,19 @@ pub fn validate_draft(kind: &str, name: &str, event: Option<&str>, text: &str, c
 
 /// Write a new item from the editor's text. Never replaces an existing file.
 pub fn create_apply(kind: &str, name: &str, event: Option<&str>, text: &str, ctx: &CreateCtx, backups: &Path) -> Res<DeleteOutcome> {
+    create_apply_with(kind, name, event, text, ctx, backups, None)
+}
+
+/// What registers an MCP server through Claude Code's own command (`claude mcp add-json`):
+/// given the name and the server's JSON. `Err` means "could not", and the guarded file edit runs
+/// instead. `.claude.json` belongs to Claude Code, which rewrites it all the time, so its own
+/// command is the safest way in.
+pub type McpAdder<'a> = &'a dyn Fn(&str, &Value) -> Result<(), String>;
+
+/// `create_apply`, with an optional `McpAdder` used for `mcpServer` (Atlas backs the file up
+/// first, lets the command do the write, then proves the entry is there and no other server
+/// changed).
+pub fn create_apply_with(kind: &str, name: &str, event: Option<&str>, text: &str, ctx: &CreateCtx, backups: &Path, adder: Option<McpAdder>) -> Res<DeleteOutcome> {
     let d = create_draft(kind, name, event, ctx)?;
     let item_kind = create_item_kind(kind);
     let is_entry = matches!(kind, "hook" | "mcpServer");
@@ -1419,12 +1581,15 @@ pub fn create_apply(kind: &str, name: &str, event: Option<&str>, text: &str, ctx
     check_write_allowed(&target)?;
     let note = if is_entry {
         let entry: Value = serde_json::from_str(text).map_err(|e| WriteError::Refused(format!("Not valid JSON: {e}")))?;
+        let sig = file_sig(&target);
         let before = fs::read(&target).ok();
         let style = before.as_deref().map(detect_style).unwrap_or_default();
         let mut root = match &before {
             Some(b) => parse_json_bytes(b).map_err(|e| WriteError::Refused(format!("The file can't be read as JSON ({e}), so nothing was changed.")))?,
             None => Value::Object(Map::new()),
         };
+        let old_servers = root.get("mcpServers").and_then(Value::as_object).cloned().unwrap_or_default();
+        let entry_for_cli = entry.clone();
         let obj = root.as_object_mut().ok_or_else(|| WriteError::Refused("The file is not a JSON object.".into()))?;
         if kind == "hook" {
             let ev = event.unwrap_or("PostToolUse");
@@ -1445,13 +1610,34 @@ pub fn create_apply(kind: &str, name: &str, event: Option<&str>, text: &str, ctx
             fs::write(dir.join("file-before"), b)?;
         }
         write_manifest(&dir, &Manifest { version: 1, backup_id: id.clone(), created_ms: now_ms(), action: "create".into(), kind: kind.into(), name: d.name.clone(), unit: "path".into(), path: Some(d.path.clone()), is_dir: Some(false), file: None, removed: None, after_stamp: None, has_file_before: Some(before.is_some()), ..Default::default() })?;
-        if fs::read(&target).ok() != before {
+        if file_sig(&target) != sig || fs::read(&target).ok() != before {
             let _ = fs::remove_dir_all(&dir);
             return refuse("The file changed while Atlas was getting ready. Nothing was added; please try again.");
         }
-        atomic_write(&target, &after)?;
-        if fs::read(&target)? != after {
-            return refuse("Something else changed the file at the same moment. Please check and try again.");
+        let mut by_command = false;
+        if kind == "mcpServer"
+            && let Some(add) = adder
+            && add(name, &entry_for_cli).is_ok()
+        {
+            // The command did the write: prove the entry is there and no other server moved.
+            let now = fs::read(&target).ok().and_then(|b| parse_json_bytes(&b).ok());
+            let servers = now.as_ref().and_then(|v| v.get("mcpServers")).and_then(Value::as_object);
+            let ok = servers.is_some_and(|s| s.get(name) == Some(&entry_for_cli) && old_servers.iter().all(|(k, v)| s.get(k) == Some(v)));
+            if !ok {
+                return refuse("Claude Code's command ran, but the file does not show the new server as expected. Atlas's earlier copy is in its backups. Please check .claude.json.");
+            }
+            by_command = true;
+        }
+        if !by_command {
+            // Re-check right before the swap (the command may have run and failed).
+            if file_sig(&target) != sig && fs::read(&target).ok() != before {
+                let _ = fs::remove_dir_all(&dir);
+                return refuse("The file changed while Atlas was getting ready. Nothing was added; please try again.");
+            }
+            atomic_write(&target, &after)?;
+            if fs::read(&target)? != after {
+                return refuse("Something else changed the file at the same moment. Please check and try again.");
+            }
         }
         id
     } else {
@@ -1530,6 +1716,39 @@ pub fn tag_backup(backups: &Path, id: &str, source: &str, summary: &str) {
     let _ = write_manifest(&dir, &m);
 }
 
+/// The files a backup holds, as (name, bytes): the saved copy of the file and everything under
+/// `payload`. Used to check what a restore would bring back before it does. Anything that can't
+/// be read plainly (a link, a huge file, too many files) comes back under a name that is not
+/// markdown, so the caller treats it as "might be code".
+pub fn backup_files(backups: &Path, backup_id: &str) -> Vec<(String, Vec<u8>)> {
+    const MAX_FILES: usize = 400;
+    const MAX_BYTES: u64 = 2 * 1024 * 1024;
+    fn walk(base: &Path, dir: &Path, out: &mut Vec<(String, Vec<u8>)>, depth: usize) {
+        let Ok(rd) = fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let p = e.path();
+            let rel = p.strip_prefix(base).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+            let Ok(md) = fs::symlink_metadata(&p) else { continue };
+            if out.len() >= MAX_FILES || depth > 12 || md.file_type().is_symlink() || (md.is_file() && md.len() > MAX_BYTES) {
+                out.push((format!("{rel}.unreadable"), Vec::new()));
+            } else if md.is_dir() {
+                walk(base, &p, out, depth + 1);
+            } else if let Ok(b) = fs::read(&p) {
+                out.push((rel, b));
+            }
+        }
+    }
+    let Ok((m, dir)) = read_manifest(backups, backup_id) else { return vec![("manifest.unreadable".into(), Vec::new())] };
+    let mut out = Vec::new();
+    if let Ok(b) = fs::read(dir.join("file-before")) {
+        let name = m.path.as_deref().or(m.file.as_deref()).map(|p| payload_name(Path::new(p))).unwrap_or_else(|| "file-before".into());
+        out.push((name, b));
+    }
+    let payload = dir.join("payload");
+    walk(&payload, &payload, &mut out, 0);
+    out
+}
+
 /// Backups, newest first, at most `limit`.
 pub fn list_backups_detailed(backups: &Path, limit: usize) -> Vec<BackupInfo> {
     let mut ids: Vec<String> = fs::read_dir(backups).map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
@@ -1565,12 +1784,13 @@ pub fn list_backups_detailed(backups: &Path, limit: usize) -> Vec<BackupInfo> {
 /// reverted to the file as it was before, but only while the file is still exactly what that
 /// change left (anything newer is never overwritten). What is replaced is backed up first, so
 /// the undo can itself be undone.
-pub fn restore_any(backups: &Path, backup_id: &str) -> Res<UndoOutcome> {
+pub fn restore_any(backups: &Path, backup_id: &str, confine: &Confine) -> Res<UndoOutcome> {
     let (m, dir) = read_manifest(backups, backup_id)?;
     match m.action.as_str() {
-        "delete" => restore(backups, backup_id),
+        "delete" => restore(backups, backup_id, confine),
         "save" | "create" | "restore" => {
             let path = PathBuf::from(m.path.clone().unwrap_or_default());
+            confine.check(&path)?;
             check_write_allowed(&path)?;
             let Some(saved) = m.saved_stamp.clone() else {
                 return refuse("That backup is too old to undo safely. Its saved copy is still in Atlas's backups folder.");
@@ -1603,6 +1823,10 @@ pub fn restore_any(backups: &Path, backup_id: &str) -> Res<UndoOutcome> {
                         ..Default::default()
                     },
                 )?;
+                // Last look: if the file moved since it was read, write nothing.
+                if fs::read(&path).ok() != current {
+                    return refuse("That file changed while Atlas was getting ready. Nothing was changed; please try again.");
+                }
                 match &before {
                     Some(bytes) => atomic_write(&path, bytes)?,
                     None => {
@@ -1634,6 +1858,7 @@ pub fn restore_any(backups: &Path, backup_id: &str) -> Res<UndoOutcome> {
 /// may change. Returns the backup id. A missing file counts as `{}`.
 pub fn edit_json_keys(file: &Path, backups: &Path, label: &str, kind: &str, name: &str, touched: &[&str], edit: impl FnOnce(&mut Value) -> Res<()>) -> Res<String> {
     check_write_allowed(file)?;
+    let sig = file_sig(file);
     let before = fs::read(file).ok();
     let style = before.as_deref().map(detect_style).unwrap_or_default();
     let mut root = match &before {
@@ -1686,7 +1911,7 @@ pub fn edit_json_keys(file: &Path, backups: &Path, label: &str, kind: &str, name
         return Err(e);
     }
     // Last look: Claude Code rewrites this file all the time. If it moved, start over, never merge.
-    if fs::read(file).ok() != before {
+    if file_sig(file) != sig || fs::read(file).ok() != before {
         let _ = fs::remove_dir_all(&dir);
         return refuse("Claude Code changed the file while Atlas was getting ready. Nothing was changed; please try again.");
     }

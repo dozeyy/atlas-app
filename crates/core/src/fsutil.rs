@@ -218,6 +218,17 @@ fn comparable(path: &Path) -> PathBuf {
     if cfg!(windows) { PathBuf::from(cur.to_string_lossy().to_lowercase()) } else { cur }
 }
 
+/// True when `path` is `dir` itself or inside it, after links and `..` are resolved on both
+/// sides (so a crafted path or a link cannot step outside). Works for paths that do not exist yet.
+pub fn path_inside(path: &Path, dir: &Path) -> bool {
+    comparable(path).starts_with(comparable(dir))
+}
+
+/// True when both paths name the same place (links, `..` and case on Windows resolved).
+pub fn same_place(a: &Path, b: &Path) -> bool {
+    comparable(a) == comparable(b)
+}
+
 /// Drop the verbatim prefix Windows `canonicalize` adds, so paths shown to people look normal.
 pub fn strip_verbatim(p: &Path) -> PathBuf {
     let s = p.to_string_lossy();

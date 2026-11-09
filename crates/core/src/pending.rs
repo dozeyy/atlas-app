@@ -129,6 +129,11 @@ pub fn apply(ops: &Ops, queue: &Path, id: &str) -> Result<Applied, String> {
     if c.status != "pending" {
         return Err("That change was already dealt with.".into());
     }
+    // What runs is the stored request, so what was shown must be what that request does.
+    if let Err(e) = verify(ops, &c) {
+        let _ = resolve(queue, c, "failed", e.clone());
+        return Err(e);
+    }
     match ops.apply(&c.request) {
         Ok(a) => {
             let _ = resolve(queue, c, "applied", a.summary.clone());
@@ -138,6 +143,44 @@ pub fn apply(ops: &Ops, queue: &Path, id: &str) -> Result<Applied, String> {
             let _ = resolve(queue, c, "failed", e.clone());
             Err(e)
         }
+    }
+}
+
+/// What `c.request` would do right now, worked out again from the request itself (never from
+/// the stored `before`/`after`/`summary`, which anyone who can write the queue folder could
+/// have set to something harmless). Show this to the user, not the stored text.
+pub fn fresh(ops: &Ops, c: &PendingChange) -> Result<Preview, String> {
+    ops.preview(&c.request)
+}
+
+/// Err when the stored card does not describe what the stored request does: the user would be
+/// approving one thing and getting another. (`before` is not compared: it follows the file on
+/// disk, and an edit is pinned to the text it was made from by its stamp.)
+pub fn verify(ops: &Ops, c: &PendingChange) -> Result<Preview, String> {
+    const MISMATCH: &str = "This change does not match what was shown for it, so Atlas did not apply it. Ask for it again.";
+    let p = fresh(ops, c).map_err(|e| format!("This change can't be applied as it stands: {e}"))?;
+    let same = p.tool == c.tool && p.summary == c.summary && p.kind == c.kind && p.name == c.name && p.target_path == c.target_path && p.after == c.after;
+    if same { Ok(p) } else { Err(MISMATCH.into()) }
+}
+
+/// The change as the user should see it: the stored card with its summary, text and target
+/// replaced by what the request really does, plus whether the stored card was honest.
+pub fn display(ops: &Ops, c: &PendingChange) -> (PendingChange, Result<(), String>) {
+    match fresh(ops, c) {
+        Ok(p) => {
+            let honest = verify(ops, c).map(|_| ());
+            let mut v = c.clone();
+            v.tool = p.tool;
+            v.summary = p.summary;
+            v.kind = p.kind;
+            v.name = p.name;
+            v.target_path = p.target_path;
+            v.before = p.before;
+            v.after = p.after;
+            v.note = p.note;
+            (v, honest)
+        }
+        Err(e) => (c.clone(), Err(format!("This change can't be applied as it stands: {e}"))),
     }
 }
 

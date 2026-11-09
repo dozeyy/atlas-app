@@ -304,7 +304,8 @@ pub async fn setup_delete(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: Str
     blocking(move || {
         let _lock = write_lock(&st)?;
         let plan = hub.current(&app, &st)?.delete_plan(&id).map_err(|e| e.message())?;
-        let out = sw::apply_delete(&plan, &backups_dir(&st)).map_err(|e| e.message())?;
+        // A delete also goes to the computer's trash, so it is recoverable even if Atlas's backups are cleared.
+        let out = sw::apply_delete_with(&plan, &backups_dir(&st), true).map_err(|e| e.message())?;
         hub.refresh(&app, &st);
         Ok(out)
     })
@@ -317,7 +318,10 @@ pub async fn setup_undo(app: AppHandle, state: Info<'_>, hub: Hub<'_>, backup_id
     let (st, hub) = (state.inner().clone(), hub.inner().clone());
     blocking(move || {
         let _lock = write_lock(&st)?;
-        let out = sw::restore(&backups_dir(&st), &backup_id).map_err(|e| e.message())?;
+        let d = hub.current(&app, &st)?;
+        let i = st.setup_inputs(false).ok_or_else(|| "Your Claude folder is not ready yet.".to_string())?;
+        let confine = sw::Confine::from_discovery(&i.root.dir, &i.root.claude_json, &d);
+        let out = sw::restore(&backups_dir(&st), &backup_id, &confine).map_err(|e| e.message())?;
         hub.refresh(&app, &st);
         Ok(out)
     })

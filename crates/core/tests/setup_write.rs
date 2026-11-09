@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use atlas_core::paths::{resolve_config_root, ConfigInputs};
 use atlas_core::setup_write::{
-    apply_delete, apply_save, create_apply, create_draft, restore, validate, CreateCtx, DeletePlan, SavePlan, Unit, WriteError,
+    apply_delete, apply_save, create_apply, create_draft, restore, validate, Confine, CreateCtx, DeletePlan, SavePlan, Unit, WriteError,
 };
 use atlas_core::setup::{discover, Cache, Discovery, DiscoveryInputs, ItemKind, ScopeKind, SetupItem};
 
@@ -71,6 +71,11 @@ impl Fx {
     fn cj(&self) -> PathBuf {
         self.inputs().root.claude_json
     }
+    /// Where a restore may write in this private copy.
+    fn confine(&self) -> Confine {
+        let i = self.inputs();
+        Confine::from_discovery(&i.root.dir, &i.root.claude_json, &self.discover())
+    }
 }
 
 fn find<'a>(d: &'a Discovery, kind: ItemKind, scope: ScopeKind, name: &str) -> &'a SetupItem {
@@ -116,7 +121,7 @@ fn deleting_a_skill_backs_up_the_whole_folder_and_undo_restores_it_byte_for_byte
     let payload = fx.backups.join(&out.backup_id).join("payload").join("shared-skill");
     assert_eq!(snapshot(&payload), before);
 
-    let undo = restore(&fx.backups, &out.backup_id).unwrap();
+    let undo = restore(&fx.backups, &out.backup_id, &fx.confine()).unwrap();
     assert_eq!(undo.name, "shared-skill");
     assert_eq!(snapshot(&dir), before, "byte-exact");
 }
@@ -132,7 +137,7 @@ fn deleting_an_agent_file_and_undoing_it_keeps_crlf_bytes() {
     let it = find(&d, ItemKind::Agent, ScopeKind::User, "user-agent");
     let out = apply_delete(&d.delete_plan(&it.id).unwrap(), &fx.backups).unwrap();
     assert!(!p.exists());
-    restore(&fx.backups, &out.backup_id).unwrap();
+    restore(&fx.backups, &out.backup_id, &fx.confine()).unwrap();
     assert_eq!(fs::read(&p).unwrap(), bytes);
 }
 
@@ -144,7 +149,7 @@ fn undo_refuses_when_something_new_sits_in_the_old_place() {
     let p = fx.claude().join("rules").join("always.md");
     let out = apply_delete(&d.delete_plan(&it.id).unwrap(), &fx.backups).unwrap();
     fs::write(&p, "new content").unwrap();
-    let err = restore(&fx.backups, &out.backup_id).unwrap_err();
+    let err = restore(&fx.backups, &out.backup_id, &fx.confine()).unwrap_err();
     assert!(matches!(err, WriteError::Refused(_)));
     assert_eq!(fs::read_to_string(&p).unwrap(), "new content", "the new file is untouched");
 }
@@ -166,7 +171,7 @@ fn deleting_an_mcp_entry_keeps_every_other_key_and_undo_is_byte_exact() {
     // The backup holds the complete original file.
     assert_eq!(fs::read(fx.backups.join(&out.backup_id).join("file-before")).unwrap(), before);
 
-    restore(&fx.backups, &out.backup_id).unwrap();
+    restore(&fx.backups, &out.backup_id, &fx.confine()).unwrap();
     assert_eq!(fs::read(&cj).unwrap(), before);
 }
 
@@ -182,7 +187,7 @@ fn undoing_an_mcp_delete_after_the_file_moved_on_puts_back_only_that_entry_in_pl
     v["numStartups"] = serde_json::json!(99);
     fs::write(&cj, serde_json::to_vec_pretty(&v).unwrap()).unwrap();
 
-    restore(&fx.backups, &out.backup_id).unwrap();
+    restore(&fx.backups, &out.backup_id, &fx.confine()).unwrap();
     let v: serde_json::Value = serde_json::from_slice(&fs::read(&cj).unwrap()).unwrap();
     assert_eq!(v["numStartups"], 99, "the newer write survives");
     let keys: Vec<&String> = v["mcpServers"].as_object().unwrap().keys().collect();
@@ -214,7 +219,7 @@ fn deleting_a_hook_removes_the_emptied_groups_and_undo_is_byte_exact() {
             }
         }
     }
-    restore(&fx.backups, &out.backup_id).unwrap();
+    restore(&fx.backups, &out.backup_id, &fx.confine()).unwrap();
     assert_eq!(fs::read(&sp).unwrap(), before);
 }
 
@@ -457,7 +462,7 @@ fn debug_builds_refuse_delete_save_undo_and_create_against_the_real_config() {
         "unit": "path", "path": ghost_dir.to_string_lossy(), "isDir": true
     });
     fs::write(dir.join("manifest.json"), manifest.to_string()).unwrap();
-    assert!(matches!(restore(backups.path(), id).unwrap_err(), WriteError::Refused(m) if m.contains("refused")));
+    assert!(matches!(restore(backups.path(), id, &Confine::new(&real, &cj, [])).unwrap_err(), WriteError::Refused(m) if m.contains("refused")));
 
     assert!(!ghost_dir.exists(), "nothing was created in the real folder");
 }

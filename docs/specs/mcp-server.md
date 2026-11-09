@@ -45,10 +45,30 @@ sentence, never a protocol error.
 - Never exposed: `.credentials.json`, `sessions/*.key`, OAuth / admin keys. Not listed, not readable,
   not writable (tests try each, with a tree snapshot before and after). Secret-looking values in
   readable files are masked; writing the mask back is refused.
-- Direct mode (no `--propose`) is tagged `mcp` and **will not** create or edit anything that runs
-  commands: new hooks and MCP servers, and edits of hooks, hook scripts, MCP servers, settings,
-  permissions and the status line. Those need the user's approval, which is propose mode. This stops a
-  prompt-injected chat from planting a command that runs later.
+- Direct mode (no `--propose`) is tagged `mcp` and is an **allow-list**: it may only create or edit
+  Instructions, Rules, Output styles and plain markdown. Skills, agents and commands are allowed only
+  as `.md` text with no `hooks`/`allowed-tools`-style frontmatter keys and no `!` command lines in
+  the body; non-`.md` skill files and `Other` items are refused. Hooks, MCP servers, settings,
+  permissions, the status line and `.claude.json` are never written in direct mode, and neither is
+  turning an MCP server on or a parked hook back on. Those need the user's approval, which is propose
+  mode. This stops a prompt-injected chat from planting a command that runs later.
+- Restore (`RestoreBackup`) in direct mode is checked the same way: a backup of a code kind,
+  `settings*.json`, `.claude.json` or `.mcp.json`, or one whose text carries code, is refused.
+- Restore targets come from the backup manifest, so they are confined (`Confine`): the Claude root,
+  `.claude.json`, and the known projects' `.claude` folders and root files only. A forged manifest
+  pointing elsewhere is refused.
+- A restore is applied once (manifest `restored` mark), takes a safety backup of the current file,
+  re-reads right before writing and verifies after. An entry that is already in the list is not
+  added a second time.
+- Delete goes to the OS trash as well as the backups (`ATLAS_NO_TRASH=1` skips the trash for tests).
+- Pending changes are re-previewed at apply time (`pending::verify`); a card that no longer matches
+  what Atlas computes is marked failed, and the list shows the recomputed card (`pending::display`).
+- `.claude.json` MCP-server creation goes through `claude mcp add-json` when the CLI is found; the
+  guarded direct edit (size+mtime+bytes re-check before the rename, untouched-key check after) is the
+  fallback. Residual risk: a rival write in the microseconds between the last look and the rename
+  cannot be detected afterwards.
+- Connect/Disconnect wait up to 15 s for the write lock, then say "Another Atlas change is in
+  progress". Disconnect reports an unreadable settings file instead of treating it as gone.
 - Every write: backup first, atomic write, read-back verify, cross-process write lock
   (`<data>/setup-backups/../write.lock`) shared with the app.
 - Debug builds refuse writes under the real Claude folder (`fsutil::check_write_allowed`).

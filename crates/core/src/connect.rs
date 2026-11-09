@@ -179,19 +179,52 @@ fn run_cli(cli: &Path, args: &[&str], root: &ConfigRoot) -> Result<(), String> {
     }
 }
 
+/// Register an MCP server at user scope through Claude Code's own command. `Err` when there is
+/// no command or it failed (the caller then falls back to the guarded file edit).
+pub fn cli_add_json(cli: &CliChoice, root: &ConfigRoot, name: &str, entry: &Value) -> Result<(), String> {
+    let cli = cli.resolve().ok_or("Claude Code's command was not found.")?;
+    let text = serde_json::to_string(entry).map_err(|e| e.to_string())?;
+    run_cli(&cli, &["mcp", "add-json", "-s", "user", name, &text], root)
+}
+
 fn lock_dir(ctx: &ConnectCtx) -> Option<PathBuf> {
     ctx.backups.parent().map(Path::to_path_buf)
 }
 
+/// The cross-process write lock. Without it nothing is changed: two writers could clobber each other.
+fn lock(ctx: &ConnectCtx, wait: Duration) -> Result<crate::writelock::WriteGuard, String> {
+    const BUSY: &str = "Another Atlas change is in progress. Nothing was changed; please try again in a moment.";
+    let dir = lock_dir(ctx).ok_or(BUSY)?;
+    crate::writelock::acquire(&dir, wait).map_err(|_| BUSY.to_string())
+}
+
+/// How long Connect and Disconnect wait for another Atlas change to finish.
+const LOCK_WAIT: Duration = Duration::from_secs(15);
+
+/// Is the `atlas` entry absent from `.claude.json`? A missing file counts as absent; a file
+/// that exists but can't be read or parsed is an error (never "it's gone").
+fn entry_gone(path: &Path) -> Result<bool, String> {
+    if !path.exists() {
+        return Ok(true);
+    }
+    let v = read_cj(path).ok_or("Claude's settings file can't be read, so Atlas can't tell whether it is connected. Nothing was changed.")?;
+    Ok(v.get("mcpServers").and_then(|m| m.get(SERVER_NAME)).is_none())
+}
+
 /// Register the server. Returns the new state, read back from the file.
 pub fn connect(ctx: &ConnectCtx) -> Result<ConnectOutcome, String> {
+    connect_waiting(ctx, LOCK_WAIT)
+}
+
+/// `connect`, waiting at most `wait` for another Atlas change to finish.
+pub fn connect_waiting(ctx: &ConnectCtx, wait: Duration) -> Result<ConnectOutcome, String> {
     crate::fsutil::check_write_allowed(&ctx.root.claude_json).map_err(|e| e.to_string())?;
     if !ctx.server.is_file() {
         return Err("The Atlas connector program is missing from this install, so there is nothing to connect. Reinstalling Atlas puts it back.".into());
     }
-    let _guard = lock_dir(ctx).and_then(|d| crate::writelock::acquire(&d, Duration::from_secs(15)).ok());
+    let _guard = lock(ctx, wait)?;
     let cli = ctx.cli.resolve();
-    let want = crate::setup::display_path(ctx.server);
+    let want =crate::setup::display_path(ctx.server);
     let json = server_json(ctx);
     let ok = |c: &ConnectCtx| state(c.root, Some(c.server), cli.is_some()).state == "connected";
     let mut via = "file";
@@ -227,19 +260,24 @@ pub fn connect(ctx: &ConnectCtx) -> Result<ConnectOutcome, String> {
 
 /// Remove the registration. Only the `atlas` entry is touched.
 pub fn disconnect(ctx: &ConnectCtx) -> Result<ConnectOutcome, String> {
+    disconnect_waiting(ctx, LOCK_WAIT)
+}
+
+/// `disconnect`, waiting at most `wait` for another Atlas change to finish.
+pub fn disconnect_waiting(ctx: &ConnectCtx, wait: Duration) -> Result<ConnectOutcome, String> {
     crate::fsutil::check_write_allowed(&ctx.root.claude_json).map_err(|e| e.to_string())?;
-    let _guard = lock_dir(ctx).and_then(|d| crate::writelock::acquire(&d, Duration::from_secs(15)).ok());
+    let _guard = lock(ctx, wait)?;
     let cli = ctx.cli.resolve();
-    let gone = |c: &ConnectCtx| read_cj(&c.root.claude_json).and_then(|v| v.get("mcpServers").map(|m| m.get(SERVER_NAME).is_none())).unwrap_or(true);
+    let gone = |c: &ConnectCtx| entry_gone(&c.root.claude_json);
     let mut via = "file";
     let mut backup_id = None;
-    if gone(ctx) {
+    if gone(ctx)? {
         let st = state(ctx.root, Some(ctx.server), cli.is_some());
         return Ok(ConnectOutcome { state: st, via: "none".into(), backup_id: None });
     }
     if let Some(cli) = &cli
         && run_cli(cli, &["mcp", "remove", "-s", "user", SERVER_NAME], ctx.root).is_ok()
-        && gone(ctx)
+        && gone(ctx).unwrap_or(false)
     {
         via = "cli";
     }
@@ -254,7 +292,7 @@ pub fn disconnect(ctx: &ConnectCtx) -> Result<ConnectOutcome, String> {
         sw::tag_backup(ctx.backups, &id, "user", "Disconnected Atlas from Claude Code");
         backup_id = Some(id);
     }
-    if !gone(ctx) {
+    if !gone(ctx)? {
         return Err("Atlas asked, but Claude's settings still list it. Please check .claude.json.".into());
     }
     Ok(ConnectOutcome { state: state(ctx.root, Some(ctx.server), cli.is_some()), via: via.into(), backup_id })

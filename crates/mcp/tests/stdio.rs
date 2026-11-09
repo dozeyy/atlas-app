@@ -72,7 +72,8 @@ impl Client {
     fn start(sb: &Sandbox, extra: &[&str]) -> Client {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_atlas-mcp"));
         cmd.arg("--config-dir").arg(&sb.config).arg("--data-dir").arg(&sb.data).args(extra);
-        cmd.env_remove("CLAUDE_CONFIG_DIR").env_remove("ATLAS_DATA_DIR");
+        // Deletes in the sandbox must not land in the real Recycle Bin.
+        cmd.env_remove("CLAUDE_CONFIG_DIR").env_remove("ATLAS_DATA_DIR").env("ATLAS_NO_TRASH", "1");
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
         let mut child = cmd.spawn().expect("start atlas-mcp");
         let stdin = child.stdin.take().unwrap();
@@ -339,4 +340,35 @@ fn the_windows_build_has_no_console_subsystem() {
     // Optional header starts 24 bytes in; Subsystem sits 68 bytes into it (same for PE32 and PE32+).
     let sub = u16::from_le_bytes(bytes[pe + 24 + 68..pe + 24 + 70].try_into().unwrap());
     assert_eq!(sub, 2, "atlas-mcp must be a windowed (GUI subsystem) program, got subsystem {sub}");
+}
+
+/// The registration Connect writes actually starts the server. Needs Claude Code installed:
+/// `cargo test -p atlas-mcp --test stdio registered_entry -- --ignored --nocapture`.
+/// Connects into a scratch folder (`--config-dir` style, never the real one), then has Claude
+/// Code's own `claude mcp get atlas` start the program from that entry and report its health.
+#[test]
+#[ignore = "runs the real claude command"]
+fn the_registered_entry_starts_the_server_when_claude_code_launches_it() {
+    use atlas_core::connect::{self, CliChoice, ConnectCtx};
+    use atlas_core::paths::{ConfigInputs, resolve_config_root};
+    let sb = Sandbox::new();
+    let home = sb._tmp.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let root = resolve_config_root(&ConfigInputs { flag: Some(&sb.config), settings_override: None, env: None, home: &home, cwd: sb._tmp.path() });
+    let server = PathBuf::from(env!("CARGO_BIN_EXE_atlas-mcp"));
+    let backups = sb.data.join("setup-backups");
+    let ctx = ConnectCtx { root: &root, server: &server, backups: &backups, data_dir_flag: Some(&sb.data), cli: CliChoice::Auto };
+    assert!(ctx.cli.found(), "Claude Code's command is not installed here");
+    let out = connect::connect(&ctx).unwrap();
+    assert_eq!((out.via.as_str(), out.state.state.as_str()), ("cli", "connected"));
+
+    let claude = atlas_core::connect::find_claude_cli(std::env::var_os("PATH").as_deref(), &atlas_core::paths::home_dir().unwrap()).expect("claude");
+    let mut cmd = Command::new(claude);
+    cmd.args(["mcp", "get", "atlas"]).env("CLAUDE_CONFIG_DIR", &sb.config).env_remove("ATLAS_DATA_DIR").stdin(Stdio::null());
+    atlas_core::proc::quiet(&mut cmd);
+    let got = cmd.output().expect("run claude mcp get");
+    let text = format!("{}{}", String::from_utf8_lossy(&got.stdout), String::from_utf8_lossy(&got.stderr));
+    eprintln!("{text}");
+    assert!(text.contains("Connected"), "Claude Code could not start the registered server:\n{text}");
+    connect::disconnect(&ctx).unwrap();
 }

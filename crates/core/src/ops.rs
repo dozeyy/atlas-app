@@ -21,6 +21,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::connect::CliChoice;
 use crate::layout;
 use crate::setup::projects::norm_key;
 use crate::setup::secrets::MASK;
@@ -60,8 +61,56 @@ fn cut(s: &str, n: usize) -> (String, bool) {
     (s.chars().take(n).collect(), true)
 }
 
-fn is_code_kind(k: ItemKind) -> bool {
-    matches!(k, ItemKind::Hook | ItemKind::HookScript | ItemKind::McpServer | ItemKind::Settings | ItemKind::Permission | ItemKind::StatusLine)
+/// The only kinds a direct (code-denied) write may touch: plain markdown that Claude reads as
+/// words. Everything else (hooks, scripts, MCP servers, settings, permissions, the status line,
+/// plugins, workflows, and any file Atlas has no name for) can end up running a command, so it
+/// is an allow-list: a kind added later is refused until someone decides it is safe.
+fn is_prose_kind(k: ItemKind) -> bool {
+    matches!(k, ItemKind::Instructions | ItemKind::Rule | ItemKind::OutputStyle | ItemKind::Skill | ItemKind::Agent | ItemKind::Command | ItemKind::AutoMemory | ItemKind::AgentMemory)
+}
+
+/// The same allow-list for a backup's `kind` word.
+fn is_prose_kind_word(k: &str) -> bool {
+    matches!(k, "instructions" | "rule" | "outputStyle" | "skill" | "agent" | "command" | "autoMemory" | "agentMemory")
+}
+
+/// Kinds whose text can carry behaviour of its own: a skill, agent or command runs `!` shell
+/// lines and can grant tools or attach hooks through its frontmatter.
+fn can_carry_code(k: ItemKind) -> bool {
+    matches!(k, ItemKind::Skill | ItemKind::Agent | ItemKind::Command)
+}
+
+/// Frontmatter keys that make a skill, agent or command run something or widen what it may run.
+const CODE_KEYS: [&str; 7] = ["hooks", "allowed-tools", "allowed_tools", "allowedtools", "permissionmode", "mcpservers", "shell"];
+
+/// Why `text` (the body of a skill, agent or command) could run a command, if it could.
+fn code_in_text(text: &str) -> Option<&'static str> {
+    let text = text.trim_start_matches('\u{feff}');
+    let mut lines = text.lines();
+    if lines.clone().next().is_some_and(|l| l.trim_end() == "---") {
+        lines.next();
+        for l in lines.by_ref() {
+            if l.trim_end() == "---" {
+                break;
+            }
+            // Top-level keys only (nested ones sit under a key that is itself checked).
+            if !l.starts_with([' ', '\t'])
+                && let Some((k, _)) = l.split_once(':')
+                && CODE_KEYS.contains(&k.trim().to_ascii_lowercase().as_str())
+            {
+                return Some("a hook, a tool permission or a server in its header");
+            }
+        }
+    }
+    // `![alt](url)` is a markdown image, not a shell line.
+    let shell_line = |l: &str| {
+        let t = l.trim_start();
+        (t.starts_with('!') && !t.starts_with("![")) || t.starts_with("```!")
+    };
+    if text.contains("!`") || text.lines().any(shell_line) {
+        return Some("a shell line (starting with !)");
+    }
+    None
 }
 
 fn no_mask(text: &str) -> Result<(), String> {
@@ -232,12 +281,32 @@ pub struct Ops {
     cache: Mutex<Cache>,
     /// May a change add or edit something that runs commands (hooks, MCP servers, settings)?
     allow_code: bool,
+    /// Claude Code's command, used to register an MCP server (`claude mcp add-json`).
+    cli: CliChoice,
+    /// Send what a delete removes to the OS trash as well as Atlas's backups.
+    to_trash: bool,
 }
 
 impl Ops {
-    /// `data_dir` is Atlas's data folder (the one that holds `setup-backups`).
+    /// `data_dir` is Atlas's data folder (the one that holds `setup-backups`). Deletes go to the
+    /// OS trash too (set `ATLAS_NO_TRASH=1`, or call `without_trash`, to keep tests out of the
+    /// real Recycle Bin). MCP servers are added by the file edit unless `with_cli` is given.
     pub fn new(inputs: DiscoveryInputs, data_dir: &Path, source: &str) -> Ops {
-        Ops { inputs, data_dir: data_dir.to_path_buf(), backups: data_dir.join("setup-backups"), source: source.to_string(), cache: Mutex::new(Cache::default()), allow_code: true }
+        let to_trash = std::env::var_os("ATLAS_NO_TRASH").is_none_or(|v| v.is_empty() || v == "0");
+        Ops { inputs, data_dir: data_dir.to_path_buf(), backups: data_dir.join("setup-backups"), source: source.to_string(), cache: Mutex::new(Cache::default()), allow_code: true, cli: CliChoice::Missing, to_trash }
+    }
+
+    /// Use Claude Code's own command to add MCP servers (it owns `.claude.json`); the guarded
+    /// file edit stays the fallback.
+    pub fn with_cli(mut self, cli: CliChoice) -> Ops {
+        self.cli = cli;
+        self
+    }
+
+    /// Do not send deleted files to the OS trash (Atlas's backups still keep them).
+    pub fn without_trash(mut self) -> Ops {
+        self.to_trash = false;
+        self
     }
 
     /// Refuse (in `apply`) to add or edit anything that runs commands on the computer: hooks,
@@ -254,6 +323,56 @@ impl Ops {
             return Ok(());
         }
         Err(format!("Changing {what} could make a command run on this computer, so Atlas will not do it without the user's approval. Ask the user to make this change in Atlas, or use Atlas in propose mode so they can approve it."))
+    }
+
+    /// A text edit of this kind of file, at this path, with this new text: allowed in direct
+    /// mode only for plain markdown, and for a skill, agent or command only when the text
+    /// cannot run anything.
+    fn guard_prose(&self, kind: ItemKind, path: &str, text: &str) -> Result<(), String> {
+        if self.allow_code {
+            return Ok(());
+        }
+        if !is_prose_kind(kind) {
+            return self.guard_code("hooks, MCP servers, settings or files of this kind");
+        }
+        if !Path::new(path).extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("md")) {
+            return self.guard_code("a file that is not plain markdown (it could be a script)");
+        }
+        if can_carry_code(kind)
+            && let Some(why) = code_in_text(text)
+        {
+            return self.guard_code(&format!("text with {why}"));
+        }
+        Ok(())
+    }
+
+    /// Where a restore may write: the Claude folder, `.claude.json` and the projects Claude knows.
+    fn confine(&self, d: &Discovery) -> sw::Confine {
+        sw::Confine::from_discovery(&self.inputs.root.dir, &self.inputs.root.claude_json, d)
+    }
+
+    /// Would putting this backup back put code on the computer? Hooks, servers, settings and
+    /// anything that is not plain markdown say yes; so does a skill, agent or command whose
+    /// saved text carries a header or `!` line that runs something.
+    fn guard_backup(&self, info: &sw::BackupInfo) -> Result<(), String> {
+        if self.allow_code {
+            return Ok(());
+        }
+        let name = info.path.as_deref().and_then(|p| Path::new(p).file_name()).and_then(|n| n.to_str()).unwrap_or("").to_ascii_lowercase();
+        if !is_prose_kind_word(&info.kind) || (name.starts_with("settings") && name.ends_with(".json")) || name == ".claude.json" || name == ".mcp.json" {
+            return self.guard_code("hooks, MCP servers or settings");
+        }
+        if matches!(info.kind.as_str(), "skill" | "agent" | "command") {
+            for (rel, bytes) in sw::backup_files(&self.backups, &info.backup_id) {
+                if !rel.to_ascii_lowercase().ends_with(".md") {
+                    return self.guard_code("a file that is not plain markdown (it could be a script)");
+                }
+                if let Some(why) = code_in_text(&String::from_utf8_lossy(&bytes)) {
+                    return self.guard_code(&format!("text with {why}"));
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn inputs(&self) -> &DiscoveryInputs {
@@ -493,7 +612,20 @@ impl Ops {
                 let draft = sw::create_draft(kind, name, event.as_deref(), &self.ctx()).map_err(wm)?;
                 let text = text.clone().unwrap_or_else(|| draft.text.clone());
                 no_mask(&text)?;
-                let out = sw::create_apply(kind, name, event.as_deref(), &text, &self.ctx(), &self.backups).map_err(wm)?;
+                if !matches!(kind.as_str(), "hook" | "mcpServer") {
+                    let k = match kind.as_str() {
+                        "instructions" => ItemKind::Instructions,
+                        "skill" => ItemKind::Skill,
+                        "agent" => ItemKind::Agent,
+                        "command" => ItemKind::Command,
+                        "rule" => ItemKind::Rule,
+                        "outputStyle" => ItemKind::OutputStyle,
+                        _ => ItemKind::Other,
+                    };
+                    self.guard_prose(k, &draft.path, &text)?;
+                }
+                let adder = |n: &str, v: &Value| crate::connect::cli_add_json(&self.cli, &self.inputs.root, n, v);
+                let out = sw::create_apply_with(kind, name, event.as_deref(), &text, &self.ctx(), &self.backups, Some(&adder)).map_err(wm)?;
                 let summary = format!("Created {} {}", kind_word(kind), out.name);
                 self.tag(&out.backup_id, &summary);
                 Ok(Applied { summary, backup_id: Some(out.backup_id), path: Some(draft.path), note: None })
@@ -501,14 +633,20 @@ impl Ops {
             Write::UpdateItem { id, text, file, stamp } => {
                 no_mask(text)?;
                 let item = d.item(id).ok_or("Unknown item. Use list_items to find the id.")?;
-                if is_code_kind(item.kind) {
-                    self.guard_code("hooks, MCP servers or settings")?;
+                if !is_prose_kind(item.kind) {
+                    self.guard_code("hooks, MCP servers, settings or files of this kind")?;
+                }
+                if let Some(rel) = file
+                    && !rel.to_ascii_lowercase().ends_with(".md")
+                {
+                    self.guard_code("a file that is not plain markdown (it could be a script)")?;
                 }
                 let plan = d.save_plan_file(id, file.as_deref()).map_err(wm)?;
                 let raw = d.read_raw_file(id, file.as_deref(), false).map_err(wm)?;
                 if raw.needs_reveal {
                     return Err("This holds keys or tokens, so it can be read but not changed from here. Change it in Atlas.".into());
                 }
+                self.guard_prose(item.kind, &raw.path, text)?;
                 let expected = stamp.clone().unwrap_or_else(|| raw.stamp.clone());
                 let out = sw::apply_save(&plan, text, &expected, false, &self.backups).map_err(wm)?;
                 let summary = format!("Edited {} {}", item.kind.as_str(), item.name);
@@ -526,18 +664,25 @@ impl Ops {
             Write::DeleteItem { id } => {
                 let item = d.item(id).ok_or("Unknown item. Use list_items to find the id.")?;
                 let plan = d.delete_plan(id).map_err(wm)?;
-                let out = sw::apply_delete(&plan, &self.backups).map_err(wm)?;
+                let out = sw::apply_delete_with(&plan, &self.backups, self.to_trash).map_err(wm)?;
                 let summary = format!("Deleted {} {}", item.kind.as_str(), item.name);
                 self.tag(&out.backup_id, &summary);
-                Ok(Applied { summary, backup_id: Some(out.backup_id), path: item.path.clone(), note: Some("Kept in Atlas's backups; restore_backup puts it back.".into()) })
+                let note = match (self.to_trash, out.note) {
+                    (_, Some(n)) => n,
+                    (true, None) => "Kept in Atlas's backups (restore_backup puts it back), and a file or folder is also in the computer's trash.".into(),
+                    (false, None) => "Kept in Atlas's backups; restore_backup puts it back.".into(),
+                };
+                Ok(Applied { summary, backup_id: Some(out.backup_id), path: item.path.clone(), note: Some(note) })
             }
             Write::ToggleHook { id, enabled } => {
                 if let Some(bid) = id.strip_prefix(PARKED_PREFIX) {
                     if !*enabled {
                         return Err("That hook is already off.".into());
                     }
+                    // Turning a hook on makes it run again, so it is code coming back.
+                    self.guard_code("hooks")?;
                     let info = sw::list_parked(&self.backups).into_iter().find(|b| b.backup_id == bid).ok_or("That turned-off hook is no longer in Atlas's backups.")?;
-                    let out = sw::restore(&self.backups, bid).map_err(wm)?;
+                    let out = sw::restore(&self.backups, bid, &self.confine(&d)).map_err(wm)?;
                     sw::set_parked(&self.backups, bid, false);
                     let summary = format!("Turned hook {} back on", out.name);
                     self.tag(bid, &summary);
@@ -558,6 +703,10 @@ impl Ops {
                 Ok(Applied { summary, backup_id: Some(out.backup_id.clone()), path: item.path.clone(), note: Some(format!("To turn it back on use toggle_hook with id \"{PARKED_PREFIX}{}\" and enabled true.", out.backup_id)) })
             }
             Write::ToggleMcpServer { id, enabled, project } => {
+                if *enabled {
+                    // Turning a server on lets Claude Code start its command.
+                    self.guard_code("MCP servers")?;
+                }
                 let item = d.item(id).ok_or("Unknown item. Use list_items to find the id.")?;
                 let t = self.mcp_target(&d, item, project.as_deref(), *enabled)?;
                 let name = item.name.clone();
@@ -584,7 +733,8 @@ impl Ops {
             }
             Write::RestoreBackup { backup_id } => {
                 let info = sw::list_backups_detailed(&self.backups, usize::MAX).into_iter().find(|b| b.backup_id == *backup_id).ok_or("There is no backup with that id.")?;
-                let out = sw::restore_any(&self.backups, backup_id).map_err(wm)?;
+                self.guard_backup(&info)?;
+                let out = sw::restore_any(&self.backups, backup_id, &self.confine(&d)).map_err(wm)?;
                 if info.parked {
                     sw::set_parked(&self.backups, backup_id, false);
                 }
