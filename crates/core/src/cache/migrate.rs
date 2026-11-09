@@ -5,7 +5,7 @@
 use rusqlite::Connection;
 
 /// The newest schema this build knows.
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 /// `PRAGMA user_version` of an open database.
 pub fn user_version(conn: &Connection) -> rusqlite::Result<i64> {
@@ -23,6 +23,7 @@ pub fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
             2 => m0003(&tx)?,
             3 => m0004(&tx)?,
             4 => m0005_effort(&tx)?,
+            5 => m0006(&tx)?,
             _ => unreachable!("no migration from version {v}"),
         }
         v += 1;
@@ -114,6 +115,86 @@ fn has_column(tx: &rusqlite::Transaction, table: &str, column: &str) -> rusqlite
         |r| r.get(0),
     )?;
     Ok(n > 0)
+}
+
+/// The helper ledger (`docs/specs/agent-scorecard.md` D3, D8, D9): one row per helper run, the
+/// parent chat's "task finished" records, the review findings and the dispatch/message links.
+/// Ids, times, counts and short masked finding lines only; never a prompt. A cache: safe to drop,
+/// and existing caches are re-read once (PARSER_VERSION bump) to fill it. Written to tolerate
+/// being run over a database that already has the pieces (older tests rewind `user_version`).
+fn m0006(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
+    let has_setting: bool = tx.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='agent_setting'",
+        [],
+        |r| r.get::<_, i64>(0),
+    )? > 0;
+    if !has_setting {
+        tx.execute_batch("ALTER TABLE sessions ADD COLUMN agent_setting TEXT;")?;
+    }
+    tx.execute_batch(
+        r#"
+CREATE TABLE IF NOT EXISTS agent_runs (
+  session_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,             -- '' = the chat itself ran as that agent
+  file_id INTEGER NOT NULL,
+  agent_type TEXT NOT NULL,
+  first_ts INTEGER,
+  last_ts INTEGER,
+  tool_calls INTEGER NOT NULL DEFAULT 0,
+  sidecar_finished INTEGER NOT NULL DEFAULT 0,
+  last_stop TEXT,
+  last_api_error INTEGER NOT NULL DEFAULT 0,
+  interrupted INTEGER NOT NULL DEFAULT 0,
+  end_status TEXT,                    -- finished | errored | stopped | NULL
+  end_source TEXT,                    -- notice | sidecar | thread
+  verdict_word TEXT,
+  verdict TEXT,                       -- pass | findings | other | NULL
+  findings_n INTEGER NOT NULL DEFAULT 0,
+  worktree_branch TEXT,
+  PRIMARY KEY (session_id, agent_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS agent_runs_file ON agent_runs(file_id);
+CREATE INDEX IF NOT EXISTS agent_runs_type ON agent_runs(agent_type);
+CREATE TABLE IF NOT EXISTS agent_notices (
+  session_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  ts INTEGER,
+  PRIMARY KEY (session_id, agent_id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS review_findings (
+  session_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  ord INTEGER NOT NULL,
+  severity TEXT,
+  text TEXT NOT NULL,
+  ts INTEGER,
+  PRIMARY KEY (session_id, agent_id, ord)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS agent_links (
+  session_id TEXT NOT NULL,
+  file_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,                 -- dispatch | send
+  tool_use_id TEXT NOT NULL,
+  ts INTEGER,
+  from_agent TEXT NOT NULL,           -- '' = the main chat made the call
+  subagent_type TEXT NOT NULL,
+  target TEXT NOT NULL,               -- a helper id the prompt or message named, or ''
+  PRIMARY KEY (session_id, tool_use_id, target)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS agent_links_file ON agent_links(file_id);
+CREATE TABLE IF NOT EXISTS agent_run_models (
+  session_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  file_id INTEGER NOT NULL,
+  model TEXT NOT NULL,                -- the exact id as the transcript wrote it
+  effort TEXT NOT NULL,               -- '' = the transcript recorded none
+  n INTEGER NOT NULL,                 -- assistant messages
+  PRIMARY KEY (session_id, agent_id, model, effort)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS agent_run_models_file ON agent_run_models(file_id);
+"#,
+    )
 }
 
 fn m0001(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {

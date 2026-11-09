@@ -6,7 +6,8 @@
 //! where the last commit ended. After a batch, the aggregates for the touched
 //! hours and sessions are rebuilt from `messages` (self-healing, no +/- drift).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::time::{Duration, Instant};
@@ -18,6 +19,8 @@ use super::line::{LineEvent, MsgEvent, Prefilter, Skip};
 use super::naming::{self, AgentMeta};
 use super::pricing::Counts;
 use super::reader::{open_read_only, read_lines, Item, ReadStats, LINE_CAP};
+use super::receipt_scan::notices_in;
+use super::reviews::{self, Finding, VerdictLine};
 use super::scan::FileTask;
 use super::time::Tz;
 use crate::cache::PriceHandle;
@@ -91,15 +94,224 @@ struct Batch {
     prompt: Option<String>,
     /// The subagent's `.meta.json`, when there is one.
     meta: Option<AgentMeta>,
+    /// What the run ledger read in this batch (`docs/specs/agent-scorecard.md` D3-D10).
+    run: RunBatch,
 }
 
-/// The sidecar of `agent-<id>.jsonl` is `agent-<id>.meta.json`. Tiny; a missing or odd one is None.
-fn read_meta(jsonl: &std::path::Path) -> Option<AgentMeta> {
+/// What the helper-run ledger reads from a batch of lines. Numbers, ids and short finding lines
+/// only: the prompts and the report text are read in memory and dropped here, in the worker.
+#[derive(Default)]
+struct RunBatch {
+    /// Run facts were read from this batch (a helper's file, or a chat that ran as an agent).
+    tracked: bool,
+    /// The chat's `agent-setting` line was in this batch (a chat that ran as that agent).
+    setting: Option<String>,
+    first_ts: Option<i64>,
+    last_ts: Option<i64>,
+    /// `(stop_reason, api error)` of the last text-or-tool-call assistant line of the batch.
+    end_line: Option<(Option<String>, bool)>,
+    interrupted: bool,
+    /// What the last text line of the batch said, parsed.
+    report: Option<Report>,
+    links: Vec<LinkRow>,
+    /// `(helper id, status, time)` of each `<task-notification>` in the batch.
+    notices: Vec<(String, String, Option<i64>)>,
+    /// `(exact model id, effort or "")` -> assistant messages (each message counted once) in the
+    /// batch. Unknown model ids are kept as they are.
+    models: HashMap<(String, String), u32>,
+}
+
+struct Report {
+    ts: Option<i64>,
+    verdict: Option<VerdictLine>,
+    findings: Vec<Finding>,
+}
+
+/// One `Agent`/`Task` dispatch or `SendMessage`, with the helper ids it named.
+struct LinkRow {
+    send: bool,
+    tool_use_id: String,
+    ts: Option<i64>,
+    subagent_type: String,
+    targets: Vec<String>,
+}
+
+/// A last-line buffer that is reused, never grown without bound.
+#[derive(Default)]
+struct Slot {
+    buf: Vec<u8>,
+    set: bool,
+}
+
+impl Slot {
+    fn put(&mut self, line: &[u8]) {
+        self.buf.clear();
+        if line.len() <= reviews::Thresholds::FINAL_TEXT_CAP {
+            self.buf.extend_from_slice(line);
+            self.set = true;
+        } else {
+            self.set = false;
+        }
+    }
+}
+
+/// The helpers of a chat that exist on disk: their ids and worktree branches, to find the ones a
+/// dispatch prompt names. Read lazily, once per file, only when a prompt has to be checked.
+#[derive(Default)]
+struct Known {
+    ids: HashSet<String>,
+    branches: Vec<(String, String)>,
+}
+
+/// Per-file scratch of the ledger scan (lives across batches of one file).
+#[derive(Default)]
+struct RunScan {
+    rc: Slot,
+    text: Slot,
+    setting_seen: bool,
+    known: Option<Known>,
+    /// Message keys already counted in `RunBatch::models` (a message streams as several lines).
+    msg_seen: HashSet<String>,
+}
+
+fn helpers_dir(task: &FileTask) -> PathBuf {
+    if task.is_subagent {
+        task.path.parent().map(Path::to_path_buf).unwrap_or_default()
+    } else {
+        task.path.with_extension("").join("subagents")
+    }
+}
+
+fn load_known(dir: &Path) -> Known {
+    let mut k = Known::default();
+    let Ok(rd) = std::fs::read_dir(dir) else { return k };
+    for e in rd.flatten().take(5000) {
+        let p = e.path();
+        let Some(name) = p.file_name().and_then(|n| n.to_str()) else { continue };
+        if let Some(stem) = name.strip_suffix(".meta.json") {
+            let id = naming::agent_id_of_stem(stem);
+            if let Some(br) = read_sidecar(&p).and_then(|m| m.worktree_branch) {
+                k.branches.push((br, id.clone()));
+            }
+            k.ids.insert(id);
+        } else if let Some(stem) = name.strip_suffix(".jsonl") {
+            k.ids.insert(naming::agent_id_of_stem(stem));
+        }
+    }
+    k
+}
+
+/// The helper ids of the chat that a dispatch prompt names: by id, or by a worktree branch a helper
+/// of the chat has recorded. Sorted, no duplicates. The prompt itself is not kept.
+fn mentioned(prompt: &str, k: &Known) -> Vec<String> {
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    for tok in prompt.split(|c: char| !c.is_ascii_alphanumeric()) {
+        if !tok.is_empty() && k.ids.contains(tok) {
+            out.insert(tok.to_string());
+        }
+    }
+    for (br, id) in &k.branches {
+        if prompt.contains(br.as_str()) {
+            out.insert(id.clone());
+        }
+    }
+    out.into_iter().collect()
+}
+
+/// Read one line for the ledger: times, the interrupt marker, the last text and tool-call lines,
+/// task-finished notices, and helper dispatches and messages.
+fn scan_ledger_line(
+    pf: &Prefilter,
+    notice: &memchr::memmem::Finder<'static>,
+    task: &FileTask,
+    l: &[u8],
+    rs: &mut RunScan,
+    run: &mut RunBatch,
+) {
+    let tracking = task.is_subagent || rs.setting_seen;
+    if tracking {
+        run.tracked = true;
+        if let Some(ts) = pf.line_ts(l) {
+            run.first_ts = Some(run.first_ts.map_or(ts, |c| c.min(ts)));
+            run.last_ts = Some(run.last_ts.map_or(ts, |c| c.max(ts)));
+        }
+        if pf.is_interrupt(l) {
+            run.interrupted = true;
+        } else if pf.is_assistant_text(l) {
+            rs.rc.put(l);
+            rs.text.put(l);
+        } else if pf.is_assistant_call(l) {
+            rs.rc.put(l);
+        }
+    }
+    if notice.find(l).is_some() {
+        let mut found = Vec::new();
+        notices_in(l, &mut found);
+        if !found.is_empty() {
+            let ts = pf.line_ts(l);
+            for n in found {
+                run.notices.push((n.agent_id, n.status, ts));
+            }
+        }
+    }
+    if pf.is_link_call(l)
+        && let Some(f) = pf.assistant_facts(l, false)
+    {
+        for c in f.calls {
+            if c.send {
+                if let Some(to) = c.to.map(|t| t.trim().to_string()).filter(|t| !t.is_empty() && t.len() <= 64) {
+                    run.links.push(LinkRow { send: true, tool_use_id: c.tool_use_id, ts: f.ts_ms, subagent_type: String::new(), targets: vec![to] });
+                }
+            } else {
+                let targets = match c.prompt.as_deref() {
+                    Some(p) if !p.is_empty() => {
+                        let k = rs.known.get_or_insert_with(|| load_known(&helpers_dir(task)));
+                        mentioned(p, k)
+                    }
+                    _ => Vec::new(),
+                };
+                run.links.push(LinkRow {
+                    send: false,
+                    tool_use_id: c.tool_use_id,
+                    ts: f.ts_ms,
+                    subagent_type: c.subagent_type.map(|t| t.trim().to_string()).unwrap_or_default(),
+                    targets,
+                });
+            }
+        }
+    }
+}
+
+/// Parse the buffered last lines into the batch (verdict and findings from the report text), then
+/// forget them: the next batch only reports lines newer than these.
+fn flush_run(pf: &Prefilter, rs: &mut RunScan, run: &mut RunBatch) {
+    if rs.rc.set {
+        if let Some(f) = pf.assistant_facts(&rs.rc.buf, false) {
+            run.end_line = Some((f.stop_reason, f.api_error));
+        }
+        rs.rc.set = false;
+    }
+    if rs.text.set {
+        if let Some(f) = pf.assistant_facts(&rs.text.buf, true)
+            && let Some(t) = f.text
+        {
+            run.report = Some(Report { ts: f.ts_ms, verdict: reviews::parse_verdict(&t), findings: reviews::finding_lines(&t) });
+        }
+        rs.text.set = false;
+    }
+}
+
+/// The sidecar `agent-<id>.meta.json`. Tiny; a missing or odd one is None.
+fn read_sidecar(p: &Path) -> Option<AgentMeta> {
     use std::io::Read;
-    let p = jsonl.with_extension("meta.json");
     let mut buf = Vec::new();
-    open_read_only(&p).ok()?.take(64 * 1024).read_to_end(&mut buf).ok()?;
+    open_read_only(p).ok()?.take(64 * 1024).read_to_end(&mut buf).ok()?;
     AgentMeta::parse(&buf)
+}
+
+/// The sidecar of `agent-<id>.jsonl` is `agent-<id>.meta.json`.
+fn read_meta(jsonl: &Path) -> Option<AgentMeta> {
+    read_sidecar(&jsonl.with_extension("meta.json"))
 }
 
 /// The summary of a line when it is a real (non-meta, non-tool-result) user prompt.
@@ -126,6 +338,7 @@ fn worker(
     tx: &std::sync::mpsc::SyncSender<Batch>,
 ) {
     let pf = Prefilter::new();
+    let notice = memchr::memmem::Finder::new(b"<task-notification>").into_owned();
     loop {
         if cancel.load(Ordering::Relaxed) {
             return;
@@ -148,6 +361,7 @@ fn worker(
             items: Vec::new(),
             prompt: None,
             meta: None,
+            run: RunBatch::default(),
         };
         let Ok(file) = open_read_only(&task.path) else {
             // Gone or locked: nothing to read now; the next sweep decides.
@@ -165,10 +379,12 @@ fn worker(
         let mut batch_first_off = task.start;
         let mut lines = 0usize;
         let mut alive = true;
+        let mut rs = RunScan::default();
         let result = read_lines(file, task.start, opts.line_cap, stats, |item, end| {
             match item {
                 Item::Line(l) => {
                     line_no += 1;
+                    scan_ledger_line(&pf, &notice, task, l, &mut rs, &mut batch.run);
                     if want_prompt {
                         if line_no > 80 {
                             want_prompt = false;
@@ -186,6 +402,18 @@ fn worker(
                     }
                     match pf.parse(l) {
                     Ok(ev) => {
+                        if let LineEvent::AgentSetting { name, .. } = &ev
+                            && !task.is_subagent
+                        {
+                            rs.setting_seen = true;
+                            batch.run.setting = Some(name.clone());
+                        }
+                        if let LineEvent::Message(m) = &ev
+                            && (task.is_subagent || rs.setting_seen)                            && rs.msg_seen.insert(m.key.clone())
+                        {
+                            let effort = super::line::effort_of(l).unwrap_or_default();
+                            *batch.run.models.entry((m.model.clone(), effort)).or_default() += 1;
+                        }
                         batch.events.push((ev, prev_end));
                         lines += 1;
                     }
@@ -207,6 +435,7 @@ fn worker(
             batch.end_offset = end;
             if lines >= opts.batch_lines || end - batch_first_off >= opts.batch_bytes {
                 batch.bytes = end - batch_first_off;
+                flush_run(&pf, &mut rs, &mut batch.run);
                 let full = std::mem::replace(&mut batch, new_batch(false, end));
                 first = false;
                 let _ = first;
@@ -226,6 +455,7 @@ fn worker(
         if !alive {
             return;
         }
+        flush_run(&pf, &mut rs, &mut batch.run);
         match result {
             Ok(committed) => {
                 batch.end_offset = committed;
@@ -525,6 +755,8 @@ fn apply_batch(
                 LineEvent::CostState { session_id, usd } => {
                     deltas.entry(sid_of(session_id)).or_default().cost = Some(*usd);
                 }
+                // Read by the helper-run ledger (`apply_ledger`), not a session field of its own.
+                LineEvent::AgentSetting { .. } => {}
             }
         }
     }
@@ -689,6 +921,7 @@ fn apply_batch(
     }
 
     refresh_aggregates(&tx)?;
+    apply_ledger(&tx, task, b, file_agent.as_deref())?;
     touched.sessions = {
         let mut st = tx.prepare_cached("SELECT s FROM ts")?;
         let v: Vec<String> = st.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
@@ -697,6 +930,216 @@ fn apply_batch(
     tx.execute_batch("DELETE FROM th; DELETE FROM ts;")?;
     tx.commit()?;
     Ok(touched)
+}
+
+/// How a helper run ended (D3), from the strongest source that knows: the parent chat's
+/// task-notification, then the sidecar's `finished: true`, then the thread's own last line (an API
+/// error, `end_turn`, or an interrupt: the same rule as the receipt's `outcome_of`). None means the
+/// run has not visibly ended.
+pub(crate) fn end_of(
+    notice: Option<&str>,
+    sidecar_finished: bool,
+    last_api_error: bool,
+    last_stop: Option<&str>,
+    interrupted: bool,
+) -> (Option<&'static str>, Option<&'static str>) {
+    match notice {
+        Some("completed") => return (Some("finished"), Some("notice")),
+        Some("failed") => return (Some("errored"), Some("notice")),
+        Some("killed" | "stopped" | "cancelled") => return (Some("stopped"), Some("notice")),
+        _ => {}
+    }
+    if sidecar_finished {
+        return (Some("finished"), Some("sidecar"));
+    }
+    if last_api_error {
+        return (Some("errored"), Some("thread"));
+    }
+    if last_stop == Some("end_turn") {
+        return (Some("finished"), Some("thread"));
+    }
+    if interrupted {
+        return (Some("stopped"), Some("thread"));
+    }
+    (None, None)
+}
+
+/// Recompute `end_status` / `end_source` of one run from what the ledger holds now.
+fn refresh_end(tx: &rusqlite::Transaction, sid: &str, aid: &str) -> rusqlite::Result<()> {
+    let row: Option<(i64, Option<String>, i64, i64, Option<String>)> = tx
+        .query_row(
+            "SELECT r.sidecar_finished, r.last_stop, r.last_api_error, r.interrupted,
+                    (SELECT n.status FROM agent_notices n WHERE n.session_id = r.session_id AND n.agent_id = r.agent_id)
+             FROM agent_runs r WHERE r.session_id = ?1 AND r.agent_id = ?2",
+            params![sid, aid],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .optional()?;
+    let Some((fin, stop, api, int, notice)) = row else { return Ok(()) };
+    let (status, source) = end_of(notice.as_deref(), fin != 0, api != 0, stop.as_deref(), int != 0);
+    tx.execute(
+        "UPDATE agent_runs SET end_status = ?3, end_source = ?4 WHERE session_id = ?1 AND agent_id = ?2",
+        params![sid, aid, status, source],
+    )?;
+    Ok(())
+}
+
+/// The helper-run ledger of one batch (`docs/specs/agent-scorecard.md` D1-D10): the run row of this
+/// file, the parent chat's task-finished notices, the verdict and finding lines of the report, and
+/// the dispatch/message links. Everything here is ids, times, counts and masked finding lines.
+fn apply_ledger(tx: &rusqlite::Transaction, task: &FileTask, b: &Batch, file_agent: Option<&str>) -> rusqlite::Result<()> {
+    let sid = task.folder_session.as_str();
+    let r = &b.run;
+    if b.replace_counts {
+        // This file is read again from byte 0: its rows start over.
+        tx.execute(
+            "DELETE FROM review_findings WHERE (session_id, agent_id) IN
+               (SELECT session_id, agent_id FROM agent_runs WHERE file_id = ?1)",
+            [task.file_id],
+        )?;
+        tx.execute("DELETE FROM agent_runs WHERE file_id = ?1", [task.file_id])?;
+        tx.execute("DELETE FROM agent_links WHERE file_id = ?1", [task.file_id])?;
+        tx.execute("DELETE FROM agent_run_models WHERE file_id = ?1", [task.file_id])?;
+    }
+
+    // The run this file is: a helper (from its path), or the chat itself when it ran as an agent.
+    let mut run_aid: Option<&str> = None;
+    if let Some(aid) = file_agent {
+        if b.first {
+            let m = b.meta.as_ref();
+            let meta_type = m.and_then(|m| m.agent_type.as_deref()).map(str::trim).filter(|s| !s.is_empty());
+            tx.execute("INSERT OR IGNORE INTO sessions(session_id) VALUES(?1)", [sid])?;
+            tx.execute(
+                "INSERT INTO agent_runs(session_id, agent_id, file_id, agent_type, sidecar_finished, worktree_branch)
+                 VALUES(?1, ?2, ?3, COALESCE(?4, 'general-purpose'), ?5, ?6)
+                 ON CONFLICT(session_id, agent_id) DO UPDATE SET
+                   file_id = excluded.file_id,
+                   agent_type = COALESCE(?4, agent_type),
+                   sidecar_finished = MAX(sidecar_finished, excluded.sidecar_finished),
+                   worktree_branch = COALESCE(excluded.worktree_branch, worktree_branch)",
+                params![
+                    sid,
+                    aid,
+                    task.file_id,
+                    meta_type,
+                    m.and_then(|m| m.finished).unwrap_or(false) as i64,
+                    m.and_then(|m| m.worktree_branch.as_deref()),
+                ],
+            )?;
+        }
+        run_aid = Some(aid);
+    } else if let Some(name) = &r.setting {
+        tx.execute("INSERT OR IGNORE INTO sessions(session_id) VALUES(?1)", [sid])?;
+        tx.execute("UPDATE sessions SET agent_setting = ?2 WHERE session_id = ?1", params![sid, name])?;
+        tx.execute(
+            "INSERT INTO agent_runs(session_id, agent_id, file_id, agent_type) VALUES(?1, '', ?2, ?3)
+             ON CONFLICT(session_id, agent_id) DO UPDATE SET file_id = excluded.file_id, agent_type = excluded.agent_type",
+            params![sid, task.file_id, name],
+        )?;
+        run_aid = Some("");
+    } else if r.tracked {
+        // A later batch of a chat that ran as an agent.
+        run_aid = Some("");
+    }
+
+    if let Some(aid) = run_aid {
+        if r.tracked {
+            let (has_end, stop, api) = match &r.end_line {
+                Some((s, a)) => (1i64, s.clone(), *a as i64),
+                None => (0, None, 0),
+            };
+            tx.execute(
+                "UPDATE agent_runs SET
+                   first_ts = CASE WHEN ?3 IS NULL THEN first_ts WHEN first_ts IS NULL OR ?3 < first_ts THEN ?3 ELSE first_ts END,
+                   last_ts  = CASE WHEN ?4 IS NULL THEN last_ts  WHEN last_ts  IS NULL OR ?4 > last_ts  THEN ?4 ELSE last_ts  END,
+                   last_stop = CASE WHEN ?5 = 1 THEN ?6 ELSE last_stop END,
+                   last_api_error = CASE WHEN ?5 = 1 THEN ?7 ELSE last_api_error END,
+                   interrupted = MAX(interrupted, ?8)
+                 WHERE session_id = ?1 AND agent_id = ?2",
+                params![sid, aid, r.first_ts, r.last_ts, has_end, stop, api, r.interrupted as i64],
+            )?;
+        }
+        if !r.models.is_empty() {
+            let mut put = tx.prepare_cached(
+                "INSERT INTO agent_run_models(session_id, agent_id, file_id, model, effort, n) VALUES(?1,?2,?3,?4,?5,?6)
+                 ON CONFLICT(session_id, agent_id, model, effort) DO UPDATE SET n = n + excluded.n, file_id = excluded.file_id",
+            )?;
+            for ((model, effort), n) in &r.models {
+                put.execute(params![sid, aid, task.file_id, model, effort, n])?;
+            }
+        }
+        if let Some(rep) = &r.report {
+            tx.execute("DELETE FROM review_findings WHERE session_id = ?1 AND agent_id = ?2", params![sid, aid])?;
+            let mut put = tx.prepare_cached(
+                "INSERT OR REPLACE INTO review_findings(session_id, agent_id, ord, severity, text, ts) VALUES(?1,?2,?3,?4,?5,?6)",
+            )?;
+            for (i, f) in rep.findings.iter().enumerate() {
+                put.execute(params![sid, aid, i as i64, f.severity, f.text, rep.ts])?;
+            }
+            tx.execute(
+                "UPDATE agent_runs SET verdict_word = ?3, verdict = ?4, findings_n = ?5
+                 WHERE session_id = ?1 AND agent_id = ?2",
+                params![
+                    sid,
+                    aid,
+                    rep.verdict.as_ref().map(|v| v.word.as_str()),
+                    rep.verdict.as_ref().map(|v| v.class.as_str()),
+                    rep.findings.len() as i64
+                ],
+            )?;
+        }
+        tx.execute(
+            "UPDATE agent_runs SET tool_calls = COALESCE((SELECT tool_calls FROM files WHERE file_id = ?3), 0)
+             WHERE session_id = ?1 AND agent_id = ?2",
+            params![sid, aid, task.file_id],
+        )?;
+        if aid.is_empty() {
+            // A chat's own clock is its messages' (the line scan only saw lines after the setting).
+            tx.execute(
+                "UPDATE agent_runs SET
+                   first_ts = COALESCE((SELECT first_ts FROM sessions WHERE session_id = ?1), first_ts),
+                   last_ts  = COALESCE((SELECT last_ts  FROM sessions WHERE session_id = ?1), last_ts)
+                 WHERE session_id = ?1 AND agent_id = ''",
+                [sid],
+            )?;
+        }
+        refresh_end(tx, sid, aid)?;
+    }
+
+    // The parent chat's "task finished" records name helpers by id; a run learns its end from them.
+    if !r.notices.is_empty() {
+        let mut put = tx.prepare_cached(
+            "INSERT INTO agent_notices(session_id, agent_id, status, ts) VALUES(?1,?2,?3,?4)
+             ON CONFLICT(session_id, agent_id) DO UPDATE SET status = excluded.status, ts = COALESCE(excluded.ts, ts)",
+        )?;
+        let mut seen: HashSet<&str> = HashSet::new();
+        for (aid, status, ts) in &r.notices {
+            put.execute(params![sid, aid, status, ts])?;
+            seen.insert(aid.as_str());
+        }
+        for aid in seen {
+            refresh_end(tx, sid, aid)?;
+        }
+    }
+
+    // Dispatches and messages: ids only (D9).
+    if !r.links.is_empty() {
+        let mut put = tx.prepare_cached(
+            "INSERT OR REPLACE INTO agent_links(session_id, file_id, kind, tool_use_id, ts, from_agent, subagent_type, target)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+        )?;
+        let from = file_agent.unwrap_or("");
+        for l in &r.links {
+            let kind = if l.send { "send" } else { "dispatch" };
+            if l.targets.is_empty() {
+                put.execute(params![sid, task.file_id, kind, l.tool_use_id, l.ts, from, l.subagent_type, ""])?;
+            }
+            for t in &l.targets {
+                put.execute(params![sid, task.file_id, kind, l.tool_use_id, l.ts, from, l.subagent_type, t])?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn session_meta_from_message(

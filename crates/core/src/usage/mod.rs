@@ -15,7 +15,9 @@ pub mod query;
 pub mod reader;
 pub mod receipt;
 pub mod receipt_scan;
+pub mod reviews;
 pub mod scan;
+pub mod scorecard;
 pub mod time;
 pub mod transcript;
 pub mod watch;
@@ -41,7 +43,8 @@ use time::{now_ms, Tz};
 
 /// Bump to make every install re-read its transcripts once (D30).
 /// "4": effort per reply, and a replayed reply line with zeroed counts no longer wins its key.
-pub const PARSER_VERSION: &str = "4";
+/// "5": the helper ledger (agent runs, verdicts, findings).
+pub const PARSER_VERSION: &str = "5";
 
 // ---------------------------------------------------------------- config
 
@@ -463,6 +466,21 @@ impl UsageEngine {
     /// How often each skill, helper type or tool was used in a period (see `query::usage_by_item`).
     pub fn usage_by_item(&self, q: &query::ItemQuery) -> Result<Vec<query::ItemUse>, String> {
         self.read(|c, _| query::usage_by_item(c, q))
+    }
+
+    /// The agent scorecard: one card per helper type (`scorecard`, spec `docs/specs/agent-scorecard.md`).
+    pub fn agent_scorecard(&self, a: &scorecard::ScorecardArgs) -> Result<scorecard::Scorecard, String> {
+        self.read(|c, x| scorecard::agent_scorecard(c, x, a))
+    }
+
+    /// Findings reviewers keep raising, grouped (spec D24, D25).
+    pub fn review_themes(&self, a: &scorecard::ThemeArgs) -> Result<scorecard::Themes, String> {
+        self.read(|c, x| scorecard::review_themes(c, x, a))
+    }
+
+    /// The facts of one chat's helpers since a time, for the after-run debrief (spec D60, D61).
+    pub fn run_debrief(&self, a: &scorecard::DebriefArgs) -> Result<Option<scorecard::RunDebrief>, String> {
+        self.read(|c, x| scorecard::run_debrief(c, x, a))
     }
 
     /// Chat shapes, the helpers' share and the chat with the most helpers (the Wrapped story).

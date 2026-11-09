@@ -126,12 +126,15 @@ pub struct AgentMeta {
     pub tool_use_id: Option<String>,
     pub parent_agent_id: Option<String>,
     pub spawn_depth: Option<i64>,
+    /// Newer Claude Code writes `finished: true` when the helper ended on its own.
+    pub finished: Option<bool>,
+    pub worktree_branch: Option<String>,
 }
 
 impl AgentMeta {
     pub fn parse(bytes: &[u8]) -> Option<AgentMeta> {
         let mut m: AgentMeta = serde_json::from_slice(bytes).ok()?;
-        for f in [&mut m.agent_type, &mut m.description, &mut m.tool_use_id, &mut m.parent_agent_id] {
+        for f in [&mut m.agent_type, &mut m.description, &mut m.tool_use_id, &mut m.parent_agent_id, &mut m.worktree_branch] {
             if f.as_deref().is_some_and(|s| s.trim().is_empty()) {
                 *f = None;
             }

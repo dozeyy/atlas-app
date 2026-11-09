@@ -25,6 +25,7 @@ pub mod redact;
 pub mod sandbox;
 pub mod search;
 pub mod settings;
+pub mod textgroup;
 pub mod usage;
 pub mod writelock;
 pub mod setup;

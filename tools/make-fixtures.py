@@ -703,10 +703,176 @@ def setup():
     put(s, "managed/managed-mcp.json", js({"mcpServers": {"managed-srv": {"command": "node", "args": ["managed.js"]}}}))
 
 
+def ledger():
+    """fixtures/claude-ledger: the helper-run ledger of docs/specs/agent-scorecard.md.
+
+    One project, three chats. S1 is an interactive chat that dispatches 7 workers and 4 reviewers:
+      W1 coder        ends by a task-notification (end source: notice)      review R1 names W1   (L1, pass)
+      W2 coder        ends by its own end_turn (source: thread)             review R2 names none (L2, pass)
+      W3 / W4 coder   run in parallel                                       review R3 names none, two ended
+                                                                            (not tied); a SendMessage to W4
+                                                                            after its findings sends W4 back
+      R4 design-review names W4 by its worktree branch (L1, pass)
+      W5 Explore      interrupted by the user (stopped)   W6 general-purpose  API error (errored)
+      W7 coder        still going (no end)
+      R1 ends by sidecar `finished: true` (source: sidecar).
+    S2 is a headless chat (entrypoint sdk-cli) that ran as the code-reviewer agent (agent-setting).
+    S3 is a plain interactive chat with no helpers. R3's dispatch prompt holds SENTINEL-PROMPT-7731
+    and its report a line with a fake password: neither may reach the cache.
+    """
+    base = os.path.join(ROOT, "claude-ledger")
+    P = "projects/-fx-ledger"
+    cwd = "/fixture/ledger"
+    S1 = "aaaa1001-0000-4000-8000-000000000001"
+    S2 = "bbbb1002-0000-4000-8000-000000000002"
+    S3 = "cccc1003-0000-4000-8000-000000000003"
+
+    def hid(n):
+        return "a" + format(n, "016x")
+
+    W1, R1, W2, R2, W3, W4, R3, R4, W5, W6, W7 = (hid(n) for n in range(1, 12))
+
+    def t(h, m, s=0):
+        return f"2026-11-06T{h:02d}:{m:02d}:{s:02d}.000Z"
+
+    n = [0]
+
+    def line(sid, ts, blocks, stop=None, model="claude-sonnet-5-5", inp=10, out=50, entry="cli", side=False, **extra):
+        n[0] += 1
+        mid = f"L{n[0]:04d}"
+        o = {
+            "type": "assistant", "uuid": f"u-{mid}", "sessionId": sid, "timestamp": ts, "cwd": cwd,
+            "isSidechain": side, "version": "2.1.296", "entrypoint": entry, "requestId": f"req_{mid}",
+            "message": {"id": f"msg_{mid}", "type": "message", "role": "assistant", "model": model,
+                        "content": blocks, "stop_reason": stop, "usage": usage(inp, out)},
+        }
+        o.update(extra)
+        return o
+
+    def text(s):
+        return {"type": "text", "text": s}
+
+    def call(tid, name, inp):
+        return {"type": "tool_use", "id": tid, "name": name, "input": inp}
+
+    def prompt(sid, ts, s, entry="cli", side=False):
+        o = user(sid, f"uu-{ts}", None, ts, cwd, s)
+        o["entrypoint"] = entry
+        o["isSidechain"] = side
+        return o
+
+    def notice(sid, ts, agent, status):
+        body = f"<task-notification>\n<task-id>{agent}</task-id>\n<status>{status}</status>\n</task-notification>"
+        o = prompt(sid, ts, body)
+        o["fixtureText"] = True  # invented text, allowed by tests/fixtures.rs
+        return o
+
+    def helper(aid, ty, tool, start, ends, meta_extra=None, side_lines=None, no_sidecar=False):
+        """A helper transcript (and its sidecar). `ends` = (h, m, s) of its last line."""
+        rel = f"{P}/{S1}/subagents/agent-{aid}"
+        put(base, rel + ".jsonl", jl(*side_lines))
+        if not no_sidecar:
+            meta = {"agentType": ty, "description": f"fixture {ty} {aid[-2:]}", "toolUseId": tool, "spawnDepth": 1}
+            meta.update(meta_extra or {})
+            put(base, rel + ".meta.json", json.dumps(meta, separators=(",", ":")))
+
+    def work(aid, start, end, final, stop="end_turn", extra_user=None, model="claude-sonnet-5-5", eff="high"):
+        """prompt, one tool call, then the last line (text or a tool call)."""
+        ex = {"effort": eff, "perTurnEffort": eff} if eff else {}
+        out = [prompt(S1, t(*start), "[fixture helper prompt]", side=True)]
+        mid = (start[0], start[1], start[2] + 5)
+        out.append(line(S1, t(*mid), [text("[fixture work]"), call(f"toolu_{aid}_0", "Read", {})], stop="tool_use", model=model, side=True, agentId=aid, **ex))
+        if extra_user:
+            out.append(extra_user)
+        out.append(line(S1, t(*end), final, stop=stop, model=model, side=True, agentId=aid, **ex))
+        return out
+
+    final = lambda s: [text("[fixture report]\n" + s)]
+    r3_report = (
+        "**FINDINGS**\n"
+        "- Retry loop in net.rs never backs off between attempts (src/net.rs:41)\n"
+        "- Error text is swallowed in the request handler (src/handler.rs:88)\n\n"
+        "High: the password=fixturepw12345 value is written to the debug log\n"
+        "Low: stale TODO left in settings.rs after the refactor\n\n"
+        "Verdict: FIX-REQUIRED"
+    )
+
+    # ---- S1 helpers
+    helper(W1, "coder", "toolu_d_w1", (9, 1, 5), None,
+           side_lines=work(W1, (9, 1, 5), (9, 3, 0), final("Built the parser. All done.")))
+    helper(R1, "code-reviewer", "toolu_d_r1", (9, 3, 35), None, {"finished": True},
+           work(R1, (9, 3, 35), (9, 5, 0), final("Looks right.\n\nVerdict: PASS")))
+    helper(W2, "coder", "toolu_d_w2", (9, 6, 5), None,
+           side_lines=work(W2, (9, 6, 5), (9, 8, 0), final("Wired the cache."), model="claude-opus-5-5", eff="medium"))
+    helper(R2, "verifier", "toolu_d_r2", (9, 8, 35), None,
+           side_lines=work(R2, (9, 8, 35), (9, 9, 30), final("Ran it.\n\n**Verdict:** MERGE")))
+    helper(W3, "coder", "toolu_d_w3", (9, 10, 0), None,
+           side_lines=work(W3, (9, 10, 0), (9, 12, 0), final("Did the settings page."), model="claude-fable-5-2", eff=None))
+    helper(W4, "coder", "toolu_d_w4", (9, 10, 10), None, {"worktreeBranch": "worktree-agent-w4branch"},
+           work(W4, (9, 10, 10), (9, 12, 30), final("Did the network layer.")))
+    helper(R3, "code-reviewer", "toolu_d_r3", (9, 13, 5), None,
+           side_lines=work(R3, (9, 13, 5), (9, 13, 50), final(r3_report)))
+    helper(R4, "design-reviewer", "toolu_d_r4", (9, 16, 5), None,
+           side_lines=work(R4, (9, 16, 5), (9, 17, 0), final("Matches the identity.\n\nVerdict: PASS")))
+    interrupt = prompt(S1, t(9, 21, 0), "[Request interrupted by user]", side=True)
+    interrupt["fixtureText"] = True  # the marker Claude Code writes, as a string; allowed by tests/fixtures.rs
+    helper(W5, "Explore", "toolu_d_w5", (9, 20, 0), None,
+           side_lines=work(W5, (9, 20, 0), (9, 20, 40), [call(f"toolu_{W5}_1", "Grep", {})], stop="tool_use", extra_user=interrupt))
+    api_err = line(S1, t(9, 22, 40), [text("[fixture] API Error: 500 internal error")], stop="stop_sequence", side=True, agentId=W6, isApiErrorMessage=True)
+    helper(W6, "general-purpose", "toolu_d_w6", (9, 22, 0), None, no_sidecar=True,
+           side_lines=[prompt(S1, t(9, 22, 0), "[fixture helper prompt]", side=True),
+                       line(S1, t(9, 22, 10), [call(f"toolu_{W6}_0", "Read", {})], stop="tool_use", side=True, agentId=W6),
+                       api_err])
+    helper(W7, "coder", "toolu_d_w7", (9, 25, 0), None,
+           side_lines=work(W7, (9, 25, 0), (9, 25, 50), [call(f"toolu_{W7}_1", "Edit", {})], stop="tool_use"))
+
+    # ---- S1 main chat
+    def dispatch(ts, tool, ty, desc, body):
+        return line(S1, ts, [call(tool, "Agent", {"subagent_type": ty, "description": desc, "prompt": body})], stop="tool_use")
+
+    main = [prompt(S1, t(9, 0, 0), "[fixture user message]")]
+    main += [
+        dispatch(t(9, 1, 0), "toolu_d_w1", "coder", "Build the parser", "Build the parser."),
+        notice(S1, t(9, 3, 10), W1, "completed"),
+        dispatch(t(9, 3, 30), "toolu_d_r1", "code-reviewer", "Review the parser", f"Review the parser built by agent {W1}."),
+        dispatch(t(9, 6, 0), "toolu_d_w2", "coder", "Wire the cache", "Wire the cache."),
+        dispatch(t(9, 8, 30), "toolu_d_r2", "verifier", "Verify the cache", "Verify the cache works."),
+        dispatch(t(9, 10, 0), "toolu_d_w3", "coder", "Settings page", "Build the settings page."),
+        dispatch(t(9, 10, 5), "toolu_d_w4", "coder", "Network layer", "Build the network layer."),
+        dispatch(t(9, 13, 0), "toolu_d_r3", "code-reviewer", "Review both", "Review the recent work. SENTINEL-PROMPT-7731"),
+        line(S1, t(9, 14, 0), [call("toolu_s_w4", "SendMessage", {"to": W4, "message": "fix the retry loop", "summary": "fix retries"})], stop="tool_use"),
+        line(S1, t(9, 14, 5), [call("toolu_s_w4b", "SendMessage", {"to": W4, "message": "and the handler", "summary": "fix handler"})], stop="tool_use"),
+        line(S1, t(9, 14, 8), [call("toolu_s_name", "SendMessage", {"to": "team-lead", "message": "status", "summary": "status"})], stop="tool_use"),
+        dispatch(t(9, 16, 0), "toolu_d_r4", "design-reviewer", "Review the look", "Check the look of worktree-agent-w4branch against the identity."),
+        dispatch(t(9, 20, 0), "toolu_d_w5", "Explore", "Look around", "Look around."),
+        dispatch(t(9, 22, 0), "toolu_d_w6", "general-purpose", "A one-off", "A one-off job."),
+        dispatch(t(9, 25, 0), "toolu_d_w7", "coder", "Keep going", "Keep going."),
+        line(S1, t(9, 30, 0), [text("[fixture main reply]")], stop="end_turn"),
+    ]
+    put(base, f"{P}/{S1}.jsonl", jl(*main))
+
+    # ---- S2: headless, ran as an agent
+    s2 = [
+        {"type": "agent-setting", "agentSetting": "code-reviewer", "sessionId": S2},
+        prompt(S2, t(10, 0, 0), "[fixture headless prompt]", entry="sdk-cli"),
+        line(S2, t(10, 0, 20), [text("[fixture work]"), call("toolu_h_0", "Read", {})], stop="tool_use", entry="sdk-cli"),
+        line(S2, t(10, 2, 0), [text("[fixture report]\nChecked the diff.\n\nVerdict: pass")], stop="end_turn", entry="sdk-cli"),
+    ]
+    put(base, f"{P}/{S2}.jsonl", jl(*s2))
+
+    # ---- S3: interactive, no helpers
+    s3 = [prompt(S3, t(11, 0, 0), "[fixture user message]"), line(S3, t(11, 0, 30), [text("[fixture reply]")], stop="end_turn")]
+    put(base, f"{P}/{S3}.jsonl", jl(*s3))
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "ledger":
+        ledger()  # only this fixture: never touches the others
+        print(f"wrote {os.path.normpath(os.path.join(ROOT, 'claude-ledger'))}")
+        return 0
     # Clear only the folders this script writes: claude-agents, claude-items and the
     # setup-*-wire-keys.json files beside them are hand-made and must survive a regenerate.
-    for name in ("claude-basic", "claude-edge", "claude-usage", "claude-accuracy", "claude-habits", "claude-setup"):
+    for name in ("claude-basic", "claude-edge", "claude-usage", "claude-accuracy", "claude-habits", "claude-setup", "claude-ledger"):
         folder = os.path.join(ROOT, name)
         if not os.path.isdir(folder):
             continue
@@ -723,6 +889,7 @@ def main():
     accuracy_fx()
     habits()
     setup()
+    ledger()
     n = sum(len(f) for _, _, f in os.walk(ROOT))
     print(f"wrote {n} fixture files under {os.path.normpath(ROOT)}")
 

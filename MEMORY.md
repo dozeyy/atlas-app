@@ -404,3 +404,9 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - "Sessions started" (Dashboard today/week/month, tray, CLI, MCP) counted chats *active* in the range, not started: Will's cache 2026-11-09 had 117 active vs 115 started today. Now `sessions_started`: first reply in the local-day range (helpers share the chat's session id, so they never add to it).
 - One label rule: the Now helper rows (`helperProgress.modelEffort`) and the waiting card use `modelWithEffort`, as Sessions and Session Detail do. Geo is matched lowercased; `ByModel.known` drives "not priced".
 - Flaky under load (from the Now-tracker branch): `fsutil::a_read_only_target_fails_at_once_with_a_clear_message`; 6 clean workspace runs here.
+
+## 2026-11-09 - Helper ledger, scorecard query API (Unit 1)
+- Added cache m0005 (agent_runs, agent_notices, review_findings, agent_links, agent_run_models; PARSER_VERSION 4, SCHEMA_VERSION 5, idempotent) and usage/scorecard.rs (agent_scorecard, review_themes, run_debrief), usage/reviews.rs (verdict, finding lines, review ties), textgroup.rs (Jaccard 0.55 themes). Model id and effort stored per run (effort_of); model_name names any id from the id itself (Opus 5.5, Fable 5.2).
+- Real corpus (read-only, 1,605 runs with a model row): severity-less loose "findings" were ~80% noise (nested detail lines, bare file refs, prose); fixed with indent/detail/says_something rules; ~4% of verdict lines were prose words (PROSE_WORDS stoplist). Themes query 78 ms, 5 themes from 1,627 findings.
+- First full pass 30.0 s (ledger on) vs 36.3 s (ledger scan switched off) back to back while other agents were building: ledger cost is below machine noise; the 14.7 s baseline was an idle-machine figure and was not reproduced under load.
+- Dead ends: prefixing interrupt text with "[fixture" broke interrupt detection (use fixtureText: true); rowid does not exist on WITHOUT ROWID tables.
