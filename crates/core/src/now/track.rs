@@ -525,8 +525,42 @@ pub fn tail_last(path: &Path, id: &str, folder_hint: &str, facts: &Facts, prices
         true
     })
     .ok()?;
+    // A copied file (a restore) has a fresh write time: the chat ended at its last entry.
+    let last = s.last();
+    let ended_ms = s.files[fi].last_ts.map_or(last.ended_ms, |t| t.min(last.ended_ms));
     // Only the end of the file was read: a token total would be a fraction of the real one.
-    Some(NowLast { tokens: None, ..s.last() })
+    Some(NowLast { tokens: None, ended_ms, ..last })
+}
+
+/// How far back `last_entry_ms` looks for a stamped line.
+const ENTRY_TAIL_BYTES: u64 = 256 * 1024;
+
+/// The timestamp of the newest stamped line, read from the end of the file only. `None` when
+/// the end holds no stamped line (one huge line, or a file of untimed records).
+pub fn last_entry_ms(path: &Path) -> Option<i64> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = open_read_only(path).ok()?;
+    let size = file.metadata().ok()?.len();
+    let start = size.saturating_sub(ENTRY_TAIL_BYTES);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut buf = Vec::with_capacity((size - start) as usize);
+    file.take(ENTRY_TAIL_BYTES).read_to_end(&mut buf).ok()?;
+    let mut lines = buf.split(|b| *b == b'\n');
+    if start > 0 {
+        lines.next(); // began mid-line
+    }
+    #[derive(serde::Deserialize)]
+    struct Stamp {
+        timestamp: Option<String>,
+    }
+    let lines: Vec<&[u8]> = lines.collect();
+    lines.iter().rev().find_map(|l| {
+        let l = l.strip_suffix(b"\r").unwrap_or(l);
+        if l.is_empty() {
+            return None;
+        }
+        serde_json::from_slice::<Stamp>(l).ok()?.timestamp.as_deref().and_then(crate::usage::time::parse_iso_ms)
+    })
 }
 
 #[cfg(test)]
@@ -686,5 +720,27 @@ mod tests {
         assert_eq!(l.title.as_deref(), Some("The big one"));
         assert_eq!(l.project, "app");
         assert!(l.ended_ms > 0);
+    }
+
+    #[test]
+    fn the_newest_entry_time_skips_untimed_lines_and_a_cut_first_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("s.jsonl");
+        let mut f = std::fs::File::create(&p).unwrap();
+        // More than the tail it reads, so it starts mid-line.
+        let filler = format!(r#"{{"type":"attachment","timestamp":"2026-11-08T09:00:00.000Z","pad":"{}"}}"#, "x".repeat(4000));
+        for _ in 0..80 {
+            writeln!(f, "{filler}").unwrap();
+        }
+        writeln!(f, "{}", tool("t", "Read", r#"{"file_path":"q"}"#, "2026-11-08T10:00:01.000Z")).unwrap();
+        // A rename later on adds an untimed line: it does not make the chat newer.
+        write!(f, "{}\r\n", r#"{"type":"custom-title","customTitle":"Renamed"}"#).unwrap();
+        drop(f);
+        let want = crate::usage::time::parse_iso_ms("2026-11-08T10:00:01.000Z");
+        assert_eq!(last_entry_ms(&p), want);
+
+        let q = dir.path().join("none.jsonl");
+        std::fs::write(&q, "{\"type\":\"custom-title\",\"customTitle\":\"x\"}\n").unwrap();
+        assert_eq!(last_entry_ms(&q), None);
     }
 }

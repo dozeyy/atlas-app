@@ -58,7 +58,7 @@ exe_of() { echo "$1/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundle
 } >"$OUT/machine.txt" 2>&1
 note "machine: $(sw_vers -productVersion) $(uname -m), $(grep -m1 Resolution "$OUT/machine.txt" | sed 's/^Resolution: //')"
 
-if python3 tools/make-demo-fixture.py "$T/fx" >"$OUT/fixture.log" 2>&1 && [ -d "$T/fx/home/.claude" ]; then
+if python3 tools/make-demo-fixture.py "$T/fx" --live >"$OUT/fixture.log" 2>&1 && [ -d "$T/fx/home/.claude" ]; then
   ok "made-up Claude folder built (tools/make-demo-fixture.py)"
 else
   bad "could not build the made-up Claude folder (fixture.log)"
@@ -195,7 +195,14 @@ if [ -d "$DBG" ]; then
   PIDS="$PIDS $pid"
   end=$(($(date +%s) + 900))
   shots=0
+  touched=0
   while [ ! -f "$TOUR/done.txt" ] && [ "$(date +%s)" -lt "$end" ] && kill -0 "$pid" 2>/dev/null; do
+    # The fixture's two live chats stay live for the whole tour (Now drops a chat that has not
+    # been written to for two minutes): touch them every 20 s, as a working Claude Code would.
+    if [ $(($(date +%s) - touched)) -ge 20 ] && [ -f "$T/fx/live.txt" ]; then
+      while IFS= read -r f; do [ -f "$f" ] && touch "$f"; done <"$T/fx/live.txt"
+      touched=$(date +%s)
+    fi
     for req in "$TOUR"/req/*.rect; do
       [ -f "$req" ] || continue
       name=$(basename "$req" .rect)
