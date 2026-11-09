@@ -2,7 +2,10 @@
   new    = the settled frame of this step (correct, relaid-out content)
   stale  = the previous step's settled content, pinned to the window's new top-left corner
   screen = the previous step's settled content, left where it was on screen
-Error = mean abs pixel difference over the window rect (0 = identical)."""
+Error = mean abs pixel difference over the window rect (0 = identical).
+Also checks whether the app relays out live at all: a settled frame that equals the previous
+layout pinned to the new top-left means the content was only clipped, and the "released" frame
+(700 ms after mouse-up) shows whether the layout changed once the drag ended."""
 import json, os, sys
 import numpy as np
 from PIL import Image, ImageDraw
@@ -20,7 +23,7 @@ def run(d, sheet_step):
     worst = 0.0
     for m in meta:
         s = m["step"]
-        if m["sub"] == 99 or s - 1 not in settled:
+        if m["sub"] >= 98 or s - 1 not in settled:
             continue
         p = settled[s - 1]
         cur = load(d, m["file"]); new = load(d, settled[s]["file"]); prev = load(d, p["file"])
@@ -37,6 +40,23 @@ def run(d, sheet_step):
             worst = max(worst, e_new)
     bad = sum(1 for r in rows if r[-1] != "new" and r[4] > 1.0)
     print(f"{os.path.basename(d)}: {bad}/{len(rows)} mid-drag frames not showing the new layout (err>1)")
+    frozen = 0
+    for s in sorted(settled):
+        if s - 1 not in settled:
+            continue
+        a, b = settled[s - 1], settled[s]
+        w, h = b["R"] - b["L"], b["B"] - b["T"]
+        cur = load(d, b["file"])[b["T"]:b["B"], b["L"]:b["R"]]
+        st = load(d, a["file"])[a["T"]:a["T"] + h, a["L"]:a["L"] + w]
+        if (a["R"] - a["L"], a["B"] - a["T"]) != (w, h) and err(cur[: st.shape[0], : st.shape[1]], st) < 0.3:
+            frozen += 1
+    rel = next((m for m in meta if m["sub"] == 98), None)
+    line = f"  live relayout: {len(settled) - 1 - frozen}/{len(settled) - 1} settled steps relaid out"
+    if rel:
+        last = settled[max(settled)]
+        if (rel["R"] - rel["L"], rel["B"] - rel["T"]) == (last["R"] - last["L"], last["B"] - last["T"]):
+            line += f"; released vs last settled err={err(load(d, rel['file'])[rel['T']:rel['B'], rel['L']:rel['R']], load(d, last['file'])[last['T']:last['B'], last['L']:last['R']]):.2f}"
+    print(line)
     for r in rows:
         print("  step %2d sub %d t=%5d rect=%s  new=%5.2f stale=%5.2f screen=%5.2f -> %s" % r)
     # contact sheet: previous settled frame | first frame after the move | settled frame,

@@ -1,24 +1,32 @@
-﻿# Real edge drags on the Atlas window with screen captures right after each move.
-# Dev data only: pass a fixture --config-dir (tools/make-demo-fixture.py) and a scratch --data-dir.
+﻿# Real edge drags on a window with screen captures right after each move.
+# Atlas: dev data only, pass a fixture --config-dir (tools/make-demo-fixture.py) and a scratch --data-dir.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\resize-drag.ps1 -Exe target\debug\atlas.exe `
 #     -ConfigDir <fixture>\home\.claude -DataDir <scratch> -Out <scratch>\frames -Edges L,T,TL,BR,R,B -Mode shrink
 #   python tools\analyze-resize.py <scratch>\frames <scratch>\sheets
 #
-# Per edge: SendInput press on the native resize border, Steps moves of StepPx, PerStep captures
-# (DwmFlush + screen copy) right after each move, then one settled capture 250 ms later. meta.json
-# holds each frame's DWM window rect in capture coordinates. The app is killed at the end, so the
-# window-state plugin never saves the test bounds.
+# -Attach <process> drags an app that is already open instead (for comparison, e.g. Discord); its
+# placement, z-order flag and visibility are put back afterwards and it is never closed.
+#
+# Per edge: SendInput press on the resize border (found by hit test), Steps moves of StepPx, PerStep
+# captures (DwmFlush + screen copy) right after each move, then one settled capture 250 ms later.
+# meta.json holds each frame's DWM window rect in capture coordinates. A launched Atlas is killed at
+# the end, so the window-state plugin never saves the test bounds.
 param(
-  [Parameter(Mandatory = $true)][string]$Exe,
-  [Parameter(Mandatory = $true)][string]$ConfigDir,
-  [Parameter(Mandatory = $true)][string]$DataDir,
+  [string]$Exe,
+  [string]$ConfigDir,
+  [string]$DataDir,
   [Parameter(Mandatory = $true)][string]$Out,
+  [string]$Attach = "",
+  [string]$Class = "Chrome_WidgetWin_1",
   [string[]]$Edges = @("L"),
   [string]$Mode = "shrink",
   [int]$Steps = 10,
   [int]$StepPx = 12,
   [int]$PerStep = 4,
+  [int]$MoveMs = 0,   # > 0: continuous drag (one StepPx move every MoveMs), analyze with tools\analyze-continuous.py
+  [int]$W0 = 1240,
+  [int]$H0 = 820,
   [switch]$KeepOpen
 )
 $ErrorActionPreference = "Stop"
@@ -32,6 +40,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 public static class Drag {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+  [StructLayout(LayoutKind.Sequential)] public struct PLACEMENT { public int len, flags, show; public int minX, minY, maxX, maxY; public RECT normal; }
   [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx, dy, mouseData, dwFlags, time; public IntPtr extra; }
   [StructLayout(LayoutKind.Sequential)] struct INPUT { public int type; public MOUSEINPUT mi; }
   [DllImport("user32.dll")] static extern uint SendInput(uint n, INPUT[] i, int size);
@@ -39,23 +48,32 @@ public static class Drag {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int hh, uint f);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool GetWindowPlacement(IntPtr h, ref PLACEMENT p);
+  [DllImport("user32.dll")] public static extern bool SetWindowPlacement(IntPtr h, ref PLACEMENT p);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
   [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
-  [DllImport("dwmapi.dll")] static extern int DwmFlush();
-  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int a, out RECT r, int s);
-  public static RECT Bounds(IntPtr h) { RECT r; DwmGetWindowAttribute(h, 9, out r, 16); return r; }
-  public delegate bool P(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr v);
   [DllImport("user32.dll")] static extern bool EnumWindows(P p, IntPtr l);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr h);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
-  public static IntPtr Find(uint want) {
-    IntPtr found = IntPtr.Zero;
+  [DllImport("dwmapi.dll")] static extern int DwmFlush();
+  [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int a, out RECT r, int s);
+  public delegate bool P(IntPtr h, IntPtr l);
+  public static RECT Bounds(IntPtr h) { RECT r; DwmGetWindowAttribute(h, 9, out r, 16); return r; }
+  public static bool Visible(IntPtr h) { return IsWindowVisible(h); }
+  // The largest titled top-level window of these processes with this class.
+  public static IntPtr Find(uint[] pids, string cls, bool visibleOnly) {
+    IntPtr found = IntPtr.Zero; long best = -1;
     EnumWindows((h, l) => { uint pid; GetWindowThreadProcessId(h, out pid);
-      if (pid == want && IsWindowVisible(h)) { var c = new System.Text.StringBuilder(64); GetClassName(h, c, 64); if (c.ToString() == "Tauri Window") found = h; }
+      if (Array.IndexOf(pids, pid) >= 0 && (!visibleOnly || IsWindowVisible(h)) && GetWindowTextLength(h) > 0) {
+        var c = new System.Text.StringBuilder(64); GetClassName(h, c, 64);
+        RECT r; GetWindowRect(h, out r); long a = (long)(r.R - r.L) * (r.B - r.T);
+        if (c.ToString() == cls && a > best) { best = a; found = h; } }
       return true; }, IntPtr.Zero);
     return found;
   }
-  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr v);
   public static int HitTest(IntPtr h, int x, int y) {
     return (int)SendMessage(h, 0x84, IntPtr.Zero, (IntPtr)((y << 16) | (x & 0xFFFF)));
   }
@@ -74,7 +92,7 @@ public static class Drag {
     var list = new List<Frame>();
     var sw = Stopwatch.StartNew();
     SetCursorPos(x, y); Thread.Sleep(150);
-    Btn(0x0002); Thread.Sleep(120);
+    Btn(0x0002); Thread.Sleep(300);
     for (int s = 1; s <= steps; s++) {
       SetCursorPos(x + dx * s, y + dy * s);
       for (int f = 0; f < frames; f++) {
@@ -89,38 +107,90 @@ public static class Drag {
       st.Win = Bounds(h); st.Img = Grab(reg); list.Add(st);
     }
     Btn(0x0004);
+    Thread.Sleep(700);   // "released": did the layout change once the drag ended?
+    var rl = new Frame(); rl.Step = steps + 1; rl.Sub = 98; rl.Ms = sw.ElapsedMilliseconds;
+    rl.Win = Bounds(h); rl.Img = Grab(reg); list.Add(rl);
+    return list;
+  }
+  // Continuous drag, closer to a hand: a mover thread steps the cursor every moveMs while this
+  // thread captures every composed frame (Step = moves done so far, Sub = frame index).
+  static volatile int moved;
+  public static List<Frame> RunContinuous(IntPtr h, int x, int y, int dx, int dy, int steps, int moveMs, Rectangle reg) {
+    var list = new List<Frame>();
+    var sw = Stopwatch.StartNew();
+    SetCursorPos(x, y); Thread.Sleep(150);
+    Btn(0x0002); Thread.Sleep(300);
+    moved = 0;
+    var mover = new Thread(() => { for (int s = 1; s <= steps; s++) { SetCursorPos(x + dx * s, y + dy * s); moved = s; Thread.Sleep(moveMs); } });
+    mover.Start();
+    int n = 0;
+    while (mover.IsAlive) {
+      DwmFlush();
+      var fr = new Frame(); fr.Step = moved; fr.Sub = n++; fr.Ms = sw.ElapsedMilliseconds;
+      fr.Win = Bounds(h); fr.Img = Grab(reg); list.Add(fr);
+    }
+    Thread.Sleep(250);
+    var st = new Frame(); st.Step = steps; st.Sub = 99; st.Ms = sw.ElapsedMilliseconds;
+    st.Win = Bounds(h); st.Img = Grab(reg); list.Add(st);
+    Btn(0x0004);
+    Thread.Sleep(700);
+    var rl = new Frame(); rl.Step = steps + 1; rl.Sub = 98; rl.Ms = sw.ElapsedMilliseconds;
+    rl.Win = Bounds(h); rl.Img = Grab(reg); list.Add(rl);
     return list;
   }
 }
 "@
 [Drag]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null
-New-Item -ItemType Directory -Force $DataDir, $Out | Out-Null
-$sp = Join-Path $DataDir "settings.json"
-if (Test-Path $sp) { $j = Get-Content -Raw $sp | ConvertFrom-Json; $j.lastView = "dashboard"; [IO.File]::WriteAllText($sp, ($j | ConvertTo-Json)) }
-$env:ATLAS_NO_INTRO = "1"; $env:ATLAS_MULTI = "1"
-$app = Start-Process $Exe -ArgumentList @("--config-dir", "`"$ConfigDir`"", "--data-dir", "`"$DataDir`"") -RedirectStandardError (Join-Path $Out "atlas.log") -PassThru
-$h = [IntPtr]::Zero
-for ($i = 0; $i -lt 100 -and $h -eq [IntPtr]::Zero; $i++) {
-  Start-Sleep -Milliseconds 150; $h = [Drag]::Find([uint32]$app.Id)
+New-Item -ItemType Directory -Force $Out | Out-Null
+if ($Attach) {
+  $pids = [uint32[]]@(Get-Process -Name $Attach | ForEach-Object { $_.Id })
+  $h = [Drag]::Find($pids, $Class, $false)
+  if ($h -eq [IntPtr]::Zero) { throw "no $Class window for $Attach" }
+  $place = New-Object Drag+PLACEMENT; $place.len = [Runtime.InteropServices.Marshal]::SizeOf($place)
+  [Drag]::GetWindowPlacement($h, [ref]$place) | Out-Null
+  $wasVisible = [Drag]::Visible($h)
+  Write-Output "attached to $Attach window $h visible=$wasVisible show=$($place.show) normal=$($place.normal.L),$($place.normal.T),$($place.normal.R),$($place.normal.B)"
+  if (-not $wasVisible) { [Drag]::ShowWindow($h, 5) | Out-Null }   # SW_SHOW: a renderer behind SW_SHOWNOACTIVATE kept its hidden size
+  if ($place.show -eq 3) { [Drag]::ShowWindow($h, 9) | Out-Null }  # maximized: restore for the test
+  Start-Sleep -Milliseconds 3000
+} else {
+  New-Item -ItemType Directory -Force $DataDir | Out-Null
+  $sp = Join-Path $DataDir "settings.json"
+  if (Test-Path $sp) { $j = Get-Content -Raw $sp | ConvertFrom-Json; $j.lastView = "dashboard"; [IO.File]::WriteAllText($sp, ($j | ConvertTo-Json)) }
+  $env:ATLAS_NO_INTRO = "1"; $env:ATLAS_MULTI = "1"
+  $app = Start-Process $Exe -ArgumentList @("--config-dir", "`"$ConfigDir`"", "--data-dir", "`"$DataDir`"") -RedirectStandardError (Join-Path $Out "atlas.log") -PassThru
+  $h = [IntPtr]::Zero
+  for ($i = 0; $i -lt 100 -and $h -eq [IntPtr]::Zero; $i++) {
+    Start-Sleep -Milliseconds 150; $h = [Drag]::Find([uint32[]]@($app.Id), "Tauri Window", $true)
+  }
+  if ($h -eq [IntPtr]::Zero) { throw "no window" }
+  Start-Sleep -Milliseconds 2500
 }
-if ($h -eq [IntPtr]::Zero) { throw "no window" }
-Start-Sleep -Milliseconds 2500
-$X0 = 260; $Y0 = 160; $W0 = 1240; $H0 = 820
+$X0 = 260; $Y0 = 160
 foreach ($edge in $Edges) {
   [Drag]::SetWindowPos($h, [IntPtr](-1), $X0, $Y0, $W0, $H0, 0x0040) | Out-Null   # topmost, show
   [Drag]::SetForegroundWindow($h) | Out-Null
   Start-Sleep -Milliseconds 1200
   $r = [Drag]::Bounds($h)
   $sign = if ($Mode -eq "shrink") { 1 } else { -1 }
-  $x = [int](($r.L + $r.R) / 2); $y = [int](($r.T + $r.B) / 2); $dx = 0; $dy = 0
-  if ($edge.Contains("L")) { $x = $r.L - 3; $dx = $sign * $StepPx }
-  if ($edge.Contains("R")) { $x = $r.R + 2; $dx = -$sign * $StepPx }
-  if ($edge.Contains("T")) { $y = $r.T + 2; $dy = $sign * $StepPx }
-  if ($edge.Contains("B")) { $y = $r.B + 2; $dy = -$sign * $StepPx }
-  $ht = [Drag]::HitTest($h, $x, $y)
+  # Grab point: the first spot near the edge whose hit test is that edge (the border may sit
+  # outside the visible frame, as on Atlas, or just inside it).
+  $want = @{ L = 10; R = 11; T = 12; TL = 13; TR = 14; B = 15; BL = 16; BR = 17 }[$edge]
+  $dx = 0; $dy = 0
+  if ($edge.Contains("L")) { $dx = $sign * $StepPx }; if ($edge.Contains("R")) { $dx = -$sign * $StepPx }
+  if ($edge.Contains("T")) { $dy = $sign * $StepPx }; if ($edge.Contains("B")) { $dy = -$sign * $StepPx }
+  $ht = -1
+  foreach ($o in @(-3, 2, -1, 0, 1, 3, 4)) {
+    $x = [int](($r.L + $r.R) / 2); $y = [int](($r.T + $r.B) / 2)
+    if ($edge.Contains("L")) { $x = $r.L + $o }; if ($edge.Contains("R")) { $x = $r.R - 1 - $o }
+    if ($edge.Contains("T")) { $y = $r.T + [Math]::Max($o, 0) + 1 }; if ($edge.Contains("B")) { $y = $r.B - 1 - $o }
+    $ht = [Drag]::HitTest($h, $x, $y); if ($ht -eq $want) { break }
+  }
+  if ($ht -ne $want) { Write-Output "$Mode-$edge skipped: no hit test $want near the edge (last $ht)"; continue }
   $m = 40 + $Steps * $StepPx
   $reg = New-Object System.Drawing.Rectangle(($r.L - $m), ($r.T - $m), ($r.R - $r.L + 2 * $m), ($r.B - $r.T + 2 * $m))
-  $shots = [Drag]::Run($h, $x, $y, $dx, $dy, $Steps, $PerStep, $reg)
+  $shots = if ($MoveMs -gt 0) { [Drag]::RunContinuous($h, $x, $y, $dx, $dy, $Steps, $MoveMs, $reg) }
+           else { [Drag]::Run($h, $x, $y, $dx, $dy, $Steps, $PerStep, $reg) }
   $dir = Join-Path $Out "$Mode-$edge"; New-Item -ItemType Directory -Force $dir | Out-Null
   $meta = @()
   foreach ($f in $shots) {
@@ -131,10 +201,10 @@ foreach ($edge in $Edges) {
   $meta | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $dir "meta.json")
   Write-Output "$Mode-$edge hittest=$ht grab=($x,$y) frames=$($shots.Count) -> $dir"
 }
-[Drag]::SetWindowPos($h, [IntPtr](-2), 0, 0, 0, 0, 0x0003) | Out-Null  # not topmost
-if (-not $KeepOpen) { Stop-Process -Id $app.Id -Force }
-
-
-
-
-
+[Drag]::SetWindowPos($h, [IntPtr](-2), 0, 0, 0, 0, 0x0013) | Out-Null  # not topmost, no move/size/activate
+if ($Attach) {
+  [Drag]::SetWindowPlacement($h, [ref]$place) | Out-Null
+  if (-not $wasVisible) { [Drag]::ShowWindow($h, 0) | Out-Null }
+  $p2 = New-Object Drag+PLACEMENT; $p2.len = $place.len; [Drag]::GetWindowPlacement($h, [ref]$p2) | Out-Null
+  Write-Output "restored: visible=$([Drag]::Visible($h)) show=$($p2.show) normal=$($p2.normal.L),$($p2.normal.T),$($p2.normal.R),$($p2.normal.B)"
+} elseif (-not $KeepOpen) { Stop-Process -Id $app.Id -Force }
