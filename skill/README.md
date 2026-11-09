@@ -39,23 +39,25 @@ Then type `/atlas`. There is no binary to set up: the plugin's launcher uses the
 these it finds:
 
 1. `atlas-usage` on your PATH.
-2. A copy it saved earlier in the plugin's own data folder.
-3. The Atlas app's copy (`%LOCALAPPDATA%\Atlas\atlas-usage.exe`, Windows).
+2. A copy it saved earlier in the plugin's own data folder, kept per plugin version.
+3. The Atlas app's copy, next to `atlas.exe` in its install folder (by default
+   `%LOCALAPPDATA%\Atlas\atlas-usage.exe`, Windows).
 4. Otherwise it downloads the right build for your computer from the latest release of
    `dozeyy/atlas` (with `gh` if you are signed in to it, else plain HTTPS), checks its
    SHA-256 against the release's `SHA256SUMS.txt`, and saves it. A file that fails the check
    is deleted and never run.
 
 If the download cannot work (offline, or the repo is private and `gh` is not signed in), the
-launcher prints one line saying what to do. To refresh the saved copy after a new release,
-delete the `atlas-usage` file in the plugin's data folder.
+launcher prints one line saying what to do. The saved copy lives in a folder named after the
+plugin version, so updating the plugin fetches the matching build by itself and removes the
+older folder.
 
 **Fallback, by hand** (no plugin):
 
 - Build the program: `cargo install --path crates/cli` from this repo (it lands on PATH via
   `~/.cargo/bin`), or take a prebuilt one from the release and put it on PATH.
 - Copy `skill/skills/atlas/` to `~/.claude/skills/atlas/`. The same launcher finds the
-  program on PATH or in that skill's `bin/` folder. (`claude --plugin-dir <this repo>/skill`
+  program on PATH, or downloads it as above. (`claude --plugin-dir <this repo>/skill`
   tries the plugin without installing it.)
 
 When Claude picks the skill up from a plain question it uses the Skill tool; if your

@@ -2,10 +2,11 @@
 # Atlas launcher for macOS, Linux (and Git Bash on Windows): finds or fetches the
 # atlas-usage program, then runs it with the arguments unchanged.
 #   usage: sh atlas-usage.sh [--bin-dir=<folder>] <atlas-usage arguments>
-# Order: (a) atlas-usage on PATH, (b) a copy cached in <folder> (the plugin data folder the
-# skill passes in, else this script's own folder), (c) Windows only: the Atlas app's install
-# folder, (d) download from the latest GitHub Release of dozeyy/atlas, checked against
-# SHA256SUMS.txt.
+# Order: (a) atlas-usage on PATH, (b) a copy cached in <folder>/atlas-usage/<plugin version>/
+# (<folder> = the plugin data folder the skill passes in, else this script's own folder; older
+# version folders are removed when a new one is made), (c) Windows only: the Atlas app's
+# install folder, (d) download from the latest GitHub Release of dozeyy/atlas, checked
+# against SHA256SUMS.txt.
 # Exit code 3 = the launcher itself failed (one plain line on stderr).
 # Test aid: ATLAS_USAGE_TEST_SOURCE = a local folder, or an http://127.0.0.1 / localhost
 # address, that stands in for the release. ATLAS_USAGE_LAUNCHER_VERBOSE=1 names the copy used.
@@ -13,9 +14,12 @@
 REPO="dozeyy/atlas"
 
 fail() {
-  printf 'atlas-usage: %s
-' "$1" >&2
+  printf 'atlas-usage: %s\n' "$1" >&2
   exit 3
+}
+
+say() { # verbose-only note
+  [ -n "$ATLAS_USAGE_LAUNCHER_VERBOSE" ] && printf 'atlas-usage launcher: %s %s\n' "$1" "$2" >&2
 }
 
 # --- the launcher's own option (everything after it goes to atlas-usage untouched) ---
@@ -32,9 +36,8 @@ if [ -z "$bindir" ]; then
   bindir=$CLAUDE_PLUGIN_DATA
   case $bindir in *'${'*) bindir="" ;; esac
 fi
-if [ -z "$bindir" ]; then
-  bindir=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || fail "cannot find the skill folder."
-fi
+scriptdir=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || fail "cannot find the skill folder."
+[ -n "$bindir" ] || bindir=$scriptdir
 
 os=$(uname -s 2>/dev/null)
 case $os in
@@ -45,23 +48,29 @@ esac
 # (a) on PATH
 onpath=$(command -v atlas-usage 2>/dev/null)
 if [ -n "$onpath" ] && [ -f "$onpath" ]; then
-  [ -n "$ATLAS_USAGE_LAUNCHER_VERBOSE" ] && printf 'atlas-usage launcher: PATH: %s
-' "$onpath" >&2
+  say "PATH:" "$onpath"
   exec "$onpath" "$@"
 fi
 
-# (b) cached copy
-cached=$bindir/$exe
+# (b) cached copy, keyed by the plugin version: <folder>/atlas-usage/<version>/atlas-usage.
+# A plugin update changes the version, so the next run fetches a fresh copy by itself.
+version=unknown
+pj=$scriptdir/../../../.claude-plugin/plugin.json
+if [ -f "$pj" ]; then
+  v=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pj" | head -n 1 | tr -c 'A-Za-z0-9._\n-' '_')
+  [ -n "$v" ] && version=$v
+fi
+cacheroot=$bindir/atlas-usage
+verdir=$cacheroot/$version
+cached=$verdir/$exe
 if [ -f "$cached" ]; then
-  [ -n "$ATLAS_USAGE_LAUNCHER_VERBOSE" ] && printf 'atlas-usage launcher: cache: %s
-' "$cached" >&2
+  say "cache:" "$cached"
   exec "$cached" "$@"
 fi
 
-# (c) the Atlas app's install folder (Windows)
+# (c) the Atlas app's install folder (Windows; the installer's per-user default)
 if [ "$exe" = "atlas-usage.exe" ] && [ -n "$LOCALAPPDATA" ] && [ -f "$LOCALAPPDATA/Atlas/$exe" ]; then
-  [ -n "$ATLAS_USAGE_LAUNCHER_VERBOSE" ] && printf 'atlas-usage launcher: Atlas app: %s
-' "$LOCALAPPDATA/Atlas/$exe" >&2
+  say "Atlas app:" "$LOCALAPPDATA/Atlas/$exe"
   exec "$LOCALAPPDATA/Atlas/$exe" "$@"
 fi
 
@@ -80,9 +89,9 @@ case $os in
 esac
 hint="Install the Atlas app from github.com/$REPO/releases, or put atlas-usage on PATH."
 
-mkdir -p "$bindir" 2>/dev/null || fail "cannot write to $bindir. $hint"
+mkdir -p "$cacheroot" 2>/dev/null || fail "cannot write to $bindir. $hint"
 # A private work folder per run: two runs at once never share a half-written file.
-work=$(mktemp -d "$bindir/.dl.XXXXXX" 2>/dev/null) || fail "cannot write to $bindir. $hint"
+work=$(mktemp -d "$cacheroot/.dl.XXXXXX" 2>/dev/null) || fail "cannot write to $bindir. $hint"
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 
 sha256_of() {
@@ -107,8 +116,7 @@ fetch() { # url dest
   fi
 }
 
-printf 'atlas-usage: first use, downloading the program (one time)...
-' >&2
+printf 'atlas-usage: first use, downloading the program (one time)...\n' >&2
 got=0
 src=$ATLAS_USAGE_TEST_SOURCE
 if [ -n "$src" ] && [ -d "$src" ]; then
@@ -145,10 +153,15 @@ fi
 
 # Atomic rename into place. If another run got there first, its copy is just as good.
 chmod +x "$work/$asset" 2>/dev/null
+mkdir -p "$verdir" 2>/dev/null
 mv -f "$work/$asset" "$cached" 2>/dev/null || [ -f "$cached" ] || fail "cannot save the program to $bindir. $hint"
+
+# A new version folder now exists: drop the older ones (work folders start with a dot).
+for d in "$cacheroot"/*; do
+  [ -d "$d" ] && [ "${d##*/}" != "$version" ] && rm -rf "$d"
+done
 rm -rf "$work"
 trap - EXIT HUP INT TERM
 
-[ -n "$ATLAS_USAGE_LAUNCHER_VERBOSE" ] && printf 'atlas-usage launcher: downloaded: %s
-' "$cached" >&2
+say "downloaded:" "$cached"
 exec "$cached" "$@"
