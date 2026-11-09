@@ -429,6 +429,7 @@ export function DetailSheet({
         ref={panel}
         role="dialog"
         aria-modal="true"
+        data-allow-jump=""
         aria-labelledby={titleId}
         tabIndex={-1}
         onKeyDown={onKey}
