@@ -56,34 +56,41 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # The Tauri app's build reads dist/, so the frontend is built first.
-      - name: Build the frontend
-        run: npx vite build
+      # The browser-preview copy of the frontend, with the screenshot tour built in
+      # (VITE_ATLAS_TOUR=1; vite.config.ts). Its own folder: `tauri build` rebuilds dist/ itself.
+      - name: Build the frontend with the tour (browser preview)
+        env:
+          VITE_ATLAS_TOUR: "1"
+        run: npx vite build --outDir dist-tour
 
-      # The tour app: a debug build (the only kind with the screenshot tour in it).
+      # The tour app: a debug build (the only kind with the screenshot tour in it). Its frontend
+      # (tauri's beforeBuildCommand) is built with the tour in too.
       - name: Build the tour app (debug)
         id: debug
+        env:
+          VITE_ATLAS_TOUR: "1"
         run: npx tauri build --debug --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
-      # The app as it ships: universal, ad-hoc signed, with the dmg. Update bundles only when the
-      # signing key is there (a fork or a fresh repo has none).
+      # The app as it ships: universal, ad-hoc signed, with the dmg, and its frontend built without
+      # the tour. The real update-signing key lives only in release.yml: this proof signs the update
+      # bundle with a throwaway key made here, to show the .sig still gets made.
       - name: Build the universal app and dmg
         id: universal
         if: ${{ !cancelled() }}
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # GitHub sets CI=true, and Tauri then skips the Finder step that lays the icons out on
           # the dmg background (no .DS_Store). The runner allows Finder scripting, so keep it.
           TAURI_BUNDLER_DMG_IGNORE_CI: "true"
         run: |
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "ATLAS_EXPECT_UPDATER=1" >> "$GITHUB_ENV"
-            npx tauri build --target universal-apple-darwin --bundles app,dmg
-          else
-            echo "No update signing key: building without update bundles."
-            npx tauri build --target universal-apple-darwin --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
-          fi
+          key="$RUNNER_TEMP/throwaway-update.key"
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$(openssl rand -hex 24)
+          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          npx tauri signer generate --ci -f -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" -w "$key" >/dev/null
+          TAURI_SIGNING_PRIVATE_KEY=$(cat "$key")
+          export TAURI_SIGNING_PRIVATE_KEY
+          rm -f "$key" "$key.pub"
+          echo "ATLAS_EXPECT_UPDATER=1" >> "$GITHUB_ENV"
+          npx tauri build --target universal-apple-darwin --bundles app,dmg
 
       - name: Build atlas-usage (universal)
         if: ${{ !cancelled() }}
@@ -100,6 +107,8 @@ jobs:
 
       - name: WebKit pictures of every page (browser preview, mock data)
         if: ${{ !cancelled() && steps.playwright.outcome == 'success' }}
+        env:
+          ATLAS_DIST: dist-tour
         run: node tools/webkit-shots.mjs mac-check-out/webkit
 
       - name: Real app checks and pictures
