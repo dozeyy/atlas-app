@@ -24,9 +24,11 @@ function describe(card: ShareCard): string {
 function Pop({
   card,
   canvas,
+  hint,
 }: {
   card: ShareCard;
   canvas: RefObject<HTMLCanvasElement | null>;
+  hint?: string;
 }) {
   const ctx = useClockCtx();
   const pic = useEl();
@@ -41,7 +43,7 @@ function Pop({
     });
   });
   return (
-    <div ref={pic.ref} className="pr-card-pic">
+    <div ref={pic.ref} className="pr-card-pic" title={hint}>
       <canvas
         ref={canvas}
         role="img"
@@ -150,15 +152,8 @@ export function CardPoster({
       >
         <Field spec={spec} id={slide.id} />
         <div className="pr-cardwrap">
-          <Pop card={card} canvas={canvas} />
+          <Pop card={card} canvas={canvas} hint={slide.hint} />
           <Rise className="pr-card-foot">
-            <p
-              className="pr-card-note"
-              title={slide.hint}
-              tabIndex={slide.hint ? 0 : undefined}
-            >
-              {slide.line}
-            </p>
             <div className="pr-card-save">
               <span
                 role="status"

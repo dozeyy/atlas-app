@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { compact, exact } from "../../lib/usage";
 import {
   chamfer,
-  clipText,
   dialFrame,
   dialModel,
   heatLayout,
@@ -10,8 +9,7 @@ import {
   polar,
   skyline,
   SWATCH,
-  tileBoxes,
-  tileFits,
+  projectTiles,
   towerBlocks,
   trailLayout,
 } from "../../lib/posterMath";
@@ -478,14 +476,14 @@ export function LongHero({ chart, box }: P<"dial">) {
 export function ProjectHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
   const ctx = useClockCtx();
   const at = useMemo(() => pieces(ctx), [ctx]);
-  const shown = rows.slice(0, 6);
+  // Every tile carries its whole label (across it or turned along it); a project too small for that
+  // leaves the picture rather than being cut or left bare.
   const tiles = useMemo(
     () =>
-      tileBoxes(
-        shown.map((r) => r.value),
+      projectTiles(
+        rows.map((r) => ({ value: r.value, name: r.name ?? r.label })),
         { x: 0, y: box.ceil, w: box.w, h: box.floor - box.ceil },
       ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, box],
   );
   const { els, ref } = useEls();
@@ -497,19 +495,14 @@ export function ProjectHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
   });
   return (
     <HeroSvg box={box}>
-      {tiles.map((b, i) => {
-        const r = shown[i];
+      {tiles.map((tile, i) => {
+        const b = tile.box;
+        const r = rows[i];
         const sw = SWATCH[i % SWATCH.length];
         const big = i === 0;
         // The biggest tile is the project the slide's title already names: it says what the tile weighs
         // instead, so the name is on the poster once.
-        const name = big ? compact(r.value) : (r.name ?? r.label);
-        const px = big ? 40 : 22;
-        const fits = tileFits(b, Math.min(name.length, big ? 12 : 10), px);
-        const chars = Math.max(
-          3,
-          Math.floor((b.w - 34) / (px * (big ? 0.5 : 0.62))),
-        );
+        const px = tile.px;
         return (
           <g key={r.label} ref={ref(i)} className="o-b">
             <title>{`${r.label}: ${compact(r.value)} tokens`}</title>
@@ -517,17 +510,22 @@ export function ProjectHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
               className={`f-${sw.fill} ln`}
               d={chamfer(b.x + 4, b.y + 4, b.w - 8, b.h - 8, 12)}
             />
-            {fits ? (
+            {px > 0 ? (
               <text
                 className={big ? `pr-num f-${sw.ink}` : `pr-lab f-${sw.ink}`}
-                x={b.x + 22}
-                y={b.y + (big ? 66 : 44)}
-                style={big ? { fontSize: px * 1.4 } : undefined}
+                x={tile.turn ? 0 : b.x + 22}
+                y={tile.turn ? 0 : b.y + (big ? 66 : 22 + px)}
+                transform={
+                  tile.turn
+                    ? `translate(${b.x + 20 + px * 0.8} ${b.y + b.h - 22}) rotate(-90)`
+                    : undefined
+                }
+                style={{ fontSize: big ? px * 1.4 : px }}
               >
-                {clipText(name, chars)}
+                {tile.text}
               </text>
             ) : null}
-            {fits && big ? (
+            {px > 0 && big ? (
               <text
                 className={`pr-lab f-${sw.ink}`}
                 x={b.x + 22}

@@ -225,3 +225,23 @@ describe("compare", () => {
     }
   });
 });
+
+describe("one thing, once", () => {
+  it("counts Apollo 11 as one thing on the days ladder and the hours ladder", () => {
+    const used = new Set<string>();
+    const first = compare("days", 8.4, { lead: "About" }, used);
+    expect(first?.text).toContain("Apollo 11");
+    // 195 hours is the whole Apollo 11 trip again: spoken for, so it is not offered a second time.
+    const second = compare("hours", 195, { lead: "About" }, used);
+    expect(second?.text ?? "").not.toContain("Apollo 11");
+    // And the other way round.
+    const used2 = new Set<string>();
+    expect(compare("hours", 195, { lead: "About" }, used2)?.text).toContain("Apollo 11");
+    expect(compare("days", 8.4, { lead: "About" }, used2)?.text ?? "").not.toContain("Apollo 11");
+  });
+  it("counts the soccer match and the soccer team as one thing", () => {
+    const used = new Set<string>();
+    expect(compare("hours", 1.6, { lead: "About" }, used)?.text).toContain("soccer");
+    expect(compare("crew", 11, { lead: "About" }, used)?.text ?? "").not.toContain("soccer");
+  });
+});

@@ -18,6 +18,8 @@ export interface Rung {
   many: string;
   /** Where the size comes from, for the hover. */
   fact: string;
+  /** Which thing this is, when it sits on two ladders (Apollo 11 in days and in hours). Defaults to `one`. */
+  thing?: string;
 }
 
 export interface Ladder {
@@ -56,7 +58,7 @@ export const LADDERS: Record<LadderId, Ladder> = {
     unit: "days",
     rungs: [
       // Apollo 11, launch to splashdown, 16 to 24 July 1969: 8 days, 3 hours, 18 minutes.
-      { size: 8, one: "one Apollo 11 moon trip", many: "Apollo 11 moon trips", fact: "Apollo 11 took 8 days from launch to splashdown." },
+      { size: 8, thing: "apollo11", one: "one Apollo 11 moon trip", many: "Apollo 11 moon trips", fact: "Apollo 11 took 8 days from launch to splashdown." },
       // A lunar month (new moon to new moon): 29.5 days.
       { size: 29.5, one: "one lunar month", many: "lunar months", fact: "A lunar month, new moon to new moon, is 29.5 days." },
       // Mercury goes round the Sun once in 88 Earth days.
@@ -73,13 +75,13 @@ export const LADDERS: Record<LadderId, Ladder> = {
     unit: "hours",
     rungs: [
       // A soccer match is two 45-minute halves.
-      { size: 1.5, one: "one soccer match", many: "soccer matches", fact: "A soccer match is 90 minutes of play." },
+      { size: 1.5, thing: "soccer", one: "one soccer match", many: "soccer matches", fact: "A soccer match is 90 minutes of play." },
       // New York to London is a flight of about 7 hours.
       { size: 7, one: "one flight to London", many: "flights to London", fact: "New York to London is a flight of about 7 hours." },
       // A full-time work week is 40 hours.
       { size: 40, one: "one full-time work week", many: "full-time work weeks", fact: "A full-time work week is 40 hours." },
       // Apollo 11 lasted 195 hours (8 days, 3 hours, 18 minutes).
-      { size: 195, one: "one whole Apollo 11 moon trip", many: "Apollo 11 moon trips", fact: "Apollo 11 took about 195 hours." },
+      { size: 195, thing: "apollo11", one: "one whole Apollo 11 moon trip", many: "Apollo 11 moon trips", fact: "Apollo 11 took about 195 hours." },
       // A full-time work year is 40 hours x 52 weeks = 2,080 hours.
       { size: 2080, one: "one full-time work year", many: "full-time work years", fact: "A full-time work year is 2,080 hours." },
       // A year is 365.25 days x 24 hours = 8,766 hours.
@@ -102,7 +104,7 @@ export const LADDERS: Record<LadderId, Ladder> = {
     unit: "helpers",
     rungs: [
       { size: 5, one: "one basketball team", many: "basketball teams", fact: "A basketball team puts 5 players on the court." },
-      { size: 11, one: "one soccer team", many: "soccer teams", fact: "A soccer team has 11 players on the pitch." },
+      { size: 11, thing: "soccer", one: "one soccer team", many: "soccer teams", fact: "A soccer team has 11 players on the pitch." },
       { size: 53, one: "one NFL roster", many: "NFL rosters", fact: "An NFL team's active roster is 53 players." },
       { size: 100, one: "the whole US Senate", many: "US Senates", fact: "The US Senate has 100 members." },
       { size: 435, one: "the whole US House", many: "US Houses", fact: "The US House has 435 voting members." },
@@ -175,11 +177,13 @@ export interface CompareWords {
   atLeast?: boolean;
 }
 
+const thingOf = (r: Rung): string => r.thing ?? r.one;
+
 /** Build the comparison for an amount in the ladder's own unit; null when none fits. */
 export function compare(id: LadderId, amount: number, words: CompareWords, used?: Set<string>): Comparison | null {
-  // A thing is compared once per Wrapped: the rungs already spoken for are out of the running.
+  // A thing is compared once per Wrapped, on whichever ladder it sits: what is spoken for is out of the running.
   const full = LADDERS[id];
-  const ladder = used ? { ...full, rungs: full.rungs.filter((r) => !used.has(r.one)) } : full;
+  const ladder = used ? { ...full, rungs: full.rungs.filter((r) => !used.has(thingOf(r))) } : full;
   const hit = pickRung(ladder, amount, words.atLeast ? 1 : MIN_SHARE);
   if (!hit) return null;
   const { rung, ratio } = hit;
@@ -190,7 +194,7 @@ export function compare(id: LadderId, amount: number, words: CompareWords, used?
   let text = say(words.lead, words.tail ?? "");
   if (text.length > MAX_LINE) text = say(words.atLeast ? "At least" : "About", words.tail ?? "");
   if (text.length > MAX_LINE) return null;
-  used?.add(rung.one);
+  used?.add(thingOf(rung));
   const math = `${compact(amount)} ${ladder.unit} / ${compact(rung.size)} = ${words.atLeast ? "at least " : ratio < ONE_BELOW ? "about " : ""}${ratio < ONE_BELOW ? "1" : n}.`;
   return { text, hint: [rung.fact, math, ladder.note].filter(Boolean).join(" ") };
 }

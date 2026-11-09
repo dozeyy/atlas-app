@@ -15,6 +15,7 @@ import {
   lollipops,
   OUT,
   podiumLayout,
+  runDots,
   sectorPath,
   spikeLayout,
   SWATCH,
@@ -275,33 +276,51 @@ export function ToolHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
       ),
     [rows, box],
   ); // eslint-disable-line react-hooks/exhaustive-deps
+  // One tool has nothing to be set against, so its runs are drawn instead: a dot under the line for each.
+  const runs = useMemo(
+    () =>
+      shown.length === 1 ? runDots(shown[0].value, box, bars[0].y + bars[0].h) : null,
+    [rows, box, bars], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const dotCount = runs?.dots.length ?? 0;
   const { els, ref } = useEls();
+  const dots = useEls();
+  const chip = useEl();
   const glyph = useEl();
   // The ghost prompt sits wholly inside the hero box (nothing on the card is cut off).
   const gsize = Math.round(Math.min(460, box.h * 0.8));
   const gx = box.side === "l" ? 8 : box.w - gsize * 0.62 - 8;
   const gy = box.floor - gsize * 0.14;
   useTick((t) => {
+    const total = bars.length + dotCount;
     bars.forEach((_, i) => {
-      const { p, landed } = at(t, i, bars.length);
+      const { p, landed } = at(t, i, total);
       put(els.current[i], enter(ctx.mood, p, landed, 420));
     });
+    // The dots arrive after the line they count, one after another.
+    for (let i = 0; i < dotCount; i++) {
+      const { p, landed } = at(t, bars.length + i, total);
+      put(dots.els.current[i], pop(ctx.mood, p, landed, 200));
+    }
+    if (dotCount > 0) fade(chip.el.current, after(at(t, total - 1, total).p, 0.9));
     // The prompt glyph is the card's own ink at 18%: it reads on a dark or a light card alike.
     fade(glyph.el.current, beatValue(ctx, "hero", t) * GLYPH_INK);
   });
   return (
     <HeroSvg box={box}>
-      <text
-        ref={glyph.ref}
-        className="pr-num"
-        data-deco=""
-        aria-hidden="true"
-        x={gx}
-        y={gy}
-        style={{ fontSize: gsize }}
-      >
-        $
-      </text>
+      {runs ? null : (
+        <text
+          ref={glyph.ref}
+          className="pr-num"
+          data-deco=""
+          aria-hidden="true"
+          x={gx}
+          y={gy}
+          style={{ fontSize: gsize }}
+        >
+          $
+        </text>
+      )}
       {bars.map((b, i) => {
         const r = shown[i];
         const sw = SWATCH[i % 4];
@@ -330,6 +349,29 @@ export function ToolHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
           </g>
         );
       })}
+      {runs
+        ? runs.dots.map((d, i) => (
+            <circle
+              key={i}
+              ref={dots.ref(i)}
+              className="f-acc ln o-c"
+              cx={d.x}
+              cy={d.y}
+              r={d.r}
+            />
+          ))
+        : null}
+      {runs && runs.unit > 1 ? (
+        <g ref={chip.ref}>
+          <path
+            className="f-sbg ln"
+            d={chamfer(0, box.floor - 40, 320, 40, 8)}
+          />
+          <text className="pr-lab f-sfg" x={160} y={box.floor - 12} textAnchor="middle">
+            {`1 dot = ${exact(runs.unit)} runs`}
+          </text>
+        </g>
+      ) : null}
     </HeroSvg>
   );
 }
