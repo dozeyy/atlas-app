@@ -139,6 +139,7 @@ function Palette() {
 
   const shown = useMemo(() => rankItems(items, query, SHOWN), [items, query]);
   const at = clampIndex(picked, shown.length);
+  const searching = chat.pending || typedRows.length > 0;
 
   // A new query starts from the top.
   const type = (v: string) => {
@@ -163,7 +164,8 @@ function Palette() {
   const onKey = (e: KeyboardEvent) => {
     // Nothing typed here reaches a shortcut or a page behind.
     e.stopPropagation();
-    const mk = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k";
+    // The same modifier as the shortcut that opened it: Cmd on a Mac, Ctrl elsewhere.
+    const mk = (info.platform === "macos" ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === "k";
     if (e.key === "Escape" || mk) {
       e.preventDefault();
       closePalette();
@@ -224,8 +226,9 @@ function Palette() {
           <kbd className="qj-key">Esc</kbd>
         </div>
         {shown.length === 0 ? (
-          <p className="qj-none" role="status">
-            {chat.pending || typedRows.length ? "Looking" : "Nothing matches"}
+          // While the words are still being searched the row stays, empty, so nothing jumps.
+          <p className="qj-none" role="status" aria-busy={searching}>
+            {searching ? " " : "Nothing matches"}
           </p>
         ) : (
           <ul ref={list} id={listId} role="listbox" aria-label="Results" className="qj-list">

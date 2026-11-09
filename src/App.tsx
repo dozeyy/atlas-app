@@ -44,6 +44,11 @@ export function App() {
       if (e.key.toLowerCase() === "k") {
         // An editor that took Ctrl+K for itself keeps it.
         if (e.defaultPrevented) return;
+        // Not over another dialog (the quick jump's own panel is the one dialog that may be up).
+        const over = Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"]')).some(
+          (d) => !d.closest(".qj-root"),
+        );
+        if (over) return;
         e.preventDefault();
         openPalette();
         return;

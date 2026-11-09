@@ -2,14 +2,13 @@
 // Each says what happened in a toast, so a press never feels silent.
 
 import { getBackend } from "./ipc";
-import { resumeCommand } from "./sessionBrowse";
 import { pushToast } from "../state/toastStore";
 
-/** Puts the "resume this chat" command on the clipboard. */
-export async function copyResume(sessionId: string, projectPath: string | null | undefined): Promise<void> {
+/** Puts a "resume this chat" command (from `resumeCommand`) on the clipboard. */
+export async function copyResume(command: string): Promise<void> {
   try {
-    await navigator.clipboard.writeText(resumeCommand(sessionId, projectPath));
-    pushToast({ message: "Copied the resume command. Paste it in a terminal.", tone: "success" });
+    await navigator.clipboard.writeText(command);
+    pushToast({ message: "Resume command copied", tone: "success" });
   } catch {
     pushToast({ message: "Could not reach the clipboard.", tone: "error" });
   }

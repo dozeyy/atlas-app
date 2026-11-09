@@ -7,7 +7,9 @@ import { TokenText } from "./TokenText";
 import { timelineBars } from "./timelineBars";
 import { getBackend } from "../../lib/ipc";
 import { copyResume } from "../../lib/sessionActions";
-import { projectTone, shareOfMax } from "../../lib/sessionBrowse";
+import { projectTone, resumeCommand } from "../../lib/sessionBrowse";
+import { sparkShape } from "../../lib/todayStat";
+import { useAtlas } from "../../state/AtlasProvider";
 import { useFetched } from "../../lib/useUsage";
 import { formatWhen, plural } from "../../lib/usage";
 import type { SessionRow } from "../../lib/types";
@@ -22,14 +24,18 @@ const H = 30;
  */
 export function PickUp({ row, onOpen }: { row: SessionRow; onOpen: (id: string) => void }) {
   const backend = getBackend();
+  const { info } = useAtlas();
+  const resume = resumeCommand(row.sessionId, row.projectPath, info.platform);
   const detail = useFetched(() => backend.sessionDetail(row.sessionId), [row.sessionId]);
   const values = useMemo(
     () => timelineBars(detail.data?.timeline ?? [], row.durationMs).map((b) => b.value),
     [detail.data, row.durationMs],
   );
-  const max = Math.max(0, ...values);
-  const step = values.length > 0 ? W / values.length : W;
-  const tone = projectTone(row.projectPath || row.projectName);
+  // A trace needs a few steps to say anything; with fewer, only the floor is drawn. It is smoothed
+  // monotonically, so it never dips below its baseline.
+  const shape = useMemo(() => sparkShape(values, W, H), [values]);
+  const trace = values.length >= 3 && !shape.empty;
+  const color = `var(--chart-${projectTone(row.projectPath || row.projectName)})`;
 
   return (
     <section aria-label="Pick up where you left off" className="pick card">
@@ -52,31 +58,22 @@ export function PickUp({ row, onOpen }: { row: SessionRow; onOpen: (id: string) 
         </span>
       </button>
       <svg aria-hidden="true" focusable="false" width={W} height={H} className="pick-strip chart">
-        <line x1="0" x2={W} y1={H - 0.5} y2={H - 0.5} className="today-base" />
-        {values.map((v, i) => {
-          const h = max > 0 ? Math.max(1.5, shareOfMax(v, max) * (H - 3)) : 0;
-          return h > 0 ? (
-            <rect
-              key={i}
-              x={i * step + 0.5}
-              y={H - 1 - h}
-              width={Math.max(1.5, step - 1.5)}
-              height={h}
-              rx={0.75}
-              fill={`var(--chart-${tone})`}
-              opacity={0.9}
-            />
-          ) : null;
-        })}
+        <title>Tokens through the chat</title>
+        <line x1="0" x2={W} y1={shape.baseline} y2={shape.baseline} className="today-base" />
+        {trace && (
+          <>
+            <path d={shape.area} fill={color} opacity={0.16} />
+            <path d={shape.line} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+            {shape.last && <circle cx={shape.last[0]} cy={shape.last[1]} r={2} fill={color} />}
+          </>
+        )}
       </svg>
       <div className="pick-actions">
-        <IconButton
-          aria-label="Copy resume command"
-          title="Copy resume command"
-          onClick={() => void copyResume(row.sessionId, row.projectPath)}
-        >
-          <Copy size={16} aria-hidden="true" />
-        </IconButton>
+        {resume && (
+          <IconButton aria-label="Copy resume command" title="Copy resume command" onClick={() => void copyResume(resume)}>
+            <Copy size={16} aria-hidden="true" />
+          </IconButton>
+        )}
         <Button variant="primary" onClick={() => onOpen(row.sessionId)}>
           Open
           <ArrowRight size={14} aria-hidden="true" />

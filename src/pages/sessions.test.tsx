@@ -205,7 +205,8 @@ describe("Sessions: the first view", () => {
     await waitFor(() => expect(screen.getByRole("heading", { level: 2 }).textContent).not.toBe(first));
     await userEvent.click(screen.getByRole("button", { name: /Copy resume/ }));
     await waitFor(() => expect(written.length).toBe(1));
-    expect(written[0]).toMatch(/claude --resume \S+$/);
-    expect(await screen.findByText(/Copied the resume command/)).toBeInTheDocument();
+    expect(written[0]).toMatch(/claude --resume [A-Za-z0-9_-]+$/);
+    expect(written[0]).not.toMatch(/[\r\n]/); // one line, safe to paste
+    expect(await screen.findByText("Resume command copied")).toBeInTheDocument();
   });
 });
