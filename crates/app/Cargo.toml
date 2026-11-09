@@ -25,8 +25,12 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphic
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
 
 [features]
+# Lets ATLAS_UPDATE_URL point the updater at a local test server in a release build. Never in
+# the shipped build (see update.rs); debug builds always honor it.
+dev-update = []
 # tauri build turns this on: the front end is served from the binary instead of
 # the Vite dev server.
 custom-protocol = ["tauri/custom-protocol"]

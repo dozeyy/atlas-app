@@ -12,6 +12,7 @@ import { agoText } from "../lib/historyModel";
 import { plural } from "../lib/usage";
 import { useFetched, useUsageStatus } from "../lib/useUsage";
 import { useWidth } from "../lib/useWidth";
+import { checkForUpdate, startInstall, useUpdate } from "../lib/updateStore";
 
 const WIDE_AT = 760;
 const KEEP_MIN = 10;
@@ -99,6 +100,28 @@ export function Settings() {
       off?.();
     };
   }, [backend, reloadOverview]);
+
+  // Updates (About): the same state the sidebar icon shows; the button asks right now.
+  const upd = useUpdate();
+  const [checking, setChecking] = useState(false);
+  const [updateNote, setUpdateNote] = useState<string | null>(null);
+  const updateBusy = upd.state.kind === "downloading" || upd.state.kind === "installing";
+  const askForUpdate = async () => {
+    setChecking(true);
+    setUpdateNote(null);
+    const r = await checkForUpdate({ manual: true });
+    setChecking(false);
+    if (r.outcome === "latest") setUpdateNote("You have the latest version.");
+    else if (r.outcome === "failed") setUpdateNote(r.message);
+  };
+  const updateHint =
+    upd.state.kind === "available"
+      ? `Version ${upd.state.info.version} is ready.`
+      : upd.state.kind === "failed"
+        ? upd.state.message
+        : upd.state.kind === "downloading" || upd.state.kind === "installing"
+          ? `Version ${upd.state.info.version} is on its way. Atlas restarts when it is done.`
+          : (updateNote ?? "Atlas looks for a new version when it opens and every few hours. It never installs one without asking.");
 
   const ov = overview.data;
   const [active, setActive] = useState<SectionId>("appearance");
@@ -288,13 +311,26 @@ export function Settings() {
         <Row label="Version">
           <span className="text-body text-ink-2">{info.version}</span>
         </Row>
+        <Row label="Updates" hint={updateHint}>
+          {updateBusy ? (
+            <Button disabled>{upd.state.kind === "installing" ? "Installing" : "Downloading"}</Button>
+          ) : upd.state.kind === "available" || upd.state.kind === "failed" ? (
+            <Button variant="primary" onClick={() => void startInstall()}>
+              {upd.state.kind === "failed" ? "Try again" : "Update and restart"}
+            </Button>
+          ) : (
+            <Button disabled={checking} onClick={() => void askForUpdate()}>
+              {checking ? "Checking" : "Check for updates"}
+            </Button>
+          )}
+        </Row>
         <Row label="Build">
           <span className="text-body text-ink-2">{info.build === "release" ? "Release" : "Debug"}</span>
         </Row>
         <Row label="Started in" hint="Time from launch to the first screen.">
           <span className="text-body text-ink-2">{info.firstPaintMs === null ? "Not measured" : `${info.firstPaintMs} ms`}</span>
         </Row>
-        <Row label="Privacy" hint="Atlas never sends your data anywhere. Everything it shows is read from files on this computer." />
+        <Row label="Privacy" hint="Atlas never sends your data anywhere. Everything it shows is read from files on this computer. The only thing it asks the internet is whether a newer version exists." />
       </>
     ),
   };

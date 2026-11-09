@@ -130,6 +130,20 @@ fn try_open(db: &Path) -> rusqlite::Result<(Connection, OpenKind)> {
     Ok((conn, OpenKind::Ready))
 }
 
+/// Fold the write-ahead log into the database file and close, so nothing is left beside it.
+/// For a short-lived writer (Atlas Setup's first read): the engine's read connections are
+/// read-only and cannot clear the log when they close last. Best effort; a missing or busy
+/// cache is left as it is.
+pub fn checkpoint_and_close(db: &Path) {
+    if !db.is_file() {
+        return;
+    }
+    if let Ok(conn) = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_WRITE) {
+        let _ = conn.busy_timeout(std::time::Duration::from_millis(2000));
+        let _ = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
+    }
+}
+
 /// Set the damaged database aside and put the newest good backup in its place.
 pub fn recover(db: &Path) -> Result<Recovery, CacheError> {
     let aside = sibling(db, &format!("corrupt-{}", now_secs()));

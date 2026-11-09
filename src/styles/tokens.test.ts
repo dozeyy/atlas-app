@@ -98,6 +98,14 @@ for (const [name, set] of [
       expect(contrast(get(set, "accent-text"), get(set, s))).toBeGreaterThanOrEqual(4.5);
     });
 
+    it.each(["bg", "surface", "sidebar-solid"])("the update blue is readable on %s", (s) => {
+      expect(contrast(get(set, "info"), get(set, s))).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it("the update blue is readable on its own wash", () => {
+      expect(contrast(get(set, "info"), on(set, "info-tint", "sidebar-solid"))).toBeGreaterThanOrEqual(4.5);
+    });
+
     it("accent text is readable on the selected-item wash", () => {
       for (const base of ["sidebar-solid", "bg"]) {
         const wash = on(set, "accent-tint", base);

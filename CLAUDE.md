@@ -124,6 +124,18 @@ Reliability beats feature count.
   bundled, FTS5) for the usage cache · `notify`, `keyring`, `trash` crates.
 - npm (no pnpm/bun on this machine); `@tauri-apps/cli` pinned in `package.json`.
 - Installers: `.dmg` (universal) + NSIS `.exe` (and `.msi`) via GitHub Actions matrix.
+- **Atlas Setup** (`crates/setup`, front end `setup.html` + `src/setup/`): the styled Windows
+  `Atlas-Setup-Windows-x64.exe`. It embeds the NSIS installer, installs it silently per user,
+  and reads the chats into the cache while the window is open (same data dir, one writer, the
+  indexer is stopped before Atlas launches). The trail on the sheet is the chat-reading
+  progress; Install is a click, available at any time. Build it locally with
+  `tools/build-setup.ps1`; the release workflow (`.github/workflows/release.yml`, tags `v*`)
+  builds the same chain. Details: `docs/releasing.md`.
+- **In-app updates** (`crates/app/src/update.rs`, `tauri-plugin-updater`): a quiet check after
+  first paint and every 6 h against `https://github.com/dozeyy/atlas/releases/latest/download/latest.json`;
+  a blue download icon at the sidebar's bottom-left offers the update, never installs by itself.
+  The signing key is `C:\Users\Will\.tauri\atlas-updater.key` (outside every repo, never
+  printed or committed); only the public key is in `tauri.conf.json`.
 
 ## Constraints
 - Performance: first paint < 1 s; dashboard populated from the cache < 2 s with 1,000+

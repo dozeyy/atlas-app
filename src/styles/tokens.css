@@ -41,6 +41,8 @@
   --warning: #86570f;
   --warning-tint: rgb(134 87 15 / 0.13);
   --slate: #5b7083; /* the cool second chart hue */
+  --info: #1b59b0; /* the update icon: a blue that is not the accent, >= 4.5:1 on bg, surface, sidebar */
+  --info-tint: rgb(27 89 176 / 0.12);
 
   /* Code in the read-only viewer (Setup): all >= 4.5:1 on surface and raised. */
   --syntax-keyword: #9c4524;
@@ -105,6 +107,8 @@
   --warning: #6a4409;
   --warning-tint: rgb(122 79 13 / 0.14);
   --slate: #4f6377;
+  --info: #164584;
+  --info-tint: rgb(22 69 132 / 0.13);
 
   --syntax-keyword: #7a3416;
   --syntax-string: #265a3d;
@@ -163,6 +167,8 @@
   --warning: #e3b341;
   --warning-tint: rgb(227 179 65 / 0.14);
   --slate: #8fa3b5;
+  --info: #7ab0ff;
+  --info-tint: rgb(122 176 255 / 0.16);
 
   --syntax-keyword: #e8896a;
   --syntax-string: #6fbf8e;
@@ -219,6 +225,8 @@
     --warning: #e3b341;
     --warning-tint: rgb(227 179 65 / 0.14);
     --slate: #8fa3b5;
+    --info: #7ab0ff;
+    --info-tint: rgb(122 176 255 / 0.16);
 
     --syntax-keyword: #e8896a;
     --syntax-string: #6fbf8e;
@@ -348,6 +356,8 @@
   --color-success-tint: var(--success-tint);
   --color-warning: var(--warning);
   --color-warning-tint: var(--warning-tint);
+  --color-info: var(--info);
+  --color-info-tint: var(--info-tint);
   --color-slate: var(--slate);
   --color-heat-0: var(--heat-0);
   --color-heat-1: var(--heat-1);

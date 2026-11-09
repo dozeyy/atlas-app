@@ -15,3 +15,5 @@ crates/app/gen/
 skill/bin/
 skill/skills/atlas/bin/
 dist-cli/
+# Atlas Setup's front end (built by npm run build:setup, embedded by crates/setup)
+dist-setup/
