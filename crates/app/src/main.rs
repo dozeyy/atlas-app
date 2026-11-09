@@ -64,7 +64,8 @@ fn main() {
     // Cmd+C / Cmd+V work in text fields. Windows has no menu bar (the page draws its own menu).
     #[cfg(target_os = "macos")]
     {
-        builder = builder.menu(macmenu::build).on_menu_event(macmenu::on_event);
+        let show_shortcuts = state.show_shortcuts();
+        builder = builder.menu(move |app| macmenu::build(app, show_shortcuts)).on_menu_event(macmenu::on_event);
     }
     let app = builder
         .plugin(tauri_plugin_dialog::init())

@@ -63,6 +63,9 @@ pub struct Settings {
     pub close_to_tray: bool,
     /// A desktop notification when a running chat finishes or waits for input (default off).
     pub notify_on_finish: bool,
+    /// Show keyboard shortcut hints (tooltips, search badges, menu accelerators). Default off;
+    /// the shortcuts work either way and Help > Keyboard shortcuts always lists them.
+    pub show_shortcuts: bool,
     /// How many versions of each file History keeps (10 to 200, default 50).
     pub history_keep_versions: u32,
     /// Keys this version does not know, kept as they were.
@@ -81,6 +84,7 @@ impl Default for Settings {
             launch_animation: true,
             close_to_tray: false,
             notify_on_finish: false,
+            show_shortcuts: false,
             history_keep_versions: DEFAULT_KEEP_VERSIONS,
             extra: Map::new(),
         }
@@ -94,7 +98,7 @@ pub fn clamp_keep_versions(n: u32) -> u32 {
     n.clamp(10, 200)
 }
 
-const KNOWN: [&str; 9] = [
+const KNOWN: [&str; 10] = [
     "schemaVersion",
     "theme",
     "lastView",
@@ -103,6 +107,7 @@ const KNOWN: [&str; 9] = [
     "launchAnimation",
     "closeToTray",
     "notifyOnFinish",
+    "showShortcuts",
     "historyKeepVersions",
 ];
 
@@ -130,6 +135,7 @@ impl Settings {
             take("launchAnimation").and_then(|v| v.as_bool()).unwrap_or(d.launch_animation);
         let close_to_tray = take("closeToTray").and_then(|v| v.as_bool()).unwrap_or(d.close_to_tray);
         let notify_on_finish = take("notifyOnFinish").and_then(|v| v.as_bool()).unwrap_or(d.notify_on_finish);
+        let show_shortcuts = take("showShortcuts").and_then(|v| v.as_bool()).unwrap_or(d.show_shortcuts);
         let history_keep_versions = take("historyKeepVersions")
             .and_then(|v| v.as_u64())
             .map(|n| clamp_keep_versions(n.min(u32::MAX as u64) as u32))
@@ -146,6 +152,7 @@ impl Settings {
             launch_animation,
             close_to_tray,
             notify_on_finish,
+            show_shortcuts,
             history_keep_versions,
             extra: map,
         })
@@ -282,6 +289,19 @@ mod tests {
         assert!(fs::read_to_string(path_in(d.path())).unwrap().contains("\"notifyOnFinish\": true"));
         assert!(load(d.path()).settings.notify_on_finish);
         assert!(!load(d.path()).settings.extra.contains_key("notifyOnFinish"));
+    }
+
+    #[test]
+    fn show_shortcuts_defaults_off_and_persists() {
+        assert!(!Settings::default().show_shortcuts);
+        // A settings file from before this field existed, or a bad value, means off.
+        assert!(!Settings::from_json(r#"{"schemaVersion":1,"theme":"dark"}"#).unwrap().show_shortcuts);
+        assert!(!Settings::from_json(r#"{"showShortcuts":"yes"}"#).unwrap().show_shortcuts);
+        let d = tempdir().unwrap();
+        save(d.path(), &Settings { show_shortcuts: true, ..Settings::default() }).unwrap();
+        assert!(fs::read_to_string(path_in(d.path())).unwrap().contains("\"showShortcuts\": true"));
+        assert!(load(d.path()).settings.show_shortcuts);
+        assert!(!load(d.path()).settings.extra.contains_key("showShortcuts"));
     }
 
     #[test]

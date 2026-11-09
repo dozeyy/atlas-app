@@ -3,7 +3,8 @@ import type { KeyboardEvent } from "react";
 import { CaretRight, List } from "@phosphor-icons/react";
 import { IconButton } from "./controls";
 import { HelpSheet } from "./HelpSheets";
-import { APP_MENU, modName } from "../lib/appMenu";
+import { APP_MENU } from "../lib/appMenu";
+import { useKeyHints } from "../lib/keyHints";
 import { onNativeMenu } from "../lib/ipc";
 import type { MenuEntry, SheetId } from "../lib/appMenu";
 import { useAtlas } from "../state/AtlasProvider";
@@ -28,6 +29,7 @@ const siblings = (el: Element | null) => itemsOf(el?.closest('[role="menu"]'));
  */
 export function AppMenu() {
   const { info, setView } = useAtlas();
+  const { show: showKeys, tip, mod } = useKeyHints();
   const [open, setOpen] = useState(false);
   const [sub, setSub] = useState<string | null>(null);
   const [sheet, setSheet] = useState<SheetId | null>(null);
@@ -204,7 +206,7 @@ export function AppMenu() {
       >
         <span>{m.label}</span>
         {parent && <CaretRight size={14} aria-hidden="true" />}
-        {m.action === "palette" && <span className="app-menu-hint">{modName(info.platform)}+K</span>}
+        {m.action === "palette" && showKeys && <span className="app-menu-hint">{mod}+K</span>}
       </button>
     );
   };
@@ -214,7 +216,7 @@ export function AppMenu() {
       <IconButton
         ref={trigger}
         aria-label="Menu"
-        title={info.platform === "macos" ? "Menu" : "Menu (Alt)"}
+        title={info.platform === "macos" ? "Menu" : tip("Menu", "Alt")}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}

@@ -175,6 +175,7 @@ pub struct SettingsPatch {
     pub launch_animation: Option<bool>,
     pub close_to_tray: Option<bool>,
     pub notify_on_finish: Option<bool>,
+    pub show_shortcuts: Option<bool>,
     pub history_keep_versions: Option<u32>,
 }
 
@@ -432,6 +433,10 @@ impl AppState {
                 changed |= inner.settings.notify_on_finish != n;
                 inner.settings.notify_on_finish = n;
             }
+            if let Some(s) = patch.show_shortcuts {
+                changed |= inner.settings.show_shortcuts != s;
+                inner.settings.show_shortcuts = s;
+            }
             if let Some(k) = patch.history_keep_versions.map(settings::clamp_keep_versions) {
                 changed |= inner.settings.history_keep_versions != k;
                 inner.settings.history_keep_versions = k;
@@ -447,6 +452,11 @@ impl AppState {
     /// Closing the window hides Atlas to the tray (opt-in, default off).
     pub fn close_to_tray(&self) -> bool {
         self.lock().settings.close_to_tray
+    }
+
+    /// Draw keyboard shortcut hints (opt-in, default off).
+    pub fn show_shortcuts(&self) -> bool {
+        self.lock().settings.show_shortcuts
     }
 
     /// Tell the user when a running chat finishes or waits for them (opt-in, default off).

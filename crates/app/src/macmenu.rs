@@ -7,6 +7,11 @@
 //!
 //! On purpose there are no menu shortcuts for Cmd+1..7 or Cmd+B: the page owns those keys, and a
 //! menu accelerator would take them before the page sees them.
+//!
+//! Key hints are opt-in (Settings > Show shortcuts): the Settings item draws its Cmd+, only while
+//! the switch is on, and `refresh` rebuilds the menu when the switch changes. Cmd+, itself keeps
+//! working either way (the page handles it, see App.tsx). The Edit, Window and Quit items are the
+//! system's own standard items, whose keys macOS always draws.
 
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter};
@@ -21,7 +26,7 @@ fn item(app: &AppHandle, id: &str, text: &str, accel: Option<&str>) -> tauri::Re
     MenuItem::with_id(app, format!("{PREFIX}{id}"), text, true, accel)
 }
 
-pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+pub fn build(app: &AppHandle, show_shortcuts: bool) -> tauri::Result<Menu<tauri::Wry>> {
     let sep = || PredefinedMenuItem::separator(app);
     let atlas = Submenu::with_items(
         app,
@@ -30,7 +35,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         &[
             &item(app, "about", "About Atlas", None)?,
             &sep()?,
-            &item(app, "settings", "Settings...", Some("Cmd+,"))?,
+            &item(app, "settings", "Settings...", show_shortcuts.then_some("Cmd+,"))?,
             &sep()?,
             &PredefinedMenuItem::services(app, None)?,
             &sep()?,
@@ -84,6 +89,13 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         ],
     )?;
     Menu::with_items(app, &[&atlas, &edit, &view, &window, &help])
+}
+
+/// The switch changed: install a menu drawn for the new value.
+pub fn refresh(app: &AppHandle, show_shortcuts: bool) {
+    if let Ok(menu) = build(app, show_shortcuts) {
+        let _ = app.set_menu(menu);
+    }
 }
 
 /// An Atlas item was picked: bring the window forward and tell the page.

@@ -50,6 +50,7 @@ function loadSettings(): Settings {
     launchAnimation: true,
     closeToTray: false,
     notifyOnFinish: false,
+    showShortcuts: false,
     historyKeepVersions: 50,
   };
   try {

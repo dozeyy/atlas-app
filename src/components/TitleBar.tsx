@@ -6,7 +6,7 @@ import { IconButton } from "./controls";
 import { GiftIcon } from "./GiftIcon";
 import { IconMotion } from "./IconMotion";
 import { NAV } from "./Sidebar";
-import { modName } from "../lib/appMenu";
+import { useKeyHints } from "../lib/keyHints";
 import { getBackend } from "../lib/ipc";
 import { useSidebar } from "../lib/useSidebar";
 import { useAtlas } from "../state/AtlasProvider";
@@ -24,6 +24,7 @@ import { useAtlas } from "../state/AtlasProvider";
 export function TitleBar() {
   const { info } = useAtlas();
   const { collapsed, toggle } = useSidebar();
+  const { tip, mod } = useKeyHints();
   return (
     <header data-tauri-drag-region className="titlebar">
       <div data-tauri-drag-region className="titlebar-left">
@@ -32,7 +33,7 @@ export function TitleBar() {
           aria-label="Sidebar"
           aria-expanded={!collapsed}
           aria-controls="app-sidebar"
-          title={`${collapsed ? "Show" : "Hide"} sidebar (${modName(info.platform)}+B)`}
+          title={tip(`${collapsed ? "Show" : "Hide"} sidebar`, `${mod}+B`)}
           onClick={toggle}
         >
           <SidebarSimple size={18} aria-hidden="true" />
@@ -51,7 +52,8 @@ export function TitleBar() {
  * a drag anywhere else on the row still moves the window.
  */
 function WrappedButton() {
-  const { info, view, setView } = useAtlas();
+  const { view, setView } = useAtlas();
+  const { tip, mod } = useKeyHints();
   const at = NAV.findIndex((n) => n.view === "wrapped");
   const here = view === "wrapped";
   return (
@@ -60,7 +62,7 @@ function WrappedButton() {
       aria-current={here ? "page" : undefined}
       // No tip once you are on it: an empty title (not a missing one, which the tip layer cannot
       // see change while it holds the old text) so nothing hangs over the page the click opened.
-      title={here ? "" : `Wrapped (${modName(info.platform)}+${at + 1})`}
+      title={here ? "" : tip("Wrapped", `${mod}+${at + 1}`)}
       className="titlebar-gift hover-host"
       onClick={() => setView("wrapped")}
     >

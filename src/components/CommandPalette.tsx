@@ -8,7 +8,7 @@ import { closePalette, usePaletteOpen } from "../state/paletteStore";
 import { guardLeave } from "../state/unsavedStore";
 import { startSetup, useSetup } from "../state/setupStore";
 import { getBackend } from "../lib/ipc";
-import { modName } from "../lib/appMenu";
+import { useKeyHints } from "../lib/keyHints";
 import { openProjectNext, openSessionNext, openToolkitItemNext } from "../lib/nav";
 import { KIND_LABEL, clampIndex, matchRanges, pageItems, projectItem, rankItems, sessionItem, stepIndex, toolkitItems } from "../lib/palette";
 import type { PaletteItem, PaletteKind } from "../lib/palette";
@@ -86,7 +86,7 @@ export function CommandPalette() {
 
 function Palette() {
   const { info, view, setView } = useAtlas();
-  const mod = modName(info.platform);
+  const { show: showKeys, mod } = useKeyHints();
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -230,7 +230,7 @@ function Palette() {
             autoComplete="off"
             className="qj-input"
           />
-          <kbd className="qj-key">Esc</kbd>
+          {showKeys && <kbd className="qj-key">Esc</kbd>}
         </div>
         {shown.length === 0 ? (
           // While the words are still being searched the row stays, empty, so nothing jumps.
@@ -264,7 +264,7 @@ function Palette() {
                       </span>
                     )}
                   </span>
-                  {item.kind === "page" ? <kbd className="qj-key">{item.meta}</kbd> : <span className="qj-meta">{item.meta || KIND_LABEL[item.kind]}</span>}
+                  {item.kind === "page" && showKeys ? <kbd className="qj-key">{item.meta}</kbd> : <span className="qj-meta">{(item.kind !== "page" && item.meta) || KIND_LABEL[item.kind]}</span>}
                 </li>
               );
             })}

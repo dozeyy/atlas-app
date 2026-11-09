@@ -57,7 +57,18 @@ describe("navigation", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Wrapped" })).toBeInTheDocument();
   });
 
-  it("numbers the shortcuts 1 to 7 with no gap, Wrapped's gift included", () => {
+  it("shows no shortcut hint and no hover on named nav items until Show shortcuts is on", () => {
+    mount();
+    const main = screen.getByRole("navigation", { name: "Main" });
+    for (const b of main.querySelectorAll("button")) expect(b.getAttribute("title") ?? "").toBe("");
+    // The gear and the gift are icon-only, so they keep their name, without the keys.
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "Settings");
+    expect(screen.getByRole("button", { name: "Wrapped" })).toHaveAttribute("title", "Wrapped");
+    expect(document.querySelector("[title*='Ctrl'], [data-tip*='Ctrl']")).toBeNull();
+  });
+
+  it("numbers the shortcuts 1 to 7 with no gap, Wrapped's gift included (Show shortcuts on)", () => {
+    localStorage.setItem("atlas.mock.settings", JSON.stringify({ showShortcuts: true }));
     mount();
     const keys = [...screen.getByRole("navigation", { name: "Main" }).querySelectorAll("button"), ...screen.getByRole("navigation", { name: "Secondary" }).querySelectorAll("button"), screen.getByRole("button", { name: "Wrapped" })].map((b) => /\+(\d)\)$/.exec(b.getAttribute("title") ?? "")?.[1]);
     expect(keys.sort()).toEqual(["1", "2", "3", "4", "5", "6", "7"]);

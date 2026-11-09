@@ -503,7 +503,13 @@ describe("Setup page: edit", () => {
     expect(screen.queryByRole("textbox", { name: /^Editing / })).not.toBeInTheDocument();
   });
 
-  it("saves with Ctrl+S semantics through the same path (Save button label shows the shortcut)", async () => {
+  it("Save has no hover while Show shortcuts is off, and shows Ctrl S when it is on", async () => {
+    const { dialog } = await openEditor("Skills", /skill deep-research/);
+    expect(within(dialog).getByRole("button", { name: /^Save/ })).not.toHaveAttribute("title");
+  });
+
+  it("saves with Ctrl+S semantics through the same path (Save button label shows the shortcut when on)", async () => {
+    await backend.updateSettings({ showShortcuts: true });
     const { dialog } = await openEditor("Skills", /skill deep-research/);
     expect(within(dialog).getByRole("button", { name: /^Save/ })).toHaveAttribute("title", expect.stringContaining("Ctrl S"));
   });

@@ -38,7 +38,8 @@ export function Toolbar({
   searchRef: RefObject<HTMLInputElement | null>;
   /** Extra key handling on the search box (Down into the list). */
   onSearchKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
-  shortcut: string;
+  /** The key hint drawn in the empty search box; left out unless Settings > Show shortcuts is on. */
+  shortcut?: string;
   shown: number;
   total: number;
   placeholder?: string;
@@ -84,11 +85,11 @@ export function Toolbar({
             >
               <X size={14} aria-hidden="true" />
             </button>
-          ) : (
+          ) : shortcut ? (
             <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded-[4px] border border-line bg-raised px-1.5 text-caption text-ink-2">
               {shortcut}
             </kbd>
-          )}
+          ) : null}
         </div>
 
         <OptionsMenu

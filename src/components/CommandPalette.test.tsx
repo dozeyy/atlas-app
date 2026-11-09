@@ -9,8 +9,8 @@ import { setBackend } from "../lib/ipc";
 import { MockBackend } from "../lib/mock";
 import { clearPendingProject, clearPendingSession, clearPendingToolkitItem } from "../lib/nav";
 
-function mount(view = "dashboard") {
-  localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: view }));
+function mount(view = "dashboard", showShortcuts = false) {
+  localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: view, showShortcuts }));
   const backend = new MockBackend();
   setBackend(backend);
   render(
@@ -43,7 +43,7 @@ const selected = () => options().find((o) => o.getAttribute("aria-selected") ===
 
 describe("Quick jump: opening and closing", () => {
   it("opens with Ctrl+K on the field, listing every page first; Escape closes and gives focus back", async () => {
-    mount();
+    mount("dashboard", true);
     const before = screen.getByRole("button", { name: "Settings" });
     before.focus();
     const dlg = await open();
@@ -56,6 +56,14 @@ describe("Quick jump: opening and closing", () => {
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Quick jump" })).not.toBeInTheDocument();
     expect(before).toHaveFocus();
+  });
+
+  it("draws no key hints while Show shortcuts is off", async () => {
+    mount();
+    const dlg = await open();
+    expect(options()[2]).not.toHaveTextContent("Ctrl+3");
+    expect(options()[2]).toHaveTextContent("Page");
+    expect(dlg.querySelector("kbd")).toBeNull();
   });
 
   it("Ctrl+K again closes it, and a press on the scrim does too", async () => {

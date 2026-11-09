@@ -10,6 +10,13 @@ import type { SlideGraphic } from "../../lib/wrappedModel";
 /** The four-point clay spark: planted on a peak, and the trail's "you are here". Unit size 1. */
 export const SPARK = "M0-1Q.16-.16 1 0Q.16 .16 0 1Q-.16 .16-1 0Q-.16-.16 0-1Z";
 
+/** The spark's radius, how far its centre floats above the bar it marks, and the room a chart must keep
+ * above its tallest bar so the whole spark (and the spring's overshoot while it pops in) is inside the
+ * SVG. A chart sets its top from SPARK_HEAD instead of nudging one number, so a bar at 100 % never clips. */
+export const SPARK_SIZE = 11;
+export const SPARK_LIFT = 20;
+export const SPARK_HEAD = SPARK_LIFT + Math.ceil(SPARK_SIZE * 1.25) + 3;
+
 export function Spark({
   x,
   y,
@@ -164,8 +171,8 @@ function HoursArt({ g }: { g: Extract<SlideGraphic, { kind: "hours" }> }) {
   const w = 14;
   const gap = 4;
   const base = 236;
-  const bs = bars(g.values, max, base, base - 190, w, gap, 12);
-  const width = 12 + 24 * (w + gap);
+  const bs = bars(g.values, max, base, SPARK_HEAD, w, gap, 12);
+  const width = 12 + 24 * (w + gap) + 6; // the right 6 are the peak spark's room when the peak is 11 PM
   const pk = bs[g.peak];
   return (
     <svg
@@ -196,7 +203,7 @@ function HoursArt({ g }: { g: Extract<SlideGraphic, { kind: "hours" }> }) {
           }
         />
       ))}
-      <Spark x={pk.x + w / 2} y={pk.y - 22} size={11} delay={520} />
+      <Spark x={pk.x + w / 2} y={pk.y - SPARK_LIFT} size={SPARK_SIZE} delay={520} />
       <line
         className="sm-axis"
         x1={8}
@@ -229,8 +236,8 @@ function WeekdaysArt({
   const tied = weekdayTied(g.values);
   const w = 64;
   const gap = 28;
-  const base = 128;
-  const bs = bars(g.values, max, base, base - 104, w, gap, 4);
+  const base = 128; // the total height stays 162: the bars give up the spark's headroom, the SVG does not grow
+  const bs = bars(g.values, max, base, SPARK_HEAD, w, gap, 4);
   const width = 4 + 7 * w + 6 * gap + 4;
   return (
     <svg
@@ -262,8 +269,8 @@ function WeekdaysArt({
             <Spark
               key={`s${b.i}`}
               x={b.x + w / 2}
-              y={b.y - 20}
-              size={11}
+              y={b.y - SPARK_LIFT}
+              size={SPARK_SIZE}
               delay={420}
             />
           ),
@@ -294,8 +301,8 @@ function SpikeArt({ g }: { g: Extract<SlideGraphic, { kind: "spike" }> }) {
   const max = Math.max(...g.values, 0);
   const w = 20;
   const gap = 9;
-  const base = 128;
-  const bs = bars(g.values, max, base, base - 104, w, gap, 4);
+  const base = 128; // the total height stays 162: the bars give up the spark's headroom, the SVG does not grow
+  const bs = bars(g.values, max, base, SPARK_HEAD, w, gap, 4);
   const width = 4 + g.values.length * w + (g.values.length - 1) * gap + 4;
   const pk = bs[g.peak];
   return (
@@ -321,7 +328,7 @@ function SpikeArt({ g }: { g: Extract<SlideGraphic, { kind: "spike" }> }) {
           style={{ animationDelay: `${b.i * 22}ms` }}
         />
       ))}
-      <Spark x={pk.x + w / 2} y={pk.y - 20} size={11} delay={520} />
+      <Spark x={pk.x + w / 2} y={pk.y - SPARK_LIFT} size={SPARK_SIZE} delay={520} />
       <line
         className="sm-axis"
         x1={0}

@@ -2,8 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { CheckCircle, WarningCircle } from "@phosphor-icons/react";
 import { Button } from "../controls";
-import { modName } from "../../lib/appMenu";
-import { useAtlas } from "../../state/AtlasProvider";
+import { useKeyHints } from "../../lib/keyHints";
 import { setUnsaved } from "../../state/unsavedStore";
 import { errorText } from "../../lib/setup-actions";
 import type { Editor } from "../../lib/codemirror";
@@ -41,7 +40,7 @@ export function TextEditor({
   /** Fields drawn over the editor that read and change the same text. */
   above?: (api: { text: string; setText: (next: string) => void }) => ReactNode;
 }) {
-  const { info } = useAtlas();
+  const { show: showKeys, mod } = useKeyHints();
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<Editor | null>(null);
   const [text, setText] = useState(initial);
@@ -181,7 +180,7 @@ export function TextEditor({
         <Button onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
-        <Button variant="primary" onClick={() => void submit()} disabled={!canSave} title={`${submitLabel} (${modName(info.platform)} S)`}>
+        <Button variant="primary" onClick={() => void submit()} disabled={!canSave} title={showKeys ? `${submitLabel} (${mod} S)` : undefined}>
           {saving ? "Saving..." : submitLabel}
         </Button>
       </div>

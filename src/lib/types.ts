@@ -17,6 +17,8 @@ export interface Settings {
   closeToTray: boolean;
   /** Tell me when a chat finishes or asks a question (default off). */
   notifyOnFinish: boolean;
+  /** Show keyboard shortcut hints in tooltips, badges and menus (default off). */
+  showShortcuts: boolean;
   /** How many copies of each file History keeps (10 to 200). */
   historyKeepVersions: number;
 }

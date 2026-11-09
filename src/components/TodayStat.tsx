@@ -28,13 +28,10 @@ export function TodayStat() {
   const usual = useMemo(() => (daily ? usualDay(daily.tokens.slice(-31, -1)) : 0), [daily]);
   if (!stat || !shape) return null;
   const pace = paceText(stat.total, usual);
-  const exactText = `${exact(stat.total)} tokens today`;
-  const title = pace ? `${exactText}. A usual day is about ${compact(usual)} (the middle of your active days in the last 30).` : exactText;
   return (
     <button
       type="button"
       className="today-stat hover-host"
-      title={title}
       aria-label={`Today ${exact(stat.total)}${pace ? `, ${pace}` : ""}. Open Dashboard`}
       onClick={() => setView("dashboard")}
     >

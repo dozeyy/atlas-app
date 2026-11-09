@@ -8,7 +8,8 @@ import { MockBackend, mockInfo } from "../lib/mock";
 import { SessionLine } from "./usage/SessionList";
 import type { SessionRow } from "../lib/types";
 
-function mount(platform: "windows" | "macos" | "linux") {
+function mount(platform: "windows" | "macos" | "linux", showShortcuts = false) {
+  localStorage.setItem("atlas.mock.settings", JSON.stringify({ showShortcuts }));
   const backend = new MockBackend();
   vi.spyOn(backend, "boot").mockReturnValue(mockInfo({}, platform));
   setBackend(backend);
@@ -90,7 +91,7 @@ describe("title bar row", () => {
 
 describe("Wrapped's gift", () => {
   it("is an icon-only button in the title bar row, outside the main list, that opens Wrapped and shows it selected", async () => {
-    mount("windows");
+    mount("windows", true);
     const gift = screen.getByRole("button", { name: "Wrapped" });
     expect(gift.closest("header.titlebar")).not.toBeNull();
     expect(gift.closest("nav")).toBeNull();

@@ -16,6 +16,7 @@ interface AtlasContext {
   setLaunchAnimation: (on: boolean) => void;
   setCloseToTray: (on: boolean) => void;
   setNotifyOnFinish: (on: boolean) => void;
+  setShowShortcuts: (on: boolean) => void;
   setHistoryKeep: (n: number) => void;
   setSandbox: (enabled: boolean) => Promise<void>;
   chooseConfigDir: () => Promise<void>;
@@ -119,6 +120,11 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     [backend, run],
   );
 
+  const setShowShortcuts = useCallback(
+    (on: boolean) => void run(backend.updateSettings({ showShortcuts: on })),
+    [backend, run],
+  );
+
   // A chat Atlas watched working has stopped. Rust only sends this while the setting is on;
   // the toast is the in-window half (a desktop notice covers the window being behind).
   useEffect(() => {
@@ -151,6 +157,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       setLaunchAnimation,
       setCloseToTray,
       setNotifyOnFinish,
+      setShowShortcuts,
       setHistoryKeep,
       setSandbox: (enabled) => run(backend.setSandbox(enabled)),
       chooseConfigDir: () => run(backend.chooseConfigDir()),
@@ -158,7 +165,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       openConfigDir: () => backend.openConfigDir().catch(() => {}),
       openDataDir: () => backend.openDataDir().catch(() => {}),
     }),
-    [info, view, setView, goBack, setTheme, setLaunchAnimation, setCloseToTray, setNotifyOnFinish, setHistoryKeep, run, backend],
+    [info, view, setView, goBack, setTheme, setLaunchAnimation, setCloseToTray, setNotifyOnFinish, setShowShortcuts, setHistoryKeep, run, backend],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

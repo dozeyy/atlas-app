@@ -104,6 +104,18 @@ describe("Settings", () => {
     expect(sw).toHaveAttribute("aria-checked", "true");
   });
 
+  it("Show shortcuts starts off, switches on, and the hints follow it", async () => {
+    mount();
+    const sw = await screen.findByRole("switch", { name: "Show shortcuts" });
+    expect(sw).toHaveAttribute("aria-checked", "false");
+    // Off: the gear is named with no keys.
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "Settings");
+    await userEvent.click(sw);
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").showShortcuts).toBe(true));
+    expect(sw).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "Settings (Ctrl+6)");
+  });
+
   it("steps how many versions History keeps, inside 10 to 200", async () => {
     mount();
     const rail = await screen.findByRole("navigation", { name: "Settings sections" });

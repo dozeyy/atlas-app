@@ -87,6 +87,8 @@ export interface SettingsPatch {
   closeToTray?: boolean;
   /** Tell me (a toast, or a desktop notice when Atlas is behind) when a chat stops. Off by default. */
   notifyOnFinish?: boolean;
+  /** Show keyboard shortcut hints in tooltips, badges and menus. Off by default. */
+  showShortcuts?: boolean;
   /** Copies kept per file in History (clamped to 10-200 by the backend). */
   historyKeepVersions?: number;
 }
