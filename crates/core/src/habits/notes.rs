@@ -105,13 +105,16 @@ pub fn record(data_dir: &Path, id: Option<&str>, aliases: &[String], answer: Ans
         Ok(bytes) => match serde_json::from_slice::<Notes>(&bytes) {
             Ok(n) => n,
             Err(_) => {
-                // Keep the unreadable file instead of overwriting it.
-                let _ = std::fs::rename(&file, data_dir.join(format!("{FILE}.bad-{now_ms}")));
-                Notes::unreadable()
+                // Keep the unreadable file instead of overwriting it, then start clean
+                // (offers on) with only the new answer. If it cannot be moved aside, save
+                // nothing: writing over it would lose it.
+                std::fs::rename(&file, data_dir.join(format!("{FILE}.bad-{now_ms}")))
+                    .map_err(|e| format!("Atlas could not set aside a damaged habits.json: {e}"))?;
+                Notes::default()
             }
         },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Notes::default(),
-        Err(_) => Notes::unreadable(),
+        Err(e) => return Err(format!("Atlas could not read habits.json: {e}")),
     };
     if answer == Answer::Never {
         notes.offers_off = true;
@@ -182,13 +185,21 @@ mod tests {
     }
 
     #[test]
-    fn a_damaged_file_keeps_offers_off_until_it_is_fixed() {
+    fn a_damaged_file_means_offers_off_until_an_answer_replaces_it() {
         let d = tempfile::tempdir().unwrap();
         std::fs::write(path(d.path()), b"{ not json").unwrap();
         assert!(Notes::load(d.path()).offers_off, "unreadable means quiet");
-        // Recording an answer over the damaged file keeps the quiet default too.
+        // Recording an answer sets the bad file aside and starts clean: offers come back
+        // on, and only the new answer is kept.
         let n = record(d.path(), Some(A), &[], Answer::Declined, None, 7).unwrap();
-        assert!(n.offers_off);
+        assert!(!n.offers_off && !Notes::load(d.path()).offers_off);
+        assert_eq!(n.groups.len(), 1);
+        assert_eq!(std::fs::read(d.path().join("habits.json.bad-7")).unwrap(), b"{ not json");
+        // "Never" after a damaged file still turns offers off, and that is what is saved.
+        let f = tempfile::tempdir().unwrap();
+        std::fs::write(path(f.path()), b"{ not json").unwrap();
+        let n = record(f.path(), None, &[], Answer::Never, None, 8).unwrap();
+        assert!(n.offers_off && Notes::load(f.path()).offers_off);
         // A missing file is a normal fresh start.
         let e = tempfile::tempdir().unwrap();
         assert!(!Notes::load(e.path()).offers_off);
