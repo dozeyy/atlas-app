@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import {
   Binoculars,
@@ -21,7 +21,7 @@ import { PageTitle } from "../components/controls";
 import { Topo } from "../components/Topo";
 import { prefersReducedMotion } from "../lib/motion";
 import { ago, clock, groupChats } from "../lib/nowFormat";
-import type { NowChat, NowHelper, NowLast, NowStep } from "../lib/nowTypes";
+import type { NowChat, NowDoing, NowHelper, NowLast, NowStep } from "../lib/nowTypes";
 import { useClimb, useClock, useNowSnapshot } from "../lib/useNow";
 import { compact, formatDuration, modelLabel, plural, tokenHint } from "../lib/usage";
 import type { Cost } from "../lib/usageTypes";
@@ -33,6 +33,10 @@ const HELPERS_SHOWN = 3;
 const FILES_SHOWN = 3;
 /** A step stays marked as new this long, so a second one landing does not cut its entrance short. */
 const FRESH_MS = 700;
+/** A tool's line stays up this long after the call ends, so back-to-back calls never blink to "Thinking". */
+const HOLD_MS = 1200;
+/** At most one entrance or slide per this long per card: rapid calls just update the text in place. */
+const CALM_MS = 1000;
 
 const KIND_ICON: Record<string, ComponentType<IconProps>> = {
   read: FileText,
@@ -230,6 +234,7 @@ function nowCost(usd: number | null, unpriced: boolean): Cost {
 function ChatCard({ chat }: { chat: NowChat }) {
   const working = chat.state === "working";
   const tokens = useClimb(chat.tokens);
+  const { doing, swapKey } = useSteadyDoing(chat.doing);
   const name = chat.title ?? chat.project;
   const out = chat.helpers.filter((h) => !h.done).length;
 
@@ -261,14 +266,14 @@ function ChatCard({ chat }: { chat: NowChat }) {
 
         <section className="nc-doing" aria-label="Doing now">
           <div className="nc-doing-row">
-            <div className="nc-tile" data-kind={chat.doing.kind}>
-              <KindIcon kind={chat.doing.kind} size={28} />
+            <div className="nc-tile" data-kind={doing.kind}>
+              <KindIcon kind={doing.kind} size={28} />
             </div>
-            <div className="nc-doing-text" key={chat.doing.verb + "|" + (chat.doing.target ?? "")}>
-              <p className="d nc-verb">{chat.doing.verb}</p>
-              {chat.doing.target && (
-                <p className="nc-target" title={chat.doing.target}>
-                  {chat.doing.target}
+            <div className="nc-doing-text" key={swapKey}>
+              <p className="d nc-verb">{doing.verb}</p>
+              {doing.target && (
+                <p className="nc-target" title={doing.target}>
+                  {doing.target}
                 </p>
               )}
             </div>
@@ -288,6 +293,41 @@ function ChatCard({ chat }: { chat: NowChat }) {
       </div>
     </article>
   );
+}
+
+const doingId = (d: NowDoing) => `${d.kind}|${d.verb}|${d.target ?? ""}`;
+
+/**
+ * What the "doing" line shows. The live feed flips tool -> "Thinking" -> the same tool on every
+ * call, many times a second when a script polls; shown raw, the line re-mounted and faded in each
+ * time and the card flashed. Here a tool's line is held for HOLD_MS before "Thinking" replaces it,
+ * and the swap animates (a new `swapKey`) at most once per CALM_MS; a faster change only swaps
+ * the text in place.
+ */
+export function useSteadyDoing(live: NowDoing): { doing: NowDoing; swapKey: number } {
+  const [shown, setShown] = useState({ doing: live, key: 0 });
+  const lastSwap = useRef(0);
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  const liveId = doingId(live);
+  const shownId = doingId(shown.doing);
+  const shownKind = shown.doing.kind;
+  useEffect(() => {
+    if (liveId === shownId) return;
+    const swap = () => {
+      const t = performance.now();
+      const animate = t - lastSwap.current >= CALM_MS;
+      if (animate) lastSwap.current = t;
+      setShown((prev) => ({ doing: liveRef.current, key: animate ? prev.key + 1 : prev.key }));
+    };
+    const fromTool = !["think", "wait", "ask"].includes(shownKind);
+    if (liveRef.current.kind === "think" && fromTool) {
+      const t = setTimeout(swap, HOLD_MS);
+      return () => clearTimeout(t);
+    }
+    swap();
+  }, [liveId, shownId, shownKind]);
+  return { doing: shown.doing, swapKey: shown.key };
 }
 
 function Elapsed({ chat }: { chat: NowChat }) {
@@ -356,34 +396,42 @@ function Helper({ helper }: { helper: NowHelper }) {
 // ---- the trail ------------------------------------------------------------------------
 
 function Trail({ steps, working }: { steps: NowStep[]; working: boolean }) {
-  // Steps already on the page at mount (or already shown a moment ago) do not animate in.
+  // Steps already on the page at mount do not animate in. A new step slides in and the rest slide
+  // one slot left, but at most once per CALM_MS: when calls arrive faster than that the trail just
+  // updates in place, so it never flickers.
   const seen = useRef<Set<string> | null>(null);
   if (seen.current === null) seen.current = new Set(steps.map((s) => s.id));
-  const fresh = useMemo(() => steps.filter((s) => !seen.current!.has(s.id)).map((s) => s.id), [steps]);
-  useEffect(() => {
-    if (fresh.length === 0) return;
-    const t = setTimeout(() => fresh.forEach((id) => seen.current!.add(id)), FRESH_MS);
-    return () => clearTimeout(t);
-  }, [fresh]);
-
-  // When the oldest step drops off, the rest slide one slot left instead of jumping.
   const nodes = useRef(new Map<string, HTMLLIElement>());
   const lefts = useRef(new Map<string, number>());
+  const lastAnim = useRef(0);
   const ids = steps.map((s) => s.id).join("|");
   useLayoutEffect(() => {
     const next = new Map<string, number>();
     nodes.current.forEach((el, id) => next.set(id, el.offsetLeft));
-    if (!prefersReducedMotion()) {
+    const fresh = new Set([...next.keys()].filter((id) => !seen.current!.has(id)));
+    seen.current = new Set(next.keys());
+    const t = performance.now();
+    if (!prefersReducedMotion() && t - lastAnim.current >= CALM_MS) {
+      let moved = false;
       next.forEach((left, id) => {
-        const before = lefts.current.get(id);
         const el = nodes.current.get(id);
-        if (before !== undefined && Math.abs(before - left) > 1 && el && typeof el.animate === "function") {
+        if (!el) return;
+        if (fresh.has(id)) {
+          el.classList.add("is-new");
+          setTimeout(() => el.classList.remove("is-new"), FRESH_MS);
+          moved = true;
+          return;
+        }
+        const before = lefts.current.get(id);
+        if (before !== undefined && Math.abs(before - left) > 1 && typeof el.animate === "function") {
           el.animate([{ transform: `translateX(${before - left}px)` }, { transform: "none" }], {
             duration: 260,
             easing: "cubic-bezier(0.22, 1, 0.36, 1)",
           });
+          moved = true;
         }
       });
+      if (moved) lastAnim.current = t;
     }
     lefts.current = next;
   }, [ids]);
@@ -399,14 +447,17 @@ function Trail({ steps, working }: { steps: NowStep[]; working: boolean }) {
             if (el) nodes.current.set(s.id, el);
             else nodes.current.delete(s.id);
           }}
-          className={`nc-step${fresh.includes(s.id) ? " is-new" : ""}`}
+          className="nc-step"
           data-done={s.done || undefined}
           data-helper={s.by ? "" : undefined}
           data-now={working && s.id === newest ? "" : undefined}
-          title={[s.verb, s.target, s.by ? `by ${s.by}` : ""].filter(Boolean).join(" ")}
+          title={[s.verb, s.target, s.count > 1 ? `(${s.count} times)` : "", s.by ? `by ${s.by}` : ""].filter(Boolean).join(" ")}
         >
           <span className="nc-dot" aria-hidden="true" />
-          <span className="nc-step-verb">{s.verb}</span>
+          <span className="nc-step-verb">
+            {s.verb}
+            {s.count > 1 && <span className="nc-step-count">{` x${s.count}`}</span>}
+          </span>
           <span className="nc-step-target">{s.target ?? ""}</span>
         </li>
       ))}

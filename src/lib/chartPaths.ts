@@ -181,6 +181,9 @@ export interface HeatLayout {
   streak: number;
   /** True when the last streak day is today (so today gets the heavier ring). */
   streakIncludesToday: boolean;
+  /** Index of the first and last ringed day (inclusive); -1 when there is no streak. */
+  streakStart: number;
+  streakEnd: number;
   cuts: number[];
   todayCell: HeatCell | null;
 }
@@ -201,13 +204,17 @@ export function heatLayout(values: number[], cell = 13, gap = 4, labelWidth = 40
     return { index: i, col, row, x: col * step, y: row * step, band: heatBand(v, cuts) };
   });
   const streak = streakLength(values);
+  const streakIncludesToday = n > 0 && values[n - 1] > 0;
+  const streakEnd = streak > 0 ? (streakIncludesToday ? n - 1 : n - 2) : -1;
   return {
     cells,
     weeks,
     width: weeks * step - gap + labelWidth,
     height: 7 * step - gap,
     streak,
-    streakIncludesToday: n > 0 && values[n - 1] > 0,
+    streakIncludesToday,
+    streakStart: streak > 0 ? streakEnd - streak + 1 : -1,
+    streakEnd,
     cuts,
     todayCell: cells.length ? cells[cells.length - 1] : null,
   };

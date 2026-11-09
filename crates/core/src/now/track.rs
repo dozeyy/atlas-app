@@ -116,7 +116,12 @@ impl FileTrack {
 }
 
 struct StepRec {
+    /// The first call's id: stays put while the same call repeats, so the page never re-animates it.
     id: String,
+    /// The newest repeat's id: its result is the one that marks the step done.
+    latest: String,
+    /// How many identical calls in a row this step stands for.
+    count: u32,
     desc: Desc,
     ts_ms: i64,
     done: bool,
@@ -244,7 +249,7 @@ impl Session {
                 }
                 for id in &p.result_ids {
                     self.files[fi].pending.retain(|x| &x.id != id);
-                    if let Some(s) = self.steps.iter_mut().rev().find(|s| &s.id == id) {
+                    if let Some(s) = self.steps.iter_mut().rev().find(|s| &s.latest == id) {
                         s.done = true;
                     }
                 }
@@ -325,7 +330,18 @@ impl Session {
                 f.pending.remove(0);
             }
             f.pending.push(Pend { id: t.id.clone(), desc: t.desc.clone() });
-            self.steps.push_back(StepRec { id: t.id, desc: t.desc, ts_ms: ts, done: false, by: by.clone() });
+            // The same call again straight after itself (a script polling, a retry) is one step
+            // with a count, not a new step, so the trail does not slide in every few hundred ms.
+            if let Some(last) = self.steps.back_mut().filter(|s| s.by == by && s.desc == t.desc) {
+                if last.latest != t.id {
+                    last.count += 1;
+                    last.latest = t.id;
+                }
+                last.ts_ms = ts;
+                last.done = false;
+                continue;
+            }
+            self.steps.push_back(StepRec { id: t.id.clone(), latest: t.id, count: 1, desc: t.desc, ts_ms: ts, done: false, by: by.clone() });
             if self.steps.len() > MAX_STEPS {
                 self.steps.pop_front();
             }
@@ -444,6 +460,7 @@ impl Session {
                 target: s.desc.target.clone(),
                 ts_ms: s.ts_ms,
                 done: s.done,
+                count: s.count,
                 by: name_of(&s.by),
             })
             .collect();
@@ -664,6 +681,26 @@ mod tests {
         let (_d, s) = session(&[prompt("2026-11-08T10:00:00.000Z"), a, b]);
         let c = s.chat(now_after(), i64::MAX / 4);
         assert_eq!(c.tokens, 10 + 50 + 100);
+    }
+
+    #[test]
+    fn the_same_call_again_and_again_is_one_step_with_a_count() {
+        let js = r#"{"command":"node poll.js"}"#;
+        let (_d, s) = session(&[
+            prompt("2026-11-08T10:00:00.000Z"),
+            tool("b1", "Bash", js, "2026-11-08T10:00:01.000Z"),
+            result("b1"),
+            tool("b2", "Bash", js, "2026-11-08T10:00:01.100Z"),
+            result("b2"),
+            tool("b3", "Bash", js, "2026-11-08T10:00:01.200Z"),
+            tool("r1", "Read", r#"{"file_path":"x"}"#, "2026-11-08T10:00:01.300Z"),
+            tool("b4", "Bash", js, "2026-11-08T10:00:01.400Z"),
+        ]);
+        let c = s.chat(now_after(), i64::MAX / 4);
+        let ids: Vec<(&str, u32)> = c.steps.iter().map(|s| (s.id.as_str(), s.count)).collect();
+        assert_eq!(ids, vec![("b1", 3), ("r1", 1), ("b4", 1)]);
+        // The folded step is open until its newest call's result comes back.
+        assert!(!c.steps[0].done);
     }
 
     #[test]

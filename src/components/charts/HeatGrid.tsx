@@ -59,9 +59,7 @@ export function HeatGrid({
   const layout = useMemo(() => heatLayout(values, CELL, GAP, 0), [values, CELL]);
   const height = layout.height + LABEL_ROOM;
   const width = layout.width;
-  const streakFrom = n - layout.streak - (layout.streakIncludesToday ? 0 : 1);
-
-  const inStreak = (i: number) => layout.streak > 0 && i > streakFrom && i <= (layout.streakIncludesToday ? n - 1 : n - 2);
+  const inStreak = (i: number) => layout.streak > 0 && i >= layout.streakStart && i <= layout.streakEnd;
 
   const tip: TipAt | null =
     active !== null && layout.cells[active] && readouts[active]

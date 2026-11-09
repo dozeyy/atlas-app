@@ -17,6 +17,8 @@ export interface NowStep {
   target: string | null;
   tsMs: number;
   done: boolean;
+  /** Identical calls in a row folded into this step (1 = a single call). */
+  count: number;
   /** The helper that made the call, if it was not the chat itself. */
   by: string | null;
 }

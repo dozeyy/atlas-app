@@ -9,7 +9,7 @@ import { ago, clock, groupChats } from "../lib/nowFormat";
 import type { NowChat, NowLast, NowSnapshot, NowStep } from "../lib/nowTypes";
 
 function step(id: string, verb: string, target: string | null, over: Partial<NowStep> = {}): NowStep {
-  return { id, kind: "edit", verb, target, tsMs: Date.now(), done: true, by: null, ...over };
+  return { id, kind: "edit", verb, target, tsMs: Date.now(), done: true, count: 1, by: null, ...over };
 }
 
 function chat(over: Partial<NowChat> = {}): NowChat {
@@ -238,5 +238,34 @@ describe("nowFormat", () => {
     expect(g.waiting.map((c) => c.sessionId)).toEqual(["w1"]);
     expect(g.finished.map((l) => l.sessionId)).toEqual(["d1"]);
     expect(groupChats(snap()).finished).toEqual([]);
+  });
+});
+
+describe("useSteadyDoing", () => {
+  it("does not blink or re-animate when the same call repeats many times a second", async () => {
+    const { renderHook } = await import("@testing-library/react");
+    const { vi } = await import("vitest");
+    const { useSteadyDoing } = await import("./Now");
+    vi.useFakeTimers();
+    try {
+      const tool = { kind: "tool", verb: "Using Browser", target: null };
+      const think = { kind: "think", verb: "Thinking", target: null };
+      const { result, rerender } = renderHook(({ d }) => useSteadyDoing(d), { initialProps: { d: tool } });
+      const key0 = result.current.swapKey;
+      for (let i = 0; i < 20; i++) {
+        rerender({ d: { ...think } });
+        act(() => void vi.advanceTimersByTime(50));
+        rerender({ d: { ...tool } });
+        act(() => void vi.advanceTimersByTime(50));
+        expect(result.current.doing.verb).toBe("Using Browser");
+      }
+      expect(result.current.swapKey).toBe(key0);
+      // A real pause does reach "Thinking".
+      rerender({ d: think });
+      act(() => void vi.advanceTimersByTime(1300));
+      expect(result.current.doing.verb).toBe("Thinking");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

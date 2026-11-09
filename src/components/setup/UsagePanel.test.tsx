@@ -38,7 +38,7 @@ describe("UsagePanel", () => {
   it("shows a ring, ranks what is used, and counts only established items", () => {
     render(<UsagePanel rows={rows} items={items} />);
     expect(screen.getByRole("heading", { name: "Used and never used" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "2 of 4 used in the last 30 days" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "2 of 5 used in the last 30 days" })).toBeInTheDocument();
 
     const most = screen.getByRole("heading", { name: "Used most" }).parentElement!;
     const names = within(most).getAllByRole("listitem").map((li) => li.textContent);
@@ -48,21 +48,19 @@ describe("UsagePanel", () => {
 
     // The unused are squares you hover, each named in full for screen readers and the tooltip.
     const never = screen.getByRole("heading", { name: /Never used/ }).parentElement!;
-    expect(never).toHaveTextContent("2");
+    expect(never).toHaveTextContent("3");
     const cells = never.querySelectorAll("[data-dust-field] [data-dust]");
     const titles = [...cells].map((c) => c.getAttribute("title")!);
-    expect(titles).toHaveLength(2);
+    expect(titles).toHaveLength(3);
     expect(titles).toContain("dusty (skill), never used");
     expect(titles.some((t) => /^code-reviewer \(agent\), last used /.test(t))).toBe(true);
   });
 
-  it("says new, not never used, for something added recently", () => {
+  it("counts something added recently and not used since as never used, with no 'too soon' group", () => {
     render(<UsagePanel rows={rows} items={items} />);
-    const fresh = screen.getByRole("heading", { name: "New, too soon to tell" }).parentElement!;
-    expect(fresh.querySelector('[data-dust="s4"]')).not.toBeNull();
+    expect(screen.queryByText(/too soon/)).toBeNull();
     const never = screen.getByRole("heading", { name: /Never used/ }).parentElement!;
-    expect(never.querySelectorAll('[data-dust-field] [data-dust="s4"]')).toHaveLength(0);
-    expect(fresh.querySelector("[data-dust]")).toHaveAttribute("title", "brand-new (skill), new, too soon to tell");
+    expect(never.querySelector('[data-dust-field] [data-dust="s4"]')).toHaveAttribute("title", "brand-new (skill), never used");
   });
 
   it("packs dozens of unused items into a capped field and says how many are left out", () => {
@@ -72,11 +70,8 @@ describe("UsagePanel", () => {
     const most = screen.getByRole("heading", { name: "Used most" }).parentElement!;
     expect(within(most).getAllByRole("listitem")).toHaveLength(4);
     const field = document.querySelector("[data-dust-field]")!;
-    expect(field.querySelectorAll("[data-dust]")).toHaveLength(78); // 114 never used, 78 drawn
-    expect(within(field as HTMLElement).getByText("+36")).toBeInTheDocument();
-    const fresh = screen.getByRole("heading", { name: "New, too soon to tell" }).parentElement!;
-    expect(fresh.querySelectorAll("[data-dust]")).toHaveLength(6);
-    expect(within(fresh).getByText("+4")).toBeInTheDocument();
+    expect(field.querySelectorAll("[data-dust]")).toHaveLength(78); // 124 never used, 78 drawn
+    expect(within(field as HTMLElement).getByText("+46")).toBeInTheDocument();
   });
 
   it("names a square under the field on hover and focus", () => {

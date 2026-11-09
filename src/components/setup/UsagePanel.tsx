@@ -13,7 +13,6 @@ import type { UsageRow } from "../../lib/usage-types";
 // field holds about six rows of squares; past that it says how many more there are.
 const TOP = 4;
 const DUST_CAP = 78;
-const FRESH_CAP = 6;
 
 /**
  * Skills and agents joined to the last 30 days of real use, or null when the usage
@@ -64,23 +63,22 @@ export function useUsageRows(items: SetupItem[], reloadKey: number): UsageRow[] 
 
 /** What a dust cell says on hover: its name, what it is, and when (if ever) it was last used. */
 function dustLine(it: SetupItem, r: UsageRow): string {
-  const last = r.isNew ? "new, too soon to tell" : r.lastUsed ? `last used ${relativeTime(r.lastUsed)}` : "never used";
+  const last = r.lastUsed ? `last used ${relativeTime(r.lastUsed)}` : "never used";
   return `${it.name} (${KIND_BY_ID[it.kind].singular}), ${last}`;
 }
 
 /**
  * Everything unused as a field of little squares: dozens fit in a handful of rows. Hover or
  * focus one to read its name in the line below; click to open it. Arrow keys walk the field
- * (one tab stop for the whole thing). New things are dashed: too soon to call them dusty.
+ * (one tab stop for the whole thing). Something added recently and not used since is never
+ * used too: the uses are counted from the transcripts, so "too soon to tell" is never needed.
  */
 function DustField({
   never,
-  fresh,
   byId,
   onOpen,
 }: {
   never: UsageRow[];
-  fresh: UsageRow[];
   byId: Map<string, SetupItem>;
   onOpen?: (id: string) => void;
 }) {
@@ -88,7 +86,6 @@ function DustField({
   const field = useRef<HTMLDivElement>(null);
   const shown = never.slice(0, DUST_CAP);
   const hiddenCount = never.length - shown.length;
-  const newShown = fresh.slice(0, FRESH_CAP);
 
   // Arrow keys move between squares; Up/Down pick the square nearest in the row above or below.
   const onKey = (e: KeyboardEvent) => {
@@ -113,10 +110,10 @@ function DustField({
     next?.focus();
   };
 
-  const cell = (r: UsageRow, tab: boolean, isNew: boolean) => {
+  const cell = (r: UsageRow, tab: boolean) => {
     const it = byId.get(r.id)!;
     const line = dustLine(it, r);
-    const look = isNew ? "border border-dashed border-accent bg-transparent" : "bg-chart-4/60 group-hover/cell:bg-chart-4 group-focus-visible/cell:bg-chart-4";
+    const look = "bg-chart-4/60 group-hover/cell:bg-chart-4 group-focus-visible/cell:bg-chart-4";
     const face = (
       <span
         aria-hidden="true"
@@ -146,7 +143,7 @@ function DustField({
   return (
     <div ref={field} onKeyDown={onKey}>
       <div className="flex flex-wrap" data-dust-field>
-        {shown.map((r, i) => cell(r, i === 0, false))}
+        {shown.map((r, i) => cell(r, i === 0))}
         {hiddenCount > 0 && (
           <span className="flex h-[22px] items-center pl-1.5 text-caption text-ink-2" title={`${hiddenCount} more never used, not drawn here`}>
             +{hiddenCount}
@@ -157,13 +154,6 @@ function DustField({
         <p aria-live="polite" className="mt-1.5 h-5 truncate text-caption text-ink-2">
           {peek ?? "Gathering dust. Hover one to see which."}
         </p>
-      )}
-      {newShown.length > 0 && (
-        <div className={`flex items-center gap-2 ${never.length > 0 ? "mt-1" : ""}`}>
-          <h4 className="shrink-0 text-caption font-semibold text-ink-2">New, too soon to tell</h4>
-          <div className="flex">{newShown.map((r, j) => cell(r, never.length === 0 && j === 0, true))}</div>
-          {fresh.length > FRESH_CAP && <span className="text-caption text-ink-2">+{fresh.length - FRESH_CAP}</span>}
-        </div>
       )}
     </div>
   );
@@ -182,16 +172,14 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
     const known = rows.filter((r) => byId.has(r.id));
     if (known.length === 0) return null;
     const used = known.filter((r) => r.uses30d > 0).sort((a, b) => b.uses30d - a.uses30d);
-    const idle = known.filter((r) => r.uses30d === 0);
-    // Anything made or changed inside the window is listed apart, never counted as unused.
-    const never = idle.filter((r) => !r.isNew);
-    const fresh = idle.filter((r) => r.isNew);
+    // Unused in the window is never used, new or not: the count comes from the transcripts.
+    const never = known.filter((r) => r.uses30d === 0);
     if (used.length + never.length === 0) return null;
-    return { byId, used, never, fresh, max: used[0]?.uses30d ?? 1 };
+    return { byId, used, never, max: used[0]?.uses30d ?? 1 };
   }, [rows, items]);
 
   if (!model) return null;
-  const { byId, used, never, fresh, max } = model;
+  const { byId, used, never, max } = model;
   const total = used.length + never.length;
 
   const open = (id: string, children: ReactNode) =>
@@ -263,15 +251,10 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
           {never.length === 0 ? (
             <p className="text-body text-ink-2">Everything here has been used. Nice and tidy.</p>
           ) : (
-            <DustField never={never} fresh={fresh} byId={byId} onOpen={onOpen} />
+            <DustField never={never} byId={byId} onOpen={onOpen} />
           )}
         </div>
       </div>
-      {never.length === 0 && fresh.length > 0 && (
-        <div className="mt-3 border-t border-line pt-3">
-          <DustField never={[]} fresh={fresh} byId={byId} onOpen={onOpen} />
-        </div>
-      )}
     </section>
   );
 }

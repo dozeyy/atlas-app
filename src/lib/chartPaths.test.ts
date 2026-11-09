@@ -62,6 +62,16 @@ describe("heatLayout", () => {
     expect(l.cells[0]).toMatchObject({ col: 0, row: 0 });
     expect(l.streak).toBe(84);
   });
+  it("rings exactly as many days as the streak count", () => {
+    const today = heatLayout([5, 0, 5, 5, 5]);
+    expect(today.streak).toBe(3);
+    expect([today.streakStart, today.streakEnd]).toEqual([2, 4]);
+    const yesterday = heatLayout([0, 5, 5, 5, 0]);
+    expect(yesterday.streak).toBe(3);
+    expect([yesterday.streakStart, yesterday.streakEnd]).toEqual([1, 3]);
+    const none = heatLayout([5, 0, 0]);
+    expect([none.streakStart, none.streakEnd]).toEqual([-1, -1]);
+  });
   it("pads a partial first column at the top", () => {
     const l = heatLayout(Array.from({ length: 10 }, () => 1));
     expect(l.cells[0].row).toBe(4);

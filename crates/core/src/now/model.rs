@@ -29,6 +29,8 @@ pub struct NowStep {
     pub ts_ms: i64,
     /// Its result has come back.
     pub done: bool,
+    /// Identical calls in a row folded into this step (1 = a single call).
+    pub count: u32,
     /// The helper that made the call, if it was not the chat itself.
     pub by: Option<String>,
 }

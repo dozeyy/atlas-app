@@ -163,7 +163,7 @@ export function HelperMap({
                       )}
                     </g>
                     {n.kind === "root" && (
-                      <text className="map-name" transform={`translate(0 ${ROOT_R + 18}) scale(${1 / zoom})`} textAnchor="middle">
+                      <text className="map-name" transform={`translate(0 ${ROOT_R + 28}) scale(${1 / zoom})`} textAnchor="middle">
                         Main chat
                       </text>
                     )}
