@@ -383,7 +383,8 @@ export function podiumLayout(values: number[], b: HeroBox): PodiumBar[] {
         rank: i + 1,
         w,
         h,
-        chars: Math.max(3, Math.floor((h - 36) / 12.5)),
+        // The label is 22 px mono with 0.05em tracking: 14.3 design units a character, with the bar's own padding off both ends.
+        chars: Math.max(0, Math.floor((h - 48) / 14.6)),
       };
     })
     .reverse()
@@ -438,6 +439,8 @@ export function burstLayout(
 ): { shown: number; sats: Satellite[] } {
   const shown = Math.max(1, Math.min(BURST_MAX, count));
   const inner = shown <= 10 ? shown : Math.ceil(shown * 0.4);
+  // A few helpers get bigger dots so a small crowd still fills the poster.
+  const rIn = shown <= 6 ? 40 : shown <= 10 ? 32 : 26;
   const outer = shown - inner;
   const sats: Satellite[] = [];
   for (let i = 0; i < inner; i++) {
@@ -445,7 +448,7 @@ export function burstLayout(
     sats.push({
       x: cx + Math.cos(a) * r1,
       y: cy + Math.sin(a) * r1,
-      r: 26,
+      r: rIn,
       ring: 0,
     });
   }

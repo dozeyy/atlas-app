@@ -123,6 +123,13 @@ export function Story({ slides }: { slides: Slide[] }) {
       if (document.querySelector('[role="dialog"],[role="alertdialog"]'))
         return;
       e.preventDefault();
+      // Paging the story is not a walk round the controls, so it must not leave a keyboard ring on a
+      // control a click left focused. The input-modality listener (document, after this window one)
+      // flips to keyboard on every arrow, so hand it back once the event has finished.
+      if (!tabbed)
+        window.setTimeout(() => {
+          document.documentElement.dataset.input = "pointer";
+        }, 0);
       // Holding a key repeats it; one press is one move, so the repeats are swallowed, not stepped.
       if (e.repeat) return;
       if (e.key === " ") spaceDown = true;

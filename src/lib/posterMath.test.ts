@@ -184,6 +184,14 @@ describe("the bars, the burst, the podium and the skyline", () => {
     expect(bars[bars.length - 1].rank).toBe(1);
   });
 
+  it("only promises as many label characters as fit along the bar (22 px mono, 14.3 a letter)", () => {
+    for (const vals of [[4, 9, 5, 7, 3], [25, 24, 21, 12, 3], [1, 1, 1, 1, 1]]) {
+      for (const b of podiumLayout(vals, BOX)) {
+        expect(b.chars * 14.3).toBeLessThanOrEqual(b.h - 40);
+      }
+    }
+  });
+
   it("keep the command bars stacked inside the box and inside the cap", () => {
     const { bars, cap } = commandBars([2682, 1607, 1068, 82, 40], BOX);
     for (const b of bars) {

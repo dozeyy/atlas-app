@@ -254,7 +254,8 @@
   outline-offset: 8px;
 }
 
-.pr-fig:focus-visible {
+/* Focus rings follow the app rule: only a real keyboard walk draws one (index.css, data-input). On a poster the ring is the pair's own ink, since the app's grey can vanish on a coloured field. */
+html[data-input="keyboard"] .pr-fig:focus-visible {
   outline: 3px solid var(--p-fg);
 }
 
@@ -329,7 +330,7 @@
   outline-offset: 4px;
 }
 
-.pr-strip-text:focus-visible {
+html[data-input="keyboard"] .pr-strip-text:focus-visible {
   outline: 3px solid var(--p-strip-fg);
 }
 
@@ -566,20 +567,14 @@
   animation: pr-fade-in 220ms linear both;
 }
 
-/* The poster going out fades under the wipe block while it covers it. */
+/* The poster going out stays fully opaque until the wipe block covers it (the story drops it at the
+   half way mark). Fading it earlier showed the next poster's text through it, ahead of the wipe front. */
 .pr-out {
-  animation: pr-fade-out 280ms linear both;
   pointer-events: none;
 }
 
 @keyframes pr-fade-in {
   from {
-    opacity: 0;
-  }
-}
-
-@keyframes pr-fade-out {
-  to {
     opacity: 0;
   }
 }

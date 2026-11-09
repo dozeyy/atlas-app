@@ -293,7 +293,7 @@ const mirrorY = (b: Box): Box => ({ ...b, y: FRAME_H - b.y - b.h });
 
 const BL: PosterBoxes = {
   hero: { x: 300, y: -30, w: 840, h: 380 },
-  main: { x: 40, y: 350, w: 620, h: 290 },
+  main: { x: 40, y: 350, w: 620, h: 280 },
   line: { x: 690, y: 400, w: 353, h: 200 },
   strip: { x: -60, y: 640, w: FRAME_W + 120, h: 60 },
   stripPad: 108,
@@ -321,8 +321,8 @@ const ML: PosterBoxes = {
 
 const MID: PosterBoxes = {
   hero: { x: -60, y: -40, w: 1211, h: 300 },
-  main: { x: 95, y: 262, w: 900, h: 300 },
-  line: { x: 195, y: 568, w: 700, h: 64 },
+  main: { x: 95, y: 262, w: 900, h: 286 },
+  line: { x: 195, y: 554, w: 700, h: 80 },
   strip: { x: -60, y: 640, w: FRAME_W + 120, h: 60 },
   stripPad: 108,
   anchor: "start",

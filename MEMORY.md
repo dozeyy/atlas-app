@@ -256,5 +256,11 @@ px vite build); without it the exe loads devUrl :1420, which another agent's vit
 - Lessons: an SVG hand with data-a pivots wrong (.wr-gfx svg [data-a] sets transform-box fill-box); use a transform attribute without data-a.
 - Proof: tsc clean, vitest 652/652, clippy -D warnings and cargo test green.
 
+## 2026-11-08 - Wrapped "Poster Riot" rebuild (branch wrapped-fun)
+- Rebuilt every slide as a flat poster: Anton display face (bundled, OFL), mono small-caps labels, flat fills and 8 px outlines, static grain, no gradients; 1091x700 design frame scaled by --k, layouts BL/ML/MID/TILT with flips so no two neighbours match, one rAF clock per slide with beats as data (snappy/heavy/tick/pulse), colour-wipe between slides, hold to pause, reduced motion = 220 ms fade. Bash slide has a terminal-block hero; the weekday hand lands once (outQuart, no overshoot, then still).
+- Root causes: (1) SVG text mispositioned in the scaled frame: Chromium needs text-rendering: geometricPrecision on svg text. (2) Label overflow was invisible because label ink was dark on a dark field: char budgets must use the real glyph width (22 px mono is about 14.3 units per char). (3) Story's key handler is a window capture listener and runs before the document-level input-modality one, so resetting data-input needs a setTimeout(0). (4) The outgoing poster faded from t=0 and showed the next poster's legend ahead of the wipe front: it now stays opaque until the story drops it at the half way mark. (5) The weekday ghost word overlapped the dial and was removed.
+- Focus: poster rings are html[data-input="keyboard"] gated and use the pair's own ink (grey can vanish on a coloured field); arrow paging hands data-input back to pointer.
+- Proof shots: docs/shots/wrapped-fun/round3 (walks per theme and size, bursts2).
+
 ## 2026-11-09 - mac-check tour pictures by window id
 - Tour pictures are now taken of the Atlas window by its window id, not the whole screen. The small pass opens the skills list. Run 42581627718 passed: 36/36 pictures (28 at 1280x677, 8 at 900x600), every page scrolls, and the menus, Cmd+W/Q, dmg and atlas-usage checks all pass. Gatekeeper still rejects a downloaded copy, as expected for an ad-hoc signature.

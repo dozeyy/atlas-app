@@ -121,7 +121,8 @@ export function ridgeBars(ridge: number[], n: number): number[] {
     const a = Math.floor(at);
     const b = Math.min(ridge.length - 1, a + 1);
     const v = ridge[a] + (ridge[b] - ridge[a]) * (at - a);
-    return Math.max(0.1, Math.min(1, v));
+    // Square root: one huge day would otherwise flatten the rest of the history into stubs.
+    return Math.max(0.1, Math.min(1, Math.sqrt(Math.max(0, v))));
   });
 }
 

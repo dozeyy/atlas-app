@@ -23,7 +23,6 @@ import type { HeroBox } from "../../lib/posterMath";
 import { clamp01 } from "../../lib/wrappedClock";
 import { WEEKDAYS } from "../../lib/wrappedModel";
 import type { Row, SlideChart } from "../../lib/wrappedModel";
-import { fitFigure } from "../../lib/wrappedPoster";
 import { useClockCtx, useTick } from "./clock";
 import {
   after,
@@ -423,13 +422,9 @@ export function WeekdayHero({
     () => fanLayout(chart.values, hx, hy),
     [chart.values, hx, hy],
   );
-  const topDay = spokes.find((s) => s.top) ?? spokes[0];
-  const name = WEEKDAYS[topDay.day] ?? "";
-  const ghost = useMemo(() => fitFigure(name, box.w - 40, 190), [name, box.w]);
   const spokeEls = useEls();
   const hand = useEl();
   const labels = useEl();
-  const ghostEl = useEl();
   useTick((t) => {
     // The hand and every spoke read the same eased p, so a spoke is as long as the hand has made it.
     const p = beatValue(ctx, "hand", t);
@@ -437,7 +432,6 @@ export function WeekdayHero({
     spin(hand.el.current, -f.hand, hx, hy);
     f.grow.forEach((g, i) => scaleAbout(spokeEls.els.current[i], g, hx, hy));
     fade(labels.el.current, clamp01((p - 0.1) / 0.4));
-    fade(ghostEl.el.current, clamp01(p / 0.5));
   });
   const reach = FAN.R + FAN.over;
   return (
@@ -455,16 +449,6 @@ export function WeekdayHero({
           r={763}
         />
       </g>
-      <text
-        ref={ghostEl.ref}
-        className="pr-num f-ghost"
-        x={box.side === "r" ? 12 : box.w - 12}
-        y={box.floor - 12}
-        textAnchor={box.side === "r" ? "start" : "end"}
-        style={{ fontSize: ghost.size }}
-      >
-        {name.toUpperCase()}
-      </text>
       <path
         className="f-bg ln"
         d={`M${hx - FAN.R} ${hy}A${FAN.R} ${FAN.R} 0 0 1 ${hx + FAN.R} ${hy}Z`}

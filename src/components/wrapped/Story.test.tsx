@@ -76,6 +76,30 @@ describe("Story keys", () => {
     expect(position()).toBe("2 of 3");
   });
 
+  it("paging with the arrows never leaves a keyboard focus ring behind, but a Tab walk still does", async () => {
+    mount();
+    const root = document.documentElement;
+    root.dataset.input = "pointer";
+    const button = screen.getByRole("button", { name: "Minimize" });
+    await userEvent.click(button);
+    // The input-modality listener flips to keyboard on any arrow; the story hands it straight back.
+    const flip = (e: KeyboardEvent) => {
+      if (e.key.startsWith("Arrow")) root.dataset.input = "keyboard";
+    };
+    document.addEventListener("keydown", flip, true);
+    fireEvent.keyDown(button, { key: "ArrowRight" });
+    expect(position()).toBe("2 of 3");
+    await new Promise((r) => setTimeout(r, 5));
+    expect(root.dataset.input).toBe("pointer");
+    fireEvent.keyDown(button, { key: "Tab" });
+    root.dataset.input = "keyboard";
+    fireEvent.keyDown(button, { key: "ArrowRight" });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(root.dataset.input).toBe("keyboard");
+    document.removeEventListener("keydown", flip, true);
+    delete root.dataset.input;
+  });
+
   it("moves one slide per press: held keys that repeat are swallowed, not stepped", () => {
     mount();
     const body = document.body;
