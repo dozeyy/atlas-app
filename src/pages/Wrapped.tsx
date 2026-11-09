@@ -4,7 +4,7 @@ import { getBackend } from "../lib/ipc";
 import { cacheNotReady, useFetched, useUsageStatus } from "../lib/useUsage";
 import { useDaily } from "../lib/useDaily";
 import { loadWrapped } from "../lib/wrappedLoad";
-import { buildSlides, coverSlide } from "../lib/wrappedModel";
+import { buildSlides } from "../lib/wrappedModel";
 import { modelLabel } from "../lib/usage";
 import { useAtlas } from "../state/AtlasProvider";
 import { PageTitle } from "../components/controls";
@@ -21,7 +21,7 @@ export function Wrapped() {
   const wrapped = useFetched(() => (daily ? loadWrapped(daily, modelLabel) : Promise.resolve(null)), [backend, daily]);
 
   const d = wrapped.data;
-  const slides = useMemo(() => (d ? [coverSlide(d), ...buildSlides(d)] : []), [d]);
+  const slides = useMemo(() => (d ? buildSlides(d) : []), [d]);
 
   const waiting = daily === null || (wrapped.loading && !d);
   const notReady = cacheNotReady(status);

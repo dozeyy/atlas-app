@@ -1,0 +1,499 @@
+/* Wrapped, direction A "Summit" (docs/specs/wrapped-redesign/DIRECTIONS.md, a-summit/*.png).
+   A quiet sheet, one huge Recursive figure, one plain line, at most one clay graphic. The progress
+   row is the trail and the spark is "you are here". Every colour is a token (tokens.css), so light,
+   silver and dark all come from the one set. Slides are laid out in a fixed 1008 x 625 frame that
+   Story.tsx scales to the sheet. Reduced motion (html.reduced): fades only. */
+
+/* ---- the story: trail, a stage that takes the rest of the page, Back / Next ---- */
+.sm-story {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.sm-stage {
+  flex: 1;
+  min-height: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.sm-sheet {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  isolation: isolate;
+}
+
+.sm-scaler {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: 50% 50%;
+}
+
+.sm-slot {
+  position: absolute;
+  inset: 0;
+}
+
+.sm-slot[data-in="fwd"] {
+  animation: sm-in-fwd 320ms var(--ease-out) both;
+}
+
+.sm-slot[data-in="back"] {
+  animation: sm-in-back 320ms var(--ease-out) both;
+}
+
+/* The slide going out stays under the one arriving for its own short fade. */
+.sm-out {
+  pointer-events: none;
+}
+
+.sm-out[data-out="fwd"] {
+  animation: sm-out-fwd 260ms ease-in both;
+}
+
+.sm-out[data-out="back"] {
+  animation: sm-out-back 260ms ease-in both;
+}
+
+@keyframes sm-in-fwd {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@keyframes sm-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+@keyframes sm-out-fwd {
+  to {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+@keyframes sm-out-back {
+  to {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@keyframes sm-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.sm-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* ---- the trail ---- */
+.sm-trail {
+  position: relative;
+  height: 28px;
+  flex: none;
+  margin: 0 6px;
+}
+
+.sm-trail-track,
+.sm-trail-fill {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  display: block;
+  pointer-events: none;
+}
+
+.sm-trail-track {
+  right: 8px;
+  height: 0;
+  border-top: 2px dotted var(--line-strong);
+  transform: translateY(-1px);
+}
+
+.sm-trail-fill {
+  width: calc((100% - 16px) * var(--at, 0));
+  height: 2.5px;
+  margin-top: -1.25px;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 420ms var(--ease-expo);
+}
+
+/* A waypoint: a 28 px hit area with a dot in it. The dot of the slide you are on is the spark. */
+.sm-wp {
+  position: absolute;
+  top: 0;
+  left: calc(8px + (100% - 16px) * var(--at, 0));
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  transform: translateX(-50%);
+  cursor: pointer;
+}
+
+.sm-wp::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--line-strong);
+  transition:
+    transform var(--dur-hover) var(--ease-spring),
+    background-color var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out);
+}
+
+.sm-wp[data-done]::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.sm-wp[data-now]::before {
+  opacity: 0;
+}
+
+.sm-wp:hover::before {
+  transform: scale(1.35);
+  border-color: var(--ink-2);
+}
+
+.sm-wp[data-done]:hover::before {
+  border-color: var(--accent);
+}
+
+.sm-trail-spark {
+  position: absolute;
+  top: 1px;
+  left: calc(8px + (100% - 16px) * var(--at, 0));
+  width: 26px;
+  height: 26px;
+  margin-left: -13px;
+  fill: var(--accent);
+  pointer-events: none;
+  transition: left 420ms var(--ease-expo);
+}
+
+/* ---- the frame ---- */
+.sm-frame {
+  position: absolute;
+  inset: 0;
+  color: var(--ink);
+}
+
+.sm-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.sm-col {
+  position: absolute;
+  left: 56px;
+  top: 50%;
+  width: 430px;
+  transform: translateY(-50%);
+}
+
+.sm-stack {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 36px;
+  padding: 0 64px;
+}
+
+.sm-stack-words {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.sm-frame > .sm-art {
+  position: absolute;
+  right: 48px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.sm-kicker {
+  margin: 0;
+  font: 600 16px/22px var(--font-ui);
+  color: var(--ink-2);
+}
+
+/* The hero. Its size is set by SlideView (as big as its box allows); the unit stays small. */
+.sm-fig {
+  margin: 22px 0 0;
+  font-family: var(--font-display);
+  font-variation-settings: var(--display-axes);
+  font-weight: 760;
+  font-feature-settings: "tnum" 1;
+  line-height: 0.85;
+  letter-spacing: -0.035em;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.sm-fig-num {
+  position: relative;
+  display: inline-block;
+}
+
+/* While a number counts, the final text holds the box and the live text is right-aligned over it. */
+.sm-ghost {
+  visibility: hidden;
+}
+
+.sm-live {
+  position: absolute;
+  right: 0;
+  top: 0;
+  white-space: nowrap;
+}
+
+.sm-unit {
+  margin-left: 14px;
+  font-size: 34px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink-2);
+}
+
+.sm-line {
+  max-width: 400px;
+  margin: 30px 0 0;
+  font: 400 22px/31px var(--font-ui);
+  text-wrap: pretty;
+  color: var(--ink);
+}
+
+.sm-center .sm-line,
+.sm-stack-words .sm-line {
+  max-width: none;
+}
+
+.sm-line strong {
+  font-weight: 600;
+}
+
+/* ---- the opener ---- */
+.sm-year {
+  margin: 0;
+  font-family: var(--font-display);
+  font-variation-settings: var(--display-axes);
+  font-weight: 760;
+  font-feature-settings: "tnum" 1;
+  font-size: 236px;
+  line-height: 200px;
+  letter-spacing: -0.045em;
+  color: var(--accent);
+}
+
+.sm-title {
+  margin: 26px 0 0;
+  font-family: var(--font-display);
+  font-variation-settings: var(--display-axes);
+  font-size: 40px;
+  line-height: 48px;
+  font-weight: 720;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.sm-range {
+  margin: 12px 0 0;
+  font: 400 20px/28px var(--font-ui);
+  color: var(--ink-2);
+}
+
+/* ---- the graphics ---- */
+.sm-cap {
+  font: 600 12px/16px var(--font-ui);
+  fill: var(--ink-2);
+}
+
+.sm-axis {
+  stroke: var(--line-strong);
+}
+
+.sm-cell[data-band="0"] {
+  fill: var(--heat-0);
+}
+.sm-cell[data-band="1"] {
+  fill: var(--heat-1);
+}
+.sm-cell[data-band="2"] {
+  fill: var(--heat-2);
+}
+.sm-cell[data-band="3"] {
+  fill: var(--heat-3);
+}
+.sm-cell[data-band="4"] {
+  fill: var(--heat-4);
+}
+.sm-cell[data-band="5"] {
+  fill: var(--heat-5);
+}
+
+.sm-cell {
+  animation: sm-fade 360ms var(--ease-out) backwards;
+}
+
+.sm-ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  animation: sm-fade 300ms var(--ease-out) backwards;
+}
+
+.sm-bar {
+  fill: var(--heat-2);
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: sm-rise 520ms var(--ease-expo) backwards;
+}
+
+.sm-bar[data-zero] {
+  fill: var(--heat-0);
+}
+
+.sm-bar[data-peak] {
+  fill: var(--accent);
+}
+
+@keyframes sm-rise {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+.sm-spark {
+  fill: var(--accent);
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: sm-pop 360ms var(--ease-spring) backwards;
+}
+
+@keyframes sm-pop {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+}
+
+.sm-dot-usual {
+  fill: var(--chart-4);
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: sm-grow 420ms var(--ease-expo) backwards;
+}
+
+.sm-dot-big {
+  fill: var(--accent);
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: sm-grow 640ms var(--ease-expo) 120ms backwards;
+}
+
+@keyframes sm-grow {
+  from {
+    transform: scale(0);
+  }
+}
+
+/* ---- the end card ---- */
+.sm-cardwrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+}
+
+.sm-card {
+  display: block;
+  width: 452px;
+  height: 420px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.sm-card-save {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.sm-card-status {
+  min-height: 18px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 12px/18px var(--font-ui);
+  color: var(--ink-2);
+}
+
+.sm-card-status[data-bad] {
+  color: var(--danger-text, var(--ink));
+}
+
+/* ---- motion that is only a fade, or nothing ---- */
+html.reduced .sm-slot[data-in] {
+  animation: sm-fade 150ms linear both;
+}
+
+html.reduced .sm-out {
+  display: none;
+}
+
+html.reduced .sm-cell,
+html.reduced .sm-ring,
+html.reduced .sm-bar,
+html.reduced .sm-spark,
+html.reduced .sm-dot-usual,
+html.reduced .sm-dot-big {
+  animation: none;
+}
+
+html.reduced .sm-trail-fill,
+html.reduced .sm-trail-spark,
+html.reduced .sm-wp::before {
+  transition: none;
+}

@@ -2,13 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Story } from "./Story";
-import { figureLabel } from "./Poster";
+import { figureLabel } from "./SlideView";
 import type { Slide } from "../../lib/wrappedModel";
 
 const slide = (id: string, over: Partial<Slide> = {}): Slide => ({
   id,
-  tone: "plain",
-  layout: "stack",
   kicker: `Kicker ${id}`,
   figure: "2026",
   line: "A line.",
@@ -118,7 +116,7 @@ describe("Story keys", () => {
   });
   it("advances once, not twice, on Space with the figure's hover stop focused", async () => {
     mount();
-    const fig = document.querySelector(".pr-fig") as HTMLElement;
+    const fig = document.querySelector(".sm-fig") as HTMLElement;
     expect(fig.getAttribute("aria-label")).toBe("2026. Where it comes from.");
     fig.focus();
     expect(position()).toBe("1 of 3");

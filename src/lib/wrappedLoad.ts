@@ -109,18 +109,16 @@ export async function loadWrapped(daily: Daily, modelName: (id: string) => strin
 
   // Chats that are gone from disk are left out of every list here, the same as the habits count.
   const present = { ...range, includeMissing: false };
-  const [hourly, byProject, byModel, longest, first, habits, skills, agents, tools, overview] = await Promise.all([
+  const [hourly, byProject, byModel, longest, habits, skills, agents, tools] = await Promise.all([
     quiet(backend.usageTimeline({ from: hourFrom, to, bucket: "hour" }), null),
     quiet(backend.usageTimeline({ ...range, bucket: "month", groupBy: "project" }), null),
     quiet(backend.usageTimeline({ ...range, bucket: "month", groupBy: "model" }), null),
     quiet(backend.sessionsList({ ...present, sort: "duration", dir: "desc", limit: 1 }), null),
-    quiet(backend.sessionsList({ ...present, sort: "started", dir: "asc", limit: 1 }), null),
     quiet(backend.usageWrappedHabits(range), null),
     // Every skill, so the Toolsmith rule can count all uses; the story shows the top five.
     quiet(backend.usageByItem({ kind: "skill", ...range, limit: 500 }), [] as ItemUse[]),
     quiet(backend.usageByItem({ kind: "agent", ...range, limit: 5 }), [] as ItemUse[]),
     quiet(backend.usageByItem({ kind: "tool", ...range, limit: 5 }), [] as ItemUse[]),
-    quiet(backend.settingsOverview(), null),
   ]);
 
   const used = (l: ItemUse[]) => l.filter((i) => i.uses > 0);
@@ -147,8 +145,6 @@ export async function loadWrapped(daily: Daily, modelName: (id: string) => strin
     models: seriesTotals(byModel, (key) => modelName(key), 4),
     longest: longest?.rows[0] ?? null,
     biggest: habits?.biggest ?? null,
-    first: first?.rows[0] ?? null,
     habits,
-    keepDays: overview?.cleanupDays ?? null,
   };
 }

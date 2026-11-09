@@ -109,6 +109,7 @@ Reliability beats feature count.
   behind empty states, onboarding and Wrapped; plus count-up hero numbers and the native
   vibrancy / Mica sidebar. No "Live" tags anywhere; Setup has no header chips (Will's Setup layout: checklist first,
   equal type tiles, cards with an X delete + inline confirm).
+- Wrapped = **Summit** (decided by Will, 2026-11-09; `docs/specs/wrapped-redesign/DIRECTIONS.md`, look in `a-summit/*.png`): a quiet sheet, one huge Recursive figure, one plain line, at most one clay graphic, never a poster. The progress row is the trail (dotted line, clay fill, a waypoint button per slide, the clay spark on the current one); the last slide is a saveable recap card (canvas = preview = saved PNG). Each slide: readable in 3 s, no repeated fact (the card is the one exception), no stats on the opener, a hover only when it says something exact about that element, a slide with no data is skipped, nothing decorative or overlapping. Code: `src/lib/wrappedModel.ts` (slides), `src/components/wrapped/{Story,SlideView,Trail,graphics,CardSlide}.tsx`, `src/styles/summit.css`, `src/lib/shareCard.ts`.
 - Icon: **DECIDED by Will (2026-11-08)**. Cream tile `#F7EBDC`, mark `#DC784D`.
   Sources and rebuild script in `assets/brand/` (`atlas-icon-1024.png` macOS tile,
   `atlas-icon-fullbleed-1024.png` Windows/full bleed, `atlas-mark-1024.png` mark only

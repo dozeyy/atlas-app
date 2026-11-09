@@ -1,24 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
+  bestRun,
   buildCard,
   buildSlides,
   cardRidge,
   coderType,
   daysBetween,
-  heatChart,
+  heatGraphic,
+  HEAT_DAYS,
   hourLabel,
   hourTotals,
   novelsHint,
   novelsOf,
   peakHour,
-  rangeHint,
+  plainNames,
   rangeLabel,
-  readingHours,
-  spikeChart,
+  rangeLong,
+  slideLayout,
+  spikeGraphic,
+  SPIKE_DAYS,
   weekdayAverages,
-  MAX_CELEBRATIONS,
 } from "./wrappedModel";
-import type { WrappedData } from "./wrappedModel";
+import type { Slide, WrappedData } from "./wrappedModel";
 import type { ItemUse, SessionRow, Tokens, WrappedHabits } from "./usageTypes";
 
 const item = (id: string, kind: ItemUse["kind"], uses: number, sessions: number): ItemUse => ({ id, kind, uses, sessions, lastUsed: null });
@@ -93,9 +96,7 @@ function data(over: Partial<WrappedData> = {}): WrappedData {
     ],
     longest: null,
     biggest: null,
-    first: null,
     habits: null,
-    keepDays: 30,
     ...over,
   };
 }
@@ -116,268 +117,354 @@ function plain(over: Partial<WrappedData> = {}): WrappedData {
   });
 }
 
-describe("buildSlides", () => {
-  it("tells the full story with real numbers and ends on the card", () => {
-    const s = buildSlides(data());
-    const ids = s.map((x) => x.id);
-    expect(ids).toEqual(["tokens", "novels", "days", "project", "skill", "helper", "tool", "busiest", "weekday", "rhythm", "models", "type", "card"]);
-    expect(s[0].figure).toBe("48M");
-    expect(s.find((x) => x.id === "skill")?.figure).toBe("frontend-design");
-    // The card slide says its one dated range inside the picture, never a second one in the line;
-    // the log-retention sentence is a hover and only when it is true.
-    const end = s[s.length - 1];
-    expect(end.line).not.toMatch(/ to /);
-    expect(end.card?.range).toMatch(/^Oct 9 to /);
-    expect(end.hint).toBe("Oct 9 is your first day with usage.");
+
+/** A long, rich history with a different number on every slide, so a repeat would show. */
+function rich(over: Partial<WrappedData> = {}): WrappedData {
+  const spanDays = 124;
+  const dayTokens = Array.from({ length: spanDays }, (_, i) => (i % 5 === 4 ? 0 : 2_000_000 + ((i * 7) % 13) * 400_000));
+  // The busiest day is Oct 19: day 102 of a history that starts on Jul 9.
+  dayTokens[102] = 144_000_000;
+  const hoursRich = new Array<number>(24).fill(1_000_000);
+  hoursRich[17] = 9_000_000;
+  return data({
+    from: "2026-07-09",
+    to: "2026-11-09",
+    spanDays,
+    activeDays: 74,
+    tokens: 873_000_000,
+    sessions: 410,
+    busiest: { day: "2026-10-19", tokens: 144_000_000, sessions: 18 },
+    longestStreak: 15,
+    streak: 3,
+    hours: hoursRich,
+    hoursDays: 120,
+    dayTokens,
+    skills: [item("away-mode", "skill", 31, 22), item("design:design-critique", "skill", 9, 5)],
+    agents: [item("general-purpose", "agent", 474, 25)],
+    tools: [item("Bash", "tool", 76_804, 263)],
+    skillUses: 40,
+    projects: [
+      { label: "Origin Client", value: 523_800_000 },
+      { label: "atlas", value: 90_000_000 },
+    ],
+    models: [
+      { label: "Opus 5.5", value: 427_800_000 },
+      { label: "Sonnet 5.5", value: 100_000_000 },
+    ],
+    longest: chat({ projectName: "medal michael", durationMs: (10 * 24 + 17) * 3_600_000, startedAt: new Date(2026, 6, 26, 9).getTime() }),
+    biggest: chat({ projectName: "Origin Client", tokens: tok(110_000_000) }),
+    habits: habits({ chats: 100, chatTokens: 234_000_000, allTokens: 873_000_000, helperTokens: 300_000_000 }),
+    ...over,
+  });
+}
+
+const ids = (d: WrappedData) => buildSlides(d).map((s) => s.id);
+const numbers = (text: string) => text.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
+/** Everything a slide says out loud (the card, which recaps, is checked on its own). */
+const said = (s: Slide) => [s.kicker, s.figure, s.unit ?? "", s.line].join(" ");
+
+describe("buildSlides: the Summit story", () => {
+  it("tells the full 15-slide story in order and ends on the card", () => {
+    expect(ids(rich())).toEqual([
+      "opener",
+      "tokens",
+      "days",
+      "busiest",
+      "weekday",
+      "rhythm",
+      "long",
+      "biggest",
+      "project",
+      "skill",
+      "helper",
+      "tool",
+      "models",
+      "type",
+      "card",
+    ]);
   });
 
-  it("gives every slide its own kind of graphic", () => {
-    const s = buildSlides(
-      data({
-        biggest: chat(),
-        first: chat(),
-        longest: chat({ durationMs: 7_200_000 }),
-        habits: habits({ mostHelpers: chat({ agentCount: 7 }) }),
-        skills: [item("a", "skill", 9, 5), item("b", "skill", 8, 5), item("c", "skill", 7, 5)],
-        agents: [item("x", "agent", 9, 5), item("y", "agent", 4, 2)],
-        tools: [item("Edit", "tool", 900, 100), item("Bash", "tool", 500, 80)],
-      }),
-    );
-    const kinds = s.map((x) => x.chart?.kind).filter(Boolean);
-    expect(kinds.length).toBe(new Set(kinds).size);
-    expect(kinds).toEqual(["ridge", "spines", "trail", "heat", "tower", "dial", "tiles", "podium", "lollipop", "burst", "terminal", "spike", "spokes", "strip", "donut", "badge"]);
-    // Layouts vary: not every slide is laid out the same way.
-    expect(new Set(s.map((x) => x.layout)).size).toBeGreaterThanOrEqual(4);
+  it("reads each slide from the real numbers", () => {
+    const by = Object.fromEntries(buildSlides(rich()).map((s) => [s.id, s]));
+    expect(by.tokens.figure).toBe("873M");
+    expect(by.tokens.line).toBe("About 6,500 novels' worth of words.");
+    expect(by.days.figure).toBe("74");
+    expect(by.days.unit).toBe("of 124");
+    expect(by.days.line).toBe("Best run: 15 days in a row.");
+    expect(by.busiest.figure).toBe("Mon, Oct 19");
+    expect(by.busiest.line).toBe("144M tokens over 18 sessions.");
+    expect(by.rhythm.figure).toBe("5 PM");
+    expect(by.rhythm.line).toBe("Your busiest hour over the last 120 days.");
+    expect(by.long.figure).toBe("10 d 17 h");
+    expect(by.long.line).toBe("In medal michael, Jul 26.");
+    expect(by.biggest.figure).toBe("110M");
+    expect(by.biggest.unit).toBe("tokens");
+    expect(by.biggest.line).toBe("One chat in Origin Client. 47 times a usual chat.");
+    expect(by.project.figure).toBe("Origin Client");
+    expect(by.project.line).toBe("60% of your tokens.");
+    expect(by.skill.figure).toBe("away-mode");
+    expect(by.skill.line).toBe("Used 31 times in 22 sessions.");
+    expect(by.helper.line).toBe("Called 474 times in 25 sessions.");
+    expect(by.tool.figure).toBe("Bash");
+    expect(by.tool.line).toBe("Run 76,804 times in 263 sessions.");
+    expect(by.models.figure).toBe("Opus 5.5");
+    expect(by.models.line).toBe("49% of your tokens.");
   });
 
-  it("averages the tower over the chats it counts, not the whole range total", () => {
-    // 100 chats on disk spent 40M between them; the range total is 48M because chats that are gone
-    // spent the other 8M. The average chat is 400k, not 480k.
-    const s = buildSlides(data({ tokens: 48_000_000, biggest: chat(), habits: habits({ chats: 100, chatTokens: 40_000_000 }) }));
-    const tower = s.find((x) => x.id === "biggest")?.chart;
-    expect(tower?.kind).toBe("tower");
-    expect(tower && tower.kind === "tower" ? tower.avg : 0).toBe(400_000);
-    // Without the chats' own total there is no honest average, so no tower.
-    const none = buildSlides(data({ biggest: chat(), habits: habits({ chats: 100, chatTokens: 0 }) }));
-    expect(none.find((x) => x.id === "biggest")?.chart).toBeUndefined();
-    const lone = buildSlides(data({ biggest: chat(), habits: habits({ chats: 1, chatTokens: 5_000 }) }));
-    expect(lone.find((x) => x.id === "biggest")?.chart).toBeUndefined();
+  it("gives the opener no stats: a year, a title and where the numbers start", () => {
+    const o = buildSlides(rich())[0];
+    expect(o.id).toBe("opener");
+    expect(o.figure).toBe("2026");
+    expect(o.title).toBe("Your year in Claude Code");
+    expect(o.line).toBe(rangeLabel({ from: "2026-07-09" }));
+    expect(o.line).toBe("Jul 9 to today");
+    expect(o.unit).toBeUndefined();
+    expect(o.graphic).toBeUndefined();
+    expect(o.hint).toBeUndefined();
+    expect(o.strong).toBeUndefined();
   });
 
-  it("puts one true comparison under the number, in tokens and ASCII, never in dollars", () => {
-    const s = buildSlides(
-      data({
-        biggest: chat(),
-        first: chat(),
-        longest: chat({ durationMs: 7_200_000 }),
-        habits: habits({ mostHelpers: chat({ agentCount: 7 }) }),
-      }),
-    );
-    const withLine = s.filter((x) => x.compare);
-    expect(withLine.length).toBeGreaterThanOrEqual(8);
-    for (const x of withLine) {
-      expect(x.compare!.text, x.id).toMatch(/^[\x20-\x7e]+\.$/);
-      expect(x.compare!.text, x.id).not.toContain("$");
-      expect(x.compare!.hint, x.id).not.toContain("$");
-      expect(x.compare!.hint.length, x.id).toBeGreaterThan(x.compare!.text.length / 2);
+  it("states every fact once: no number, figure or kicker on two slides", () => {
+    const slides = buildSlides(rich()).filter((s) => s.id !== "opener" && !s.card);
+    const seen = new Map<string, string>();
+    for (const s of slides) {
+      for (const n of new Set(numbers(said(s)))) {
+        expect(seen.get(n), `"${n}" is on ${seen.get(n)} and ${s.id}`).toBeUndefined();
+        seen.set(n, s.id);
+      }
     }
-    // 48.2M tokens x 0.75 = 36.15M words: the Britannica rung (40M), at 0.9 of it.
-    expect(s[0].compare?.text).toBe("About one Encyclopaedia Britannica.");
-    expect(s[0].compare?.hint).toContain("0.75 words per token");
-    // The share card is the numbers-only picture: no comparison there.
-    expect(s[s.length - 1].compare).toBeUndefined();
-    // 7 helpers is past the 5 on a basketball court, short of 11 on a soccer pitch: the nearer rung wins.
-    expect(s.find((x) => x.id === "crowd")?.compare?.text).toBe("Enough helpers to fill 1.4 basketball teams.");
+    expect(new Set(slides.map((s) => s.figure)).size).toBe(slides.length);
+    expect(new Set(slides.map((s) => s.kicker)).size).toBe(slides.length);
+    expect(new Set(slides.map((s) => s.line)).size).toBe(slides.length);
   });
 
-  it("leaves the comparison out when the number is too small for the smallest rung", () => {
-    const s = buildSlides(data({ tokens: 100, busiest: { day: "2026-10-27", tokens: 100, sessions: 1 } }));
-    expect(s[0].compare).toBeUndefined();
-    expect(s.find((x) => x.id === "busiest")?.compare).toBeUndefined();
-  });
-
-  it("adds the big-number slides when their data exists", () => {
-    const crowd = chat({ sessionId: "c", name: "Crowd chat", agentCount: 7 });
-    const s = buildSlides(
-      data({
-        biggest: chat({ name: "Biggest chat name", projectName: "heavens-casino", tokens: tok(6_500_000) }),
-        first: chat({ name: "First chat name", startedAt: new Date(2026, 9, 9, 10).getTime() }),
-        longest: chat({ name: "Longest chat name", durationMs: 7_200_000 }),
-        habits: habits({ mostHelpers: crowd }),
-        skills: [item("a", "skill", 9, 5), item("b", "skill", 8, 5), item("c", "skill", 7, 5), item("d", "skill", 6, 5), item("e", "skill", 5, 5)],
-      }),
-    );
-    expect(s.map((x) => x.id)).toEqual(["tokens", "novels", "first", "days", "biggest", "long", "project", "skill", "helper", "crowd", "tool", "busiest", "weekday", "rhythm", "models", "type", "card"]);
-    const biggest = s.find((x) => x.id === "biggest")!;
-    expect(biggest.figure).toBe("6.5M");
-    expect(biggest.line).toBe("One chat in heavens-casino did all that.");
-    const first = s.find((x) => x.id === "first")!;
-    expect(first.figure).toBe("Oct 9");
-    expect(first.kicker).toBe("Oldest chat still here");
-    expect(first.line).toBe("30 days ago: a session in atlas. Still standing.");
-    // 30 days is past a lunar month (29.5) and short of the next rung, 88.
-    expect(first.compare?.text).toBe("Since then, about one lunar month.");
-    const crowdSlide = s.find((x) => x.id === "crowd")!;
-    expect(crowdSlide.figure).toBe("7");
-    expect(crowdSlide.unit).toBe("helpers");
-    expect(crowdSlide.line).toBe("One chat in atlas. A whole crew.");
-  });
-
-  it("makes the skill slide a five to one countdown instead of a second skill slide", () => {
-    const five = ["a", "b", "c", "d", "e"].map((id, i) => item(id, "skill", 9 - i, 5));
-    const s = buildSlides(data({ skills: five }));
-    expect(s.filter((x) => x.id === "skill")).toHaveLength(1);
-    const skill = s.find((x) => x.id === "skill")!;
-    expect(skill.kicker).toBe("Your top 5 skills, counted down");
-    expect(skill.figure).toBe("a");
-    expect(skill.chart).toMatchObject({ kind: "podium" });
-    expect((skill.chart as { rows: unknown[] }).rows).toHaveLength(5);
-    // One skill is just the favorite, with no chart.
-    const one = buildSlides(data({ skills: [item("only", "skill", 3, 2)] })).find((x) => x.id === "skill")!;
-    expect(one.kicker).toBe("Favorite skill");
-    expect(one.chart).toBeUndefined();
-  });
-
-  it("tells a short story when there are only a few active days", () => {
-    const s = buildSlides(data({ activeDays: 3, spanDays: 3, dayTokens: [1, 2, 3], first: chat(), biggest: chat(), habits: habits() }));
-    expect(s.map((x) => x.id)).toEqual(["tokens", "skill", "busiest", "card"]);
-  });
-
-  it("leaves out a slide whose numbers are missing instead of making them up", () => {
-    const s = buildSlides(data({ skills: [], agents: [], tools: [], projects: [], models: [], busiest: null, hours: new Array(24).fill(0), dayTokens: [], skillUses: 0, activeDays: 22 }));
-    expect(s.map((x) => x.id)).toEqual(["tokens", "novels", "days", "card"]);
-  });
-
-  it("counts tokens, never dollars", () => {
-    const s = buildSlides(
-      data({
-        habits: habits({ mostHelpers: chat({ agentCount: 4 }) }),
-        biggest: chat(),
-        first: chat(),
-        models: [
-          { label: "Opus 5.5", value: 40_000_000 },
-          { label: "Sonnet 5.5", value: 8_000_000 },
-        ],
-      }),
-    );
-    const models = s.find((x) => x.id === "models");
-    expect(models?.figure).toBe("Opus 5.5");
-    expect(models?.line).toBe("83% of your tokens. Your ride or die.");
-    expect(JSON.stringify(s)).not.toContain("$");
-  });
-
-  it("gives the top model its share of ALL tokens, not of the few models listed", () => {
-    // Four listed models hold 40M of 100M: the top one is 20%, not 50%.
-    const s = buildSlides(
-      data({
-        tokens: 100_000_000,
-        models: [
-          { label: "Opus 5.5", value: 20_000_000 },
-          { label: "Sonnet 5.5", value: 10_000_000 },
-          { label: "Haiku 5.5", value: 6_000_000 },
-          { label: "Older", value: 4_000_000 },
-        ],
-      }),
-    );
-    expect(s.find((x) => x.id === "models")?.line).toBe("20% of your tokens. Your ride or die.");
-  });
-
-  it("never says a comparison twice in one Wrapped", () => {
-    const s = buildSlides(data({ tokens: 48_200_000, habits: habits({ chats: 100, chatTokens: 40_000_000 }), biggest: chat() }));
-    const said = s.flatMap((x) => (x.compare ? [x.compare.text.replace(/^.*?(\d[\d.,]*\s|one\s|about\s)/i, "")] : []));
-    expect(new Set(said).size).toBe(said.length);
-    expect(s.filter((x) => /Encyclopaedia/.test(x.compare?.text ?? "")).length).toBeLessThanOrEqual(1);
-  });
-
-  it("compares each thing once and each number once, whichever ladder it sits on", () => {
-    // 67 active days of 70: a Regular. The days slide compares the 67 days; the type slide must not
-    // compare them again, nor reach for a thing (Apollo 11) another slide already used.
-    const d = data({
-      activeDays: 67,
-      spanDays: 70,
-      hours: flatHours(),
-      tokens: 9_000_000,
-      busiest: { day: "2026-10-27", tokens: 1_200_000, sessions: 9 },
-      habits: habits({ chats: 100, shortChats: 20, longChats: 5, chatTokens: 8_000_000, allTokens: 100, helperTokens: 5 }),
+  it("skips a slide whose numbers are missing instead of filling it", () => {
+    const bare = rich({
+      busiest: null,
+      hours: new Array<number>(24).fill(0),
+      longest: null,
+      biggest: null,
+      projects: [],
+      skills: [],
+      agents: [],
+      tools: [],
+      models: [],
+      habits: null,
     });
-    const s = buildSlides(d);
-    const type = s.find((x) => x.id === "type");
-    expect(type?.figure).toBe("Regular");
-    expect(type?.compare).toBeUndefined();
-    const texts = s.flatMap((x) => (x.compare ? [x.compare.text] : []));
-    expect(texts.filter((t) => /Apollo 11/.test(t)).length).toBeLessThanOrEqual(1);
-    // No two lines name the same thing, however the ladder words it.
-    const things = texts.map((t) => t.replace(/^.*?\d[\d.,]*[kM]?\s+/, "").replace(/^(one|the whole)\s+/i, ""));
-    expect(new Set(things).size).toBe(things.length);
+    // Nothing is invented: only the slides that still have their numbers are left.
+    expect(ids(bare)).toEqual(["opener", "tokens", "days", "weekday", "card"]);
+    expect(ids(rich({ tokens: 0, activeDays: 0 }))).not.toContain("tokens");
+    expect(ids(rich({ tokens: 0, activeDays: 0 }))).not.toContain("days");
+    // A chat with no length, and one that used nothing, do not get a slide either.
+    expect(ids(rich({ longest: chat({ durationMs: 0 }), biggest: chat({ tokens: tok(0) }) }))).not.toContain("long");
+    expect(ids(rich({ longest: chat({ durationMs: 0 }), biggest: chat({ tokens: tok(0) }) }))).not.toContain("biggest");
   });
 
-  it("never leaves a coder-type comparison without a subject", () => {
-    const owl = buildSlides(data({ hours: [...new Array<number>(21).fill(1), 9_000_000, 9_000_000, 9_000_000], hoursDays: 31 })).find((x) => x.id === "type");
-    expect(owl?.figure).toBe("Night Owl");
-    for (const x of [owl]) if (x?.compare) expect(x.compare.text).not.toMatch(/^(That|It|This|These|Those)\b/);
-    const loyal = buildSlides(data({ projects: [{ label: "atlas", value: 95 }, { label: "site", value: 5 }], tokens: 100 })).find((x) => x.id === "type");
-    if (loyal?.compare) expect(loyal.compare.text).not.toMatch(/^(That|It|This)\b/);
+  it("tells the short story under a week of active days", () => {
+    expect(ids(rich({ activeDays: 3 }))).toEqual(["opener", "tokens", "busiest", "skill", "card"]);
+    // Only the first favorite is kept; with no skill it is the helper, then the tool.
+    expect(ids(rich({ activeDays: 3, skills: [] }))).toEqual(["opener", "tokens", "busiest", "helper", "card"]);
+    expect(ids(rich({ activeDays: 3, skills: [], agents: [] }))).toEqual(["opener", "tokens", "busiest", "tool", "card"]);
   });
 
-  it("gives a lone tool its graphic: the terminal chart, with one row", () => {
-    const tool = buildSlides(data({ tools: [item("Edit", "tool", 8, 1)] })).find((x) => x.id === "tool");
-    expect(tool?.chart?.kind).toBe("terminal");
-    expect(tool?.chart && tool.chart.kind === "terminal" ? tool.chart.rows : []).toHaveLength(1);
-    const short = buildSlides(data({ activeDays: 3, skills: [], agents: [], tools: [item("Bash", "tool", 20, 2)] })).find((x) => x.id === "tool");
-    expect(short?.chart?.kind).toBe("terminal");
+  it("names a weekday tie as a tie and says nothing when most days tie", () => {
+    const flat = (values: number[]) => rich({ from: "2026-11-02", to: "2026-11-08", spanDays: 7, dayTokens: values, activeDays: 7 });
+    const two = buildSlides(flat([9, 9, 1, 1, 1, 1, 1])).find((s) => s.id === "weekday")!;
+    expect(two.figure).toBe("Mon and Tue");
+    expect(two.line).toMatch(/each\.$/);
+    expect(ids(flat([5, 5, 5, 1, 1, 1, 1]))).not.toContain("weekday");
   });
 
-  it("explains nothing on the card slide: no line, only the picture and the saved status", () => {
-    const end = buildSlides(data()).at(-1);
-    expect(end?.id).toBe("card");
-    expect(end?.line).toBe("");
-    for (const x of buildSlides(data())) expect(x.line, x.id).not.toMatch(/nothing is sent|saved as a picture/i);
+  it("makes the circles to scale and drops them when the chat is not far above a usual one", () => {
+    const big = buildSlides(rich()).find((s) => s.id === "biggest")!;
+    expect(big.graphic).toMatchObject({ kind: "circles" });
+    expect((big.graphic as { ratio: number }).ratio).toBeCloseTo(47, 0);
+    // Average chat = chatTokens / chats (the chats the count covers), never the range total.
+    const near = buildSlides(rich({ habits: habits({ chats: 100, chatTokens: 9_000_000_000 }) })).find((s) => s.id === "biggest")!;
+    expect(near.graphic).toBeUndefined();
+    expect(near.line).toBe("One chat in Origin Client.");
+    expect(near.strong).toBeUndefined();
   });
-  it("never shows a chat name or prompt text on a poster line", () => {
-    const s = buildSlides(
-      data({
-        biggest: chat({ name: "make online play seamless in mario party 2", projectName: "mario", tokens: tok(6_500_000) }),
-        first: chat({ name: "make online play seamless in mario party 2", startedAt: new Date(2026, 9, 9, 10).getTime() }),
-        longest: chat({ name: "make online play seamless in mario party 2", durationMs: 7_200_000 }),
-        habits: habits({ mostHelpers: chat({ name: "make online play seamless in mario party 2", agentCount: 7 }) }),
-      }),
-    );
-    for (const x of s) {
-      expect(x.line, x.id).not.toMatch(/seamless/);
-      expect(x.hint ?? "", x.id).not.toMatch(/seamless/);
+
+  it("puts each slide's one graphic where it belongs", () => {
+    const by = Object.fromEntries(buildSlides(rich()).map((s) => [s.id, s]));
+    expect(by.days.graphic?.kind).toBe("heat");
+    expect(by.busiest.graphic?.kind).toBe("spike");
+    expect(by.weekday.graphic?.kind).toBe("weekdays");
+    expect(by.rhythm.graphic?.kind).toBe("hours");
+    expect(by.biggest.graphic?.kind).toBe("circles");
+    for (const id of ["opener", "tokens", "long", "project", "skill", "helper", "tool", "models", "type", "card"]) {
+      expect(by[id].graphic, id).toBeUndefined();
     }
   });
 
-  it("names a weekday tie as a tie, never 'beats every other day'", () => {
-    // 2026-10-09 is a Friday: 28 days hold four of each weekday.
-    const run = (big: number[]) => Array.from({ length: 28 }, (_, i) => (big.includes(new Date(2026, 9, 9 + i, 12).getDay()) ? 5_000_000 : 1_000_000));
-    const tied = buildSlides(data({ dayTokens: run([2, 3]) }));
-    const line = tied.find((x) => x.id === "weekday")?.line ?? "";
-    expect(line).not.toMatch(/beats every other day/);
-    expect(line).toBe("Tuesday and Wednesday tie for the top. Plan around both.");
-    const clear = buildSlides(data({ dayTokens: run([2]) }));
-    expect(clear.find((x) => x.id === "weekday")?.line).toBe("Tuesday beats every other day. Plan around it.");
+  it("lays slides out by what they carry", () => {
+    const by = Object.fromEntries(buildSlides(rich()).map((s) => [s.id, s]));
+    expect(slideLayout(by.opener)).toBe("opener");
+    expect(slideLayout(by.tokens)).toBe("center");
+    expect(slideLayout(by.days)).toBe("split");
+    expect(slideLayout(by.rhythm)).toBe("split");
+    expect(slideLayout(by.biggest)).toBe("split");
+    expect(slideLayout(by.busiest)).toBe("stack");
+    expect(slideLayout(by.weekday)).toBe("stack");
+    expect(slideLayout(by.card)).toBe("card");
   });
 
-  it("celebrates at most three moments", () => {
-    const n = buildSlides(data({ longestStreak: 12 })).filter((x) => x.celebrate).length;
-    expect(n).toBeLessThanOrEqual(MAX_CELEBRATIONS);
-    expect(n).toBeGreaterThan(0);
+  it("keeps hovers to the exact counts and the novels source, nothing generic", () => {
+    const hovered = buildSlides(rich())
+      .filter((s) => s.hint || s.strongHint)
+      .map((s) => s.id);
+    expect(hovered).toEqual(["tokens", "biggest"]);
+    const by = Object.fromEntries(buildSlides(rich()).map((s) => [s.id, s]));
+    expect(by.tokens.hint).toBe("873,000,000 tokens.");
+    expect(by.biggest.hint).toBe("110,000,000 tokens in one chat.");
+    expect(by.tokens.strongHint).toContain("0.75 words per token");
+    expect(by.biggest.strongHint).toBeUndefined();
   });
 
-  it("uses the singular for one day", () => {
-    const end = buildSlides(data({ spanDays: 1, activeDays: 1 })).pop();
-    expect(end?.card?.days).toBe("1 active day of 1");
+  it("uses ASCII only and never money", () => {
+    const text = JSON.stringify(buildSlides(rich()));
+    expect(text).toMatch(/^[\x20-\x7e]*$/);
+    expect(text).not.toContain("$");
+    expect(text).not.toContain("Live");
   });
 
-  it("names the busiest weekday and shows all seven", () => {
-    // 2026-10-09 is a Friday. Put the big days on Tuesdays.
-    const days = Array.from({ length: 31 }, (_, i) => (new Date(2026, 9, 9 + i, 12).getDay() === 2 ? 5_000_000 : 1_000_000));
-    const w = buildSlides(data({ dayTokens: days })).find((x) => x.id === "weekday")!;
-    expect(w.figure).toMatch(/^\d+%$/);
-    expect(w.unit).toBe("of your week");
-    expect(w.chart).toMatchObject({ kind: "spokes" });
-    expect(w.line).toBe("Tuesday beats every other day. Plan around it.");
+  it("uses the singular for one", () => {
+    const s = buildSlides(rich({ agents: [item("reviewer", "agent", 1, 1)], busiest: { day: "2026-10-19", tokens: 5_000_000, sessions: 1 } }));
+    expect(s.find((x) => x.id === "helper")!.line).toBe("Called 1 time in 1 session.");
+    expect(s.find((x) => x.id === "busiest")!.line).toBe("5M tokens over 1 session.");
+  });
+
+  it("says there was never a run when no two days touch", () => {
+    const d = rich({ longestStreak: 1 });
+    expect(buildSlides(d).find((s) => s.id === "days")!.line).toBe("Never two days in a row yet.");
+  });
+
+  it("drops the plugin prefix from a skill's name unless two would then read the same", () => {
+    expect(plainNames(["design:design-critique", "code-review"])).toEqual(["design-critique", "code-review"]);
+    expect(plainNames(["a:review", "b:review"])).toEqual(["a:review", "b:review"]);
+    expect(buildSlides(rich({ skills: [item("design:design-critique", "skill", 9, 5)] })).find((s) => s.id === "skill")!.figure).toBe("design-critique");
+  });
+
+  it("has no novels phrase for a small total", () => {
+    const t = buildSlides(rich({ tokens: 100_000 })).find((s) => s.id === "tokens")!;
+    expect(t.line).toBe("");
+    expect(t.strong).toBeUndefined();
+    expect(t.strongHint).toBeUndefined();
+  });
+});
+
+describe("the end card", () => {
+  it("recaps the headline facts and nothing from a chat", () => {
+    const secret = "SECRET FIRST PROMPT";
+    const d = rich({
+      longest: chat({ name: secret, projectName: "medal michael", durationMs: 90_000_000 }),
+      biggest: chat({ name: secret, tokens: tok(110_000_000) }),
+      habits: habits({ chats: 100, chatTokens: 234_000_000, mostHelpers: chat({ name: secret, agentCount: 5 }) }),
+    });
+    const slides = buildSlides(d);
+    const end = slides[slides.length - 1];
+    const card = end.card!;
+    expect(end.id).toBe("card");
+    expect(end.line).toBe("");
+    expect(card.title).toBe("Atlas Wrapped");
+    expect(card.range).toBe("Jul 9 to Nov 9, 2026");
+    expect(card.tokens).toBe(slides.find((s) => s.id === "tokens")!.figure);
+    expect(card.unit).toBe("tokens");
+    expect(card.facts).toEqual([
+      { value: "74", label: "active days" },
+      { value: "5 PM", label: "prime time" },
+      { value: "Origin Client", label: "top project" },
+      { value: slides.find((s) => s.id === "type")!.figure, label: "coder type" },
+    ]);
+    expect(card.day).toBe("2026-11-09");
+    expect(card.ridge.length).toBeGreaterThan(1);
+    expect(Math.max(...card.ridge)).toBe(1);
+    expect(JSON.stringify(card)).not.toContain(secret);
+    expect(JSON.stringify(card)).not.toContain("$");
+  });
+
+  it("is the one slide that repeats facts, and it is always last", () => {
+    const slides = buildSlides(rich());
+    expect(slides.filter((s) => s.card)).toHaveLength(1);
+    expect(slides[slides.length - 1].card).toBeDefined();
+    // The card's figure is the total the tokens slide already said: the deliberate recap.
+    expect(slides[slides.length - 1].figure).toBe(slides[1].figure);
+  });
+
+  it("leaves out a fact whose number is missing and shows the main model when there is no type", () => {
+    const card = buildCard(rich({ projects: [], hours: new Array<number>(24).fill(0), activeDays: 0 }), null);
+    expect(card.facts).toEqual([{ value: "Opus 5.5", label: "main model" }]);
+    expect(buildCard(rich({ models: [] }), null).facts.map((f) => f.label)).toEqual(["active days", "prime time", "top project"]);
+    expect(buildCard(rich({ activeDays: 1 }), null).facts[0]).toEqual({ value: "1", label: "active day" });
+  });
+
+  it("still builds for a history with nothing but a total", () => {
+    const d = rich({ activeDays: 0, busiest: null, hours: new Array<number>(24).fill(0), longest: null, biggest: null, projects: [], skills: [], agents: [], tools: [], models: [], habits: null });
+    expect(ids(d)).toEqual(["opener", "tokens", "card"]);
+  });
+});
+
+describe("the graphics' data", () => {
+  it("finds the best run, the later one on a tie, and none when no two days touch", () => {
+    expect(bestRun([0, 5, 5, 5, 0, 5, 5, 5, 0])).toEqual([5, 7]);
+    expect(bestRun([5, 0, 5, 0, 5])).toBeNull();
+    expect(bestRun([])).toBeNull();
+  });
+
+  it("rings the best run in the calendar", () => {
+    const h = heatGraphic({ to: "2026-11-08", dayTokens: [0, 5, 5, 5, 0, 5, 0, 0, 5] })!;
+    expect(h.run).toEqual([1, 3]);
+    expect(h.values).toHaveLength(9);
+    expect(heatGraphic({ to: "2026-11-08", dayTokens: [7] })).toBeUndefined();
+    expect(heatGraphic({ to: "2026-11-08", dayTokens: [5, 0, 5, 0, 5] })!.run).toBeNull();
+  });
+
+  it("rings the best run only when it is on show", () => {
+    // A history longer than the calendar: the best run (days 2-6) is out of the window, so no ring.
+    const long = Array.from({ length: HEAT_DAYS + 40 }, (_, i) => (i >= 2 && i <= 6 ? 9 : i % 3 === 0 ? 0 : 1));
+    expect(heatGraphic({ to: "2026-11-08", dayTokens: long })!.values).toHaveLength(HEAT_DAYS);
+    expect(heatGraphic({ to: "2026-11-08", dayTokens: long })!.run).toBeNull();
+    // The same run inside the window is ringed, with indexes into the window.
+    const inside = Array.from({ length: HEAT_DAYS + 40 }, (_, i) => (i >= 200 && i <= 205 ? 9 : 0));
+    expect(heatGraphic({ to: "2026-11-08", dayTokens: inside })!.run).toEqual([200 - 40, 205 - 40]);
+  });
+
+  it("centers the spike on the busiest day and keeps the window inside the history", () => {
+    const days = Array.from({ length: 31 }, (_, i) => (i === 18 ? 9 : 1));
+    const s = spikeGraphic({ from: "2026-10-09", dayTokens: days }, "2026-10-27")!;
+    expect(s.values).toHaveLength(SPIKE_DAYS);
+    expect(s.values[s.peak]).toBe(9);
+    // A busiest day on the first day cannot center: the window starts at the first day.
+    const edge = spikeGraphic({ from: "2026-10-09", dayTokens: days }, "2026-10-09")!;
+    expect(edge.peak).toBe(0);
+    expect(edge.first).toBe("Oct 9");
+    expect(spikeGraphic({ from: "2026-10-09", dayTokens: days }, "2027-01-01")).toBeUndefined();
+  });
+
+  it("draws the hours and weekdays from the model's own numbers", () => {
+    const s = buildSlides(rich());
+    const hrs = s.find((x) => x.id === "rhythm")!.graphic as { values: number[]; days: number; peak: number };
+    expect(hrs.values).toHaveLength(24);
+    expect(hrs.days).toBe(120);
+    expect(hrs.peak).toBe(17);
+    expect((s.find((x) => x.id === "weekday")!.graphic as { values: number[] }).values).toHaveLength(7);
+  });
+
+  it("makes the card ridge 0 to 1 and never below the baseline", () => {
+    const r = cardRidge(Array.from({ length: 100 }, (_, i) => i % 7), 40);
+    expect(r).toHaveLength(40);
+    expect(Math.max(...r)).toBe(1);
+    expect(Math.min(...r)).toBeGreaterThanOrEqual(0);
+    expect(cardRidge([])).toEqual([]);
+    expect(cardRidge([0, 0, 0])).toEqual([0, 0, 0]);
+  });
+});
+
+describe("the range", () => {
+  it("says only where the numbers start, and the dated range for the card", () => {
+    expect(rangeLabel({ from: "2026-10-09" })).toBe("Oct 9 to today");
+    expect(rangeLong({ from: "2026-07-09", to: "2026-11-09" })).toBe("Jul 9 to Nov 9, 2026");
   });
 });
 
@@ -399,46 +486,6 @@ describe("weekdayAverages", () => {
   });
 });
 
-describe("the graphics' data", () => {
-  it("rings the best run in the calendar and starts on the right weekday", () => {
-    // Days 2..4 are a run of three; today is 2026-11-08 (a Sunday), so the first of the nine days is a Saturday.
-    const h = heatChart({ to: "2026-11-08", dayTokens: [0, 5, 5, 5, 0, 5, 0, 0, 5] })!;
-    expect(h.run).toEqual([1, 3]);
-    expect(h.start).toBe(5);
-    expect(h.weeks).toBe(2);
-    expect(heatChart({ to: "2026-11-08", dayTokens: [7] })).toBeUndefined();
-  });
-
-  it("has no run to ring when no two days touch", () => {
-    expect(heatChart({ to: "2026-11-08", dayTokens: [5, 0, 5, 0, 5] })!.run).toBeNull();
-  });
-
-  it("centers the spike on the busiest day and keeps the window inside the history", () => {
-    const days = Array.from({ length: 31 }, (_, i) => (i === 18 ? 9 : 1));
-    const s = spikeChart({ from: "2026-10-09", to: "2026-11-08", dayTokens: days }, "2026-10-27")!;
-    expect(s.values).toHaveLength(21);
-    expect(s.values[s.peak]).toBe(9);
-    // A busiest day on the first day cannot center: the window starts at the first day.
-    const edge = spikeChart({ from: "2026-10-09", to: "2026-11-08", dayTokens: days }, "2026-10-09")!;
-    expect(edge.peak).toBe(0);
-    expect(edge.first).toBe("Oct 9");
-  });
-
-  it("makes the share-card ridge 0 to 1 and never below the baseline", () => {
-    const r = cardRidge(Array.from({ length: 100 }, (_, i) => i % 7), 40);
-    expect(r).toHaveLength(40);
-    expect(Math.max(...r)).toBe(1);
-    expect(Math.min(...r)).toBeGreaterThanOrEqual(0);
-    expect(cardRidge([])).toEqual([]);
-    expect(cardRidge([0, 0, 0])).toEqual([0, 0, 0]);
-  });
-
-  it("carries the ridge on the card and no chat name", () => {
-    const s = buildSlides(data());
-    expect(s[s.length - 1].card!.ridge.length).toBeGreaterThan(1);
-  });
-});
-
 describe("days", () => {
   it("counts calendar days between two days", () => {
     expect(daysBetween("2026-10-09", "2026-11-08")).toBe(30);
@@ -455,21 +502,8 @@ describe("novels", () => {
     expect(hint).toContain("An estimate");
   });
 
-  it("is under one novel for a small number, so there is no novels slide", () => {
-    expect(novelsOf(100_000)).toBeLessThan(1);
-    expect(novelsOf(0)).toBe(0);
-    expect(buildSlides(data({ tokens: 100_000 })).some((x) => x.id === "novels")).toBe(false);
-  });
-
-  it("becomes its own slide with a reading-time comparison", () => {
-    const n = buildSlides(data()).find((x) => x.id === "novels")!;
-    expect(n.figure).toBe("360");
-    expect(n.hint).toContain("An estimate");
-    // 36.15M words at 238 words a minute is about 2,530 hours: 1.2 work years of 2,080 hours.
-    expect(readingHours(48_200_000)).toBeCloseTo(2531.6, 0);
-    expect(n.compare?.text).toBe("Reading takes about 1.2 full-time work years.");
-  });
 });
+
 describe("coderType", () => {
   it("calls a late-night worker a Night Owl and says why with the real figure", () => {
     // 62% of the tokens between 9 pm and 4 am.
@@ -532,7 +566,6 @@ describe("coderType", () => {
     h[12] = 50;
     const t = coderType(plain({ hours: h, habits: habits({ chats: 100, shortChats: 90, longChats: 0, allTokens: 100, helperTokens: 5 }) }))!;
     expect(t.id).toBe("sprinter");
-    expect(t.traits.map((x) => x.name)).toContain("Night Owl");
   });
 
   it("breaks a tie by the fixed order of the rules (owl before bird)", () => {
@@ -567,43 +600,6 @@ describe("coderType", () => {
     expect(t.why).toContain("in the last 120 days");
   });
 
-  it("puts the type on its own slide with the why in the hover", () => {
-    const h = new Array<number>(24).fill(0);
-    h[22] = 62;
-    h[10] = 38;
-    const s = buildSlides(plain({ hours: h })).find((x) => x.id === "type")!;
-    expect(s.figure).toBe("Night Owl");
-    expect(s.hint).toContain("62%");
-  });
-});
-
-describe("share card", () => {
-  it("carries totals, project, skill, model and type, and no chat name", () => {
-    const secret = "SECRET FIRST PROMPT";
-    const d = data({
-      longest: chat({ name: secret }),
-      biggest: chat({ name: secret }),
-      first: chat({ name: secret }),
-      habits: habits({ mostHelpers: chat({ name: secret, agentCount: 5 }) }),
-    });
-    const s = buildSlides(d);
-    const card = s[s.length - 1].card!;
-    expect(card.tokens).toBe("48M");
-    expect(card.days).toBe("22 active days of 31");
-    expect(card.tiles.map((t) => t.label)).toEqual(["Project", "Skill", "Model", "Type"]);
-    expect(card.tiles.find((t) => t.label === "Project")?.value).toBe("atlas");
-    expect(card.tiles.find((t) => t.label === "Skill")?.value).toBe("frontend-design");
-    expect(card.tiles.find((t) => t.label === "Model")?.value).toBe("Opus 5.5");
-    expect(card.range).toBe("Oct 9 to Nov 8");
-    expect(card.day).toBe("2026-11-08");
-    expect(JSON.stringify(card)).not.toContain(secret);
-    expect(JSON.stringify(card)).not.toContain("$");
-  });
-
-  it("leaves out a tile whose number is missing", () => {
-    const card = buildCard(data({ skills: [], models: [] }), null);
-    expect(card.tiles.map((t) => t.label)).toEqual(["Project"]);
-  });
 });
 
 describe("hours", () => {
@@ -626,12 +622,4 @@ describe("hours", () => {
     expect(peakHour(new Array(24).fill(0))).toBeNull();
   });
 
-  it("says only the range, with the retention setting in the hover when it is true", () => {
-    expect(rangeLabel({ from: "2026-10-09" })).toBe("Oct 9 to today");
-    // The history fits inside the setting: say it.
-    expect(rangeHint({ from: "2026-10-09", keepDays: 30, spanDays: 20 })).toBe("Oct 9 is your first day with usage. Claude Code keeps its logs for 30 days.");
-    // The data goes back further than the setting says: never claim the setting.
-    expect(rangeHint({ from: "2026-07-09", keepDays: 30, spanDays: 122 })).toBe("Jul 9 is your first day with usage.");
-    expect(rangeHint({ from: "2026-07-09", keepDays: null, spanDays: 122 })).toBe("Jul 9 is your first day with usage.");
-  });
 });

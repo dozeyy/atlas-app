@@ -1,13 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
 import { DownloadSimple } from "@phosphor-icons/react";
 import { getBackend } from "../../lib/ipc";
-import { cardBytes, drawShareCard, loadCardFonts } from "../../lib/shareCard";
+import { CARD_H, CARD_W, cardBytes, drawShareCard, loadCardFonts } from "../../lib/shareCard";
 import type { ShareCard, Slide } from "../../lib/wrappedModel";
-import type { PosterSpec } from "../../lib/wrappedPoster";
-import { ClockProvider, useClockCtx, useTick } from "./clock";
-import { beatValue, put, useEl } from "./heroKit";
-import { Field, useFit } from "./Poster";
+import { Button } from "../controls";
 
 type Status =
   | { kind: "idle" }
@@ -16,90 +12,43 @@ type Status =
   | { kind: "error"; text: string };
 
 function describe(card: ShareCard): string {
-  const tiles = card.tiles.map((t) => `${t.label} ${t.value}`).join(", ");
-  return `${card.title}: ${card.tokens} ${card.unit}, ${card.days}${tiles ? `. ${tiles}` : ""}.`;
+  const facts = card.facts.map((f) => `${f.value} ${f.label}`).join(", ");
+  return `${card.title}, ${card.range}: ${card.tokens} ${card.unit}${facts ? `. ${facts}` : ""}.`;
 }
 
-/** The picture pops in on the poster's clock; the words under it arrive after. */
-function Pop({
-  card,
-  canvas,
-  hint,
-}: {
-  card: ShareCard;
-  canvas: RefObject<HTMLCanvasElement | null>;
-  hint?: string;
-}) {
-  const ctx = useClockCtx();
-  const pic = useEl();
-  useTick((t) => {
-    const p = beatValue(ctx, "hero", t);
-    const s = 0.84 + 0.16 * p;
-    put(pic.el.current, {
-      sx: s,
-      sy: s,
-      y: (1 - p) * 40,
-      o: Math.min(1, p * 4),
-    });
-  });
-  return (
-    <div ref={pic.ref} className="pr-card-pic" title={hint}>
-      <canvas
-        ref={canvas}
-        role="img"
-        aria-label={describe(card)}
-        width={1200}
-        height={675}
-      />
-    </div>
-  );
-}
-
-function Rise({
-  className,
-  children,
-}: {
-  className: string;
-  children: ReactNode;
-}) {
-  const ctx = useClockCtx();
-  const el = useEl();
-  useTick((t) => {
-    const p = beatValue(ctx, "line", t);
-    put(el.el.current, { y: (1 - p) * 20, o: p });
-  });
-  return (
-    <div ref={el.ref} className={className}>
-      {children}
-    </div>
-  );
+/** Calls `onChange` when the theme under the card changes: the card is drawn from the live tokens. */
+function useThemeChange(onChange: () => void): void {
+  useEffect(() => {
+    const root = document.documentElement;
+    const seen = new MutationObserver(onChange);
+    seen.observe(root, { attributes: true, attributeFilter: ["data-theme", "class"] });
+    let mq: MediaQueryList | undefined;
+    try {
+      mq = window.matchMedia("(prefers-color-scheme: dark)");
+      mq.addEventListener?.("change", onChange);
+    } catch {
+      /* no media queries here */
+    }
+    return () => {
+      seen.disconnect();
+      mq?.removeEventListener?.("change", onChange);
+    };
+  }, [onChange]);
 }
 
 /**
- * The last slide: the story on one poster card, drawn to a canvas, and a button that saves that same
- * canvas as a PNG through a picker that starts in Pictures. The note under it is the honest coverage line.
+ * The last slide: the story on one card, drawn to a canvas, and a button that saves that same canvas
+ * as a PNG through a picker that starts in Pictures. The picture, the preview and the saved file are
+ * one canvas. The status line under the button says where it went, or why it did not.
  */
-export function CardPoster({
-  slide,
-  spec,
-  frozen = false,
-  paused = false,
-  delay = 0,
-  onFrame,
-}: {
-  slide: Slide;
-  spec: PosterSpec;
-  frozen?: boolean;
-  paused?: boolean;
-  delay?: number;
-  onFrame?: (t: number) => void;
-}) {
+export function CardView({ slide, settled }: { slide: Slide; settled: boolean }) {
   const card = slide.card as ShareCard;
-  const root = useRef<HTMLDivElement>(null);
-  useFit(root);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [drawn, setDrawn] = useState(true);
+  const [redraw, setRedraw] = useState(0);
+
+  useThemeChange(() => setRedraw((n) => n + 1));
 
   useEffect(() => {
     let live = true;
@@ -112,77 +61,45 @@ export function CardPoster({
     return () => {
       live = false;
     };
-  }, [card]);
+  }, [card, redraw]);
 
   const save = async () => {
     const el = canvas.current;
     if (!el || status.kind === "busy") return;
     setStatus({ kind: "busy" });
     try {
-      const path = await getBackend().wrappedSaveCard(
-        await cardBytes(el),
-        card.day,
-      );
+      const path = await getBackend().wrappedSaveCard(await cardBytes(el), card.day);
       setStatus(path ? { kind: "saved", path } : { kind: "idle" });
     } catch (e) {
-      setStatus({
-        kind: "error",
-        text: e instanceof Error ? e.message : String(e),
-      });
+      setStatus({ kind: "error", text: e instanceof Error ? e.message : String(e) });
     }
   };
 
   return (
-    <div
-      ref={root}
-      className="pr"
-      data-pair={spec.pair}
-      data-layout="card"
-      data-mood="snappy"
-      data-slide={slide.id}
-      data-frozen={frozen ? "" : undefined}
-    >
-      <ClockProvider
-        mood="snappy"
-        delay={delay}
-        frozen={frozen}
-        paused={paused}
-        onFrame={onFrame}
-        runRef={root}
-      >
-        <Field spec={spec} id={slide.id} />
-        <div className="pr-cardwrap">
-          <Pop card={card} canvas={canvas} hint={slide.hint} />
-          <Rise className="pr-card-foot">
-            <div className="pr-card-save">
-              <span
-                role="status"
-                className="pr-card-status"
-                data-bad={status.kind === "error" ? "" : undefined}
-                title={status.kind === "saved" ? status.path : undefined}
-              >
-                {status.kind === "saved"
-                  ? `Saved to ${status.path}`
-                  : status.kind === "error"
-                    ? status.text
-                    : !drawn
-                      ? "The picture could not be drawn."
-                      : ""}
-              </span>
-              <button
-                type="button"
-                className="pr-save"
-                onClick={() => void save()}
-                disabled={status.kind === "busy" || !drawn}
-              >
-                <DownloadSimple size={16} weight="bold" aria-hidden="true" />
-                Save image
-              </button>
-            </div>
-          </Rise>
+    <div className="sm-frame" data-slide={slide.id} data-layout="card" data-settled={settled ? "" : undefined}>
+      <div className="sm-cardwrap">
+        <canvas ref={canvas} className="sm-card" role="img" aria-label={describe(card)} width={CARD_W} height={CARD_H} />
+        <div className="sm-card-save">
+          <Button variant="primary" onClick={() => void save()} disabled={status.kind === "busy" || !drawn}>
+            <DownloadSimple size={16} weight="bold" aria-hidden="true" />
+            Save image
+          </Button>
+          <span
+            role="status"
+            className="sm-card-status"
+            data-bad={status.kind === "error" ? "" : undefined}
+            title={status.kind === "saved" ? status.path : undefined}
+          >
+            {status.kind === "saved"
+              ? `Saved to ${status.path}`
+              : status.kind === "error"
+                ? status.text
+                : !drawn
+                  ? "The picture could not be drawn."
+                  : ""}
+          </span>
         </div>
-        <div className="pr-grain" aria-hidden="true" />
-      </ClockProvider>
+      </div>
     </div>
   );
 }
