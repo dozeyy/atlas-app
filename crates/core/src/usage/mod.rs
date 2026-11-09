@@ -83,8 +83,29 @@ impl UsageConfig {
     }
 }
 
+/// Canonical form of `p` even when it does not exist yet: the deepest existing ancestor
+/// is resolved (symlinks, 8.3 short names like `RUNNER~1`, `/var` -> `/private/var`) and
+/// the missing tail is appended, so a not-yet-created file compares like its folder.
+fn canon(p: &Path) -> std::path::PathBuf {
+    let mut cur = p;
+    let mut tail = Vec::new();
+    loop {
+        if let Ok(mut c) = cur.canonicalize() {
+            c.extend(tail.iter().rev());
+            return c;
+        }
+        match (cur.parent(), cur.file_name()) {
+            (Some(parent), Some(name)) => {
+                tail.push(name);
+                cur = parent;
+            }
+            _ => return p.to_path_buf(),
+        }
+    }
+}
+
 fn norm(p: &Path) -> String {
-    let s = p.canonicalize().unwrap_or_else(|_| p.to_path_buf()).to_string_lossy().replace('\\', "/");
+    let s = canon(p).to_string_lossy().replace('\\', "/");
     let s = s.strip_prefix("//?/").unwrap_or(&s).trim_end_matches('/').to_string();
     if cfg!(any(windows, target_os = "macos")) {
         s.to_lowercase()
@@ -1036,6 +1057,31 @@ impl Core {
         match cache::backup(conn, &self.cfg.cache_db) {
             Ok(()) => set_meta(conn, "last_backup_at", &now_secs.to_string()),
             Err(e) => self.log(&format!("usage: backup failed: {e}")),
+        }
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::is_inside;
+    use std::path::Path;
+
+    #[test]
+    fn a_missing_file_under_an_aliased_folder_is_still_inside() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("claude");
+        std::fs::create_dir(&real).unwrap();
+        assert!(is_inside(&real.join("not-yet").join("search.sqlite"), &real));
+        // Windows 8.3 short name for the same folder (CI runners live under RUNNER~1).
+        let short = Path::new(r"C:\PROGRA~1");
+        if cfg!(windows) && short.exists() {
+            assert!(is_inside(&short.join("nope").join("x.sqlite"), Path::new(r"C:\Program Files")));
+        }
+        #[cfg(unix)]
+        {
+            let link = dir.path().join("link");
+            std::os::unix::fs::symlink(&real, &link).unwrap();
+            assert!(is_inside(&link.join("x.sqlite"), &real));
         }
     }
 }
