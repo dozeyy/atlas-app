@@ -24,6 +24,17 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// From now on this process loads libraries only from System32 (never the folder it runs from
+/// or the current folder). Call it first thing in `main`. Failure is harmless: the link-time
+/// `/DEPENDENTLOADFLAG` already covers the DLLs the program imports.
+pub fn search_only_system32() {
+    use windows_sys::Win32::System::LibraryLoader::{LOAD_LIBRARY_SEARCH_SYSTEM32, SetDefaultDllDirectories};
+    // SAFETY: a plain flag call with no pointers.
+    unsafe {
+        SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+    }
+}
+
 /// A plain message box (only when the styled window cannot be shown at all).
 pub fn message(title: &str, text: &str) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};

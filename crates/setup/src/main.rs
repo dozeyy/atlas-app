@@ -74,13 +74,17 @@ fn windowless_install() -> i32 {
 /// The same for removing: no window, the installer's own uninstaller does the work.
 fn windowless_remove(dir: &std::path::Path) -> i32 {
     let code = match uninstall::run_installer_uninstaller(dir, |_| {}) {
-        Ok(()) => 0,
+        Ok(()) => {
+            // Only after the installer's uninstaller finished: a failed one leaves the removers
+            // in place so the person can run it again.
+            uninstall::tidy(dir);
+            0
+        }
         Err(e) => {
             winsys::message("Uninstall Atlas", &e.message());
             1
         }
     };
-    uninstall::tidy(dir);
     if let Ok(me) = std::env::current_exe() {
         uninstall::erase_my_copy_later(&me);
     }
@@ -88,16 +92,23 @@ fn windowless_remove(dir: &std::path::Path) -> i32 {
 }
 
 fn main() {
+    // First, before Tauri or anything else loads a library by name: only System32 is searched, so
+    // a DLL dropped beside this program (it runs from Downloads) is never picked up.
+    winsys::search_only_system32();
     let me = std::env::current_exe().unwrap_or_default();
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match uninstall::launch_for(&me, &args) {
         Launch::PassOn => std::process::exit(uninstall::pass_on(&me, &winsys::command_line())),
         Launch::RemoverFirstStep => {
-            if uninstall::hand_on(&me).is_ok() {
+            // The folder comes from where Atlas is installed, never from where this file runs.
+            let Some(dir) = uninstall::remove_target(&me) else {
+                winsys::message("Uninstall Atlas", &uninstall::RemoveError::NotInstalledHere.message());
+                std::process::exit(1);
+            };
+            if uninstall::hand_on(&me, &dir).is_ok() {
                 return;
             }
             // Could not make the temporary copy: remove from here (this file stays behind).
-            let dir = me.parent().map(PathBuf::from).unwrap_or_default();
             window(Mode::Uninstall, dir);
         }
         Launch::RemoverWindow(dir) => window(Mode::Uninstall, dir),
@@ -111,7 +122,7 @@ fn main() {
 }
 
 fn window(mode: Mode, dir: PathBuf) {
-    if mode == Mode::Uninstall && !uninstall::looks_installed(&dir) {
+    if mode == Mode::Uninstall && !uninstall::is_install_dir(&dir) {
         winsys::message("Uninstall Atlas", &uninstall::RemoveError::NotInstalledHere.message());
         std::process::exit(1);
     }

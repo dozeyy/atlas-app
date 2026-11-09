@@ -27,6 +27,26 @@ pub fn looks_installed(dir: &Path) -> bool {
     nsis_uninstaller(dir).is_file()
 }
 
+/// Whether `dir` is an Atlas install folder: the installer's uninstaller beside Atlas's program
+/// (or, after a half-finished removal, beside the remover's own file).
+pub fn is_install_dir(dir: &Path) -> bool {
+    looks_installed(dir) && (install::atlas_exe(dir).is_file() || dir.join(REMOVER_NAME).is_file())
+}
+
+/// Which folder a remover started as `exe` takes off. Never "wherever this file happens to be":
+/// a Setup (or a copy) run from Downloads with `--uninstall` must not aim at Downloads. The
+/// installed remover beside Atlas is trusted for its own folder; anything else goes by where the
+/// installer recorded Atlas (`install::install_dir`). `None` when neither is an Atlas install.
+pub fn remove_target(exe: &Path) -> Option<PathBuf> {
+    if let (Some(dir), Some(name)) = (exe.parent(), exe.file_name())
+        && name.eq_ignore_ascii_case(REMOVER_NAME)
+        && is_install_dir(dir)
+    {
+        return Some(dir.to_path_buf());
+    }
+    Some(install::install_dir()).filter(|d| is_install_dir(d))
+}
+
 // ----------------------------------------------------------------- which role this run has
 
 /// What this run of the program is for, decided from its own file name and arguments.
@@ -114,7 +134,7 @@ fn erase_installed_remover(exe: &Path) {
         return;
     }
     let (f, d) = (exe.display().to_string(), dir.display().to_string());
-    if f.contains(['"', '%', '&', '^']) || d.contains(['"', '%', '&', '^']) {
+    if !cmd_safe(&f) || !cmd_safe(&d) {
         return;
     }
     let mut cmd = Command::new("cmd.exe");
@@ -122,7 +142,7 @@ fn erase_installed_remover(exe: &Path) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.raw_arg(format!("/D /C \"ping -n 9 127.0.0.1 >nul & del /f /q \"{f}\" & rmdir \"{d}\"\""))
+        cmd.raw_arg(format!("/D /V:OFF /C \"ping -n 9 127.0.0.1 >nul & del /f /q \"{f}\" & rmdir \"{d}\"\""))
             .creation_flags(CREATE_NO_WINDOW | 0x0000_0008);
     }
     let _ = cmd.spawn();
@@ -130,9 +150,15 @@ fn erase_installed_remover(exe: &Path) {
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// A path that can sit inside a quoted `cmd` command line without being read as anything but
+/// itself: none of the characters `cmd` treats specially, `!` included (delayed expansion is
+/// also switched off with `/V:OFF`), and no control characters.
+fn cmd_safe(path: &str) -> bool {
+    !path.chars().any(|c| matches!(c, '"' | '%' | '&' | '^' | '!') || c.is_control())
+}
+
 /// Copy this program to a new temporary folder and start the copy to remove `dir`.
-pub fn hand_on(exe: &Path) -> std::io::Result<()> {
-    let dir = exe.parent().ok_or_else(|| std::io::Error::other("no folder"))?;
+pub fn hand_on(exe: &Path, dir: &Path) -> std::io::Result<()> {
     let tmp = tempfile::Builder::new().prefix("AtlasRemove-").tempdir()?.keep();
     let copy = tmp.join(REMOVER_NAME);
     if let Err(e) = install::copy_bytes(exe, &copy).and_then(|()| Command::new(&copy).arg(REMOVE_FROM).arg(dir).spawn().map(|_| ())) {
@@ -155,7 +181,7 @@ pub fn erase_my_copy_later(exe: &Path) {
     }
     // Paths made by this program under the temp folder: no quote, percent or ampersand in them.
     let (f, d) = (exe.display().to_string(), dir.display().to_string());
-    if f.contains(['"', '%', '&', '^']) || d.contains(['"', '%', '&', '^']) {
+    if !cmd_safe(&f) || !cmd_safe(&d) {
         return;
     }
     let mut cmd = Command::new("cmd.exe");
@@ -163,7 +189,7 @@ pub fn erase_my_copy_later(exe: &Path) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.raw_arg(format!("/D /C \"ping -n 4 127.0.0.1 >nul & del /f /q \"{f}\" & rmdir \"{d}\"\""))
+        cmd.raw_arg(format!("/D /V:OFF /C \"ping -n 4 127.0.0.1 >nul & del /f /q \"{f}\" & rmdir \"{d}\"\""))
             .creation_flags(CREATE_NO_WINDOW | 0x0000_0008); // no window, detached
     }
     let _ = cmd.spawn();
@@ -608,6 +634,35 @@ mod tests {
         std::fs::remove_file(dir.join("cache.sqlite")).unwrap();
         tidy(&dir);
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn a_path_with_a_cmd_special_character_is_never_put_in_a_command_line() {
+        for bad in ["C:\\a!b\\x.exe", "C:\\100%\\x.exe", "C:\\a&b", "C:\\a^b", "C:\\a\"b", "C:\\a\nb"] {
+            assert!(!cmd_safe(bad), "{bad:?}");
+        }
+        assert!(cmd_safe(r"C:\Users\Will\AppData\Local\Temp\AtlasRemove-x1\Uninstall Atlas.exe"));
+        assert!(cmd_safe(r"C:\Program Files (x86)\Atlas"));
+    }
+
+    #[test]
+    fn the_folder_to_remove_comes_from_the_install_not_from_where_the_file_runs() {
+        let t = tempfile::tempdir().unwrap();
+        let installed = t.path().join("Atlas");
+        let downloads = t.path().join("Downloads");
+        std::fs::create_dir_all(&installed).unwrap();
+        std::fs::create_dir_all(&downloads).unwrap();
+        std::fs::write(installed.join("uninstall.exe"), "u").unwrap();
+        std::fs::write(installed.join("atlas.exe"), "a").unwrap();
+        assert!(is_install_dir(&installed) && !is_install_dir(&downloads));
+        // The remover beside Atlas names its own folder.
+        assert_eq!(remove_target(&installed.join(REMOVER_NAME)), Some(installed.clone()));
+        // A Setup in Downloads (even with an uninstaller-looking file) never aims at Downloads.
+        std::fs::write(downloads.join("uninstall.exe"), "u").unwrap();
+        std::fs::write(downloads.join("atlas.exe"), "a").unwrap();
+        let target = remove_target(&downloads.join("Atlas-Setup-Windows-x64.exe"));
+        assert_ne!(target.as_deref(), Some(downloads.as_path()));
+        assert_ne!(remove_target(&downloads.join("Uninstall Atlas copy.exe")).as_deref(), Some(downloads.as_path()));
     }
 
     #[test]
