@@ -190,6 +190,7 @@ export class MockBackend {
   usageReindex: Backend["usageReindex"] = () => this.usage.usageReindex();
   pricingGet = () => this.usage.pricingGet();
   pricingReveal = () => this.usage.pricingReveal();
+  sessionOpenFolder = (id: string) => this.usage.sessionOpenFolder(id);
   onUsageStatus: Backend["onUsageStatus"] = (cb) => this.usage.onUsageStatus(cb);
   onUsageProgress: Backend["onUsageProgress"] = (cb) => this.usage.onUsageProgress(cb);
   onUsageChanged: Backend["onUsageChanged"] = (cb) => this.usage.onUsageChanged(cb);

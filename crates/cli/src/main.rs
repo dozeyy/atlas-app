@@ -38,13 +38,15 @@ OPTIONS
   --cwd DIR           folder that decides \"this project\" (default: $CLAUDE_PROJECT_DIR, else .)
   --top N             rows in the top chats / projects / helpers lists (default 5)
   --json              JSON instead of markdown
+  --ascii             plain ASCII bars (# and .) for a terminal that draws boxes for blocks
+                      (also: ATLAS_ASCII=1)
   --week-start mon|sun  default: the operating system's setting, like the app
   --config-dir DIR    Claude config folder (default: $CLAUDE_CONFIG_DIR, else ~/.claude)
   --cache-dir DIR     where the index lives (default: $ATLAS_USAGE_CACHE, else
                       <local app data>/atlas/cli)
 
-Tokens = input + output + cache writes; cache reads are shown apart. Dollar figures are
-API-price estimates, not a bill. Transcripts are only read, never written.";
+Tokens = input + output + cache writes; cache reads are shown apart. The one dollar figure
+is an API-price estimate, not a bill. Transcripts are only read, never written.";
 
 struct Quiet;
 impl EventSink for Quiet {
@@ -61,6 +63,7 @@ struct Opts {
     vs: Option<String>,
     session: Option<String>,
     json: bool,
+    ascii: bool,
     top: usize,
     cwd: Option<PathBuf>,
     week_start: Option<bool>,
@@ -123,6 +126,7 @@ fn parse_args(args: Vec<String>) -> Result<Opts, String> {
         match a.as_str() {
             "-h" | "--help" => return Err(String::new()),
             "--json" => o.json = true,
+            "--ascii" => o.ascii = true,
             "--vs" => o.vs = Some(need(&mut it, "--vs")?),
             "--session" => o.session = Some(need(&mut it, "--session")?),
             "--project" => o.project = true,
@@ -153,6 +157,12 @@ fn parse_args(args: Vec<String>) -> Result<Opts, String> {
 /// A session id that was really substituted (not an empty or literal `${...}` placeholder).
 fn real_id(s: Option<String>) -> Option<String> {
     s.map(|s| s.trim().to_string()).filter(|s| !s.is_empty() && !s.contains('$') && !s.contains('{'))
+}
+
+/// An on/off environment value: only 1, true or yes (any case) switch it on, so `false`,
+/// `no`, `off`, `0` and an empty value leave it off.
+fn truthy(v: &str) -> bool {
+    matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes")
 }
 
 fn env_path(k: &str) -> Option<PathBuf> {
@@ -190,10 +200,11 @@ fn main() {
             std::process::exit(2);
         }
     };
+    fmt::set_ascii(opts.ascii || std::env::var("ATLAS_ASCII").is_ok_and(|v| truthy(&v)));
     match run(&opts) {
         Ok(out) => println!("{out}"),
         Err(e) => {
-            eprintln!("atlas-usage: {e}");
+            eprintln!("atlas-usage: {}", fmt::plain(&e));
             std::process::exit(1);
         }
     }
@@ -417,6 +428,24 @@ mod tests {
         let o = opts(&["today and yesterday"]);
         assert_eq!(o.span.as_deref(), Some("today"));
         assert_eq!(o.vs.as_deref(), Some("yesterday"));
+    }
+
+    #[test]
+    fn ascii_is_a_flag_not_a_scope() {
+        let o = opts(&["30d", "--ascii"]);
+        assert!(o.ascii);
+        assert_eq!(o.span.as_deref(), Some("30d"));
+        assert!(!opts(&["30d"]).ascii);
+    }
+
+    #[test]
+    fn only_a_yes_turns_the_ascii_env_on() {
+        for on in ["1", "true", "TRUE", "yes", " Yes "] {
+            assert!(truthy(on), "{on}");
+        }
+        for off in ["0", "false", "False", "no", "off", "", "2", "ascii"] {
+            assert!(!truthy(off), "{off}");
+        }
     }
 
     #[test]

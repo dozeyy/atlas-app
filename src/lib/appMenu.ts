@@ -10,13 +10,16 @@ export interface MenuEntry {
   sheet?: SheetId;
   /** A submenu. An entry has either `sheet` or `items`. */
   items?: MenuEntry[];
+  /** Does this when picked. Its shortcut is drawn at the right edge. */
+  action?: "palette";
 }
 
 /**
- * The app menu (the three lines at the top left, like the Claude app). Help is all there is for
- * now; a new menu or entry is one more line here.
+ * The app menu (the three lines at the top left, like the Claude app). A new menu or entry is one
+ * more line here.
  */
 export const APP_MENU: MenuEntry[] = [
+  { id: "jump", label: "Quick jump", action: "palette" },
   {
     id: "help",
     label: "Help",
@@ -40,7 +43,8 @@ export function shortcutGroups(platform: Platform): { title: string; rows: { key
     {
       title: "Anywhere",
       rows: [
-        { keys: `${mod}+1 to ${mod}+6`, does: "Go to Dashboard, Sessions, Toolkit, History, Wrapped, Settings" },
+        { keys: `${mod}+K`, does: "Jump to a chat, page, project or skill; arrows move, Enter goes, Escape closes" },
+        { keys: `${mod}+1 to ${mod}+7`, does: "Go to Dashboard, Now, Sessions, Toolkit, History, Settings, Wrapped" },
         { keys: `${mod}+B`, does: "Show or hide the sidebar" },
         { keys: platform === "macos" ? "F10" : "Alt or F10", does: "Open the menu; arrow keys move, Enter picks, Escape closes" },
       ],

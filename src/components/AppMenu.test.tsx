@@ -52,6 +52,8 @@ describe("app menu", () => {
 
   it("F10 opens it on the first item; arrows go into the submenu and back, Escape closes", async () => {
     await userEvent.keyboard("{F10}");
+    expect(screen.getByRole("menuitem", { name: /Quick jump/ })).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Help" })).toHaveFocus();
     await userEvent.keyboard("{ArrowRight}");
     await screen.findByRole("menuitem", { name: "About Atlas" });
@@ -78,6 +80,19 @@ describe("app menu", () => {
     const dlg = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
     for (const g of shortcutGroups("windows")) for (const r of g.rows) expect(within(dlg).getByText(r.does)).toBeInTheDocument();
     expect(within(dlg).getByText("Ctrl+B")).toBeInTheDocument();
+    expect(within(dlg).getByText("Ctrl+K")).toBeInTheDocument();
+  });
+
+  it("Quick jump opens the palette and shows its shortcut", async () => {
+    await userEvent.click(menuButton());
+    const item = screen.getByRole("menuitem", { name: /Quick jump/ });
+    expect(item).toHaveTextContent("Ctrl+K");
+    await userEvent.click(item);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Quick jump" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Jump to" })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(menuButton()).toHaveFocus();
   });
 
   it("Privacy and Terms open as sheets", async () => {

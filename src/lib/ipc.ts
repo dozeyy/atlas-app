@@ -128,6 +128,8 @@ export interface Backend {
   usageReindex(scope: "changed" | "full"): Promise<UsageStatus>;
   pricingGet(): Promise<PricingInfo>;
   pricingReveal(): Promise<void>;
+  /** Open the folder a chat ran in. Only the id goes over; rejects when there is no such folder. */
+  sessionOpenFolder(sessionId: string): Promise<void>;
   onUsageStatus(cb: (s: UsageStatus) => void): Promise<Unlisten>;
   onUsageProgress(cb: (p: IndexProgress) => void): Promise<Unlisten>;
   onUsageChanged(cb: (c: UsageChanged) => void): Promise<Unlisten>;
@@ -234,6 +236,9 @@ const tauriBackend: Backend = {
   pricingGet: () => invoke<PricingInfo>("pricing_get"),
   pricingReveal: async () => {
     await invoke("pricing_reveal");
+  },
+  sessionOpenFolder: async (sessionId) => {
+    await invoke("session_open_folder", { sessionId });
   },
   onUsageStatus: (cb) => listen<UsageStatus>(USAGE_STATUS_EVENT, (e) => cb(e.payload)),
   onUsageProgress: (cb) => listen<IndexProgress>(USAGE_PROGRESS_EVENT, (e) => cb(e.payload)),

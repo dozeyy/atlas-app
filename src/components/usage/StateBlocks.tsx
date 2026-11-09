@@ -1,10 +1,10 @@
 import { WarningCircle } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Button } from "../controls";
 
 /** A quiet placeholder block while the first answer is on its way. */
-export function Skeleton({ className = "" }: { className?: string }) {
-  return <div aria-hidden="true" className={`pulse-dot rounded-control bg-raised ${className}`} />;
+export function Skeleton({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  return <div aria-hidden="true" style={style} className={`pulse-dot rounded-control bg-raised ${className}`} />;
 }
 
 /** The page could not get its numbers: say so and offer the one way forward. */

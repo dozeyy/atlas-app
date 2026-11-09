@@ -15,16 +15,25 @@ index lives in Atlas's own data folder (`%LOCALAPPDATA%\atlas\cli` on Windows,
 
 ## What you get
 
-- `/atlas` - this chat: headline tokens, cache reads apart, API-price estimate, main
-  thread vs helpers (subagents), model mix, the biggest helpers, activity per hour or day.
+- `/atlas` - this chat: headline tokens, cache reads apart, main chat vs helpers
+  (subagents), model mix, the biggest helpers, activity per hour or day.
 - `/atlas this week`, `last week`, `today`, `7d`, `30d`, `this month`, `all`, a date or
-  `2026-11-02..2026-11-07` - headline, a bar per day (week or month for long ranges),
-  model mix, top projects, biggest chats.
+  `2026-11-02..2026-11-07` - headline, activity, models, projects, biggest sessions.
+  Activity is a bar per day up to 14 days; from 15 days to 12 weeks it is the app's terrain
+  grid (a cell per day, 7 days a row, today bottom-right, `▲` on the busiest day); longer
+  ranges are a bar per week, then per month.
 - `/atlas this project` (or `project last week`) - the same, for the current folder's project.
-- `/atlas last week vs this week` - side by side with the change.
+- `/atlas last week vs this week` - side by side with the change, by model and by project.
 
-Tokens = input + output + cache writes; cache reads are shown apart. Numbers use 3
-significant digits (7.3k, 56.1M). Dollar figures are API-price estimates, not a bill.
+The look follows the app: the same names (Sessions, Models, Projects, Activity, Helpers,
+"Today"), models named as the app names them ("Sonnet 5.5"), and tokens as the figure. Tokens
+= input + output + cache writes; cache reads are shown apart. Numbers use 3 significant
+digits (7.3k, 56.1M). The one dollar figure is the closing line, an API-price estimate, not a
+bill.
+
+Chat output has no colour of its own: Claude Code shows the text in your terminal's theme, so
+the glyphs (`█ ▂ ▃ ▅ ▆ · ▲`) are all there is. If your terminal draws boxes for them, ask for
+`--ascii` bars.
 
 ## Install
 
@@ -82,5 +91,6 @@ under a second.
 atlas-usage                      # this chat ($CLAUDE_CODE_SESSION_ID), markdown
 atlas-usage last-week --vs week  # comparison
 atlas-usage project 30d --json   # JSON for scripts
+atlas-usage 30d --ascii          # plain # bars (or ATLAS_ASCII=1)
 atlas-usage --help
 ```

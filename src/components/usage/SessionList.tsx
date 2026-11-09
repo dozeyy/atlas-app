@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { projectTone } from "../../lib/sessionBrowse";
 import { formatWhen, plural } from "../../lib/usage";
 import type { SessionRow } from "../../lib/types";
 import type { SnippetPart } from "../../lib/searchTypes";
@@ -34,6 +35,11 @@ export function Snippet({ parts }: { parts: SnippetPart[] }) {
   );
 }
 
+/** A small dot in the project's colour: the same project is the same colour in every list. */
+export function ProjectDot({ path }: { path: string }) {
+  return <span aria-hidden="true" className="proj-dot" style={{ background: `var(--chart-${projectTone(path)})` }} />;
+}
+
 const DOT = (
   <span aria-hidden="true" className="mx-1.5 text-ink-2/60">
     &middot;
@@ -60,11 +66,14 @@ export function SessionLine({
   onOpen,
   index = 0,
   snippet,
+  barShare,
 }: {
   row: SessionRow;
   onOpen: (id: string) => void;
   index?: number;
   snippet?: SnippetPart[];
+  /** This chat's tokens as a share (0 to 1) of the biggest chat in view: draws a hairline bar by the count. */
+  barShare?: number;
 }) {
   const name = sessionName(row);
   return (
@@ -73,9 +82,15 @@ export function SessionLine({
         <span className={`block w-full truncate text-lead font-bold ${row.name ? "text-ink" : "text-ink-2"}`}>{name}</span>
         {/* One quiet line that never wraps: it is cut with an ellipsis instead. */}
         <span className="mt-1 block w-full truncate text-caption text-ink-2">
+          <ProjectDot path={row.projectPath || row.projectName} />
           {row.projectName}
           {DOT}
           <TokenText tokens={row.tokens.total} cost={row.cost} className="font-semibold text-ink" />
+          {barShare !== undefined && (
+            <span aria-hidden="true" className="tok-bar">
+              <i style={{ width: `${Math.round(barShare * 100)}%` }} />
+            </span>
+          )}
           {row.agentCount > 0 && (
             <>
               {DOT}

@@ -101,6 +101,7 @@ fn main() {
             usage::usage_reindex,
             usage::pricing_get,
             usage::pricing_reveal,
+            usage::session_open_folder,
             history::history_overview,
             history::history_events,
             history::history_item,

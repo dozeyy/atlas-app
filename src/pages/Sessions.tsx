@@ -5,17 +5,19 @@ import { EmptyState } from "../components/EmptyState";
 import { IndexProgress } from "../components/IndexProgress";
 import { FilterLines } from "../components/icons";
 import { ChoiceList, OptionField, OptionsMenu } from "../components/OptionsMenu";
+import { PickUp } from "../components/usage/PickUp";
 import { SessionGrid, SessionLine } from "../components/usage/SessionList";
 import { SearchField, SelectField } from "../components/usage/fields";
 import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
 import { SessionDetailView } from "./SessionDetail";
 import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
-import { clearPendingSession, peekPendingSession } from "../lib/nav";
+import { clearPendingProject, clearPendingSession, onNavRequest, peekPendingProject, peekPendingSession } from "../lib/nav";
 import { useChatSearch, useDebounced } from "../lib/useChatSearch";
 import type { ChatSearch } from "../lib/useChatSearch";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
-import { addDays, exact, localDay, modelLabel, plural } from "../lib/usage";
+import { groupByDay, shareOfMax } from "../lib/sessionBrowse";
+import { addDays, compact, exact, localDay, modelLabel, plural } from "../lib/usage";
 import type { SessionPage, SessionQuery, SessionRow } from "../lib/types";
 
 const PAGE = 50;
@@ -54,10 +56,25 @@ export function Sessions() {
   const { status, progress } = useUsageStatus();
 
   const [selected, setSelected] = useState<string | null>(() => peekPendingSession());
-  useEffect(() => clearPendingSession(), []);
-
   const [text, setText] = useState("");
-  const [project, setProject] = useState("");
+  const [project, setProject] = useState(() => peekPendingProject() ?? "");
+  useEffect(() => {
+    clearPendingSession();
+    clearPendingProject();
+    // The quick jump can ask for a chat or a project while this page is already open.
+    return onNavRequest(() => {
+      const id = peekPendingSession();
+      const key = peekPendingProject();
+      clearPendingSession();
+      clearPendingProject();
+      if (id) setSelected(id);
+      else if (key) {
+        setSelected(null);
+        setText("");
+        setProject(key);
+      }
+    });
+  }, []);
   const [model, setModel] = useState("");
   const [span, setSpan] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
@@ -137,6 +154,29 @@ export function Sessions() {
   const firstIndex = status?.state === "indexing" && !status.firstIndexDone;
   const note = typed.length >= 2 ? searchNote(chat) : null;
 
+  // The newest chat gets a card of its own, but only on the plain newest-first list.
+  const pick = !filtered && sortKey === "newest" && first.data && rows.length > 0 ? rows[0] : null;
+  // Time-ordered lists fall under a band per day; the other orders stay one flat list.
+  const byTime = SORTS[sortKey].sort === "started";
+  const groups = byTime ? groupByDay(rows, new Date()) : [];
+  const maxRow = Math.max(0, ...rows.map((r) => r.tokens.total));
+  const maxDay = Math.max(0, ...groups.filter((_, gi) => !(gi === groups.length - 1 && cursor !== null)).map((g) => g.tokens));
+  // Running index for the entrance stagger, across the day bands.
+  let seen = 0;
+  const line = (r: SessionRow) => {
+    const i = seen++;
+    return (
+      <SessionLine
+        key={r.sessionId}
+        row={r}
+        onOpen={setSelected}
+        index={i < PAGE ? i : 0}
+        snippet={chat.snippets.get(r.sessionId)}
+        barShare={shareOfMax(r.tokens.total, maxRow)}
+      />
+    );
+  };
+
   const count = first.data
     ? filtered
       ? `${exact(total)} of ${plural(Math.max(everything.data?.total ?? total, total), "chat")}`
@@ -148,7 +188,9 @@ export function Sessions() {
       <PageTitle title="Sessions" />
       <IndexProgress status={status} progress={progress} onRetry={() => void backend.usageReindex("changed").catch(() => {})} />
 
-      {selected && <SessionDetailView id={selected} onBack={() => setSelected(null)} />}
+      {selected && (
+        <SessionDetailView id={selected} onBack={() => setSelected(null)} siblings={rows.map((r) => r.sessionId)} onJump={setSelected} />
+      )}
 
       <div hidden={selected !== null}>
         <div className="toolbar-tall mb-4 flex items-center gap-2">
@@ -202,16 +244,20 @@ export function Sessions() {
         ) : first.error && !cacheNotReady(status) ? (
           <ErrorBlock title="Could not load your sessions" message={first.error} onRetry={() => first.reload(false)} />
         ) : ((first.loading || first.error) && !first.data) || (total === 0 && settling) ? (
-          <Card>
-            <div role="status" aria-label="Loading sessions" className="divide-y divide-line">
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="px-5 py-3">
-                  <Skeleton className="h-4 w-1/2" />
-                  <Skeleton className="mt-2 h-3 w-1/3" />
-                </div>
-              ))}
-            </div>
-          </Card>
+          <div role="status" aria-label="Loading sessions">
+            {/* Same shape as the loaded page: the pick-up card, then rows. */}
+            {!filtered && sortKey === "newest" && <Skeleton className="mb-4 h-[92px] rounded-card" />}
+            <Card>
+              <div className="divide-y divide-line">
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="px-5 py-3.5">
+                    <Skeleton className="h-4" style={{ width: `${62 - (i % 3) * 14}%` }} />
+                    <Skeleton className="mt-2 h-3" style={{ width: `${34 + (i % 2) * 10}%` }} />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
         ) : total === 0 && firstIndex ? (
           <p role="status" className="rounded-card border border-line bg-surface px-5 py-4 text-body text-ink-2">
             Sessions appear here as Atlas reads your files.
@@ -235,12 +281,36 @@ export function Sessions() {
             body="Each Claude Code conversation shows up here with the tokens it used, when it ran and which project it belonged to."
           />
         ) : (
+          <>
+          {pick && <PickUp row={pick} onOpen={setSelected} />}
           <Card>
-            <SessionGrid>
-              {rows.map((r, i) => (
-                <SessionLine key={r.sessionId} row={r} onOpen={setSelected} index={i < PAGE ? i : 0} snippet={chat.snippets.get(r.sessionId)} />
-              ))}
-            </SessionGrid>
+            {byTime ? (
+              groups.map((g, gi) => {
+                // More of the last day may still be on the next page: its total is not final yet.
+                const open = gi === groups.length - 1 && cursor !== null;
+                return (
+                  <section key={g.day} aria-label={g.label} className="day-section">
+                    <h3 className="day-head">
+                      <span className="day-name">{g.label}</span>
+                      {!open && (
+                        <>
+                          <span className="day-count">{plural(g.rows.length, "chat")}</span>
+                          <span className="day-total" title={`${exact(g.tokens)} tokens`}>
+                            {`${compact(g.tokens)} tokens`}
+                          </span>
+                          <span aria-hidden="true" className="day-bar">
+                            <i style={{ width: `${Math.round(shareOfMax(g.tokens, maxDay) * 100)}%` }} />
+                          </span>
+                        </>
+                      )}
+                    </h3>
+                    <SessionGrid>{g.rows.map(line)}</SessionGrid>
+                  </section>
+                );
+              })
+            ) : (
+              <SessionGrid>{rows.map(line)}</SessionGrid>
+            )}
             {(cursor || moreError) && (
               <div className="flex items-center gap-3 border-t border-line px-5 py-3">
                 <Button onClick={loadMore} disabled={busy}>
@@ -255,6 +325,7 @@ export function Sessions() {
               </div>
             )}
           </Card>
+          </>
         )}
       </div>
     </>

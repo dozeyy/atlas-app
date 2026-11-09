@@ -1,6 +1,6 @@
 ---
 name: atlas
-description: Shows the user's Claude Code token usage right in the chat, with the same numbers as the Atlas app - this chat, today, this week, last week, the last 7 or 30 days, a month, a date range, this project or all time, and comparisons like last week vs this week. Charts are drawn as text bars.
+description: Shows the user's Claude Code token usage right in the chat, with the same numbers as the Atlas app - this chat, today, this week, last week, the last 7 or 30 days, a month, a date range, this project or all time, and comparisons like last week vs this week. Charts are drawn in text: bars for a week or less, a terrain grid for a month.
 when_to_use: Use whenever the user asks about their own Claude Code usage, tokens or spend, with or without typing /atlas. Examples - "what's my usage this week", "how many tokens has this chat used", "what's my usage for this chat looking like", "usage for this project", "last week vs this week", "how much did I use today", "which models did I use most this month", "what did yesterday cost". Not for questions about API pricing in general or another person's account.
 argument-hint: "[this chat | today | yesterday | this week | last week | 7d | 30d | this month | last month | all | project | YYYY-MM-DD..YYYY-MM-DD] [vs <scope>]"
 allowed-tools: Bash(sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" *), PowerShell(powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/bin/atlas-usage.ps1" *)
@@ -9,8 +9,9 @@ allowed-tools: Bash(sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" *), PowerShell(p
 # Atlas usage in chat
 
 The `atlas-usage` program reads this computer's Claude Code transcripts (read-only) with
-the Atlas app's own engine and prints finished markdown: a headline, text bar charts and a
-few short tables. Your job is to pick the scope, run it once, and show its output.
+the Atlas app's own engine and prints finished markdown in the app's voice: a headline in
+tokens, a text chart (bars, or the terrain grid for a month), the models, and a few short
+tables. Your job is to pick the scope, run it once, and show its output.
 
 The user asked: `$ARGUMENTS`
 (Empty means `/atlas` with nothing after it, or you were invoked from a plain question:
@@ -32,6 +33,7 @@ then use the user's latest message instead.)
 | a named project ("usage for atlas") | add `--project=<name>` |
 | A vs B, compared to, versus | `<A> --vs <B>`, e.g. `last-week --vs week` |
 | top N, more rows | `--top <N>` |
+| the user says the bars show as boxes or question marks | add `--ascii` (plain `#` bars) |
 
 Build the command only from words in this table, dates and a project name made of letters,
 digits, `-`, `_` and `.`. Never paste the user's own text into the command line.
@@ -61,14 +63,30 @@ sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" <words> --session ${CLAUDE_SESSION_I
 - Your reply starts with the program's stdout, copied character for character: same
   lines, same order, same words, bold and ```text blocks kept (the bars only line up inside
   them). No preamble, no headings of your own, no rewording, no re-rounding.
-- After it, at most one short sentence of your own if it helps (the biggest day, a big
-  change). No extra tables. Do not mention which copy of the program ran.
-- Dollar figures are API-price estimates, not a bill; never present them as charges.
+- After it, at most one short sentence of your own, and only if it adds something the
+  output does not say (a big change, the busiest day's cause). Usually none. No extra
+  tables. Do not mention which copy of the program ran.
+- Voice, the app's: plain, numbers first, sentence case. No greeting, no exclamation marks,
+  no emoji, no jokes, no "Live". Say tokens, sessions and helpers, as the app does.
+- Tokens are the figure. The one dollar number is the closing line, an API-price estimate;
+  never lead with it, repeat it, or call it a charge or a bill.
+- The chart glyphs (`█ ▏ ▂ ▃ ▅ ▆ · ▲`) are part of the output: keep them, and keep each
+  chart inside its ```text block. `▲` marks the busiest day, `·` an idle one, and
+  "Today" is the last row or cell.
 - If the output says no session id was given or it fell back to the newest chat in the
   project, keep that line.
 - Optional: if a visual tool such as `show_widget` is available and the user asks for a
   richer chart, run the same command again with `--json` and draw from those numbers. The
-  text output must still be shown and stand on its own.
+  text output must still be shown and stand on its own. In the JSON, `report.points` is
+  one point per `report.bucket`: a day for ranges up to 84 days, a week up to 26 weeks, a
+  month beyond; plot them as they come and label the buckets accordingly (the last day is
+  "Today"). Draw it in Atlas's colours, not a
+  default palette. Light (page `#FAF8F5`, text `#1F1D1A`): resting bars `#D07A55`, today
+  and the busiest day clay `#C96442`, second series slate `#5B7083`, third sand `#A8875F`,
+  idle `#F0EBE4`. Dark (page `#1F1F1E`, text `#ECECEA`): resting bars `#B4653F`, today and
+  the busiest day clay `#E07A55`, slate `#8FA3B5`, sand `#C9A678`, idle `#2E2E2D`. Bars
+  start at zero and never dip below the baseline. Label the last day "Today", mark only
+  the busiest day, show tokens, and keep dollars out of it.
 
 ## If it fails
 
