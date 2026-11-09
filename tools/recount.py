@@ -5,13 +5,15 @@ Plain Python, no dependencies. Reads transcripts READ-ONLY and never writes next
     python tools/recount.py                         # ~/.claude/projects, bundled prices
     python tools/recount.py --projects <dir>        # another projects folder (fixtures)
     python tools/recount.py --compare <cache.sqlite> [--top 10] [--json out.json]
+    python tools/recount.py --compare <cache.sqlite> --before 2026-11-09T18:00:00Z   # ignore live chats
 
 Own rules (written from the transcript format, not from Atlas's code):
 - A usage line is an assistant line with message.usage. `<synthetic>` lines are not API calls.
 - Claude Code writes one line per content block of a reply, all with the same message.id and
   requestId; only output_tokens grows across them. One reply = one key `id|requestId`; the line
-  with the largest output_tokens is the reply's usage (a later tie wins). The same key in two
-  files (a resumed chat copies history) is still one reply.
+  with the largest output_tokens is the reply's usage (a later tie wins). Claude Code also
+  rewrites a finished reply later in the same file with zeroed counts; the largest-output rule
+  keeps the real one. The same key in two files (a resumed chat copies history) is one reply.
 - A line whose four token counts are all zero adds nothing (API errors, aborted streams).
 - Cache writes split by usage.cache_creation (5 minute / 1 hour); with no split, or an all-zero
   split next to real writes, the total is booked as 5 minute.
@@ -28,6 +30,7 @@ import os
 import sqlite3
 import sys
 from collections import defaultdict
+from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PRICES = os.path.join(HERE, "..", "crates", "core", "pricing", "pricing.default.json")
@@ -104,8 +107,19 @@ def read_reply(raw):
         tier=u.get("service_tier") or "",
         web_search=n(stu.get("web_search_requests")),
         effort=d.get("perTurnEffort") or d.get("effort") or None,
+        ts=ts_ms(d.get("timestamp")),
     )
     return r
+
+
+def ts_ms(v):
+    """ISO-8601 UTC timestamp -> epoch ms (None when missing or unreadable)."""
+    if not isinstance(v, str):
+        return None
+    try:
+        return int(datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp() * 1000)
+    except ValueError:
+        return None
 
 
 class Prices:
@@ -149,7 +163,7 @@ class Prices:
         return tok + r["web_search"] * self.t["webSearchPerThousand"] / 1000.0
 
 
-def recount(projects):
+def recount(projects, before=None):
     best = {}
     skips = defaultdict(int)
     files = transcripts(projects)
@@ -169,6 +183,12 @@ def recount(projects):
                     best[r["key"]] = r
                 else:
                     skips["older line of a reply"] += 1
+    if before is not None:
+        # After dedup, by the winning line's time (the time Atlas keeps for the reply).
+        late = [k for k, r in best.items() if r["ts"] is not None and r["ts"] >= before]
+        for k in late:
+            del best[k]
+        skips["after --before"] = len(late)
     return best, skips, len(files)
 
 
@@ -199,17 +219,19 @@ def summarize(replies, prices):
     return total, total_cost, unpriced, by_session, by_model, cost_session, effort_session
 
 
-def atlas_sessions(cache):
+def atlas_sessions(cache, before=None):
     """Per-session sums from Atlas's cache: the raw `messages` rows and the `session_model` roll-up."""
     con = sqlite3.connect(f"file:{cache}?mode=ro", uri=True)
     q = "SELECT session_id, SUM(input), SUM(output), SUM(cw5m), SUM(cw1h), SUM(cr), {n} FROM {t} GROUP BY session_id"
-    raw = {r[0]: dict(zip(FIELDS + ("replies",), r[1:])) for r in con.execute(q.format(n="COUNT(*)", t="messages"))}
+    cut = "" if before is None else f" WHERE ts_utc_ms < {int(before)}"
+    raw = {r[0]: dict(zip(FIELDS + ("replies",), r[1:])) for r in con.execute(q.format(n="COUNT(*)", t="messages" + cut))}
     roll = {r[0]: dict(zip(FIELDS + ("replies",), r[1:])) for r in con.execute(q.format(n="SUM(messages)", t="session_model"))}
     hour = dict(zip(FIELDS + ("replies",), con.execute(
         "SELECT SUM(input), SUM(output), SUM(cw5m), SUM(cw1h), SUM(cr), SUM(messages) FROM usage_hour").fetchone()))
     eff = {}
     try:
-        for sid, e, k in con.execute("SELECT session_id, effort, COUNT(*) FROM messages WHERE effort IS NOT NULL GROUP BY 1, 2"):
+        for sid, e, k in con.execute("SELECT session_id, effort, COUNT(*) FROM messages WHERE effort IS NOT NULL"
+                                    + ("" if before is None else f" AND ts_utc_ms < {int(before)}") + " GROUP BY 1, 2"):
             eff.setdefault(sid, {})[e] = k
     except sqlite3.OperationalError:
         eff = None  # an older cache with no effort column
@@ -231,11 +253,16 @@ def main():
     ap.add_argument("--prices", default=DEFAULT_PRICES)
     ap.add_argument("--compare", help="an Atlas cache.sqlite built from the same files")
     ap.add_argument("--top", type=int, default=10)
+    ap.add_argument("--before", help="ignore replies at or after this UTC time (ISO), so chats that are still "
+                    "running while the cache was built do not show up as differences")
     ap.add_argument("--json", help="write the per-session recount here")
     a = ap.parse_args()
 
     prices = Prices(a.prices)
-    replies, skips, nfiles = recount(a.projects)
+    before = ts_ms(a.before) if a.before else None
+    if a.before and before is None:
+        ap.error(f"--before: not an ISO time: {a.before}")
+    replies, skips, nfiles = recount(a.projects, before)
     total, cost, unpriced, by_s, by_m, cost_s, eff_s = summarize(replies, prices)
 
     print(f"Recount of {a.projects}")
@@ -254,16 +281,18 @@ def main():
 
     if not a.compare:
         return 0
-    raw, roll, hour, eff = atlas_sessions(a.compare)
+    raw, roll, hour, eff = atlas_sessions(a.compare, before)
     print(f"\nAtlas cache {a.compare}")
     ok = True
-    for name, src in (("messages", raw), ("session_model", roll)):
+    # The roll-ups have no per-reply time, so with --before only `messages` is compared.
+    for name, src in (("messages", raw),) + ((("session_model", roll),) if before is None else ()):
         t = {f: sum(s.get(f) or 0 for s in src.values()) for f in FIELDS + ("replies",)}
         line = ", ".join(f"{f} {fmt(t[f])} ({t[f] - total[f]:+,}, {pct(t[f], total[f]):+.3f}%)" for f in FIELDS + ("replies",))
         print(f"  {name:13}: {line}")
         ok &= all(abs(pct(t[f], total[f])) <= 0.5 for f in FIELDS)
-    line = ", ".join(f"{f} {fmt(hour[f] or 0)} ({(hour[f] or 0) - total[f]:+,})" for f in FIELDS + ("replies",))
-    print(f"  {'usage_hour':13}: {line}")
+    if before is None:
+        line = ", ".join(f"{f} {fmt(hour[f] or 0)} ({(hour[f] or 0) - total[f]:+,})" for f in FIELDS + ("replies",))
+        print(f"  {'usage_hour':13}: {line}")
 
     sids = set(by_s) | set(raw)
     diffs = []
