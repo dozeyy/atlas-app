@@ -181,6 +181,9 @@ impl UsageHost {
                 );
                 cfg.week_starts_sunday = week_starts_sunday();
                 let engine = UsageEngine::start(cfg, Arc::new(TauriSink { app: app.clone(), signals: Arc::clone(&self.signals) }));
+                // Starting the engine wrote the pricing table's hash: an install from before the
+                // marker (a folder with Atlas's program and little else) is now clearly Atlas's.
+                atlas_core::fsutil::mark_data_dirs(&state.data_dir, &state.local_data_dir);
                 *cur = Some(Running { roots, engine });
             }
             old

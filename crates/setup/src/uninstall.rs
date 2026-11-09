@@ -102,8 +102,11 @@ pub fn raw_tail(cmdline: &str) -> &str {
 
 /// Run the installer's uninstaller with the same switches this program got, and return its code.
 pub fn pass_on(exe: &Path, cmdline: &str) -> i32 {
-    let Some(dir) = exe.parent() else { return 1 };
-    let mut cmd = Command::new(nsis_uninstaller(dir));
+    // The installer's uninstaller of the recorded install, or of the folder an installed remover
+    // sits in. Never "the folder this file runs from": `Setup.exe --uninstall /S` out of Downloads
+    // must not run whatever `uninstall.exe` happens to lie beside it.
+    let Some(dir) = remove_target(exe) else { return 1 };
+    let mut cmd = Command::new(nsis_uninstaller(&dir));
     cmd.current_dir(install::neutral_dir());
     #[cfg(windows)]
     {
@@ -453,6 +456,13 @@ pub fn remove_named_data(dir: &Path) -> DataResult {
 /// folders only by name and only where marked.
 pub fn remove_data(plan: &DataPlan) -> DataResult {
     let mut total = DataResult::default();
+    // Before any marker goes: an older Atlas kept only `settings.json` in the roaming folder, and
+    // that is Atlas's when the other data folder is marked.
+    for dir in &plan.atlas_dirs {
+        if let Some(sibling) = plan.atlas_dirs.iter().find(|d| !same_path(d, dir) && atlas_core::fsutil::is_marked_data_dir(d)) {
+            atlas_core::fsutil::mark_settings_only_dir(dir, sibling);
+        }
+    }
     for dir in &plan.atlas_dirs {
         let r = remove_named_data(dir);
         total.removed += r.removed;
@@ -578,11 +588,39 @@ mod tests {
             std::fs::create_dir_all(d).unwrap();
             std::fs::write(d.join("settings.json"), "{}").unwrap();
         }
+        // More than the settings file: nothing there proves it is Atlas's.
+        std::fs::write(b.join("cache.sqlite"), "x").unwrap();
         mark(&a);
         let plan = DataPlan { atlas_dirs: vec![a.clone(), b.clone()], profile_dirs: vec![] };
         let r = remove_data(&plan);
         assert_eq!(r, DataResult { removed: 1, kept: true });
         assert!(!a.exists() && b.join("settings.json").is_file());
+    }
+
+    /// An older Atlas kept only `settings.json` in the roaming folder; it goes with the marked
+    /// local folder instead of being left behind with "some data is kept".
+    #[test]
+    fn an_old_roaming_folder_with_only_settings_goes_when_the_local_folder_is_marked() {
+        let t = tempfile::tempdir().unwrap();
+        let (roaming, local) = (t.path().join("roaming"), t.path().join("local"));
+        for d in [&roaming, &local] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("settings.json"), "{}").unwrap();
+        }
+        mark(&local);
+        let plan = DataPlan { atlas_dirs: vec![roaming.clone(), local.clone()], profile_dirs: vec![] };
+        let r = remove_data(&plan);
+        assert_eq!(r, DataResult { removed: 2, kept: false });
+        assert!(!roaming.exists() && !local.exists());
+        // With no marked sibling the same folder is left alone and reported.
+        let (lone, other) = (t.path().join("lone"), t.path().join("other"));
+        for d in [&lone, &other] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("settings.json"), "{}").unwrap();
+        }
+        let r = remove_data(&DataPlan { atlas_dirs: vec![lone.clone(), other.clone()], profile_dirs: vec![] });
+        assert_eq!(r, DataResult { removed: 0, kept: true });
+        assert!(lone.join("settings.json").is_file() && other.join("settings.json").is_file());
     }
 
     /// A link inside the data folder is taken away as a link: what it points at is never entered.

@@ -206,10 +206,7 @@ impl AppState {
         let started = Instant::now();
         // Say these folders are Atlas's (a one-line marker file) before anything is written to
         // them, so the uninstaller's "remove saved data" knows which folders it may touch.
-        atlas_core::fsutil::mark_data_dir(&data_dir);
-        if local_data_dir != data_dir {
-            atlas_core::fsutil::mark_data_dir(&local_data_dir);
-        }
+        atlas_core::fsutil::mark_data_dirs(&data_dir, &local_data_dir);
         let loaded = settings::load(&data_dir);
         let settings_note = loaded.recovered_from.as_ref().map(|p| {
             format!("Atlas's settings file was damaged and was set aside as {}.", p.display())

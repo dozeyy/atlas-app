@@ -259,10 +259,11 @@ pub const DATA_MARKER: &str = ".atlas-data";
 
 const DATA_MARKER_TEXT: &str = "This folder holds Atlas's saved data. Atlas's uninstaller removes it only when this file is here.\n";
 
-/// Atlas's own files by a name no other program is likely to use: the pricing table's hash, the
-/// search index, or a saved version under `history\<folder>\history.sqlite`.
+/// Atlas's own files by a name no other program is likely to use: the pricing table's hash or a
+/// saved version under `history\<folder>\history.sqlite`. (`search.sqlite` and the like are too
+/// generic a name to prove a folder is Atlas's.)
 fn has_atlas_files(dir: &Path) -> bool {
-    if ["pricing.seed-hash", "search.sqlite"].iter().any(|n| dir.join(n).is_file()) {
+    if dir.join("pricing.seed-hash").is_file() {
         return true;
     }
     fs::read_dir(dir.join("history"))
@@ -303,17 +304,58 @@ pub fn mark_data_dir(dir: &Path) -> bool {
     fs::write(&marker, DATA_MARKER_TEXT).is_ok()
 }
 
+/// Mark Atlas's two data folders (the roaming one with the settings, the local one with the
+/// caches; often the same folder). The local one goes first because it can vouch for the roaming
+/// one, see `mark_settings_only_dir`.
+pub fn mark_data_dirs(data: &Path, local: &Path) {
+    mark_data_dir(local);
+    if data == local {
+        return;
+    }
+    if !mark_data_dir(data) {
+        mark_settings_only_dir(data, local);
+    }
+}
+
+/// An Atlas from before the marker kept only `settings.json` in the roaming folder, which proves
+/// nothing by itself (the folder name is generic). When the other data folder `sibling` is marked,
+/// that settings file is Atlas's: claim `dir`, but only when `settings.json` is the one and only
+/// thing in it and a plain file. Returns whether `dir` is marked afterwards.
+pub fn mark_settings_only_dir(dir: &Path, sibling: &Path) -> bool {
+    if is_marked_data_dir(dir) {
+        return true;
+    }
+    if !is_marked_data_dir(sibling) || !is_plain_dir(dir) {
+        return false;
+    }
+    let Ok(rd) = fs::read_dir(dir) else { return false };
+    let entries: Vec<_> = rd.flatten().take(2).collect();
+    let [only] = entries.as_slice() else { return false };
+    let plain_file = fs::symlink_metadata(only.path()).is_ok_and(|m| m.is_file() && !m.file_type().is_symlink());
+    if !plain_file || !only.file_name().to_string_lossy().eq_ignore_ascii_case("settings.json") {
+        return false;
+    }
+    fs::write(dir.join(DATA_MARKER), DATA_MARKER_TEXT).is_ok()
+}
+
+/// A real folder: not a file, not a symbolic link, not a junction.
+fn is_plain_dir(p: &Path) -> bool {
+    let Ok(m) = fs::symlink_metadata(p) else { return false };
+    if !m.is_dir() || m.file_type().is_symlink() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if m.file_attributes() & 0x400 != 0 {
+            return false;
+        }
+    }
+    true
+}
 /// True when `dir` carries the marker (and is not a link).
 pub fn is_marked_data_dir(dir: &Path) -> bool {
-    let plain_dir = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink());
-    #[cfg(windows)]
-    let linked = {
-        use std::os::windows::fs::MetadataExt;
-        fs::symlink_metadata(dir).is_ok_and(|m| m.file_attributes() & 0x400 != 0)
-    };
-    #[cfg(not(windows))]
-    let linked = false;
-    plain_dir(dir) && !linked && fs::symlink_metadata(dir.join(DATA_MARKER)).is_ok_and(|m| m.is_file())
+    is_plain_dir(dir) && fs::symlink_metadata(dir.join(DATA_MARKER)).is_ok_and(|m| m.is_file())
 }
 
 #[cfg(test)]
@@ -346,6 +388,58 @@ mod tests {
         let file = t.path().join("afile");
         fs::write(&file, "x").unwrap();
         assert!(!mark_data_dir(&file));
+    }
+
+    #[test]
+    fn search_sqlite_alone_does_not_make_a_folder_atlas() {
+        let t = tempdir().unwrap();
+        let d = t.path().join("shared");
+        fs::create_dir_all(&d).unwrap();
+        fs::write(d.join("search.sqlite"), "x").unwrap();
+        fs::write(d.join("notes.txt"), "x").unwrap();
+        assert!(!mark_data_dir(&d) && !d.join(DATA_MARKER).exists());
+    }
+
+    #[test]
+    fn an_old_roaming_folder_holding_only_settings_is_claimed_when_the_local_one_is_marked() {
+        let t = tempdir().unwrap();
+        let local = t.path().join("local");
+        fs::create_dir_all(&local).unwrap();
+        fs::write(local.join("pricing.seed-hash"), "h").unwrap();
+        let roaming = t.path().join("roaming");
+        fs::create_dir_all(&roaming).unwrap();
+        fs::write(roaming.join("settings.json"), "{}").unwrap();
+        // Local not marked yet: the roaming folder proves nothing.
+        assert!(!mark_settings_only_dir(&roaming, &local));
+        mark_data_dirs(&roaming, &local);
+        assert!(is_marked_data_dir(&local) && is_marked_data_dir(&roaming));
+    }
+
+    #[test]
+    fn the_roaming_claim_needs_settings_json_and_nothing_else() {
+        let t = tempdir().unwrap();
+        let local = t.path().join("local");
+        fs::create_dir_all(&local).unwrap();
+        assert!(mark_data_dir(&local));
+        let more = t.path().join("more");
+        fs::create_dir_all(&more).unwrap();
+        fs::write(more.join("settings.json"), "{}").unwrap();
+        fs::write(more.join("other.txt"), "x").unwrap();
+        assert!(!mark_settings_only_dir(&more, &local), "another file beside it");
+        let wrong = t.path().join("wrong");
+        fs::create_dir_all(&wrong).unwrap();
+        fs::write(wrong.join("config.json"), "{}").unwrap();
+        assert!(!mark_settings_only_dir(&wrong, &local), "not the settings file");
+        let folder = t.path().join("folder");
+        fs::create_dir_all(folder.join("settings.json")).unwrap();
+        assert!(!mark_settings_only_dir(&folder, &local), "a folder named settings.json");
+        // A sibling that is not marked vouches for nothing.
+        let unmarked = t.path().join("unmarked");
+        fs::create_dir_all(&unmarked).unwrap();
+        let lonely = t.path().join("lonely");
+        fs::create_dir_all(&lonely).unwrap();
+        fs::write(lonely.join("settings.json"), "{}").unwrap();
+        assert!(!mark_settings_only_dir(&lonely, &unmarked));
     }
 
     #[test]
