@@ -2,7 +2,7 @@
 // same contour lines as the app (src/lib/topo.ts), a dashed clay trail from the app to the
 // Applications folder with the summit spark at its end, and one plain line of instruction.
 //
-//   npm install --no-save playwright@1.64.1 && npx playwright install webkit
+//   npm install --no-save playwright@1.64.1 && npx playwright install webkit   (Windows: uses Edge)
 //   node tools/make-dmg-background.mjs
 //
 // Writes crates/app/icons/dmg-background.png: 1320x800 pixels marked 144 dpi, so Finder shows it
@@ -11,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
-import { webkit } from "playwright";
+import { chromium, webkit } from "playwright";
 import { contourPath } from "../src/lib/topo.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -26,7 +26,7 @@ const html = `<!doctype html><html><head><style>
 ${fontUrl ? `@font-face { font-family: "Recursive"; src: url(${fontUrl}) format("woff2"); font-weight: 300 1000; }` : ""}
 html, body { margin: 0; width: ${W}px; height: ${H}px; overflow: hidden; background: #FAF8F5; }
 .t { position: absolute; left: 0; right: 0; top: 300px; text-align: center; font-family: "Recursive", sans-serif;
-     font-variation-settings: "CASL" 0.4, "wght" 600; font-weight: 600; font-size: 17px; letter-spacing: 0.01em; color: #6B655C; }
+     font-variation-settings: "CASL" 0.4; font-weight: 640; font-size: 17px; letter-spacing: 0.01em; color: #6B655C; }
 </style></head><body>
 <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="position:absolute;inset:0">
   <defs>
@@ -45,7 +45,9 @@ html, body { margin: 0; width: ${W}px; height: ${H}px; overflow: hidden; backgro
 <div class="t">Drag Atlas into Applications</div>
 </body></html>`;
 
-const browser = await webkit.launch();
+// WebKit on macOS draws it like Finder would. Playwright's Windows WebKit ignores variable-font axes
+// (every weight comes out as the thin default), so on Windows the installed Edge draws it instead.
+const browser = process.platform === "win32" ? await chromium.launch({ channel: "msedge" }) : await webkit.launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 2 });
 await page.setContent(html);
 await page.evaluate(() => document.fonts.ready);
