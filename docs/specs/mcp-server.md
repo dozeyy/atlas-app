@@ -35,6 +35,7 @@ Code: `crates/mcp` (server, usage summary), `crates/core/src/{ops,pending,connec
 | `restore_backup` | yes | Undo from a backup; refuses to overwrite a file changed again since. |
 | `find_repeated_requests` | no | Groups what the person typed in past chats (no AI, no network). Optional `like` (the request in front of Claude), `days`, `project`, `limit`, `currentProject` (default: the server's folder), `allProjectsText`. Returns `groups` (`id`, `count`, `sessions`, `days`, `representative`, `examples`, `meetsBar`, `offer`), `likeMatch`, `likeOffer`, `offersOff`, `offerBar`, `wordingsFrom`. The answer is shown to Claude, so wordings come only from `currentProject` unless `allProjectsText` is set (counts always span all projects). |
 | `note_skill_offer` | no (Atlas data only) | Remembers the answer to an offer to make a skill: `answer` offered, declined, made or never, with `groupId` or `like`, and `skillName` for made. Writes ids only to `habits.json`. |
+| `search_library` | no | Search the plugin catalog Atlas's Library saved (`<data>/library/catalog.json`): `{query, limit 1..20, default 10}` returns `{pluginId, name, description, marketplace, version, installed}`. Every word must match, the last as a prefix. No network, no command, nothing installed; with no catalog yet the error says to open Toolkit > Library once. |
 
 Inputs are camelCase (`newName`, `backupId`). A failed call returns an MCP tool error with one plain
 sentence, never a protocol error.

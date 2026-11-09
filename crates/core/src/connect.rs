@@ -78,7 +78,7 @@ impl CliChoice {
         self.resolve().is_some()
     }
 
-    fn resolve(&self) -> Option<PathBuf> {
+    pub fn resolve(&self) -> Option<PathBuf> {
         match self {
             CliChoice::Auto => {
                 let home = crate::paths::home_dir().unwrap_or_default();

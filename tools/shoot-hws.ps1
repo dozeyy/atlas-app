@@ -104,6 +104,10 @@ foreach ($v in $Views) {
         Start-Sleep -Milliseconds 600
         continue
       }
+      if ($pt.StartsWith("w:")) {   # "w:ms" waits (a view that loads after the click)
+        Start-Sleep -Milliseconds ([int]$pt.Substring(2))
+        continue
+      }
       $xy = $pt.Split(",")
       [void][W]::SetCursorPos($r.L + [int]$xy[0], $r.T + [int]$xy[1])
       Start-Sleep -Milliseconds 150

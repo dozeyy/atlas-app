@@ -110,7 +110,16 @@ const STOPS: Stop[] = [
       row.click();
     },
   },
-  { name: "toolkit", settle: 1200, go: go(4) },
+  {
+    name: "toolkit",
+    settle: 1200,
+    go: async () => {
+      await go(4)();
+      // The Toolkit remembers its tab; the tour starts on "Your setup" every time.
+      await waitFor('[role="radio"]');
+      clickText('[role="radio"]', "Your setup");
+    },
+  },
   {
     name: "toolkit-skills",
     settle: 1200,
@@ -127,6 +136,24 @@ const STOPS: Stop[] = [
       const card = await waitFor<HTMLElement>("[data-item-card]");
       if (!card) return "no item card";
       card.click();
+    },
+  },
+  {
+    name: "library",
+    settle: 1500,
+    go: async () => {
+      press("Escape");
+      await sleep(300);
+      if (!clickText('[role="radio"]', "Library")) return "no Library tab";
+    },
+  },
+  {
+    name: "library-sheet",
+    settle: 1200,
+    go: async () => {
+      const row = await waitFor<HTMLElement>("[data-row]", 6000);
+      if (!row) return "no plugin row";
+      row.click();
     },
   },
   { name: "history", settle: 1400, go: async () => (press("Escape"), await sleep(300), press("5", true)) },
@@ -218,7 +245,7 @@ export async function startTour(): Promise<void> {
   await sleep(1200);
   await d.log(`tour: ${real ? "app" : "browser"}, platform ${document.documentElement.dataset.platform}`);
   await waitForIndex(d.log);
-  const small = ["dashboard", "sessions", "session-detail", "toolkit", "toolkit-skills", "skill-item", "settings", "wrapped-1", "wrapped-3", "wrapped-9", "wrapped-15"];
+  const small = ["dashboard", "sessions", "session-detail", "toolkit", "toolkit-skills", "skill-item", "library", "library-sheet", "settings", "wrapped-1", "wrapped-3", "wrapped-9", "wrapped-15"];
   const passes: Pass[] = real
     ? [
         { prefix: "light", theme: "light", size: [1280, 800] },

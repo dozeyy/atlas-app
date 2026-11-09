@@ -57,6 +57,8 @@ export function sourceNote(e: Pick<HistoryEvent, "source">): string | null {
       return "Made by Claude through Atlas's connector";
     case "atlas_assistant":
       return "Made by Atlas's assistant after you approved it";
+    case "atlas_library":
+      return "Installed from the Library";
     case "claude_backup":
       return "From a Claude Code backup";
     default:

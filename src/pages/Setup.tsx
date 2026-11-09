@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { CaretDown, CaretRight, FolderDashed, Info } from "@phosphor-icons/react";
-import { PageTitle } from "../components/controls";
+import { PageTitle, SegmentedControl } from "../components/controls";
+import { LibraryTab } from "../components/library/LibraryTab";
 import { CollectionView } from "../components/setup/CollectionView";
 import { ConfirmDelete } from "../components/setup/ConfirmDelete";
 import { CreateFlow } from "../components/setup/CreateFlow";
@@ -12,7 +14,7 @@ import { TypeTiles } from "../components/setup/TypeTiles";
 import { CostProvider } from "../components/setup/CostContext";
 import { countByKind, itemsForTile, MORE_KINDS, type TileId } from "../lib/setup-model";
 import { useSetupCost } from "../lib/useSetupCost";
-import { clearPendingToolkitItem, onNavRequest, peekPendingToolkitItem } from "../lib/nav";
+import { clearPendingToolkitItem, clearPendingToolkitTab, onNavRequest, peekPendingToolkitItem, peekPendingToolkitTab, type ToolkitTab } from "../lib/nav";
 import type { CreateKind, SetupItem, SetupProject, SetupSnapshot } from "../lib/setup-types";
 import { reloadSetup, startSetup, useSetup } from "../state/setupStore";
 import { useAtlas } from "../state/AtlasProvider";
@@ -210,14 +212,66 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
   );
 }
 
+const TAB_KEY = "atlas.toolkit.tab";
+const TABS: { value: ToolkitTab; label: string }[] = [
+  { value: "setup", label: "Your setup" },
+  { value: "library", label: "Library" },
+];
+
+function firstTab(): ToolkitTab {
+  const asked = peekPendingToolkitTab();
+  if (asked) {
+    clearPendingToolkitTab();
+    return asked;
+  }
+  try {
+    return window.localStorage.getItem(TAB_KEY) === "library" ? "library" : "setup";
+  } catch {
+    return "setup";
+  }
+}
+
 export function Setup() {
   const st = useSetup();
   useEffect(() => startSetup(), []);
+  const [tab, setTabState] = useState<ToolkitTab>(firstTab);
+
+  const setTab = useCallback((t: ToolkitTab) => {
+    setTabState(t);
+    try {
+      window.localStorage.setItem(TAB_KEY, t);
+    } catch {
+      // the choice just is not remembered
+    }
+  }, []);
+
+  // Ctrl+K, or "Open in Toolkit" on a copied item, asks for a tab while the page is already open.
+  useEffect(
+    () =>
+      onNavRequest(() => {
+        const asked = peekPendingToolkitTab();
+        if (!asked) return;
+        clearPendingToolkitTab();
+        setTab(asked);
+      }),
+    [setTab],
+  );
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    setTab(e.key === "ArrowRight" ? "library" : "setup");
+  };
 
   return (
     <>
       <PageTitle title="Toolkit" />
-      {st.snapshot ? (
+      <div onKeyDown={onKeyDown} className="mb-3 flex h-10 shrink-0 items-center">
+        <SegmentedControl label="Toolkit view" value={tab} options={TABS} onChange={setTab} />
+      </div>
+      {tab === "library" ? (
+        <LibraryTab />
+      ) : st.snapshot ? (
         <Loaded snap={st.snapshot} includeWorktrees={st.includeWorktrees} loads={st.loads} error={st.status === "ready" ? st.error : null} />
       ) : st.status === "error" ? (
         <SetupError message={st.error ?? "Something went wrong."} onRetry={reloadSetup} />

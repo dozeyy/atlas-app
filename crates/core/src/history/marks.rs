@@ -23,12 +23,15 @@ const CLAUDE_JSON_MS: i64 = 2 * 60 * 1000;
 pub const SOURCE_MCP: &str = "atlas_mcp";
 /// ... and for one the in-app assistant made.
 pub const SOURCE_ASSISTANT: &str = "atlas_assistant";
+/// ... and for one installed or removed from the Library tab.
+pub const SOURCE_LIBRARY: &str = "atlas_library";
 
 /// Map the word a backup is tagged with to the word History stores.
 pub fn history_source(tag: &str) -> Option<&'static str> {
     match tag {
         "mcp" => Some(SOURCE_MCP),
         "assistant" => Some(SOURCE_ASSISTANT),
+        "library" => Some(SOURCE_LIBRARY),
         _ => None,
     }
 }
@@ -58,6 +61,10 @@ impl Marks {
                     m.claude_json = Some((at, src));
                 }
                 continue;
+            }
+            // A folder made from the Library: one exact version per file it holds.
+            for (file, sha) in &p.files {
+                m.by_version.insert(format!("{}|{sha}", file_key(Path::new(file))), src);
             }
             match p.saved_sha {
                 Some(sha) => {
@@ -107,6 +114,7 @@ mod tests {
     fn only_mcp_and_assistant_tags_count() {
         assert_eq!(history_source("mcp"), Some(SOURCE_MCP));
         assert_eq!(history_source("assistant"), Some(SOURCE_ASSISTANT));
+        assert_eq!(history_source("library"), Some(SOURCE_LIBRARY));
         assert_eq!(history_source("user"), None);
     }
 }

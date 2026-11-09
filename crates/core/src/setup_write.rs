@@ -810,6 +810,10 @@ struct Manifest {
     /// the entry). A hook that is parked again by a later toggle gets a fresh backup, not this one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     restored: Option<bool>,
+    /// A folder created from the Library: (path inside it, SHA-256) of each file it holds, so
+    /// History can say "Installed from the Library" for exactly those versions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    files: Option<Vec<(String, String)>>,
 }
 
 fn now_ms() -> u64 {
@@ -1678,6 +1682,177 @@ pub fn create_apply_with(kind: &str, name: &str, event: Option<&str>, text: &str
     Ok(DeleteOutcome { backup_id: note, name: d.name, kind: kind.into(), note: cli_note })
 }
 
+// ---------------------------------------------------------------------------
+// Library installs: a skill folder, a single file kept byte for byte, a plugin snapshot
+// ---------------------------------------------------------------------------
+
+/// A stamp of a folder's names and bytes (a skill folder as it was installed).
+fn folder_stamp(p: &Path) -> io::Result<String> {
+    let (files, h) = tree_digest(p)?;
+    Ok(format!("dir:{files}:{h:x}"))
+}
+
+/// (path inside `root` with `/`, SHA-256) of every file under it, sorted.
+fn file_shas(root: &Path) -> io::Result<Vec<(String, String)>> {
+    fn walk(dir: &Path, rel: &str, out: &mut Vec<(String, String)>, depth: usize) -> io::Result<()> {
+        if depth > 24 {
+            return Ok(());
+        }
+        let mut entries: Vec<_> = fs::read_dir(dir)?.collect::<Result<Vec<_>, _>>()?;
+        entries.sort_by_key(|e| e.file_name());
+        for e in entries {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let here = if rel.is_empty() { name } else { format!("{rel}/{name}") };
+            let ft = e.file_type()?;
+            if ft.is_dir() {
+                walk(&e.path(), &here, out, depth + 1)?;
+            } else if ft.is_file() {
+                out.push((here, crate::history::store::sha_hex(&fs::read(e.path())?)));
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    walk(root, "", &mut out, 0)?;
+    Ok(out)
+}
+
+/// Copy a skill folder from `src_dir` (a folder with a SKILL.md) into `<root>/skills/<name>`,
+/// byte for byte. Built beside its final place and moved in whole with one rename; nothing
+/// existing is replaced. The backup is a `create` of a folder: undoing it (`restore_any`) removes
+/// the folder only while it is exactly what was installed.
+pub fn install_skill_folder(src_dir: &Path, name: &str, ctx: &CreateCtx, backups: &Path) -> Res<DeleteOutcome> {
+    if !valid_name(name) {
+        return refuse("Use lowercase letters, numbers and dashes for the name, like my-helper.");
+    }
+    let skills = ctx.root.join("skills");
+    let dest = skills.join(name);
+    let taken = |d: &Path| fs::symlink_metadata(d).is_ok();
+    if taken(&dest) {
+        return refuse(format!("You already have a skill called {name}."));
+    }
+    check_write_allowed(&dest)?;
+    let bytes = fs::read(src_dir.join("SKILL.md")).map_err(|_| WriteError::Refused("This skill has no SKILL.md.".into()))?;
+    if std::str::from_utf8(&bytes).is_err() {
+        return refuse("SKILL.md is not plain UTF-8 text, so Atlas did not install it.");
+    }
+    let (files, size) = tree_size(src_dir);
+    if files > DUP_MAX_FILES || size > DUP_MAX_BYTES {
+        return refuse("This skill is too big to copy here.");
+    }
+    fs::create_dir_all(&skills)?;
+    remove_stale_copies(&skills);
+    let tmp = skills.join(format!("{COPY_PREFIX}{}-{}", now_ms(), COUNTER.fetch_add(1, Ordering::Relaxed) % 10_000));
+    check_write_allowed(&tmp)?;
+    let built = (|| -> Res<(String, Vec<(String, String)>)> {
+        copy_tree(src_dir, &tmp, 0)?;
+        if tree_digest(src_dir)? != tree_digest(&tmp)? {
+            return refuse("The copy did not match the original, so nothing was installed.");
+        }
+        Ok((folder_stamp(&tmp)?, file_shas(&tmp)?))
+    })();
+    let (stamp, list) = match built {
+        Ok(x) => x,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&tmp);
+            return Err(e);
+        }
+    };
+    let (id, bdir) = match new_backup(backups, &format!("create-skill-{name}")) {
+        Ok(x) => x,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&tmp);
+            return Err(e.into());
+        }
+    };
+    let manifest = Manifest {
+        version: 1,
+        backup_id: id.clone(),
+        created_ms: now_ms(),
+        action: "create".into(),
+        kind: "skill".into(),
+        name: name.into(),
+        unit: "path".into(),
+        path: Some(dest.to_string_lossy().into_owned()),
+        is_dir: Some(true),
+        has_file_before: Some(false),
+        saved_stamp: Some(stamp),
+        files: Some(list),
+        ..Default::default()
+    };
+    let moved = write_manifest(&bdir, &manifest).map_err(WriteError::from).and_then(|_| {
+        // Last look: on some systems a rename onto an empty folder would replace it.
+        if taken(&dest) {
+            return refuse(format!("You already have a skill called {name}."));
+        }
+        fs::rename(&tmp, &dest).map_err(WriteError::from)
+    });
+    if let Err(e) = moved {
+        let _ = fs::remove_dir_all(&tmp);
+        let _ = fs::remove_dir_all(&bdir);
+        return Err(e);
+    }
+    Ok(DeleteOutcome { backup_id: id, name: name.into(), kind: "skill".into(), note: None })
+}
+
+/// Write one agent, command or output style exactly as it is (the bytes are not tidied: no line
+/// ending or BOM change). Only text is accepted. Never replaces anything.
+pub fn create_apply_bytes(kind: &str, name: &str, bytes: &[u8], ctx: &CreateCtx, backups: &Path) -> Res<DeleteOutcome> {
+    if !matches!(kind, "agent" | "command" | "outputStyle") {
+        return refuse("Atlas copies only agents, commands and output styles this way.");
+    }
+    let d = create_draft(kind, name, None, ctx)?;
+    if std::str::from_utf8(bytes).is_err() {
+        return refuse("That file is not plain UTF-8 text, so Atlas did not install it.");
+    }
+    let target = PathBuf::from(&d.path);
+    check_write_allowed(&target)?;
+    if fs::symlink_metadata(&target).is_ok() {
+        return refuse("Something is already there, so Atlas did not overwrite it.");
+    }
+    let (id, dir) = new_backup(backups, &format!("create-{kind}-{name}"))?;
+    let made = write_manifest(&dir, &Manifest { version: 1, backup_id: id.clone(), created_ms: now_ms(), action: "create".into(), kind: kind.into(), name: d.name.clone(), unit: "path".into(), path: Some(d.path.clone()), is_dir: Some(false), has_file_before: Some(false), ..Default::default() })
+        .and_then(|_| atomic_write(&target, bytes));
+    if let Err(e) = made {
+        let _ = fs::remove_dir_all(&dir);
+        return Err(e.into());
+    }
+    Ok(DeleteOutcome { backup_id: id, name: d.name, kind: kind.into(), note: None })
+}
+
+/// A backup of files another program is about to change (Claude Code's plugin command): the
+/// primary file (`file-before`) and any others (under `payload/<name>`). Not restorable by
+/// `restore_any` (action `library`): a plugin is undone by uninstalling it. Returns the id.
+pub fn snapshot_files(backups: &Path, label: &str, kind: &str, name: &str, primary: &Path, others: &[(&str, &Path)]) -> io::Result<String> {
+    let (id, dir) = new_backup(backups, label)?;
+    let made = (|| -> io::Result<()> {
+        let before = fs::read(primary).ok();
+        if let Some(b) = &before {
+            fs::write(dir.join("file-before"), b)?;
+        }
+        for (n, p) in others {
+            if let Ok(b) = fs::read(p) {
+                let payload = dir.join("payload");
+                fs::create_dir_all(&payload)?;
+                fs::write(payload.join(n), b)?;
+            }
+        }
+        write_manifest(&dir, &Manifest { version: 1, backup_id: id.clone(), created_ms: now_ms(), action: "library".into(), kind: kind.into(), name: name.into(), unit: "path".into(), path: Some(primary.to_string_lossy().into_owned()), is_dir: Some(false), has_file_before: Some(before.is_some()), ..Default::default() })
+    })();
+    if let Err(e) = made {
+        let _ = fs::remove_dir_all(&dir);
+        return Err(e);
+    }
+    Ok(id)
+}
+
+/// Remove a backup made for a change that did not happen.
+pub fn drop_backup(backups: &Path, id: &str) {
+    if !id.is_empty() && !id.contains(['/', '\\']) && !id.contains("..") {
+        let _ = fs::remove_dir_all(backups.join(id));
+    }
+}
+
 /// Which backups exist, newest first (for a future History screen and tests).
 pub fn list_backups(backups: &Path) -> Vec<(String, String, String, String)> {
     let mut out = Vec::new();
@@ -1727,14 +1902,14 @@ pub fn tag_backup(backups: &Path, id: &str, source: &str, summary: &str) {
     // The file as it is right after the change: a save, create or restore of a file, or a delete
     // of one entry inside a JSON file (the file itself stays).
     let after = match (m.action.as_str(), m.unit.as_str()) {
-        ("save" | "create" | "restore", _) => m.path.clone(),
+        ("save" | "create" | "restore" | "library", _) => m.path.clone(),
         ("delete", "entry") => m.file.clone(),
         _ => None,
     };
     if let Some(p) = after
         && let Ok(bytes) = fs::read(&p)
     {
-        if m.action != "delete" {
+        if m.action != "delete" && m.action != "library" {
             m.saved_stamp = Some(stamp_of(&bytes));
         }
         m.saved_sha = Some(crate::history::store::sha_hex(&bytes));
@@ -1811,9 +1986,36 @@ pub fn list_backups_detailed(backups: &Path, limit: usize) -> Vec<BackupInfo> {
 /// change left (anything newer is never overwritten). What is replaced is backed up first, so
 /// the undo can itself be undone.
 pub fn restore_any(backups: &Path, backup_id: &str, confine: &Confine) -> Res<UndoOutcome> {
+    restore_any_with(backups, backup_id, confine, false)
+}
+
+/// `restore_any`; `to_trash` also sends a folder that an undo removes to the OS trash (the
+/// backup still holds it, so the undo can be undone).
+pub fn restore_any_with(backups: &Path, backup_id: &str, confine: &Confine, to_trash: bool) -> Res<UndoOutcome> {
     let (m, dir) = read_manifest(backups, backup_id)?;
     match m.action.as_str() {
         "delete" => restore(backups, backup_id, confine),
+        // A folder made from the Library: removed only while it is exactly what was installed.
+        // The removal is a delete with a backup of its own, so undoing this undo puts it back.
+        "create" if m.is_dir == Some(true) => {
+            let path = PathBuf::from(m.path.clone().unwrap_or_default());
+            confine.check(&path)?;
+            check_write_allowed(&path)?;
+            let Some(saved) = m.saved_stamp.clone() else {
+                return refuse("That backup is too old to undo safely. Its saved copy is still in Atlas's backups folder.");
+            };
+            let md = fs::symlink_metadata(&path).map_err(|_| WriteError::Refused("That folder is already gone.".into()))?;
+            if md.file_type().is_symlink() || !md.is_dir() {
+                return refuse("What is on disk is not what Atlas installed, so it was left alone.");
+            }
+            if folder_stamp(&path).ok().as_deref() != Some(saved.as_str()) {
+                return refuse("That folder has changed since it was installed, so Atlas did not remove it.");
+            }
+            let plan = DeletePlan { id: String::new(), name: m.name.clone(), kind: create_item_kind(&m.kind), unit: Unit::Path { path, is_dir: true } };
+            let out = apply_delete_with(&plan, backups, to_trash)?;
+            tag_backup(backups, &out.backup_id, "library", &format!("Removed {} (undo of an install)", m.name));
+            Ok(UndoOutcome { name: m.name, kind: m.kind, backup_id: Some(out.backup_id) })
+        }
         "save" | "create" | "restore" => {
             let path = PathBuf::from(m.path.clone().unwrap_or_default());
             confine.check(&path)?;
@@ -1965,6 +2167,8 @@ pub struct Provenance {
     pub path: String,
     /// SHA-256 of the file after a save, create or restore.
     pub saved_sha: Option<String>,
+    /// A folder created from the Library: each file in it (full path) and its SHA-256.
+    pub files: Vec<(String, String)>,
 }
 
 /// Changes made by the MCP server or the assistant since `since_ms`, newest first.
@@ -1979,7 +2183,8 @@ pub fn provenance(backups: &Path, since_ms: u64) -> Vec<Provenance> {
             continue;
         }
         let Some(path) = m.path.clone().or(m.file.clone()) else { continue };
-        out.push(Provenance { created_ms: m.created_ms, action: m.action, source, path, saved_sha: m.saved_sha });
+        let files = m.files.iter().flatten().map(|(rel, sha)| (format!("{}/{rel}", path.trim_end_matches(['/', '\\'])), sha.clone())).collect();
+        out.push(Provenance { created_ms: m.created_ms, action: m.action, source, path, saved_sha: m.saved_sha, files });
     }
     out.sort_by_key(|p| std::cmp::Reverse(p.created_ms));
     out

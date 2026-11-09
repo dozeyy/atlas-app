@@ -206,6 +206,8 @@ name = "atlas"
 version = "0.1.0"
 dependencies = [
  "atlas-core",
+ "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",
@@ -240,6 +242,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
+ "flate2",
  "libc",
  "memchr",
  "notify",
@@ -250,6 +253,7 @@ dependencies = [
  "serde_yaml_ng",
  "sha2 0.11.1",
  "similar",
+ "tar",
  "tempfile",
  "thiserror 2.0.21",
  "trash",

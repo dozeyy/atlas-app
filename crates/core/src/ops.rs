@@ -534,6 +534,11 @@ impl Ops {
         &self.backups
     }
 
+    /// Atlas's data folder (where the Library keeps its catalog).
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
     /// A fresh scan of the setup (cheap: unchanged markdown heads come from the cache).
     pub fn discovery(&self) -> Discovery {
         let mut c = self.cache.lock().unwrap_or_else(|p| p.into_inner());

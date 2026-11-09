@@ -157,6 +157,16 @@ pub struct RestoreArgs {
     pub backup_id: String,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryArgs {
+    /// What to look for, for example "frontend design" or "pdf". Every word has to match; the last one may be the start of a word.
+    pub query: String,
+    /// How many to return (default 10, at most 20).
+    pub limit: Option<usize>,
+}
+
 // ---------------------------------------------------------------- results
 
 fn pretty(v: &impl Serialize) -> String {
@@ -327,6 +337,26 @@ impl AtlasServer {
         Ok(match self.blocking(move |ops| ops.list_backups(limit)).await {
             Ok(v) => ok(&json!({ "backups": v })),
             Err(e) => fail(e),
+        })
+    }
+
+    #[tool(
+        name = "search_library",
+        description = "Search the plugin catalog the user's Atlas Library has already loaded (Claude Code's plugin marketplaces) for plugins and skills. Returns pluginId, name, description, marketplace, version and whether it is installed. It only reads Atlas's saved catalog: no internet, nothing is installed. To install one, tell the user to open Atlas > Toolkit > Library, where they see what it can do before they install it. Read-only.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn search_library(&self, Parameters(a): Parameters<LibraryArgs>) -> Result<CallToolResult, ErrorData> {
+        let limit = a.limit.unwrap_or(10);
+        let query = a.query;
+        let r = self
+            .blocking(move |ops| {
+                let installed: Vec<String> = atlas_core::library::ledger::installed_plugins(&ops.inputs().root.dir).unwrap_or_default().into_iter().filter(|p| p.scope == "user").map(|p| p.id).collect();
+                atlas_core::library::catalog::search_library(ops.data_dir(), &installed, &query, limit)
+            })
+            .await;
+        Ok(match r {
+            Ok(Ok(hits)) => ok(&json!({ "plugins": hits })),
+            Ok(Err(e)) | Err(e) => fail(e),
         })
     }
 
