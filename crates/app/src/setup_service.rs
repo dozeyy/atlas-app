@@ -228,27 +228,30 @@ pub(crate) fn may_open_as_text(path: &std::path::Path) -> bool {
 }
 
 fn open_text_file(path: &std::path::Path) -> Result<(), String> {
-    if !may_open_as_text(path) {
+    // Vetted again here, so no caller can hand the OS a relative, network or option-like path.
+    let path = atlas_core::fsutil::vet_open_path(path)?;
+    if !may_open_as_text(&path) {
         return Err("Atlas only opens plain text files. Use Show in folder for this one.".into());
     }
     use std::process::Command;
     #[cfg(windows)]
-    let r = Command::new("rundll32.exe").arg("url.dll,FileProtocolHandler").arg(path).spawn();
+    let r = Command::new("rundll32.exe").arg("url.dll,FileProtocolHandler").arg(&path).spawn();
     #[cfg(target_os = "macos")]
-    let r = Command::new("open").arg(path).spawn();
+    let r = Command::new("open").arg(&path).spawn();
     #[cfg(not(any(windows, target_os = "macos")))]
-    let r = Command::new("xdg-open").arg(path).spawn();
+    let r = Command::new("xdg-open").arg(&path).spawn();
     r.map(|_| ()).map_err(|e| format!("Could not open the file: {e}"))
 }
 
 fn show_in_folder(path: &std::path::Path) -> Result<(), String> {
+    let path = atlas_core::fsutil::vet_open_path(path)?;
     use std::process::Command;
     #[cfg(windows)]
     let r = Command::new("explorer.exe").arg(format!("/select,{}", path.display())).spawn();
     #[cfg(target_os = "macos")]
-    let r = Command::new("open").arg("-R").arg(path).spawn();
+    let r = Command::new("open").arg("-R").arg(&path).spawn();
     #[cfg(not(any(windows, target_os = "macos")))]
-    let r = Command::new("xdg-open").arg(path.parent().unwrap_or(path)).spawn();
+    let r = Command::new("xdg-open").arg(path.parent().unwrap_or(&path)).spawn();
     r.map(|_| ()).map_err(|e| format!("Could not open the folder: {e}"))
 }
 

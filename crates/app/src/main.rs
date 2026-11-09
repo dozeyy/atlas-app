@@ -96,6 +96,8 @@ fn main() {
             commands::frontend_ready,
             commands::window_control,
             commands::window_maximized,
+            commands::set_unsaved,
+            commands::leave_app,
             usage::usage_status,
             usage::usage_dashboard,
             usage::usage_timeline,
@@ -157,7 +159,13 @@ fn main() {
             WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
                 let state = window.state::<Arc<AppState>>();
                 let tray = window.try_state::<tray::Tray>().is_some();
-                if cfg!(target_os = "macos") || (state.close_to_tray() && tray) {
+                let hides = cfg!(target_os = "macos") || (state.close_to_tray() && tray);
+                // The close would end Atlas while an editor holds edits that are not saved:
+                // keep the window and let the page ask. (Hiding loses nothing.)
+                if crate::state::Leave::Ask == state.leave_decision(!hides) {
+                    api.prevent_close();
+                    tray::ask_quit(window.app_handle());
+                } else if hides {
                     api.prevent_close();
                     let _ = window.hide();
                     state.usage.focus(false);
@@ -271,6 +279,12 @@ fn main() {
         .expect("error while building Atlas");
 
     app.run(move |handle, event| match event {
+        // Cmd+Q / the last window closing, with edits not saved: hold it back and let the page ask.
+        // (A quit the program asks for itself, `exit(code)`, is not held back here.)
+        RunEvent::ExitRequested { api, code: None, .. } if state.has_unsaved() => {
+            api.prevent_exit();
+            tray::ask_quit(handle);
+        }
         RunEvent::Exit => {
             tray::remove(handle);
             state.shutdown();

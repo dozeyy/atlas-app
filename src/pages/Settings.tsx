@@ -169,7 +169,7 @@ export function Settings() {
         </Row>
         <Row
           label="Tell me when a chat finishes"
-          hint="A notice when a chat you were watching ends its turn or asks you a question. It cannot tell when a chat is only waiting for you to allow something. Off by default."
+          hint="A notice when a chat you were watching ends its turn or asks you a question. Off by default."
         >
           <Toggle label="Tell me when a chat finishes" checked={info.settings.notifyOnFinish} onChange={setNotifyOnFinish} />
         </Row>

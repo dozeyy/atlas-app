@@ -27,6 +27,14 @@ use crate::search::SearchHost;
 use crate::usage::{Roots, UsageHost};
 
 pub const INFO_EVENT: &str = "atlas://info";
+/// A quit was held back because an editor has unsaved edits; the page asks the user.
+pub const QUIT_ASK_EVENT: &str = "atlas://quit-ask";
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Leave {
+    Go,
+    Ask,
+}
 
 /// How often the running app tells other Atlas instances its sandbox is in use.
 const HEARTBEAT: Duration = Duration::from_secs(10 * 60);
@@ -89,6 +97,8 @@ pub struct AppState {
     notify: Mutex<Option<Notify>>,
     /// Deletes of old sandboxes still running; exit waits for them.
     discards: Mutex<Vec<JoinHandle<()>>>,
+    /// An editor in the page holds edits that are not saved: a quit asks first.
+    unsaved: AtomicBool,
 }
 
 #[derive(Serialize, Clone)]
@@ -227,7 +237,23 @@ impl AppState {
             seq: AtomicU64::new(0),
             notify: Mutex::new(None),
             discards: Mutex::new(Vec::new()),
+            unsaved: AtomicBool::new(false),
         })
+    }
+
+    /// The page reports whether an editor holds edits that are not saved.
+    pub fn set_unsaved(&self, on: bool) {
+        self.unsaved.store(on, Ordering::SeqCst);
+    }
+
+    pub fn has_unsaved(&self) -> bool {
+        self.unsaved.load(Ordering::SeqCst)
+    }
+
+    /// A window close or quit that would end the program, and what to do about it. With unsaved
+    /// edits it is held back and the page asks; otherwise it goes ahead.
+    pub fn leave_decision(&self, would_exit: bool) -> Leave {
+        if would_exit && self.has_unsaved() { Leave::Ask } else { Leave::Go }
     }
 
     /// Where background changes are announced (see `Notify`).
@@ -802,6 +828,17 @@ mod tests {
         assert!(settings::load(&tmp.path().join("data")).settings.close_to_tray, "persisted");
         state.update_settings(SettingsPatch { close_to_tray: Some(false), ..Default::default() });
         assert!(!settings::load(&tmp.path().join("data")).settings.close_to_tray);
+    }
+
+    #[test]
+    fn a_quit_is_held_back_only_while_edits_are_unsaved() {
+        let (_tmp, state) = fixture(false);
+        assert_eq!(state.leave_decision(true), Leave::Go, "nothing unsaved");
+        state.set_unsaved(true);
+        assert_eq!(state.leave_decision(true), Leave::Ask);
+        assert_eq!(state.leave_decision(false), Leave::Go, "a close that only hides the window loses nothing");
+        state.set_unsaved(false);
+        assert_eq!(state.leave_decision(true), Leave::Go, "saved or discarded");
     }
 
     #[test]

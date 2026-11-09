@@ -32,14 +32,32 @@ pub struct NowHost {
 /// "Tell me when a chat finishes" is on in Settings.
 pub const FINISHED_EVENT: &str = "atlas://now/finished";
 
+/// Decides which stopped chats are announced. It always watches, so switching the setting on
+/// later does not announce old news, but it hands back nothing while the setting is off.
+#[derive(Default)]
+struct FinishGate {
+    tracker: Mutex<NotifyTracker>,
+}
+
+impl FinishGate {
+    /// `enabled` is read only when something did stop.
+    fn due(&self, snapshot: &NowSnapshot, enabled: impl FnOnce() -> bool) -> Vec<Finished> {
+        let finished = self.tracker.lock().unwrap_or_else(|p| p.into_inner()).observe(snapshot);
+        if finished.is_empty() || !enabled() {
+            return Vec::new();
+        }
+        finished
+    }
+}
+
 struct TauriNowSink {
     app: AppHandle,
-    tracker: Mutex<NotifyTracker>,
+    gate: FinishGate,
 }
 
 impl TauriNowSink {
     fn new(app: AppHandle) -> TauriNowSink {
-        TauriNowSink { app, tracker: Mutex::new(NotifyTracker::new()) }
+        TauriNowSink { app, gate: FinishGate::default() }
     }
 
     /// The window is in front of the user: its own toast is enough.
@@ -64,12 +82,7 @@ impl TauriNowSink {
 impl NowSink for TauriNowSink {
     fn update(&self, snapshot: &NowSnapshot) {
         let _ = self.app.emit(UPDATE_EVENT, snapshot);
-        // Always watch, so switching the setting on later does not announce old news.
-        let finished = self.tracker.lock().unwrap_or_else(|p| p.into_inner()).observe(snapshot);
-        if finished.is_empty() || !self.app.state::<Arc<AppState>>().notify_on_finish() {
-            return;
-        }
-        for f in &finished {
+        for f in &self.gate.due(snapshot, || self.app.state::<Arc<AppState>>().notify_on_finish()) {
             self.announce(f);
         }
     }
@@ -119,4 +132,72 @@ impl NowHost {
 #[tauri::command]
 pub async fn now_snapshot(state: Shared<'_>) -> Result<NowSnapshot, String> {
     Ok(state.now.snapshot())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atlas_core::now::{Doing, NowChat};
+
+    fn chat(state: &str) -> NowChat {
+        NowChat {
+            session_id: "a".into(),
+            title: Some("Chat a".into()),
+            project: "atlas".into(),
+            model: None,
+            state: state.into(),
+            started_ms: None,
+            worked_ms: Some(1_000),
+            last_write_ms: 0,
+            doing: Doing { kind: "wait".into(), verb: "x".into(), target: None },
+            tokens: 0,
+            cost_usd: None,
+            unpriced: false,
+            helpers: vec![],
+            files: vec![],
+            steps: vec![],
+        }
+    }
+
+    fn snap(state: &str) -> NowSnapshot {
+        NowSnapshot { chats: vec![chat(state)], watching: true, ..Default::default() }
+    }
+
+    #[test]
+    fn nothing_is_announced_while_the_setting_is_off() {
+        let gate = FinishGate::default();
+        gate.due(&snap("working"), || false);
+        assert!(gate.due(&snap("waiting"), || false).is_empty());
+    }
+
+    #[test]
+    fn a_stop_is_announced_once_the_setting_is_on() {
+        let gate = FinishGate::default();
+        gate.due(&snap("working"), || true);
+        let got = gate.due(&snap("waiting"), || true);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].name, "Chat a");
+        assert!(gate.due(&snap("waiting"), || true).is_empty(), "not again");
+    }
+
+    #[test]
+    fn switching_it_on_later_does_not_announce_what_already_stopped() {
+        let gate = FinishGate::default();
+        gate.due(&snap("working"), || false);
+        assert!(gate.due(&snap("waiting"), || false).is_empty(), "stopped while off: swallowed, not queued");
+        assert!(gate.due(&snap("waiting"), || true).is_empty(), "turning it on does not replay it");
+        gate.due(&snap("working"), || true);
+        assert_eq!(gate.due(&snap("waiting"), || true).len(), 1, "the next stop is announced");
+    }
+
+    #[test]
+    fn the_setting_is_only_read_when_something_stopped() {
+        let gate = FinishGate::default();
+        let mut reads = 0;
+        gate.due(&snap("working"), || {
+            reads += 1;
+            true
+        });
+        assert_eq!(reads, 0);
+    }
 }

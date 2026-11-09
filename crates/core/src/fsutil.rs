@@ -230,10 +230,65 @@ pub fn strip_verbatim(p: &Path) -> PathBuf {
     }
 }
 
+/// A path that is about to be handed to the OS (Explorer, `open`, `xdg-open`), vetted: it must
+/// be absolute, must not start with `\\` or `//` (a network share would make Windows send the
+/// user's credentials to that host) or with `-` (an option), and must exist. The answer is the
+/// canonical path with any `\\?\` prefix dropped; a link that leads to a network share is
+/// refused too. Opening anything goes through here, so a bad path never reaches a command line.
+pub fn vet_open_path(path: &Path) -> Result<PathBuf, String> {
+    let bad = || "Atlas will not open that location.".to_string();
+    let s = path.to_string_lossy();
+    if s.is_empty() || s.contains('\0') || !path.is_absolute() {
+        return Err(bad());
+    }
+    if s.starts_with(r"\\") || s.starts_with("//") || s.starts_with('-') {
+        return Err(bad());
+    }
+    let real = strip_verbatim(&fs::canonicalize(path).map_err(|_| "The file is gone.".to_string())?);
+    let r = real.to_string_lossy();
+    if r.starts_with(r"\\") || r.starts_with("//") || r.starts_with('-') {
+        return Err(bad());
+    }
+    Ok(real)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn vet_open_path_refuses_relative_unc_verbatim_and_dash_paths() {
+        for bad in [
+            "",
+            "relative/file.md",
+            "-rf",
+            r"\\evil-host\share\file.md",
+            "//evil-host/share/file.md",
+            r"\\?\C:\Windows\win.ini",
+            r"\\?\UNC\evil-host\share\file.md",
+            r"\\.\pipe\x",
+        ] {
+            assert!(vet_open_path(Path::new(bad)).is_err(), "{bad:?} should be refused");
+        }
+        assert!(vet_open_path(Path::new("a\0b")).is_err());
+    }
+
+    #[test]
+    fn vet_open_path_gives_the_canonical_path_of_a_real_file_and_refuses_a_missing_one() {
+        let d = tempdir().unwrap();
+        let f = d.path().join("a.md");
+        fs::write(&f, "x").unwrap();
+        let got = vet_open_path(&f).unwrap();
+        assert!(got.is_absolute() && got.is_file());
+        assert!(!got.to_string_lossy().starts_with(r"\\?\"), "{got:?}");
+        assert!(vet_open_path(&d.path().join("missing.md")).is_err());
+        // A path that wanders through `..` is resolved, not trusted as written.
+        let sub = d.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        let wander = sub.join("..").join("a.md");
+        assert_eq!(vet_open_path(&wander).unwrap(), got);
+    }
 
     #[test]
     fn strip_verbatim_removes_windows_prefixes_and_leaves_others() {

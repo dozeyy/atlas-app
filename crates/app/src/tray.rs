@@ -16,9 +16,9 @@ use atlas_core::usage::State as UsageState;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
-use crate::state::AppState;
+use crate::state::{AppState, Leave};
 use crate::usage::Signal;
 
 pub const TRAY_ID: &str = "atlas";
@@ -44,6 +44,23 @@ pub fn focus_main(app: &AppHandle) {
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
+    }
+}
+
+/// An editor holds edits that are not saved and a quit was asked for: bring the window forward and
+/// let the page ask. "Discard" there calls `leave_app`.
+pub fn ask_quit(app: &AppHandle) {
+    focus_main(app);
+    let _ = app.emit(crate::state::QUIT_ASK_EVENT, ());
+}
+
+/// Quit from the tray menu, asking first when there are unsaved edits.
+fn quit_or_ask(app: &AppHandle) {
+    let ask = app.try_state::<Arc<AppState>>().is_some_and(|s| s.leave_decision(true) == Leave::Ask);
+    if ask {
+        ask_quit(app);
+    } else {
+        app.exit(0);
     }
 }
 
@@ -79,7 +96,7 @@ pub fn install(app: &AppHandle, state: &Arc<AppState>) -> tauri::Result<()> {
         .show_menu_on_left_click(cfg!(target_os = "macos"))
         .on_menu_event(|app, ev| match ev.id().as_ref() {
             "open" => focus_main(app),
-            "quit" => app.exit(0),
+            "quit" => quit_or_ask(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, ev| {

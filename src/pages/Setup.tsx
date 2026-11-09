@@ -16,6 +16,7 @@ import { clearPendingToolkitItem, onNavRequest, peekPendingToolkitItem } from ".
 import type { CreateKind, SetupItem, SetupProject, SetupSnapshot } from "../lib/setup-types";
 import { reloadSetup, startSetup, useSetup } from "../state/setupStore";
 import { useAtlas } from "../state/AtlasProvider";
+import { guardLeave } from "../state/unsavedStore";
 
 const CLAUDE_JSON_NOTE: Record<string, string> = {
   missing: "Atlas could not find your .claude.json, so the project list and per-project MCP servers may be incomplete.",
@@ -83,6 +84,8 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
   const { info } = useAtlas();
   const [tile, setTile] = useState<TileId | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedRef = useRef(selectedId);
+  selectedRef.current = selectedId;
   const [pendingDelete, setPendingDelete] = useState<SetupItem | null>(null);
   const [creating, setCreating] = useState<CreateKind | null>(null);
   const top = useRef<HTMLDivElement>(null);
@@ -128,7 +131,8 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
     const id = peekPendingToolkitItem();
     if (!id) return;
     clearPendingToolkitItem();
-    if (byId.has(id)) setSelectedId(id);
+    // Another item replaces the one being edited: ask first when it holds unsaved edits.
+    if (byId.has(id) && id !== selectedRef.current) guardLeave(() => setSelectedId(id));
   }, [byId]);
   useEffect(() => {
     takePending();

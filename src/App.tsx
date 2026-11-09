@@ -3,6 +3,7 @@ import { WarningCircle } from "@phosphor-icons/react";
 import { useSidebar } from "./lib/useSidebar";
 import { NAV, Sidebar } from "./components/Sidebar";
 import { CommandPalette } from "./components/CommandPalette";
+import { LeaveGuard } from "./components/LeaveGuard";
 import { TitleBar } from "./components/TitleBar";
 import { openPalette } from "./state/paletteStore";
 import { refreshPaletteData } from "./lib/usePaletteData";
@@ -108,6 +109,7 @@ export function App() {
         </main>
       </div>
       <CommandPalette />
+      <LeaveGuard />
       <ToastHost />
       <TipLayer />
     </div>
