@@ -734,7 +734,7 @@ mod tests {
         }
         writeln!(f, "{}", tool("t", "Read", r#"{"file_path":"q"}"#, "2026-11-08T10:00:01.000Z")).unwrap();
         // A rename later on adds an untimed line: it does not make the chat newer.
-        write!(f, "{}\r\n", r#"{"type":"custom-title","customTitle":"Renamed"}"#).unwrap();
+        f.write_all(b"{\"type\":\"custom-title\",\"customTitle\":\"Renamed\"}\r\n").unwrap();
         drop(f);
         let want = crate::usage::time::parse_iso_ms("2026-11-08T10:00:01.000Z");
         assert_eq!(last_entry_ms(&p), want);
