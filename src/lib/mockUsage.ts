@@ -28,6 +28,7 @@ import type {
   TranscriptPage,
   UsageChanged,
   UsageStatus,
+  WrappedHabits,
 } from "./types";
 import { addDays, localDay } from "./usage";
 import { buildMockReceipt, type MockThread } from "./mockReceipt";
@@ -577,6 +578,27 @@ export class MockUsage {
       .map(([id, v]) => ({ id, kind: q.kind, uses: v.uses, sessions: v.sessions.size, lastUsed: v.last || null }))
       .sort((a, b) => b.uses - a.uses || (b.lastUsed ?? 0) - (a.lastUsed ?? 0) || a.id.localeCompare(b.id))
       .slice(0, q.limit ?? 500);
+  }
+
+  /** Chat shapes, helper work and the chat with the most helpers, from the mock chats. */
+  async usageWrappedHabits(a: { from: string; to: string }): Promise<WrappedHabits> {
+    this.guard();
+    const list = this.data().filter((s) => s.day >= a.from && s.day <= a.to);
+    const SHORT = 10 * 60_000;
+    const LONG = 2 * 60 * 60_000;
+    const helperTokens = list.reduce((n, s) => n + s.agents.reduce((m, g) => m + g.tokens.total, 0), 0);
+    let most: MockSession | null = null;
+    for (const s of list) {
+      if (s.agents.length > 0 && (!most || s.agents.length > most.agents.length || (s.agents.length === most.agents.length && s.startedAt < most.startedAt))) most = s;
+    }
+    return {
+      chats: list.length,
+      shortChats: list.filter((s) => s.durationMs < SHORT).length,
+      longChats: list.filter((s) => s.durationMs >= LONG).length,
+      allTokens: list.reduce((n, s) => n + s.tokens.total, 0),
+      helperTokens,
+      mostHelpers: most ? publicRow(most) : null,
+    };
   }
 
   async sessionTranscript(id: string, cursor?: string | null, limit = 50): Promise<TranscriptPage> {

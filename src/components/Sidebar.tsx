@@ -5,10 +5,10 @@ import {
   ClockCounterClockwise,
   GearSix,
   type IconProps,
-  Sparkle,
   SquaresFour,
   Wrench,
 } from "@phosphor-icons/react";
+import { GiftIcon } from "./GiftIcon";
 import { IconMotion } from "./IconMotion";
 import type { Motion } from "./IconMotion";
 import { useAtlas } from "../state/AtlasProvider";
@@ -22,8 +22,10 @@ export const NAV: { view: View; label: string; icon: ComponentType<IconProps>; m
   { view: "sessions", label: "Sessions", icon: ChatsCircle, motion: "bob" },
   { view: "setup", label: "Toolkit", icon: Wrench, motion: "wiggle" },
   { view: "history", label: "History", icon: ClockCounterClockwise, motion: "spin" },
-  { view: "wrapped", label: "Wrapped", icon: Sparkle, motion: "wiggle" },
   { view: "settings", label: "Settings", icon: GearSix, motion: "spin" },
+  // Not in the list: its button is the gift at the right end of the title bar (TitleBar.tsx).
+  // Last, so the shortcuts run 1 to 7 with no gap.
+  { view: "wrapped", label: "Wrapped", icon: GiftIcon, motion: "gift" },
 ];
 
 /** One row is 36 px tall with a 2 px gap: the pill moves in steps of this. */
@@ -34,28 +36,32 @@ export function Sidebar() {
   const mod = modName(info.platform);
   const { collapsed } = useSidebar();
   const sb = info.sandbox;
-  // Settings sits at the foot of the sidebar; the sliding pill lives with the others.
-  const top = NAV.filter((n) => n.view !== "settings");
+  // Settings sits at the foot of the sidebar and Wrapped in the title bar; the sliding pill lives with the others.
+  const top = NAV.filter((n) => n.view !== "settings" && n.view !== "wrapped");
   const at = top.findIndex((n) => n.view === view);
 
-  const item = (index: number, { view: v, label, icon: Icon, motion }: (typeof NAV)[number], solo = false) => (
-    <button
-      key={v}
-      type="button"
-      onClick={() => setView(v)}
-      aria-current={v === view ? "page" : undefined}
-      title={`${label} (${mod}+${index + 1})`}
-      aria-label={label}
-      className={`nav-item hover-host${solo ? " nav-solo" : ""}`}
-    >
-      <span className="nav-face text-body">
-        <IconMotion motion={motion} fill>
-          <Icon />
-        </IconMotion>
-        {!solo && <span className="nav-label">{label}</span>}
-      </span>
-    </button>
-  );
+  const item = (n: (typeof NAV)[number], solo = false) => {
+    const { view: v, label, icon: Icon, motion } = n;
+    const index = NAV.indexOf(n);
+    return (
+      <button
+        key={v}
+        type="button"
+        onClick={() => setView(v)}
+        aria-current={v === view ? "page" : undefined}
+        title={`${label} (${mod}+${index + 1})`}
+        aria-label={label}
+        className={`nav-item hover-host${solo ? " nav-solo" : ""}`}
+      >
+        <span className="nav-face text-body">
+          <IconMotion motion={motion} fill>
+            <Icon />
+          </IconMotion>
+          {!solo && <span className="nav-label">{label}</span>}
+        </span>
+      </button>
+    );
+  };
 
   return (
     <aside
@@ -63,13 +69,13 @@ export function Sidebar() {
       className={`side flex shrink-0 flex-col px-3 pb-3${collapsed ? " side-collapsed" : ""}`}
       style={{ background: info.backdrop ? "var(--sidebar-glass)" : "var(--sidebar-solid)" }}
     >
-      <nav aria-label="Main" className="relative flex flex-col gap-0.5">
+      <nav aria-label="Main" className="side-main relative flex flex-col gap-0.5">
         <span
           aria-hidden="true"
           className="nav-pill"
           style={{ transform: `translateY(${Math.max(0, at) * PITCH}px)`, opacity: at < 0 ? 0 : 1 }}
         />
-        {top.map((n, i) => item(i, n))}
+        {top.map((n) => item(n))}
       </nav>
 
       <div className="mt-auto flex flex-col gap-2 pt-4">
@@ -89,7 +95,7 @@ export function Sidebar() {
         )}
         {/* Settings: icon only, in the sidebar's bottom-right corner (centred when folded). */}
         <nav aria-label="Secondary" className="nav-settings-row">
-          {item(NAV.length - 1, NAV[NAV.length - 1]!, true)}
+          {item(NAV.find((n) => n.view === "settings")!, true)}
         </nav>
       </div>
     </aside>

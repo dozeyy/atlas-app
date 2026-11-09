@@ -19,6 +19,7 @@ pub mod scan;
 pub mod time;
 pub mod transcript;
 pub mod watch;
+pub mod wrapped;
 
 use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
@@ -414,6 +415,11 @@ impl UsageEngine {
     /// How often each skill, helper type or tool was used in a period (see `query::usage_by_item`).
     pub fn usage_by_item(&self, q: &query::ItemQuery) -> Result<Vec<query::ItemUse>, String> {
         self.read(|c, _| query::usage_by_item(c, q))
+    }
+
+    /// Chat shapes, the helpers' share and the chat with the most helpers (the Wrapped story).
+    pub fn wrapped_habits(&self, from: &str, to: &str) -> Result<wrapped::WrappedHabits, String> {
+        self.read(|c, x| wrapped::wrapped_habits(c, x, from, to))
     }
 
     /// The last `days` days as the setup-cost estimate needs them (see `costmix`).

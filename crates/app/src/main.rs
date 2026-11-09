@@ -90,6 +90,8 @@ fn main() {
             usage::usage_agent_detail,
             usage::session_receipt,
             usage::usage_by_item,
+            usage::usage_wrapped_habits,
+            commands::wrapped_save_card,
             usage::session_transcript,
             usage::usage_filter_options,
             usage::usage_reindex,

@@ -241,3 +241,28 @@ fn an_older_cache_is_migrated_and_re_read() {
     assert_eq!(d.agents.len(), 5);
     assert_eq!(d.row.tokens.total, 4721, "re-reading must not double anything");
 }
+
+#[test]
+fn wrapped_habits_split_helper_work_from_the_chats_and_find_the_busiest_crowd() {
+    use atlas_core::usage::wrapped::{LONG_CHAT_MS, SHORT_CHAT_MS};
+    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let h = fx.engine.wrapped_habits("2000-01-01", "2100-12-31").unwrap();
+    let rows = fx.engine.sessions_list(&SessionQuery { limit: 50, ..Default::default() }).unwrap().rows;
+
+    assert_eq!(h.chats, 5);
+    assert_eq!(h.all_tokens, rows.iter().map(|r| r.tokens.total).sum::<u64>(), "the story's total");
+    let helpers: u64 = rows.iter().map(|r| detail(&fx, &r.session_id).agents.iter().map(|a| a.tokens.total).sum::<u64>()).sum();
+    assert!(helpers > 0);
+    assert_eq!(h.helper_tokens, helpers, "every helper token, once");
+    assert_eq!(h.short_chats, rows.iter().filter(|r| r.duration_ms < SHORT_CHAT_MS).count() as u64);
+    assert_eq!(h.long_chats, rows.iter().filter(|r| r.duration_ms >= LONG_CHAT_MS).count() as u64);
+
+    let crowd = h.most_helpers.expect("one chat had helpers");
+    assert_eq!(crowd.session_id, SA);
+    assert_eq!(crowd.agent_count, 5);
+
+    // A range with nothing in it says so instead of inventing a chat.
+    let none = fx.engine.wrapped_habits("2001-01-01", "2001-01-02").unwrap();
+    assert_eq!((none.chats, none.all_tokens, none.helper_tokens), (0, 0, 0));
+    assert!(none.most_helpers.is_none());
+}

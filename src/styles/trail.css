@@ -131,6 +131,30 @@
   40% { translate: 0 -3px; }
   100% { translate: 0 0; }
 }
+/* The gift: the whole box gives a small hop and the lid pops off its box and settles back with a
+   wobble. The lid is its own group inside GiftIcon, pivoting on its left edge. */
+@keyframes m-gift {
+  0% { translate: 0 0; scale: 1; }
+  30% { translate: 0 1px; scale: 1.04 0.94; }
+  55% { translate: 0 -1.5px; scale: 0.98 1.06; }
+  100% { translate: 0 0; scale: 1; }
+}
+@keyframes m-gift-lid {
+  0% { translate: 0 0; rotate: 0deg; }
+  35% { translate: 0 -44px; rotate: -14deg; }
+  58% { translate: 0 -12px; rotate: 5deg; }
+  78% { translate: 0 -22px; rotate: -4deg; }
+  100% { translate: 0 0; rotate: 0deg; }
+}
+.ico[data-m="gift"] svg {
+  overflow: visible;
+}
+.ico .gift-lid {
+  transform-box: view-box;
+  transform-origin: 40px 124px;
+}
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="gift"] { animation: m-gift 520ms var(--ease-out); }
+:is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="gift"] .gift-lid { animation: m-gift-lid 520ms var(--ease-out); }
 :is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="wiggle"] { animation: m-wiggle 420ms var(--ease-out); }
 :is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="zap"] { animation: m-zap 420ms var(--ease-out); }
 :is(button, a, [role="button"], .hover-host):not(:disabled):hover .ico[data-m="tilt"] { animation: m-tilt 420ms var(--ease-out); }
@@ -535,6 +559,44 @@ html.reduced .options-panel {
   display: flex;
   align-items: center;
   padding-left: 6px;
+}
+/* Wrapped's gift: the far right of the sidebar's top row (right edge in line with Settings below).
+   Folded, it drops under the toggle and sits centred over the icons; the list moves down one row
+   to make room, at the pace of the fold. */
+.titlebar-gift {
+  position: absolute;
+  top: 4px;
+  left: calc(var(--sidebar-w) - 13px - 32px);
+  transition:
+    top var(--side-dur) var(--ease-out),
+    left var(--side-dur) var(--ease-out);
+}
+.app-shell[data-side="collapsed"] .titlebar-gift {
+  top: calc(var(--titlebar-h) + 8px + 2px); /* centred on the first row (36 px) of the list's old place */
+  left: calc((var(--sidebar-w-collapsed) - 1px) / 2 - 16px);
+  transition-delay: 60ms;
+}
+.titlebar-gift[aria-current="page"] .btn-face,
+.titlebar-gift[aria-current="page"]:hover:not(:disabled) .btn-face {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+.side-main {
+  transition: margin-top var(--side-dur) var(--ease-out);
+}
+.side-collapsed .side-main {
+  margin-top: 38px; /* one row (36) and the gap (2) */
+  transition-delay: 60ms;
+}
+html.reduced .titlebar-gift,
+html.reduced .side-main {
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .titlebar-gift,
+  .side-main {
+    transition: none !important;
+  }
 }
 .caption-buttons {
   display: flex;
@@ -1463,7 +1525,8 @@ html.reduced .row-in {
   animation-name: t-fade !important;
   stroke-dasharray: none;
 }
-html.reduced .ico {
+html.reduced .ico,
+html.reduced .ico .gift-lid {
   animation: none !important;
 }
 html.reduced .bar-g:hover .bar,

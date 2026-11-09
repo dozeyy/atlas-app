@@ -15,6 +15,7 @@ import type {
   AgentDetail,
   ItemQuery,
   ItemUse,
+  WrappedHabits,
   Receipt,
   SearchPage,
   SearchStatus,
@@ -108,6 +109,13 @@ export interface Backend {
   /** Where one chat's money went, and the helper tree's numbers. Read from the files once, then kept. */
   sessionReceipt(sessionId: string): Promise<Receipt | null>;
   usageByItem(query: ItemQuery): Promise<ItemUse[]>;
+  /** Chat shapes, helper work and the chat with the most helpers, for Wrapped. Local days, inclusive. */
+  usageWrappedHabits(args: { from: string; to: string }): Promise<WrappedHabits>;
+  /**
+   * Wrapped's share card: the PNG bytes and today's local day. Opens a save picker that starts in
+   * Pictures; resolves to the saved path, or null when the picker was cancelled.
+   */
+  wrappedSaveCard(png: number[], day: string): Promise<string | null>;
   sessionTranscript(sessionId: string, cursor?: string | null, limit?: number): Promise<TranscriptPage>;
   usageFilterOptions(): Promise<FilterOptions>;
   usageReindex(scope: "changed" | "full"): Promise<UsageStatus>;
@@ -195,6 +203,8 @@ const tauriBackend: Backend = {
   agentDetail: (sessionId, agentId) => invoke<AgentDetail | null>("usage_agent_detail", { sessionId, agentId }),
   sessionReceipt: (sessionId) => invoke<Receipt | null>("session_receipt", { sessionId }),
   usageByItem: (query) => invoke<ItemUse[]>("usage_by_item", { query }),
+  usageWrappedHabits: (args) => invoke<WrappedHabits>("usage_wrapped_habits", args),
+  wrappedSaveCard: (png, day) => invoke<string | null>("wrapped_save_card", { png, day }),
   sessionTranscript: (sessionId, cursor = null, limit = 50) =>
     invoke<TranscriptPage>("session_transcript", { sessionId, cursor, limit }),
   usageFilterOptions: () => invoke<FilterOptions>("usage_filter_options"),

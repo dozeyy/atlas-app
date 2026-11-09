@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { SidebarSimple } from "@phosphor-icons/react";
 import { AppMenu } from "./AppMenu";
 import { IconButton } from "./controls";
+import { GiftIcon } from "./GiftIcon";
+import { IconMotion } from "./IconMotion";
+import { NAV } from "./Sidebar";
 import { modName } from "../lib/appMenu";
 import { getBackend } from "../lib/ipc";
 import { useSidebar } from "../lib/useSidebar";
@@ -34,8 +37,34 @@ export function TitleBar() {
           <SidebarSimple size={18} aria-hidden="true" />
         </IconButton>
       </div>
+      <WrappedButton />
       {info.platform === "windows" && <CaptionButtons />}
     </header>
+  );
+}
+
+/**
+ * Wrapped: an icon-only gift at the far right of the sidebar's top row (the toggle stays at the
+ * left). Folded, the column is too narrow for both, so it drops under the toggle, centred over
+ * the icons. It is a button of its own, not part of the drag region, so a click opens Wrapped and
+ * a drag anywhere else on the row still moves the window.
+ */
+function WrappedButton() {
+  const { info, view, setView } = useAtlas();
+  const at = NAV.findIndex((n) => n.view === "wrapped");
+  const here = view === "wrapped";
+  return (
+    <IconButton
+      aria-label="Wrapped"
+      aria-current={here ? "page" : undefined}
+      title={`Wrapped (${modName(info.platform)}+${at + 1})`}
+      className="titlebar-gift hover-host"
+      onClick={() => setView("wrapped")}
+    >
+      <IconMotion motion="gift" fill>
+        <GiftIcon />
+      </IconMotion>
+    </IconButton>
   );
 }
 

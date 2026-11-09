@@ -1,5 +1,5 @@
 import { compact } from "../../lib/usage";
-import { hourLabel, peakHour } from "../../lib/wrappedModel";
+import { hourLabel, peakHour, WEEKDAYS, WEEKDAYS_SHORT } from "../../lib/wrappedModel";
 
 const FILL = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--slate)"];
 
@@ -54,6 +54,45 @@ export function HourBars({ values, height = 96 }: { values: number[]; height?: n
         <span>11 PM</span>
       </div>
     </div>
+  );
+}
+
+/** Tokens by weekday, Monday first, the busiest one in the accent. */
+export function WeekdayBars({ values, height = 96 }: { values: number[]; height?: number }) {
+  const top = values.indexOf(Math.max(...values));
+  return (
+    <div>
+      <Bars values={values} height={height} gap={0.4} label={`Tokens by weekday, busiest on ${WEEKDAYS[top] ?? "none"}`} />
+      <div className="mt-1 grid grid-cols-7 text-center text-caption text-ink-2" aria-hidden="true">
+        {WEEKDAYS_SHORT.map((w) => (
+          <span key={w}>{w}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A countdown: the list reads 1 to 5 top to bottom, and it arrives 5 first, 1 last, so the favorite
+ * lands at the end. With reduced motion the rows only fade in.
+ */
+export function Countdown({ rows }: { rows: { label: string; value: number; note?: string }[] }) {
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  return (
+    <ol className="wr-count" aria-label={`Top ${rows.length}, ranked`}>
+      {rows.map((r, i) => (
+        <li key={r.label} data-first={i === 0 ? "" : undefined} style={{ ["--r" as string]: rows.length - 1 - i }}>
+          <span className="wr-rank d" aria-hidden="true">
+            {i + 1}
+          </span>
+          <span className="truncate text-body font-medium text-ink">{r.label}</span>
+          <span className="text-caption text-ink-2">{r.note ?? compact(r.value)}</span>
+          <span className="share-bar wr-count-bar" aria-hidden="true">
+            <i style={{ width: `${Math.max(3, (r.value / max) * 100)}%`, background: i === 0 ? "var(--accent)" : "var(--ink-2)" }} />
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
