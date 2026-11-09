@@ -83,23 +83,66 @@ fn can_carry_code(k: ItemKind) -> bool {
 /// Frontmatter keys that make a skill, agent or command run something or widen what it may run.
 const CODE_KEYS: [&str; 7] = ["hooks", "allowed-tools", "allowed_tools", "allowedtools", "permissionmode", "mcpservers", "shell"];
 
+/// Why the YAML header of a skill, agent or command could run something, if it could. It is
+/// parsed the way the scanner parses it (`serde_yaml_ng`), merge keys applied, so a quoted key,
+/// flow style (`{hooks: ...}`), an explicit key (`? hooks`) or a merge (`<<: *a`) cannot hide a
+/// key from the check. A header that does not parse, or has a key that is not plain text, is
+/// refused: it is not something Atlas can vouch for.
+fn code_in_header(yaml: &str) -> Option<&'static str> {
+    use serde_yaml_ng::Value as Y;
+    const WHY: &str = "a hook, a tool permission or a server in its header";
+    if yaml.trim().is_empty() {
+        return None;
+    }
+    let Ok(mut v) = serde_yaml_ng::from_str::<Y>(yaml) else { return Some("a header that can't be read") };
+    if v.is_null() {
+        return None;
+    }
+    if v.apply_merge().is_err() {
+        return Some("a header that can't be read");
+    }
+    let Y::Mapping(m) = &v else { return Some("a header that is not a list of keys") };
+    for k in m.keys() {
+        let Y::String(k) = k else { return Some("a header with a key that is not plain text") };
+        let k = k.trim().to_lowercase();
+        if k == "<<" {
+            return Some("a header that merges other keys in");
+        }
+        if CODE_KEYS.contains(&k.as_str()) {
+            return Some(WHY);
+        }
+    }
+    None
+}
+
 /// Why `text` (the body of a skill, agent or command) could run a command, if it could.
 fn code_in_text(text: &str) -> Option<&'static str> {
     let text = text.trim_start_matches('\u{feff}');
-    let mut lines = text.lines();
-    if lines.clone().next().is_some_and(|l| l.trim_end() == "---") {
-        lines.next();
-        for l in lines.by_ref() {
+    if text.lines().next().is_some_and(|l| l.trim_end() == "---") {
+        // Claude Code ends the header at the next `---`; the scanner also accepts `...`. Check
+        // the header both ways, and refuse one that never closes.
+        let mut yaml = String::new();
+        let mut closed = false;
+        for l in text.lines().skip(1) {
             if l.trim_end() == "---" {
+                closed = true;
                 break;
             }
-            // Top-level keys only (nested ones sit under a key that is itself checked).
-            if !l.starts_with([' ', '\t'])
-                && let Some((k, _)) = l.split_once(':')
-                && CODE_KEYS.contains(&k.trim().to_ascii_lowercase().as_str())
-            {
-                return Some("a hook, a tool permission or a server in its header");
-            }
+            yaml.push_str(l);
+            yaml.push('\n');
+        }
+        if !closed {
+            return Some("a header that is never closed");
+        }
+        if let Some(why) = code_in_header(&yaml) {
+            return Some(why);
+        }
+        let (fm, _, fm_closed) = crate::setup::frontmatter::split(text);
+        if let Some(fm) = fm
+            && (!fm_closed || fm != yaml)
+            && let Some(why) = code_in_header(fm)
+        {
+            return Some(why);
         }
     }
     // `![alt](url)` is a markdown image, not a shell line.
@@ -111,6 +154,47 @@ fn code_in_text(text: &str) -> Option<&'static str> {
         return Some("a shell line (starting with !)");
     }
     None
+}
+
+fn kind_from_word(k: &str) -> ItemKind {
+    match k {
+        "instructions" => ItemKind::Instructions,
+        "skill" => ItemKind::Skill,
+        "agent" => ItemKind::Agent,
+        "command" => ItemKind::Command,
+        "rule" => ItemKind::Rule,
+        "outputStyle" => ItemKind::OutputStyle,
+        _ => ItemKind::Other,
+    }
+}
+
+fn is_md(path: &str) -> bool {
+    Path::new(path).extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("md"))
+}
+
+/// Folders whose files are run, not read.
+fn is_code_folder(name: &str) -> bool {
+    matches!(name.to_ascii_lowercase().as_str(), "hooks" | "scripts" | "local")
+}
+
+/// A change this size is refused (and a card never shows a cut-off version of it): what is
+/// approved must be exactly what was shown.
+fn too_long(text: &str) -> Result<(), String> {
+    if text.chars().count() > TEXT_CAP {
+        return Err(format!("That text is longer than {TEXT_CAP} characters, so it can't be shown in full for approval. Make the change smaller."));
+    }
+    Ok(())
+}
+
+/// The sentence a card carries when the change would run commands.
+fn runs_commands(note: Option<String>, why: Option<String>) -> Option<String> {
+    match why {
+        Some(w) => Some(match note {
+            Some(n) => format!("This change runs commands: {w}. {n}"),
+            None => format!("This change runs commands: {w}."),
+        }),
+        None => note,
+    }
 }
 
 fn no_mask(text: &str) -> Result<(), String> {
@@ -290,10 +374,11 @@ pub struct Ops {
 impl Ops {
     /// `data_dir` is Atlas's data folder (the one that holds `setup-backups`). Deletes go to the
     /// OS trash too (set `ATLAS_NO_TRASH=1`, or call `without_trash`, to keep tests out of the
-    /// real Recycle Bin). MCP servers are added by the file edit unless `with_cli` is given.
+    /// real Recycle Bin). MCP servers are added through Claude Code's own command when it is found (`with_cli`
+    /// picks another or none); the guarded file edit is the fallback.
     pub fn new(inputs: DiscoveryInputs, data_dir: &Path, source: &str) -> Ops {
         let to_trash = std::env::var_os("ATLAS_NO_TRASH").is_none_or(|v| v.is_empty() || v == "0");
-        Ops { inputs, data_dir: data_dir.to_path_buf(), backups: data_dir.join("setup-backups"), source: source.to_string(), cache: Mutex::new(Cache::default()), allow_code: true, cli: CliChoice::Missing, to_trash }
+        Ops { inputs, data_dir: data_dir.to_path_buf(), backups: data_dir.join("setup-backups"), source: source.to_string(), cache: Mutex::new(Cache::default()), allow_code: true, cli: CliChoice::Auto, to_trash }
     }
 
     /// Use Claude Code's own command to add MCP servers (it owns `.claude.json`); the guarded
@@ -301,6 +386,11 @@ impl Ops {
     pub fn with_cli(mut self, cli: CliChoice) -> Ops {
         self.cli = cli;
         self
+    }
+
+    /// Will a new MCP server be added through Claude Code's own command (it is found)?
+    pub fn registers_servers_with_claude_command(&self) -> bool {
+        self.cli.found()
     }
 
     /// Do not send deleted files to the OS trash (Atlas's backups still keep them).
@@ -325,25 +415,32 @@ impl Ops {
         Err(format!("Changing {what} could make a command run on this computer, so Atlas will not do it without the user's approval. Ask the user to make this change in Atlas, or use Atlas in propose mode so they can approve it."))
     }
 
-    /// A text edit of this kind of file, at this path, with this new text: allowed in direct
-    /// mode only for plain markdown, and for a skill, agent or command only when the text
-    /// cannot run anything.
-    fn guard_prose(&self, kind: ItemKind, path: &str, text: &str) -> Result<(), String> {
-        if self.allow_code {
-            return Ok(());
-        }
+    /// Why a text edit of this kind of file, at this path, with this new text, could run
+    /// something: only plain markdown is safe, and for a skill, agent or command only when its
+    /// text cannot run anything. `None` means it is words only.
+    fn prose_reason(&self, kind: ItemKind, path: &str, text: &str) -> Option<String> {
         if !is_prose_kind(kind) {
-            return self.guard_code("hooks, MCP servers, settings or files of this kind");
+            return Some("hooks, MCP servers, settings or files of this kind".into());
         }
-        if !Path::new(path).extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("md")) {
-            return self.guard_code("a file that is not plain markdown (it could be a script)");
+        if !is_md(path) {
+            return Some("a file that is not plain markdown (it could be a script)".into());
         }
         if can_carry_code(kind)
             && let Some(why) = code_in_text(text)
         {
-            return self.guard_code(&format!("text with {why}"));
+            return Some(format!("text with {why}"));
         }
-        Ok(())
+        None
+    }
+
+    fn guard_prose(&self, kind: ItemKind, path: &str, text: &str) -> Result<(), String> {
+        if self.allow_code {
+            return Ok(());
+        }
+        match self.prose_reason(kind, path, text) {
+            Some(why) => self.guard_code(&why),
+            None => Ok(()),
+        }
     }
 
     /// Where a restore may write: the Claude folder, `.claude.json` and the projects Claude knows.
@@ -351,28 +448,76 @@ impl Ops {
         sw::Confine::from_discovery(&self.inputs.root.dir, &self.inputs.root.claude_json, d)
     }
 
-    /// Would putting this backup back put code on the computer? Hooks, servers, settings and
-    /// anything that is not plain markdown say yes; so does a skill, agent or command whose
-    /// saved text carries a header or `!` line that runs something.
+    /// Does this path sit in a folder that holds code (below the Claude folder, or below a
+    /// project's `.claude`)?
+    fn in_code_folder(&self, path: &Path) -> bool {
+        let rel = path.strip_prefix(&self.inputs.root.dir).ok().map(Path::to_path_buf).or_else(|| {
+            let comps: Vec<_> = path.components().collect();
+            let at = comps.iter().rposition(|c| c.as_os_str().eq_ignore_ascii_case(".claude"))?;
+            Some(comps[at + 1..].iter().collect())
+        });
+        match rel {
+            Some(r) => r.parent().into_iter().flat_map(|p| p.components()).any(|c| is_code_folder(&c.as_os_str().to_string_lossy())),
+            None => path.parent().and_then(|p| p.file_name()).is_some_and(|n| is_code_folder(&n.to_string_lossy())),
+        }
+    }
+
+    /// Why putting this backup back could put code on the computer. Decided from the files that
+    /// would be written, never from the manifest's own `kind` word: every file must be
+    /// markdown, outside the folders that hold hooks and scripts, and its text must not carry a
+    /// header key or `!` line that runs something. `None` means it is words only.
+    fn backup_reason(&self, info: &sw::BackupInfo) -> Option<String> {
+        let path = info.path.as_deref().unwrap_or("");
+        let p = Path::new(path);
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_ascii_lowercase();
+        if !is_prose_kind_word(&info.kind) || (name.starts_with("settings") && name.ends_with(".json")) || name == ".claude.json" || name == ".mcp.json" {
+            return Some("hooks, MCP servers or settings".into());
+        }
+        if p.extension().is_some_and(|e| !e.eq_ignore_ascii_case("md")) {
+            return Some("a file that is not plain markdown (it could be a script)".into());
+        }
+        if self.in_code_folder(p) {
+            return Some("a hooks, scripts or local folder".into());
+        }
+        for (rel, bytes) in sw::backup_files(&self.backups, &info.backup_id) {
+            if !is_md(&rel) {
+                return Some("a file that is not plain markdown (it could be a script)".into());
+            }
+            if Path::new(&rel).parent().into_iter().flat_map(|p| p.components()).any(|c| is_code_folder(&c.as_os_str().to_string_lossy())) {
+                return Some("a hooks, scripts or local folder".into());
+            }
+            if let Some(why) = code_in_text(&String::from_utf8_lossy(&bytes)) {
+                return Some(format!("text with {why}"));
+            }
+        }
+        None
+    }
+
     fn guard_backup(&self, info: &sw::BackupInfo) -> Result<(), String> {
         if self.allow_code {
             return Ok(());
         }
-        let name = info.path.as_deref().and_then(|p| Path::new(p).file_name()).and_then(|n| n.to_str()).unwrap_or("").to_ascii_lowercase();
-        if !is_prose_kind_word(&info.kind) || (name.starts_with("settings") && name.ends_with(".json")) || name == ".claude.json" || name == ".mcp.json" {
-            return self.guard_code("hooks, MCP servers or settings");
+        match self.backup_reason(info) {
+            Some(why) => self.guard_code(&why),
+            None => Ok(()),
         }
-        if matches!(info.kind.as_str(), "skill" | "agent" | "command") {
-            for (rel, bytes) in sw::backup_files(&self.backups, &info.backup_id) {
-                if !rel.to_ascii_lowercase().ends_with(".md") {
-                    return self.guard_code("a file that is not plain markdown (it could be a script)");
-                }
-                if let Some(why) = code_in_text(&String::from_utf8_lossy(&bytes)) {
-                    return self.guard_code(&format!("text with {why}"));
-                }
-            }
-        }
-        Ok(())
+    }
+
+    /// What a restore would put where: the saved files (secrets masked) and what is there now.
+    fn restore_view(&self, info: &sw::BackupInfo) -> (Option<String>, Option<String>) {
+        let show = |name: &str, bytes: &[u8]| {
+            let t = String::from_utf8_lossy(bytes).into_owned();
+            if name.to_ascii_lowercase().ends_with(".json") { crate::setup::secrets::mask_json(&t).text } else { crate::setup::secrets::mask_plain(&t).text }
+        };
+        let files = sw::backup_files(&self.backups, &info.backup_id);
+        let after = match files.len() {
+            0 => None,
+            1 => Some(show(&files[0].0, &files[0].1)),
+            _ => Some(files.iter().map(|(n, b)| format!("=== {n} ===\n{}", show(n, b))).collect::<Vec<_>>().join("\n")),
+        };
+        let now = info.path.as_deref().map(Path::new).filter(|p| p.is_file() && p.metadata().is_ok_and(|m| m.len() <= 2 * 1024 * 1024)).and_then(|p| std::fs::read(p).ok());
+        let before = now.map(|b| show(info.path.as_deref().unwrap_or(""), &b));
+        (before, after)
     }
 
     pub fn inputs(&self) -> &DiscoveryInputs {
@@ -527,13 +672,20 @@ impl Ops {
                 let draft = sw::create_draft(kind, name, event.as_deref(), &self.ctx()).map_err(wm)?;
                 let text = text.clone().unwrap_or_else(|| draft.text.clone());
                 no_mask(&text)?;
+                too_long(&text)?;
                 if let Some(p) = sw::validate_draft(kind, name, event.as_deref(), &text, &self.ctx()).map_err(wm)?.first() {
                     return Err(p.message.clone());
                 }
-                Ok(base(format!("Create {} {}", kind_word(kind), draft.name), kind, &draft.name, draft.path.clone(), None, Some(text), Some(draft.where_note)))
+                let why = match kind.as_str() {
+                    "hook" => Some("it is a hook".to_string()),
+                    "mcpServer" => Some("it starts a server program".to_string()),
+                    k => self.prose_reason(kind_from_word(k), &draft.path, &text),
+                };
+                Ok(base(format!("Create {} {}", kind_word(kind), draft.name), kind, &draft.name, draft.path.clone(), None, Some(text), runs_commands(Some(draft.where_note), why)))
             }
             Write::UpdateItem { id, text, file, stamp } => {
                 no_mask(text)?;
+                too_long(text)?;
                 let item = d.item(id).ok_or("Unknown item. Use list_items to find the id.")?;
                 let plan = d.save_plan_file(id, file.as_deref()).map_err(wm)?;
                 let raw = d.read_raw_file(id, file.as_deref(), false).map_err(wm)?;
@@ -548,7 +700,8 @@ impl Ops {
                 if let Some(p) = sw::validate(plan.kind, &plan.language, plan.folder_name.as_deref(), matches!(plan.unit, sw::Unit::Entry { .. }), text).first() {
                     return Err(p.message.clone());
                 }
-                Ok(base(format!("Edit {} {}", item.kind.as_str(), item.name), item.kind.as_str(), &item.name, raw.path, Some(raw.text), Some(text.clone()), None))
+                let why = self.prose_reason(item.kind, &raw.path, text);
+                Ok(base(format!("Edit {} {}", item.kind.as_str(), item.name), item.kind.as_str(), &item.name, raw.path, Some(raw.text), Some(text.clone()), runs_commands(None, why)))
             }
             Write::RenameItem { id, new_name } => {
                 let item = d.item(id).ok_or("Unknown item. Use list_items to find the id.")?;
@@ -570,7 +723,8 @@ impl Ops {
                     if !*enabled {
                         return Err("That hook is already off.".into());
                     }
-                    return Ok(base(format!("Turn hook {} back on", info.name), "hook", &info.name, info.path.clone().unwrap_or_default(), None, None, None));
+                    let (before, after) = self.restore_view(&info);
+                    return Ok(base(format!("Turn hook {} back on", info.name), "hook", &info.name, info.path.clone().unwrap_or_default(), before, after, runs_commands(None, Some("a hook runs whenever its event happens".into()))));
                 }
                 let item = d.item(id).ok_or("Unknown item. Use list_items to find the id.")?;
                 if item.kind != ItemKind::Hook {
@@ -594,7 +748,9 @@ impl Ops {
                 if !info.can_restore {
                     return Err("That backup can't be undone this way.".into());
                 }
-                Ok(base(format!("Undo the {} of {} {}", info.action, info.kind, info.name), &info.kind, &info.name, info.path.clone().unwrap_or_default(), None, None, info.summary))
+                let (before, after) = self.restore_view(&info);
+                let why = self.backup_reason(&info);
+                Ok(base(format!("Undo the {} of {} {}", info.action, info.kind, info.name), &info.kind, &info.name, info.path.clone().unwrap_or_default(), before, after, runs_commands(info.summary.clone(), why)))
             }
         }
     }
@@ -612,6 +768,7 @@ impl Ops {
                 let draft = sw::create_draft(kind, name, event.as_deref(), &self.ctx()).map_err(wm)?;
                 let text = text.clone().unwrap_or_else(|| draft.text.clone());
                 no_mask(&text)?;
+                too_long(&text)?;
                 if !matches!(kind.as_str(), "hook" | "mcpServer") {
                     let k = match kind.as_str() {
                         "instructions" => ItemKind::Instructions,
@@ -628,10 +785,11 @@ impl Ops {
                 let out = sw::create_apply_with(kind, name, event.as_deref(), &text, &self.ctx(), &self.backups, Some(&adder)).map_err(wm)?;
                 let summary = format!("Created {} {}", kind_word(kind), out.name);
                 self.tag(&out.backup_id, &summary);
-                Ok(Applied { summary, backup_id: Some(out.backup_id), path: Some(draft.path), note: None })
+                Ok(Applied { summary, backup_id: Some(out.backup_id), path: Some(draft.path), note: out.note })
             }
             Write::UpdateItem { id, text, file, stamp } => {
                 no_mask(text)?;
+                too_long(text)?;
                 let item = d.item(id).ok_or("Unknown item. Use list_items to find the id.")?;
                 if !is_prose_kind(item.kind) {
                     self.guard_code("hooks, MCP servers, settings or files of this kind")?;

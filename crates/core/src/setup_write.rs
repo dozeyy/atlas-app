@@ -1579,6 +1579,7 @@ pub fn create_apply_with(kind: &str, name: &str, event: Option<&str>, text: &str
     }
     let target = PathBuf::from(&d.path);
     check_write_allowed(&target)?;
+    let mut cli_note: Option<String> = None;
     let note = if is_entry {
         let entry: Value = serde_json::from_str(text).map_err(|e| WriteError::Refused(format!("Not valid JSON: {e}")))?;
         let sig = file_sig(&target);
@@ -1622,15 +1623,23 @@ pub fn create_apply_with(kind: &str, name: &str, event: Option<&str>, text: &str
             // The command did the write: prove the entry is there and no other server moved.
             let now = fs::read(&target).ok().and_then(|b| parse_json_bytes(&b).ok());
             let servers = now.as_ref().and_then(|v| v.get("mcpServers")).and_then(Value::as_object);
-            let ok = servers.is_some_and(|s| s.get(name) == Some(&entry_for_cli) && old_servers.iter().all(|(k, v)| s.get(k) == Some(v)));
+            // The command may store the entry in its own form (extra or reordered fields): what
+            // matters is that the server is there with the same command and args, and that no
+            // other server moved.
+            let added = servers.and_then(|s| s.get(name));
+            let ok = added.is_some_and(|e| e.get("command") == entry_for_cli.get("command") && e.get("args") == entry_for_cli.get("args"))
+                && servers.is_some_and(|s| old_servers.iter().all(|(k, v)| s.get(k) == Some(v)));
             if !ok {
                 return refuse("Claude Code's command ran, but the file does not show the new server as expected. Atlas's earlier copy is in its backups. Please check .claude.json.");
+            }
+            if added != Some(&entry_for_cli) {
+                cli_note = Some("Claude Code saved the server in its own form, so the entry may look a little different from what was shown. The command and arguments are the same.".into());
             }
             by_command = true;
         }
         if !by_command {
             // Re-check right before the swap (the command may have run and failed).
-            if file_sig(&target) != sig && fs::read(&target).ok() != before {
+            if file_sig(&target) != sig || fs::read(&target).ok() != before {
                 let _ = fs::remove_dir_all(&dir);
                 return refuse("The file changed while Atlas was getting ready. Nothing was added; please try again.");
             }
@@ -1649,7 +1658,7 @@ pub fn create_apply_with(kind: &str, name: &str, event: Option<&str>, text: &str
         atomic_write(&target, &encode_like(text, false, false))?;
         id
     };
-    Ok(DeleteOutcome { backup_id: note, name: d.name, kind: kind.into(), note: None })
+    Ok(DeleteOutcome { backup_id: note, name: d.name, kind: kind.into(), note: cli_note })
 }
 
 /// Which backups exist, newest first (for a future History screen and tests).

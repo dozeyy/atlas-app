@@ -52,8 +52,19 @@ sentence, never a protocol error.
   permissions, the status line and `.claude.json` are never written in direct mode, and neither is
   turning an MCP server on or a parked hook back on. Those need the user's approval, which is propose
   mode. This stops a prompt-injected chat from planting a command that runs later.
-- Restore (`RestoreBackup`) in direct mode is checked the same way: a backup of a code kind,
-  `settings*.json`, `.claude.json` or `.mcp.json`, or one whose text carries code, is refused.
+- The header check parses the YAML the way the scanner does (merge keys applied), so quoted, flow,
+  explicit and merge forms of `hooks` / `allowed-tools` / ... are seen; an unreadable or unclosed
+  header is refused.
+- Restore (`RestoreBackup`) in direct mode is decided from the files that would be written, not the
+  manifest's `kind`: a backup of a code kind, `settings*.json`, `.claude.json` or `.mcp.json`, any
+  file that is not `.md`, any path under `hooks/`, `scripts/` or `local/`, or text that carries code
+  is refused.
+- A proposal longer than `TEXT_CAP` (100k characters) is refused, so a card is never a cut-off
+  version of what runs. A card for a change that runs commands says "This change runs commands".
+  The card for a restore or a parked hook turned back on shows the content that comes back.
+- `Ops::new` registers MCP servers through Claude Code's command by default (`with_cli` overrides;
+  tests opt out). If the command stores the entry in its own form it still counts as added, with a
+  note.
 - Restore targets come from the backup manifest, so they are confined (`Confine`): the Claude root,
   `.claude.json`, and the known projects' `.claude` folders and root files only. A forged manifest
   pointing elsewhere is refused.
