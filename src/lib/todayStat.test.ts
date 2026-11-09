@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hourKey, last24Hours, last24Keys, sparkShape, statRange, todayTotal } from "./todayStat";
+import { hourKey, last24Hours, last24Keys, paceText, sparkShape, statRange, todayTotal } from "./todayStat";
 import type { TimelinePoint } from "./types";
 
 const pt = (start: string, tokens: number): TimelinePoint =>
@@ -116,5 +116,23 @@ describe("sparkline baseline", () => {
     const s = sparkShape(new Array(24).fill(0), 44, 22);
     expect(s.empty).toBe(true);
     for (const y of ys(s.line)) expect(y).toBeCloseTo(s.baseline, 3);
+  });
+});
+
+describe("pace text", () => {
+  it("is the Dashboard's percent of a usual day", () => {
+    expect(paceText(420, 1000)).toBe("42% usual");
+    expect(paceText(0, 1000)).toBe("0% usual");
+    expect(paceText(1290, 1000)).toBe("129% usual");
+    expect(paceText(9990, 1000)).toBe("999% usual");
+  });
+
+  it("turns into a multiple before it outgrows the readout", () => {
+    expect(paceText(23_000, 1000)).toBe("23x usual");
+  });
+
+  it("is absent without a usual day", () => {
+    expect(paceText(500, 0)).toBeNull();
+    expect(paceText(500, NaN)).toBeNull();
   });
 });

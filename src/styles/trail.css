@@ -1080,36 +1080,47 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
 .today-stat:hover {
   background: color-mix(in srgb, var(--raised) 80%, transparent);
 }
-.today-face {
+.today-stat-face {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  flex-direction: column;
+  justify-content: center;
   height: 100%;
-  padding: 0 8px 0 10px;
+  /* Text starts where the nav icons start (the nav face pads 16); 4 on the right, the room
+     "129% usual" needs beside "Today". */
+  padding: 0 4px 0 16px;
   transition: transform var(--dur-press) var(--ease-out);
 }
-.today-stat:active .today-face {
+.today-stat:active .today-stat-face {
   transform: scale(var(--press-scale));
 }
-.today-text {
+.today-stat-top,
+.today-stat-bottom {
   display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
   min-width: 0;
-  flex-direction: column;
 }
-.today-label {
-  font-size: 12px;
+.today-stat-label,
+.today-stat-pace {
+  font-size: var(--text-caption);
   line-height: 14px;
   font-weight: 500;
+  white-space: nowrap;
 }
-.today-value {
-  font-size: 15px;
+.today-stat-pace {
+  overflow: hidden;
+  text-overflow: clip;
+  font-variant-numeric: tabular-nums;
+}
+.today-stat-figure {
+  font-size: var(--text-body);
   line-height: 18px;
-  font-weight: 700;
+  font-weight: 680;
   color: var(--ink);
   white-space: nowrap;
 }
-.today-spark {
+.today-stat-spark {
   flex: none;
 }
 .today-base {
@@ -1120,8 +1131,15 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   fill: var(--accent-tint);
   stroke: none;
 }
-@container (max-width: 96px) {
-  .today-spark {
+/* Squeezed beside the update icon: the figure alone, then just the figure and label. */
+@container (max-width: 119px) {
+  .today-stat-pace {
+    display: none;
+  }
+}
+@container (max-width: 99px) {
+  .today-stat .today-stat-spark {
+    /* (the more specific selector beats the generic .chart display:block that comes later) */
     display: none;
   }
 }

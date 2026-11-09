@@ -80,3 +80,15 @@ export function sparkShape(values: number[], w: number, h: number): SparkShape {
     empty: !values.some((v) => v > 0),
   };
 }
+
+/**
+ * Today next to a usual day (chartPaths.usualDay, the same one the Dashboard's Today card shows),
+ * in words short enough for the readout: "129% usual". Null when there is no usual day yet.
+ * Past ten times a usual day it is a multiple ("12x usual") so the text never outgrows its slot.
+ */
+export function paceText(total: number, usual: number): string | null {
+  if (!(usual > 0)) return null;
+  const ratio = Math.max(0, total) / usual;
+  const pct = Math.round(ratio * 100);
+  return pct < 1000 ? `${pct}% usual` : `${Math.round(ratio)}x usual`;
+}
