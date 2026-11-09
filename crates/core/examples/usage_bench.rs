@@ -296,7 +296,8 @@ fn cost_state_report(rep: &mut Report, engine: &UsageEngine, cache: &Path) {
         .map(Result::unwrap)
         .collect();
     let mut devs = Vec::new();
-    let (mut incomplete, mut signed_sum) = (0usize, 0.0);
+    let mut signed = Vec::new();
+    let (mut incomplete, mut signed_sum, mut est_sum, mut cc_sum) = (0usize, 0.0, 0.0, 0.0);
     for (id, cc) in &ids {
         let Some(d) = engine.session_detail(id).unwrap() else { continue };
         let Some(est) = d.row.cost.usd else { continue };
@@ -305,6 +306,9 @@ fn cost_state_report(rep: &mut Report, engine: &UsageEngine, cache: &Path) {
         }
         let dev = (est - cc) / cc;
         signed_sum += dev;
+        signed.push(dev);
+        est_sum += est;
+        cc_sum += cc;
         devs.push(dev.abs());
     }
     if devs.is_empty() {
@@ -314,13 +318,21 @@ fn cost_state_report(rep: &mut Report, engine: &UsageEngine, cache: &Path) {
     let n = devs.len();
     let max = devs.iter().cloned().fold(0.0, f64::max);
     let mean_signed = signed_sum / n as f64;
+    // The unweighted mean of per-session ratios is skewed: a session can be +3000 % but never
+    // below -100 %, so one small session moves it a lot. The dollar-weighted figure and the
+    // mean without the single worst session say how much of the gap is real money.
+    let worst = signed.iter().cloned().fold(f64::MIN, f64::max);
+    let mean_wo_worst = if n > 1 { (signed_sum - worst) / (n - 1) as f64 } else { 0.0 };
+    let weighted = if cc_sum > 0.0 { (est_sum - cc_sum) / cc_sum } else { 0.0 };
     let within2 = devs.iter().filter(|d| **d <= 0.02).count();
     let med = median(&mut devs);
     rep.note(format!(
-        "estimate vs Claude Code cost-state, {n} sessions ({incomplete} with unpriced tokens): median deviation {:.2} %, max {:.2} %, mean signed {:+.2} %, {within2} within 2 % (report only, no threshold)",
+        "estimate vs Claude Code cost-state, {n} sessions ({incomplete} with unpriced tokens): median deviation {:.2} %, max {:.2} %, mean signed {:+.2} % ({:+.2} % without the worst session), dollar-weighted {:+.2} % (${est_sum:.2} vs ${cc_sum:.2}), {within2} within 2 % (report only, no threshold)",
         med * 100.0,
         max * 100.0,
-        mean_signed * 100.0
+        mean_signed * 100.0,
+        mean_wo_worst * 100.0,
+        weighted * 100.0
     ));
 }
 

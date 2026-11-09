@@ -243,6 +243,72 @@ fn cross_file_dupe_order_independent() {
     assert_eq!(results, [30, 30]);
 }
 
+/// One assistant line of `session`, for `msg|req`, with these output tokens.
+fn line(session: &str, msg: &str, output: u64) -> String {
+    format!(
+        r#"{{"type":"assistant","sessionId":"{session}","timestamp":"2026-11-03T14:00:00.000Z","cwd":"/fixture/fork","isSidechain":false,"version":"2.1.296","requestId":"req_{msg}","message":{{"id":"{msg}","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"usage":{{"input_tokens":1000,"output_tokens":{output},"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}},"service_tier":"standard","speed":"standard","inference_geo":"global"}}}}}}"#
+    ) + "\n"
+}
+
+/// The session that owns `msg_SHARED` after a pass over `files` (path, body) with one worker,
+/// so files are applied strictly biggest first. `later` files are added after the first pass.
+fn shared_owner(files: &[(&str, String)], later: &[(&str, String)]) -> (String, i64) {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("projects/-p");
+    fs::create_dir_all(&p).unwrap();
+    for (name, body) in files {
+        fs::write(p.join(name), body).unwrap();
+    }
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = config_for(dir.path(), data.path(), Tz::Fixed(0));
+    cfg.ingest.workers = 1;
+    let cache = cfg.cache_db.clone();
+    let engine = atlas_core::usage::UsageEngine::start(cfg, std::sync::Arc::new(atlas_core::usage::NullSink));
+    assert!(engine.wait_pass(0, WAIT));
+    let fx = Fx { engine, data, config: dir.path().to_path_buf(), cache };
+    if !later.is_empty() {
+        for (name, body) in later {
+            fs::write(p.join(name), body).unwrap();
+        }
+        fx.rescan();
+    }
+    let owner: String = fx
+        .db()
+        .query_row("SELECT session_id FROM messages WHERE msg_key LIKE 'msg_SHARED|%'", [], |r| r.get(0))
+        .unwrap();
+    (owner, fx.one("SELECT COUNT(*) FROM messages WHERE msg_key LIKE 'msg_SHARED|%'"))
+}
+
+/// A resumed or forked session repeats earlier lines in a second file. When both copies carry
+/// the same usage (a tie), which session the message is billed to must not depend on which
+/// file the indexer happened to apply first (D12: "independent of scan order"). Before the
+/// fix, the first-applied copy won, so the shared message (and its cost) moved between the two
+/// sessions with file sizes, worker timing and the order Atlas discovered the files.
+#[test]
+fn cross_file_tie_owner_does_not_depend_on_scan_order() {
+    const A: &str = "aaaaaaaa-0000-4000-8000-000000000001";
+    const B: &str = "bbbbbbbb-0000-4000-8000-000000000002";
+    let shared_a = line(A, "msg_SHARED", 50);
+    let shared_b = line(B, "msg_SHARED", 50);
+    let extra = |s: &str, n: u32| (0..n).map(|i| line(s, &format!("msg_{s}_{i}"), 5)).collect::<String>();
+    let fa = format!("{A}.jsonl");
+    let fb = format!("{B}.jsonl");
+    let runs = [
+        // A is the bigger file, so it is applied first.
+        shared_owner(&[(&fa, shared_a.clone() + &extra(A, 3)), (&fb, shared_b.clone())], &[]),
+        // B is the bigger file, so it is applied first.
+        shared_owner(&[(&fa, shared_a.clone()), (&fb, shared_b.clone() + &extra(B, 3))], &[]),
+        // Atlas sees B first and A only on a later pass.
+        shared_owner(&[(&fb, shared_b.clone())], &[(&fa, shared_a.clone())]),
+        // ...and the other way round.
+        shared_owner(&[(&fa, shared_a.clone())], &[(&fb, shared_b.clone())]),
+    ];
+    for (owner, n) in &runs {
+        assert_eq!(*n, 1, "the shared message is stored once");
+        assert_eq!(owner, &runs[0].0, "owner moved with scan order: {runs:?}");
+    }
+}
+
 #[test]
 fn project_from_cwd_and_relocated() {
     let fx = start(&fixture("claude-usage"), Tz::Fixed(0));

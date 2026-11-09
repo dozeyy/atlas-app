@@ -407,8 +407,10 @@ fn apply_batch(
     let sid_of = |s: &Option<String>| s.clone().unwrap_or_else(|| fallback_sid.clone());
     {
         let mut sel = tx.prepare_cached(
-            "SELECT file_id, output, hour_local, session_id FROM messages WHERE msg_key=?1",
+            "SELECT m.file_id, m.output, m.hour_local, m.session_id, COALESCE(f.path, '')
+             FROM messages m LEFT JOIN files f ON f.file_id = m.file_id WHERE m.msg_key=?1",
         )?;
+        let task_path = task.path.to_string_lossy();
         let mut put = tx.prepare_cached(
             "INSERT OR REPLACE INTO messages(msg_key, session_id, file_id, line_offset, agent_id,
                is_sidechain, model, ts_utc_ms, hour_local, input, output, cw5m, cw1h, cr,
@@ -434,14 +436,20 @@ fn apply_batch(
                                 r.get::<_, i64>(1)?,
                                 r.get::<_, String>(2)?,
                                 r.get::<_, String>(3)?,
+                                r.get::<_, String>(4)?,
                             ))
                         })
                         .optional()?;
-                    if let Some((fid, out, hour, old_sid)) = &existing {
+                    if let Some((fid, out, hour, old_sid, old_path)) = &existing {
                         if *fid != task.file_id {
                             dup.execute([&m.key])?;
-                            if (m.output as i64) <= *out {
-                                continue; // a tie or less keeps the existing row (D12)
+                            // Another file holds the same message (a resumed or forked session
+                            // repeats earlier lines). More output wins; on a tie the copy in the
+                            // file with the smaller path wins, so the session the message is
+                            // billed to never depends on which file was applied first (D12).
+                            let new_out = m.output as i64;
+                            if new_out < *out || (new_out == *out && *task_path >= **old_path) {
+                                continue;
                             }
                         }
                         th.execute([hour])?;

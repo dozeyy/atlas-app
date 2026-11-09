@@ -268,6 +268,38 @@ mod tests {
         assert!(t.cost(&no_fast, &c(1, 1)).is_none());
     }
 
+    /// Published structure (pricing page, checked 2026-11-09): 5-minute cache writes are 1.25x
+    /// base input and 1-hour writes 2x, on every model and on Haiku 5.5's long-context card too.
+    /// Cache reads differ by model (0.025x / 0.05x / 0.1x), so they are only bounded here.
+    #[test]
+    fn seed_cache_rates_follow_published_multipliers() {
+        let t = PriceTable::seed();
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        for (id, m) in &t.models {
+            assert!(near(m.cache_write5m, m.input * 1.25), "{id} 5m write");
+            assert!(near(m.cache_write1h, m.input * 2.0), "{id} 1h write");
+            assert!(m.cache_read > 0.0 && m.cache_read <= m.input * 0.1 + 1e-12, "{id} read");
+            if let Some(l) = &m.long_context {
+                assert!(near(l.cache_write5m, l.input * 1.25), "{id} long 5m write");
+                assert!(near(l.cache_write1h, l.input * 2.0), "{id} long 1h write");
+                assert!(near(l.cache_read / l.input, m.cache_read / m.input), "{id} long read");
+            }
+        }
+    }
+
+    #[test]
+    fn cache_buckets_are_priced_separately() {
+        let t = PriceTable::seed();
+        let b = basis("claude-opus-5-5", "standard", "global", "standard", 0);
+        let m = 1_000_000;
+        let one = |c: Counts| t.cost(&b, &c).unwrap();
+        assert!((one(Counts { cw5m: m, ..Default::default() }) - 5.0).abs() < 1e-9);
+        assert!((one(Counts { cw1h: m, ..Default::default() }) - 8.0).abs() < 1e-9);
+        assert!((one(Counts { cr: m, ..Default::default() }) - 0.2).abs() < 1e-9);
+        let all = Counts { input: m, output: m, cw5m: m, cw1h: m, cr: m, web_search: 0 };
+        assert!((one(all) - (4.0 + 20.0 + 5.0 + 8.0 + 0.2)).abs() < 1e-9);
+    }
+
     #[test]
     fn model_match_is_exact() {
         let t = PriceTable::seed();

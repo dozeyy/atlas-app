@@ -111,7 +111,8 @@ pricing page (fetched 2026-11-08), and read-only measurements of Will's
 - D11. Message key = `message.id + "|" + requestId`, global primary key.
 - D12. Within one file the **last** line for a key wins (all usage fields replaced).
   Across files (recon saw none; still possible after resume/fork) the row with the
-  higher `output_tokens` wins, a tie keeps the existing row; each cross-file collision
+  higher `output_tokens` wins; on a tie the copy in the file with the smaller path wins
+  (not "the existing row": that made the owning session depend on apply order); each cross-file collision
   increments `meta.cross_file_dupes`. The result is independent of scan order.
 - D13. Session id = the line's `sessionId`; for a subagent line without one, the
   `<session>` folder above `subagents/`. Subagent rows carry `agent_id` (`agentId`) and
