@@ -13,5 +13,7 @@ crates/app/gen/
 !fixtures/**/.claude/settings.local.json
 # atlas-usage binaries dropped next to the skill (built or downloaded, never committed)
 skill/bin/
-skill/skills/atlas/bin/
+skill/skills/atlas/bin/atlas-usage
+skill/skills/atlas/bin/atlas-usage.exe
+skill/skills/atlas/bin/.dl*
 dist-cli/

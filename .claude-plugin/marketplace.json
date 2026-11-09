@@ -1,6 +1,7 @@
 {
   "name": "atlas",
   "owner": { "name": "Will Henry" },
+  "description": "Atlas: Claude Code token usage in the chat, with the same numbers as the Atlas app.",
   "plugins": [
     {
       "name": "atlas",

@@ -28,25 +28,39 @@ significant digits (7.3k, 56.1M). Dollar figures are API-price estimates, not a 
 
 ## Install
 
-The skill needs the `atlas-usage` program (one small binary, built from `crates/cli`).
+In Claude Code:
 
-1. **Get `atlas-usage`** - either:
-   - build it: `cargo install --path crates/cli` from this repo (puts `atlas-usage` on
-     PATH via `~/.cargo/bin`), or
-   - take the prebuilt one from the `atlas-usage-<OS>` artifact of the repo's `build`
-     GitHub Action and put it on PATH (or in the skill's `bin/` folder, below).
-2. **Add the skill**, one of:
-   - **Personal skill:** copy `skill/skills/atlas/` to `~/.claude/skills/atlas/`. If
-     `atlas-usage` is not on PATH, put it at `~/.claude/skills/atlas/bin/atlas-usage`
-     (`atlas-usage.exe` on Windows).
-   - **Plugin:** `claude plugin marketplace add dozeyy/atlas` then
-     `claude plugin install atlas@atlas`. A plugin's `bin/` folder is on PATH while it is
-     enabled, so `atlas-usage` can also live in the plugin's `bin/`.
-   - **Try it without installing:** `claude --plugin-dir <this repo>/skill`.
+```
+/plugin marketplace add dozeyy/atlas
+/plugin install atlas@atlas
+```
+
+Then type `/atlas`. There is no binary to set up: the plugin's launcher uses the first of
+these it finds:
+
+1. `atlas-usage` on your PATH.
+2. A copy it saved earlier in the plugin's own data folder.
+3. The Atlas app's copy (`%LOCALAPPDATA%\Atlas\atlas-usage.exe`, Windows).
+4. Otherwise it downloads the right build for your computer from the latest release of
+   `dozeyy/atlas` (with `gh` if you are signed in to it, else plain HTTPS), checks its
+   SHA-256 against the release's `SHA256SUMS.txt`, and saves it. A file that fails the check
+   is deleted and never run.
+
+If the download cannot work (offline, or the repo is private and `gh` is not signed in), the
+launcher prints one line saying what to do. To refresh the saved copy after a new release,
+delete the `atlas-usage` file in the plugin's data folder.
+
+**Fallback, by hand** (no plugin):
+
+- Build the program: `cargo install --path crates/cli` from this repo (it lands on PATH via
+  `~/.cargo/bin`), or take a prebuilt one from the release and put it on PATH.
+- Copy `skill/skills/atlas/` to `~/.claude/skills/atlas/`. The same launcher finds the
+  program on PATH or in that skill's `bin/` folder. (`claude --plugin-dir <this repo>/skill`
+  tries the plugin without installing it.)
 
 When Claude picks the skill up from a plain question it uses the Skill tool; if your
 permission mode asks, allow it once or add `Skill(atlas)` to `permissions.allow`. Typing
-`/atlas` needs no approval, and the skill itself allows only the `atlas-usage` command.
+`/atlas` needs no approval, and the skill itself allows only its own launcher script.
 
 The first run indexes every transcript (about a minute for a few GB); later runs take
 under a second.
