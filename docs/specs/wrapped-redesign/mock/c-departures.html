@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wrapped C Departures</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+  :root { --board: #ebe5dd; --flap-t: #ffffff; --flap-b: #f6f2ec; --flap-ink: #1f1d1a; --flap-dim: #8b847a; --split: rgb(31 29 26 / 0.16);
+          --clay-t: #c96442; --clay-b: #bd5a39; --clay-ink: #ffffff; }
+  :root[data-theme="dark"] { --board: #181817; --flap-t: #353533; --flap-b: #2e2e2c; --flap-ink: #ecece9; --flap-dim: #8d8c88; --split: #181817;
+          --clay-t: #e07a55; --clay-b: #d36f4b; --clay-ink: #1f1f1e; }
+  .sheet { position: absolute; inset: 0; background: var(--board); border-radius: 18px; overflow: hidden; }
+  .frow { position: absolute; display: flex; gap: var(--g, 5px); }
+  .fl { position: relative; flex: none; border-radius: calc(var(--h) * 0.06); background: linear-gradient(var(--flap-t) 0 50%, var(--flap-b) 50% 100%);
+        width: var(--w); height: var(--h); color: var(--flap-ink); display: grid; place-items: center;
+        font-family: var(--font-display); font-variation-settings: "CASL" 0.4, "MONO" 1; font-weight: 720; font-size: calc(var(--h) * 0.64); line-height: 1; }
+  .fl::after { content: ""; position: absolute; left: 0; right: 0; top: calc(50% - 0.5px); height: max(1px, calc(var(--h) * 0.012)); background: var(--split); }
+  .fl.clay { background: linear-gradient(var(--clay-t) 0 50%, var(--clay-b) 50% 100%); color: var(--clay-ink); }
+  .fl.dim { color: var(--flap-dim); }
+  .line { position: absolute; left: 56px; font: 400 22px/31px var(--font-ui); color: var(--text-2); }
+  .line b { color: var(--text); font-weight: 600; }
+  .colon { flex: none; width: 34px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 46px; }
+  .colon i { width: 18px; height: 18px; border-radius: 50%; background: var(--flap-ink); }
+  .tick { position: absolute; left: 230px; top: 68px; display: flex; gap: 4px; }
+  .tick i { width: 64px; height: 14px; border-radius: 3px; background: linear-gradient(var(--flap-t) 0 50%, var(--flap-b) 50% 100%); box-shadow: inset 0 0 0 1px var(--line); }
+  .tick i.on { background: linear-gradient(var(--clay-t) 0 50%, var(--clay-b) 50% 100%); box-shadow: none; }
+  .cap { font: 600 12px/16px var(--font-ui); fill: var(--text-2); }
+  .save { position: absolute; right: 56px; bottom: 44px; }
+</style>
+</head>
+<body>
+<div class="tick" id="tick"></div>
+<div class="stage">
+
+  <section class="slide" data-s="1" data-id="opener">
+    <div class="sheet">
+      <div class="frow" data-f="ATLAS WRAPPED" data-w="30" data-h="44" style="left:56px;top:56px" data-dim="1"></div>
+      <div class="frow" data-f="YOUR 2026" data-w="92" data-h="136" data-g="7" style="left:56px;top:174px" data-clay="5-8"></div>
+      <div class="frow" data-f="FROM    JUL 9" data-w="40" data-h="58" style="left:56px;top:374px" data-dim="0-3"></div>
+      <div class="frow" data-f="TO      TODAY" data-w="40" data-h="58" style="left:56px;top:440px" data-dim="0-1"></div>
+      <div class="frow" data-f="STATUS  BOARDING" data-w="40" data-h="58" style="left:56px;top:506px" data-dim="0-5" data-clay="8-15"></div>
+    </div>
+  </section>
+
+  <section class="slide" data-s="2" data-id="totals">
+    <div class="sheet">
+      <div class="frow" data-f="TOKENS, ALL YEAR" data-w="30" data-h="44" style="left:56px;top:56px" data-dim="1"></div>
+      <div class="frow" data-f="873M" data-w="168" data-h="244" data-g="10" style="left:56px;top:174px" data-clay="3"></div>
+      <div class="line" style="top:464px">About <b>6,500 novels'</b> worth of words.</div>
+    </div>
+  </section>
+
+  <section class="slide" data-s="3" data-id="days">
+    <div class="sheet">
+      <div class="frow" data-f="DAYS YOU SHOWED UP" data-w="30" data-h="44" style="left:56px;top:56px" data-dim="1"></div>
+      <div class="frow" data-f="74" data-w="150" data-h="218" data-g="10" style="left:56px;top:174px"></div>
+      <svg id="cal" style="position:absolute;left:470px;top:174px" width="490" height="230"></svg>
+      <div class="line" style="top:444px">Out of 124. Best run: <b>15 days in a row.</b></div>
+    </div>
+  </section>
+
+  <section class="slide" data-s="6" data-id="clock">
+    <div class="sheet">
+      <div class="frow" data-f="YOUR PRIME TIME" data-w="30" data-h="44" style="left:56px;top:56px" data-dim="1"></div>
+      <div class="frow" id="clockrow" style="left:56px;top:174px;--g:10px;align-items:flex-end"></div>
+      <div class="line" style="top:464px">Your busiest hour over the last 120 days.</div>
+    </div>
+  </section>
+
+  <section class="slide" data-s="8" data-id="compare">
+    <div class="sheet">
+      <div class="frow" data-f="YOUR BIGGEST CHAT" data-w="30" data-h="44" style="left:56px;top:56px" data-dim="1"></div>
+      <div class="frow" data-f="47x" data-w="150" data-h="218" data-g="10" style="left:56px;top:174px" data-clay="2"></div>
+      <div class="frow" data-f="THIS CHAT    110M" data-w="24" data-h="36" data-g="4" style="left:56px;top:418px" data-dim="0-8" data-clay="13-16"></div>
+      <div class="frow" data-f="A USUAL CHAT 2.3M" data-w="24" data-h="36" data-g="4" style="left:56px;top:462px" data-dim="0-11"></div>
+      <div class="line" style="top:530px">One chat in Origin Client used <b>47 times</b> the tokens of a usual one.</div>
+    </div>
+  </section>
+
+  <section class="slide" data-s="11" data-id="helper">
+    <div class="sheet">
+      <div class="frow" data-f="YOUR GO-TO HELPER" data-w="30" data-h="44" style="left:56px;top:56px" data-dim="1"></div>
+      <div class="frow" data-f="GENERAL-PURPOSE" data-w="52" data-h="78" data-g="5" style="left:56px;top:214px"></div>
+      <div class="line" style="top:354px">Called <b>474 times</b> in 25 sessions.</div>
+    </div>
+  </section>
+
+  <section class="slide" data-s="15" data-id="end">
+    <div class="sheet">
+      <div class="frow" data-f="ATLAS WRAPPED  2026" data-w="30" data-h="44" style="left:56px;top:48px" data-clay="15-18"></div>
+      <div id="board" style="position:absolute;left:56px;top:130px"></div>
+      <div class="line" style="top:470px;font-size:16px">Jul 9 to Nov 9</div>
+      <span class="btn primary save">Save image</span>
+    </div>
+  </section>
+
+</div>
+<script src="data.js"></script>
+<script>
+  window.TOTAL = 15;
+  const range = (spec, n) => { const s = new Set(); if (!spec) return s; spec.split(",").forEach((p) => { const [a, b] = p.split("-").map(Number); for (let i = a; i <= (b ?? a); i++) s.add(i); }); return s; };
+  // One split-flap row. A space is a blank flap, as on a real board.
+  function flaps(row, text, w, h, opts = {}) {
+    row.style.setProperty("--g", (opts.g ?? Math.max(3, Math.round(w * 0.14))) + "px");
+    const clay = opts.clay || new Set(), dim = opts.dim || new Set();
+    [...text].forEach((ch, i) => {
+      const f = document.createElement("div");
+      f.className = "fl" + (clay.has(i) ? " clay" : "") + (dim.has(i) ? " dim" : "");
+      f.style.setProperty("--w", w + "px"); f.style.setProperty("--h", h + "px");
+      f.textContent = ch === " " ? "" : ch;
+      row.append(f);
+    });
+  }
+  window.drawProgress = (n, total) => {
+    const t = document.getElementById("tick");
+    for (let i = 1; i <= total; i++) { const e = document.createElement("i"); if (i <= n) e.className = "on"; t.append(e); }
+  };
+  window.afterShell = (on) => {
+    on.querySelectorAll("[data-f]").forEach((r) => {
+      const dimAll = r.dataset.dim === "1";
+      flaps(r, r.dataset.f, +r.dataset.w, +r.dataset.h, { g: r.dataset.g ? +r.dataset.g : undefined, clay: range(r.dataset.clay), dim: dimAll ? range("0-99") : range(r.dataset.dim) });
+    });
+    const cr = document.getElementById("clockrow");
+    if (on.contains(cr)) {
+      flaps(cr, "5", 160, 232, { g: 10 });
+      const c = document.createElement("div"); c.className = "colon"; c.style.height = "232px"; c.innerHTML = "<i></i><i></i>"; cr.append(c);
+      const mm = document.createElement("div"); mm.className = "frow"; mm.style.position = "static"; flaps(mm, "00", 160, 232, { g: 10 }); cr.append(mm);
+      const pm = document.createElement("div"); pm.className = "frow"; pm.style.position = "static"; pm.style.marginLeft = "10px"; flaps(pm, "PM", 76, 110, { g: 6, clay: range("0-1") }); cr.append(pm);
+    }
+    const cal = document.getElementById("cal");
+    if (on.contains(cal)) {
+      const S = window.SAMPLE, NS = "http://www.w3.org/2000/svg";
+      const el = (tag, a) => { const e = document.createElementNS(NS, tag); for (const k in a) e.setAttribute(k, a[k]); cal.append(e); return e; };
+      const pad = 2, cell = 22, gap = 5, top = 22, run = new Set(S.run);
+      let lastMonth = -1;
+      S.days.forEach((d, i) => {
+        const k = i + pad, c = Math.floor(k / 7), r = k % 7, x = c * (cell + gap) + 3, y = top + r * (cell + gap);
+        if (d.date.getMonth() !== lastMonth && r <= 1) { lastMonth = d.date.getMonth(); el("text", { class: "cap", x, y: 12 }).textContent = d.date.toLocaleString("en", { month: "short" }); }
+        el("rect", { x, y, width: cell, height: cell, rx: 3, fill: d.active ? "var(--clay-t)" : "var(--flap-t)" });
+        el("rect", { x, y: y + cell / 2, width: cell, height: cell / 2, fill: d.active ? "var(--clay-b)" : "var(--flap-b)" });
+        el("line", { x1: x, x2: x + cell, y1: y + cell / 2, y2: y + cell / 2, stroke: "var(--board)", "stroke-width": 1 });
+        if (run.has(i)) el("rect", { x: x - 2, y: y - 2, width: cell + 4, height: cell + 4, rx: 5, fill: "none", stroke: "var(--flap-ink)", "stroke-width": 2 });
+        if (i === S.days.length - 1) el("text", { class: "cap", x: x + cell, y: y + cell + 20, "text-anchor": "end" }).textContent = "Today";
+      });
+    }
+    const board = document.getElementById("board");
+    if (on.contains(board)) {
+      const rows = [["TOKENS", "873M"], ["ACTIVE DAYS", "74"], ["PRIME TIME", "5 PM"], ["TOP PROJECT", "ORIGIN CLIENT"], ["GO-TO HELPER", "GENERAL-PURPOSE"], ["CODER TYPE", "DELEGATOR"]];
+      rows.forEach(([k, v], i) => {
+        const r = document.createElement("div"); r.className = "frow"; r.style.top = i * 50 + "px"; r.style.left = "0";
+        const text = k.padEnd(13, " ") + v.padEnd(15, " ");
+        flaps(r, text, 26, 40, { g: 4, dim: range("0-12") });
+        board.append(r);
+      });
+    }
+  };
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

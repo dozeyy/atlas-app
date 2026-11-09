@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wrapped A Summit</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+  .sheet { position: absolute; inset: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+  .kick { font: 600 16px/22px var(--font-ui); color: var(--text-2); }
+  .hero { font-size: 176px; line-height: 150px; letter-spacing: -0.035em; margin-top: 22px; white-space: nowrap; }
+  .hero .unit { font-size: 34px; line-height: 1; letter-spacing: -0.01em; font-weight: 700; color: var(--text-2); margin-left: 14px; }
+  .line { font: 400 22px/31px var(--font-ui); margin-top: 30px; max-width: 400px; text-wrap: pretty; }
+  .line b { font-weight: 600; }
+  .col { position: absolute; left: 72px; top: 50%; transform: translateY(-50%); width: 430px; }
+  .art { position: absolute; right: 64px; top: 50%; transform: translateY(-50%); }
+  .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .center .line { max-width: none; }
+  .cap { font: 600 12px/16px var(--font-ui); fill: var(--text-2); color: var(--text-2); }
+  .trail { position: absolute; left: 230px; top: 66px; width: 1008px; height: 26px; overflow: visible; }
+
+  /* opener */
+  .year { font-size: 236px; line-height: 200px; letter-spacing: -0.045em; color: var(--accent); }
+  .title { font-size: 40px; line-height: 48px; font-weight: 720; letter-spacing: -0.015em; margin-top: 26px; }
+  .range { font: 400 20px/28px var(--font-ui); color: var(--text-2); margin-top: 12px; }
+
+  /* end card */
+  .card { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); width: 452px; border-radius: 18px; background: var(--raised); border: 1px solid var(--line); padding: 34px 36px; }
+  .card .k { font: 600 13px/18px var(--font-ui); color: var(--text-2); display: flex; justify-content: space-between; }
+  .card .big { font-size: 96px; line-height: 88px; letter-spacing: -0.035em; margin-top: 22px; }
+  .card .big small { font-size: 22px; color: var(--text-2); font-weight: 700; margin-left: 8px; letter-spacing: 0; }
+  .card .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 24px; margin-top: 22px; }
+  .card .facts b { display: block; font: 720 26px/30px var(--font-display); font-variation-settings: "CASL" 0.4; }
+  .card .facts span { font: 400 13px/18px var(--font-ui); color: var(--text-2); }
+  .save { position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%); }
+</style>
+</head>
+<body>
+<svg class="trail" id="trail"></svg>
+<div class="stage">
+
+  <section class="slide" data-s="1" data-id="opener">
+    <div class="sheet"><div class="center">
+      <div class="disp year">2026</div>
+      <div class="disp title">Your year in Claude Code</div>
+      <div class="range">Jul 9 to today</div>
+    </div></div>
+  </section>
+
+  <section class="slide" data-s="2" data-id="totals">
+    <div class="sheet"><div class="center">
+      <div class="kick">Tokens, all year</div>
+      <div class="disp hero" style="font-size:236px;line-height:206px;margin-top:18px">873M</div>
+      <div class="line">About <b>6,500 novels'</b> worth of words.</div>
+    </div></div>
+  </section>
+
+  <section class="slide" data-s="3" data-id="days">
+    <div class="sheet">
+      <div class="col">
+        <div class="kick">Days you showed up</div>
+        <div class="disp hero">74<span class="unit">of 124</span></div>
+        <div class="line">Best run: <b>15 days in a row.</b></div>
+      </div>
+      <svg class="art" id="heat" width="470" height="250"></svg>
+    </div>
+  </section>
+
+  <section class="slide" data-s="6" data-id="clock">
+    <div class="sheet">
+      <div class="col">
+        <div class="kick">Your prime time</div>
+        <div class="disp hero">5 PM</div>
+        <div class="line">Your busiest hour over the last 120 days.</div>
+      </div>
+      <svg class="art" id="hours" width="440" height="290"></svg>
+    </div>
+  </section>
+
+  <section class="slide" data-s="8" data-id="compare">
+    <div class="sheet">
+      <div class="col">
+        <div class="kick">Your biggest chat</div>
+        <div class="disp hero" style="font-size:150px;line-height:130px">110M<span class="unit">tokens</span></div>
+        <div class="line">One chat in Origin Client. <b>47 times</b> a usual chat.</div>
+      </div>
+      <svg class="art" width="330" height="300" viewBox="0 0 330 300">
+        <!-- areas to scale: 1 : 47 -->
+        <circle cx="44" cy="248" r="13" fill="var(--neutral)"/>
+        <text class="cap" x="44" y="286" text-anchor="middle">A usual chat</text>
+        <circle cx="220" cy="172" r="89" fill="var(--accent)"/>
+        <text class="cap" x="220" y="286" text-anchor="middle">This one</text>
+        <path transform="translate(220 172)" d="M0-16Q2.6-2.6 16 0Q2.6 2.6 0 16Q-2.6 2.6-16 0Q-2.6-2.6 0-16Z" fill="var(--surface)"/>
+      </svg>
+    </div>
+  </section>
+
+  <section class="slide" data-s="11" data-id="helper">
+    <div class="sheet"><div class="center">
+      <div class="kick">Your go-to helper</div>
+      <div class="disp" style="font-size:112px;line-height:120px;letter-spacing:-0.03em;margin-top:22px">general-purpose</div>
+      <div class="line">Called <b>474 times</b> in 25 sessions.</div>
+    </div></div>
+  </section>
+
+  <section class="slide" data-s="15" data-id="end">
+    <div class="sheet">
+      <div class="card">
+        <div class="k"><span>Atlas Wrapped</span><span>Jul 9 to Nov 9, 2026</span></div>
+        <div class="disp big">873M<small>tokens</small></div>
+        <svg id="ridge" width="380" height="64" style="margin-top:18px;display:block"></svg>
+        <div class="facts">
+          <div><b>74</b><span>active days</span></div>
+          <div><b>5 PM</b><span>prime time</span></div>
+          <div><b>Origin Client</b><span>top project</span></div>
+          <div><b>Delegator</b><span>coder type</span></div>
+        </div>
+      </div>
+      <span class="btn primary save">Save image</span>
+    </div>
+  </section>
+
+</div>
+<script src="data.js"></script>
+<script>
+  window.TOTAL = 15;
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.append(e); return e; };
+  const SPARK = "M0-1Q.16-.16 1 0Q.16 .16 0 1Q-.16 .16-1 0Q-.16-.16 0-1Z";
+
+  // Signature: the progress bar is the trail; every slide is a waypoint, the spark is "you are here".
+  window.drawProgress = (n, total) => {
+    const s = document.getElementById("trail");
+    const x = (i) => 8 + (i * (1008 - 16)) / (total - 1);
+    const y = 13;
+    el("line", { x1: x(0), y1: y, x2: x(total - 1), y2: y, stroke: "var(--line-2)", "stroke-width": 2, "stroke-dasharray": "2 6", "stroke-linecap": "round" }, s);
+    el("line", { x1: x(0), y1: y, x2: x(n - 1), y2: y, stroke: "var(--accent)", "stroke-width": 2.5, "stroke-linecap": "round" }, s);
+    for (let i = 0; i < total; i++) {
+      if (i === n - 1) continue;
+      el("circle", { cx: x(i), cy: y, r: 4, fill: i < n - 1 ? "var(--accent)" : "var(--bg)", stroke: i < n - 1 ? "var(--accent)" : "var(--line-2)", "stroke-width": 2 }, s);
+    }
+    el("path", { d: SPARK, transform: `translate(${x(n - 1)} ${y}) scale(12)`, fill: "var(--accent)" }, s);
+  };
+
+  window.afterShell = (on) => {
+    const S = window.SAMPLE;
+    const heat = document.getElementById("heat");
+    if (on.contains(heat)) {
+      // rows Tue..Mon so today (a Monday) is the bottom-right cell
+      const pad = 2, cell = 20, gap = 6, top = 26;
+      const sorted = S.days.filter((d) => d.active).map((d) => d.tokens).sort((a, b) => a - b);
+      const q = (v) => { const r = sorted.findIndex((t) => t >= v) / sorted.length; return 1 + Math.min(4, Math.floor(r * 5)); };
+      const run = new Set(S.run);
+      let lastMonth = -1;
+      S.days.forEach((d, i) => {
+        const k = i + pad, c = Math.floor(k / 7), r = k % 7;
+        const x = c * (cell + gap), y = top + r * (cell + gap);
+        if (d.date.getMonth() !== lastMonth && r <= 1) { lastMonth = d.date.getMonth(); el("text", { class: "cap", x, y: 12 }, heat).textContent = d.date.toLocaleString("en", { month: "short" }); }
+        el("rect", { x, y, width: cell, height: cell, rx: 5, fill: d.active ? `var(--heat-${q(d.tokens)})` : "var(--heat-0)" }, heat);
+        if (run.has(i)) el("rect", { x: x - 1.5, y: y - 1.5, width: cell + 3, height: cell + 3, rx: 6.5, fill: "none", stroke: "var(--accent)", "stroke-width": 2.5 }, heat);
+        if (i === S.days.length - 1) { el("text", { class: "cap", x: x + cell, y: y + cell + 20, "text-anchor": "end" }, heat).textContent = "Today"; }
+      });
+    }
+    const hrs = document.getElementById("hours");
+    if (on.contains(hrs)) {
+      const max = Math.max(...S.hours), w = 14, g = 4, base = 236, h = 190;
+      S.hours.forEach((v, i) => {
+        const bh = Math.max(4, (v / max) * h), x = 12 + i * (w + g);
+        el("rect", { x, y: base - bh, width: w, height: bh, rx: 4, fill: i === 17 ? "var(--accent)" : "var(--heat-1)" }, hrs);
+        if (i === 17) el("path", { d: SPARK, transform: `translate(${x + w / 2} ${base - bh - 22}) scale(11)`, fill: "var(--accent)" }, hrs);
+      });
+      el("line", { x1: 8, x2: 12 + 24 * (w + g), y1: base + 0.5, y2: base + 0.5, stroke: "var(--line-2)" }, hrs);
+      [["12 AM", 0], ["6 AM", 6], ["12 PM", 12], ["6 PM", 18]].forEach(([t, i]) => (el("text", { class: "cap", x: 12 + i * (w + g), y: base + 24 }, hrs).textContent = t));
+    }
+    const ridge = document.getElementById("ridge");
+    if (on.contains(ridge)) {
+      const v = S.days.map((d) => d.tokens), max = Math.max(...v), W = 380, H = 64;
+      const pts = v.map((t, i) => `${((i / (v.length - 1)) * W).toFixed(1)},${(H - 2 - (t / max) * (H - 8)).toFixed(1)}`);
+      el("path", { d: `M0,${H} L${pts.join(" L")} L${W},${H}Z`, fill: "var(--heat-1)" }, ridge);
+      el("path", { d: `M${pts.join(" L")}`, fill: "none", stroke: "var(--accent)", "stroke-width": 1.6, "stroke-linejoin": "round" }, ridge);
+    }
+  };
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

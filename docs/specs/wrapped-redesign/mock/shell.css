@@ -1,0 +1,55 @@
+/* Mockup shell: the Atlas window around the Wrapped stage (1280 x 800).
+   Token values copied from src/styles/tokens.css (light and dark). Mockups only; nothing here ships. */
+@font-face {
+  font-family: "Recursive Variable";
+  src: url("../../../../node_modules/@fontsource-variable/recursive/files/recursive-latin-full-normal.woff2") format("woff2");
+  font-weight: 300 1000;
+  font-display: block;
+}
+:root {
+  --bg: #faf8f5; --surface: #ffffff; --raised: #f3f0eb;
+  --text: #1f1d1a; --text-2: #6b655c; --line: rgb(31 29 26 / 0.1); --line-2: rgb(31 29 26 / 0.18);
+  --accent: #c96442; --accent-solid: #b4532f; --accent-text: #9c4524; --on-accent: #ffffff;
+  --slate: #5b7083; --sand: #a8875f; --neutral: #8e877d;
+  --heat-0: #f0ebe4; --heat-1: #f2d9c6; --heat-2: #e9b394; --heat-3: #dc8a63; --heat-4: #c96442; --heat-5: #9c4524;
+  --font-ui: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, sans-serif;
+  --font-display: "Recursive Variable", var(--font-ui);
+  --font-code: "Cascadia Code", Consolas, monospace;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #1f1f1e; --surface: #292928; --raised: #333331;
+  --text: #ecece9; --text-2: #a5a4a0; --line: rgb(236 236 234 / 0.1); --line-2: rgb(236 236 234 / 0.18);
+  --accent: #e07a55; --accent-solid: #e07a55; --accent-text: #e8896a; --on-accent: #1f1f1e;
+  --slate: #8fa3b5; --sand: #c9a678; --neutral: #7b7a76;
+  --heat-0: #2e2e2d; --heat-1: #4a3226; --heat-2: #7a4630; --heat-3: #b35e3d; --heat-4: #e07a55; --heat-5: #f4ad8a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1280px; height: 800px; overflow: hidden; }
+body { background: var(--bg); color: var(--text); font: 14px/20px var(--font-ui); -webkit-font-smoothing: antialiased; }
+.disp { font-family: var(--font-display); font-variation-settings: "CASL" 0.4, "MONO" 0; font-weight: 760; font-feature-settings: "tnum" 1; }
+
+/* window chrome */
+.side { position: absolute; left: 0; top: 0; width: 188px; height: 800px; border-right: 1px solid var(--line); }
+.side .row { height: 40px; display: flex; align-items: center; gap: 14px; padding-left: 16px; color: var(--text-2); }
+.side .gift { position: absolute; left: 144px; top: 6px; width: 32px; height: 30px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 18%, transparent); display: grid; place-items: center; }
+.side nav { margin-top: 8px; }
+.side nav a { display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 28px; color: var(--text); text-decoration: none; font-size: 14px; }
+.side nav svg, .side .row svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+.side .foot { position: absolute; left: 20px; bottom: 12px; right: 18px; display: flex; align-items: flex-end; gap: 30px; }
+.side .foot b { display: block; font: 600 17px/18px var(--font-display); font-variation-settings: "CASL" 0.4; }
+.side .foot small { font-size: 11px; font-weight: 600; }
+.top { position: absolute; left: 188px; right: 0; top: 0; height: 40px; border-bottom: 1px solid var(--line); }
+.top .wc { position: absolute; right: 0; top: 0; display: flex; }
+.top .wc i { width: 46px; height: 40px; display: grid; place-items: center; color: var(--text-2); font-style: normal; }
+.top .wc svg { width: 10px; height: 10px; stroke: currentColor; stroke-width: 1; fill: none; }
+
+/* stage */
+.stage { position: absolute; left: 230px; top: 100px; width: 1008px; height: 625px; }
+.slide { display: none; position: absolute; inset: 0; }
+.slide.on { display: block; }
+.foot-nav { position: absolute; left: 230px; width: 1008px; top: 735px; height: 34px; display: flex; align-items: center; justify-content: space-between; }
+.btn { height: 34px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--line-2); display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); background: transparent; }
+.btn.primary { background: var(--accent-solid); border-color: transparent; color: var(--on-accent); font-weight: 600; }
+.count { color: var(--text-2); font-size: 12px; }

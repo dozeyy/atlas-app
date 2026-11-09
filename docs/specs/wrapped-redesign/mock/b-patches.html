@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wrapped B Patches</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+  .sheet { position: absolute; inset: 0; background: var(--raised); border-radius: 18px; overflow: hidden; }
+  :root[data-theme="dark"] .sheet { background: #262625; }
+  .pt { position: absolute; left: 40px; top: 0; width: 520px; height: 625px; }
+  .words { position: absolute; left: 584px; top: 50%; transform: translateY(-50%); width: 360px; }
+  .ttl { font-size: 44px; line-height: 50px; font-weight: 720; letter-spacing: -0.015em; }
+  .line { font: 400 22px/31px var(--font-ui); color: var(--text-2); margin-top: 18px; text-wrap: pretty; }
+  .line b { color: var(--text); font-weight: 600; }
+  .ink { font-family: var(--font-display); font-variation-settings: "CASL" 0.4; font-weight: 760; font-feature-settings: "tnum" 1; }
+  .cap { font: 600 12px/16px var(--font-ui); fill: var(--text-2); }
+  .sash { position: absolute; left: 230px; top: 62px; width: 1008px; height: 32px; overflow: visible; }
+  .endttl { position: absolute; left: 56px; top: 44px; }
+  .wall { position: absolute; left: 0; top: 150px; width: 1008px; height: 420px; }
+  .save { position: absolute; left: 56px; bottom: 40px; }
+</style>
+</head>
+<body>
+<svg class="sash" id="sash"></svg>
+<div class="stage">
+
+  <section class="slide" data-s="1" data-id="opener">
+    <div class="sheet"><svg class="pt" data-patch='{"shape":"circle","c":"clay","size":380,"big":"2026","bigSize":104}'></svg>
+      <div class="words"><div class="disp ttl">Your year,<br>in patches</div><div class="line">Jul 9 to today. Thirteen to earn.</div></div></div>
+  </section>
+
+  <section class="slide" data-s="2" data-id="totals">
+    <div class="sheet"><svg class="pt" data-patch='{"shape":"circle","c":"clay","size":400,"big":"873M","bigSize":112,"small":"tokens"}'></svg>
+      <div class="words"><div class="disp ttl">Tokens, all year</div><div class="line">About <b>6,500 novels'</b> worth of words.</div></div></div>
+  </section>
+
+  <section class="slide" data-s="3" data-id="days">
+    <div class="sheet"><svg class="pt" data-patch='{"shape":"cal","c":"sand","size":370,"big":"74","bigSize":150,"small":"days"}'></svg>
+      <div class="words"><div class="disp ttl">Days you showed up</div><div class="line">Out of 124. Best run: <b>15 days in a row.</b></div></div></div>
+  </section>
+
+  <section class="slide" data-s="6" data-id="clock">
+    <div class="sheet"><svg class="pt" id="clockpt"></svg>
+      <div class="words"><div class="disp ttl">Your prime time</div><div class="line">Your busiest hour over the last 120 days.</div></div></div>
+  </section>
+
+  <section class="slide" data-s="8" data-id="compare">
+    <div class="sheet"><svg class="pt" id="cmp"></svg>
+      <div class="words"><div class="disp ttl">Your biggest chat</div><div class="line">One chat in Origin Client. <b>47 times</b> a usual one.</div></div></div>
+  </section>
+
+  <section class="slide" data-s="11" data-id="helper">
+    <div class="sheet"><svg class="pt" data-patch='{"shape":"shield","c":"slate","size":380,"lines":["general-","purpose"],"bigSize":54}'></svg>
+      <div class="words"><div class="disp ttl">Your go-to helper</div><div class="line">Called <b>474 times</b> in 25 sessions.</div></div></div>
+  </section>
+
+  <section class="slide" data-s="15" data-id="end">
+    <div class="sheet">
+      <div class="endttl"><div class="disp ttl">2026, all earned</div><div class="line" style="margin-top:6px;font-size:18px">Jul 9 to Nov 9</div></div>
+      <svg class="wall" id="wall"></svg>
+      <span class="btn primary save">Save image</span>
+    </div>
+  </section>
+
+</div>
+<script src="data.js"></script>
+<script>
+  window.TOTAL = 15;
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, a, p) => { const e = document.createElementNS(NS, tag); for (const k in a) e.setAttribute(k, a[k]); p && p.append(e); return e; };
+  // Patches are objects: the same colours in both themes; only the canvas behind them changes.
+  const C = {
+    clay: { fill: "#c96442", edge: "#a14a2b", ink: "#fff3e8" },
+    slate: { fill: "#5b7083", edge: "#44576a", ink: "#f2f5f8" },
+    sand: { fill: "#dcc096", edge: "#b4946a", ink: "#3a2a16" },
+    grey: { fill: "#b9b1a6", edge: "#978e84", ink: "#2a2622" },
+  };
+  function shapePath(shape, s) {
+    const h = s / 2;
+    if (shape === "circle" || shape === "clock") return `M${-h},0a${h},${h} 0 1,0 ${s},0a${h},${h} 0 1,0 ${-s},0Z`;
+    if (shape === "cal") { const r = s * 0.16; return `M${-h + r},${-h}H${h - r}Q${h},${-h} ${h},${-h + r}V${h - r}Q${h},${h} ${h - r},${h}H${-h + r}Q${-h},${h} ${-h},${h - r}V${-h + r}Q${-h},${-h} ${-h + r},${-h}Z`; }
+    if (shape === "shield") { const w = s * 0.86, t = -h, r = s * 0.1; return `M${-w / 2 + r},${t}H${w / 2 - r}Q${w / 2},${t} ${w / 2},${t + r}V${s * 0.05}Q${w / 2},${h * 0.62} 0,${h}Q${-w / 2},${h * 0.62} ${-w / 2},${s * 0.05}V${t + r}Q${-w / 2},${t} ${-w / 2 + r},${t}Z`; }
+    if (shape === "scallop") { let d = ""; for (let i = 0; i <= 96; i++) { const a = (i / 96) * Math.PI * 2, rr = h - s * 0.025 + s * 0.025 * Math.cos(a * 16); d += `${i ? "L" : "M"}${(Math.sin(a) * rr).toFixed(1)},${(-Math.cos(a) * rr).toFixed(1)}`; } return d + "Z"; }
+    if (shape === "tab") { const w = s, hh = s * 0.27, r = hh * 0.32; return `M${-w / 2 + r},${-hh / 2}H${w / 2 - r}Q${w / 2},${-hh / 2} ${w / 2},${-hh / 2 + r}V${hh / 2 - r}Q${w / 2},${hh / 2} ${w / 2 - r},${hh / 2}H${-w / 2 + r}Q${-w / 2},${hh / 2} ${-w / 2},${hh / 2 - r}V${-hh / 2 + r}Q${-w / 2},${-hh / 2} ${-w / 2 + r},${-hh / 2}Z`; }
+    if (shape === "hex") { let d = ""; for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2 + Math.PI / 6; d += `${i ? "L" : "M"}${(Math.cos(a) * h).toFixed(1)},${(Math.sin(a) * h).toFixed(1)}`; } return d + "Z"; }
+  }
+  // One patch: merrowed edge, flat fill, a dashed stitch line inset, content in the patch's ink.
+  function patch(svg, o, cx, cy) {
+    const c = C[o.c], s = o.size, g = el("g", { transform: `translate(${cx} ${cy})` }, svg);
+    const d = shapePath(o.shape, s);
+    const edgeW = Math.max(3, s * 0.024);
+    el("path", { d, fill: c.fill, stroke: c.edge, "stroke-width": edgeW, "stroke-linejoin": "round" }, g);
+    const k = o.shape === "tab" ? 0.9 : 0.88;
+    el("path", { d, transform: `scale(${k.toFixed(3)})`, fill: "none", stroke: c.ink, "stroke-opacity": 0.7, "stroke-width": Math.max(1.2, s * 0.006), "stroke-dasharray": `${Math.max(3, s * 0.018)} ${Math.max(3, s * 0.014)}`, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }, g);
+    if (o.shape === "cal") {
+      el("rect", { x: -s / 2 + s * 0.08, y: -s / 2 + s * 0.09, width: s * 0.84, height: s * 0.035, rx: s * 0.017, fill: c.edge }, g);
+    }
+    let textY = o.small ? -s * 0.02 : 0;
+    if (o.shape === "cal") textY += s * 0.06;
+    if (o.shape === "clock") {
+      // Hour marks are dots on one ring: nothing sits at 12 o'clock that could read as a notch.
+      for (let i = 0; i < (s < 200 ? 0 : 12); i++) { const a = (i / 12) * Math.PI * 2, r = s * 0.385; el("circle", { cx: Math.sin(a) * r, cy: -Math.cos(a) * r, r: s * (i % 3 ? 0.009 : 0.016), fill: c.ink }, g); }
+      if (o.hand) {
+        const a = ((o.hour % 12) / 12) * Math.PI * 2;
+        el("line", { x1: 0, y1: 0, x2: Math.sin(a) * s * 0.28, y2: -Math.cos(a) * s * 0.28, stroke: "#e9875f", "stroke-width": s * 0.034, "stroke-linecap": "round" }, g);
+        el("circle", { r: s * 0.034, fill: c.ink }, g);
+      }
+    }
+    const lines = o.lines || (o.big ? [o.big] : []);
+    lines.forEach((t, i) => {
+      const y = textY + (i - (lines.length - 1) / 2) * o.bigSize * 1.02 + (o.shape === "shield" ? -s * 0.06 : 0);
+      el("text", { class: "ink", x: 0, y, "text-anchor": "middle", "dominant-baseline": "central", fill: c.ink, "font-size": o.bigSize, "letter-spacing": "-0.02em" }, g).textContent = t;
+    });
+    if (o.small) el("text", { x: 0, y: textY + o.bigSize * 0.62, "text-anchor": "middle", "dominant-baseline": "central", fill: c.ink, "font-size": Math.round(o.bigSize * 0.26), "font-family": "Segoe UI Variable Text, Segoe UI, sans-serif", "font-weight": 600, "fill-opacity": 0.85 }, g).textContent = o.small;
+    return g;
+  }
+
+  // Signature: the progress bar is the sash; each slide sews one patch onto it.
+  const SASH = [["circle", "clay"], ["cal", "sand"], ["cal", "sand"], ["cal", "sand"], ["clock", "slate"], ["clock", "slate"], ["circle", "clay"], ["hex", "sand"], ["shield", "slate"], ["shield", "slate"], ["shield", "slate"], ["circle", "clay"], ["scallop", "clay"]];
+  window.drawProgress = (n) => {
+    const s = document.getElementById("sash");
+    const step = 1008 / SASH.length;
+    SASH.forEach(([shape, c], i) => {
+      const cx = step * i + step / 2, cy = 16, story = i + 2;
+      if (story < n || n === 15) patch(s, { shape, c, size: 24 }, cx, cy);
+      else if (story === n) { el("circle", { cx, cy, r: 17, fill: "none", stroke: "var(--accent)", "stroke-width": 2 }, s); patch(s, { shape, c, size: 24 }, cx, cy); }
+      else el("path", { d: shapePath(shape, 22), transform: `translate(${cx} ${cy})`, fill: "none", stroke: "var(--line-2)", "stroke-width": 1.5, "stroke-dasharray": "3 3" }, s);
+    });
+  };
+
+  window.afterShell = (on) => {
+    on.querySelectorAll("[data-patch]").forEach((svg) => patch(svg, JSON.parse(svg.dataset.patch), 260, 312));
+    const cp = document.getElementById("clockpt");
+    if (on.contains(cp)) {
+      patch(cp, { shape: "clock", c: "slate", size: 340, hour: 17, hand: true }, 260, 252);
+      patch(cp, { shape: "tab", c: "clay", size: 300, big: "5 PM", bigSize: 56 }, 260, 498);
+    }
+    const cmp = document.getElementById("cmp");
+    if (on.contains(cmp)) {
+      // areas to scale: 1 : 47
+      patch(cmp, { shape: "circle", c: "clay", size: 380, big: "110M", bigSize: 104, small: "tokens" }, 290, 300);
+      patch(cmp, { shape: "circle", c: "grey", size: 56 }, 52, 470);
+      el("text", { class: "cap", x: 52, y: 524, "text-anchor": "middle" }, cmp).textContent = "A usual chat";
+    }
+    const wall = document.getElementById("wall");
+    if (on.contains(wall)) {
+      const P = [
+        ["circle", "clay", ["873M"], "tokens"], ["cal", "sand", ["74"], "active days"], ["cal", "sand", ["Oct 19"], "busiest day"], ["cal", "sand", ["Sun"], "best weekday"],
+        ["clock", "slate", ["5 PM"], "prime time"], ["clock", "slate", ["10d 15h"], "longest sitting"], ["circle", "clay", ["110M"], "biggest chat"],
+        ["hex", "sand", ["Origin", "Client"], "top project"], ["shield", "slate", ["away-", "mode"], "top skill"], ["shield", "slate", ["general-", "purpose"], "go-to helper"],
+        ["shield", "slate", ["Bash"], "go-to tool"], ["circle", "clay", ["Opus", "5.5"], "main model"], ["scallop", "clay", ["Dele-", "gator"], "coder type"],
+      ];
+      P.forEach(([shape, c, lines, label], i) => {
+        const row = i < 7 ? 0 : 1, col = row ? i - 7 : i, perRow = row ? 6 : 7;
+        const cx = 56 + 64 + col * 132 + (row ? 66 : 0), cy = 70 + row * 190;
+        const longest = Math.max(...lines.map((t) => t.length));
+        const fs = lines.length > 1 ? 20 : longest > 4 ? 22 : 30;
+        patch(wall, { shape, c, size: 118, lines, bigSize: fs }, cx, cy);
+        el("text", { class: "cap", x: cx, y: cy + 84, "text-anchor": "middle" }, wall).textContent = label;
+      });
+    }
+  };
+</script>
+<script src="shell.js"></script>
+</body>
+</html>
