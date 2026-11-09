@@ -697,22 +697,34 @@ unsafe fn attach(controller: ICoreWebView2Controller) -> windows::core::Result<(
 unsafe extern "system" fn subclass_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM, _id: usize, _data: usize) -> LRESULT {
     match msg {
         WM_SYSCOMMAND if (wp.0 as u32 & 0xFFF0) == SC_SIZE => {
-            with(|m| {
-                if m.failures < 3 && !IsZoomed(m.host.top).as_bool() {
-                    m.sizing_edge = Some(wp.0 as u32 & 0x000F);
+            let edge = wp.0 as u32 & 0x000F;
+            let seen = with(|m| {
+                let zoomed = IsZoomed(m.host.top).as_bool();
+                if m.failures < 3 && !zoomed {
+                    m.sizing_edge = Some(edge);
+                    m.trace(&format!("size command, edge {edge}"));
+                } else {
+                    m.trace(&format!("size command, edge {edge}: not synced (failures {}, zoomed {zoomed})", m.failures));
                 }
             });
+            if seen.is_none() {
+                trace_busy("size command");
+            }
         }
         WM_ENTERSIZEMOVE => {
             let r = DefSubclassProc(hwnd, msg, wp, lp);
-            with(|m| {
-                if let Some(edge) = m.sizing_edge.take() {
-                    if m.phase == Phase::Idle {
-                        let (window, client, monitor, min) = m.host.geometry();
-                        m.begin(edge, window, client, monitor, min);
-                    }
+            let seen = with(|m| match m.sizing_edge.take() {
+                Some(edge) if m.phase == Phase::Idle => {
+                    let (window, client, monitor, min) = m.host.geometry();
+                    m.begin(edge, window, client, monitor, min);
                 }
+                Some(edge) => m.trace(&format!("size loop entered on edge {edge} while {:?}: not synced", m.phase)),
+                // A move (title drag) or a size the command above did not take.
+                None => m.trace("size/move loop entered without a size command: not synced"),
             });
+            if seen.is_none() {
+                trace_busy("size loop entered");
+            }
             return r;
         }
         WM_GETMINMAXINFO => {
@@ -787,6 +799,14 @@ unsafe extern "system" fn subclass_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
         _ => {}
     }
     DefSubclassProc(hwnd, msg, wp, lp)
+}
+
+/// A start-of-drag message found the machine busy (borrowed) or gone: the drag runs unsynced.
+fn trace_busy(what: &str) {
+    if std::env::var("ATLAS_FRAME_SYNC_LOG").as_deref() == Ok("1") {
+        let gone = SYNC.with(|c| c.try_borrow().map(|g| g.is_none()).unwrap_or(false));
+        eprintln!("[atlas] frame sync: {what}: machine {}, not synced", if gone { "gone" } else { "busy" });
+    }
 }
 
 fn with<R>(f: impl FnOnce(&mut Machine<Win>) -> R) -> Option<R> {
