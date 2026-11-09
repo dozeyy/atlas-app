@@ -171,7 +171,7 @@ function HoursArt({ g }: { g: Extract<SlideGraphic, { kind: "hours" }> }) {
   const w = 14;
   const gap = 4;
   const base = 236;
-  const bs = bars(g.values, max, base, Math.max(SPARK_HEAD, base - 190), w, gap, 12);
+  const bs = bars(g.values, max, base, SPARK_HEAD, w, gap, 12);
   const width = 12 + 24 * (w + gap) + 6; // the right 6 are the peak spark's room when the peak is 11 PM
   const pk = bs[g.peak];
   return (
@@ -236,7 +236,7 @@ function WeekdaysArt({
   const tied = weekdayTied(g.values);
   const w = 64;
   const gap = 28;
-  const base = SPARK_HEAD + 104;
+  const base = 128; // the total height stays 162: the bars give up the spark's headroom, the SVG does not grow
   const bs = bars(g.values, max, base, SPARK_HEAD, w, gap, 4);
   const width = 4 + 7 * w + 6 * gap + 4;
   return (
@@ -301,7 +301,7 @@ function SpikeArt({ g }: { g: Extract<SlideGraphic, { kind: "spike" }> }) {
   const max = Math.max(...g.values, 0);
   const w = 20;
   const gap = 9;
-  const base = SPARK_HEAD + 104;
+  const base = 128; // the total height stays 162: the bars give up the spark's headroom, the SVG does not grow
   const bs = bars(g.values, max, base, SPARK_HEAD, w, gap, 4);
   const width = 4 + g.values.length * w + (g.values.length - 1) * gap + 4;
   const pk = bs[g.peak];

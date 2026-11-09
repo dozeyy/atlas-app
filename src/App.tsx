@@ -37,7 +37,7 @@ export function App() {
   const { collapsed, toggle: toggleSidebar } = useSidebar();
 
   // Ctrl/Cmd + 1..7 jumps between sections; Ctrl/Cmd + B shows or hides the sidebar;
-  // Ctrl/Cmd + K opens the quick jump.
+  // Ctrl/Cmd + K opens the quick jump; Cmd + , opens Settings (Mac).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = info.platform === "macos" ? e.metaKey : e.ctrlKey;
@@ -59,6 +59,13 @@ export function App() {
       if (e.key.toLowerCase() === "b") {
         e.preventDefault();
         toggleSidebar();
+        return;
+      }
+      // Cmd+, opens Settings on a Mac. The menu bar's Settings item only draws this key while
+      // Show shortcuts is on, so the page owns the key itself.
+      if (e.key === "," && info.platform === "macos") {
+        e.preventDefault();
+        setView("settings");
         return;
       }
       const n = Number(e.key);

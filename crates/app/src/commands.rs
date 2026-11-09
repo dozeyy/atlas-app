@@ -30,7 +30,15 @@ pub fn get_app_info(state: Shared) -> AppInfo {
 #[tauri::command(async)]
 pub fn update_settings(app: AppHandle, state: Shared, patch: SettingsPatch) -> AppInfo {
     let theme = patch.theme;
+    let shortcuts = patch.show_shortcuts;
     let info = state.update_settings(patch);
+    // The macOS menu bar draws Cmd+, only while the hints are on.
+    #[cfg(target_os = "macos")]
+    if shortcuts.is_some() {
+        crate::macmenu::refresh(&app, info.settings.show_shortcuts);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = shortcuts;
     if let (Some(t), Some(w)) = (theme, app.get_webview_window("main")) {
         apply_window_theme(&w, t);
     }

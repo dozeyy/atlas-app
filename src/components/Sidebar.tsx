@@ -55,7 +55,8 @@ export function Sidebar() {
         type="button"
         onClick={() => setView(v)}
         aria-current={v === view ? "page" : undefined}
-        title={named && !show ? undefined : tip(label, `${mod}+${index + 1}`)}
+        // An empty title, not a missing one: the tip layer sees the change when the sidebar folds under the pointer.
+        title={named && !show ? "" : tip(label, `${mod}+${index + 1}`)}
         aria-label={label}
         className={`nav-item hover-host${solo ? " nav-solo" : ""}`}
       >

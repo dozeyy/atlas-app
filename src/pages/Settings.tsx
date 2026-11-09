@@ -178,7 +178,7 @@ export function Settings() {
         <Row label="Tell me when a chat finishes">
           <Toggle label="Tell me when a chat finishes" checked={info.settings.notifyOnFinish} onChange={setNotifyOnFinish} />
         </Row>
-        <Row label="Show shortcuts" tip="Shows keys like Ctrl+6 in hovers, menus and search boxes. The shortcuts work either way, and Help lists them all.">
+        <Row label="Show shortcuts" tip="Shows the keys in hovers, menus and search boxes. The shortcuts work either way, and Help lists them all.">
           <Toggle label="Show shortcuts" checked={info.settings.showShortcuts} onChange={setShowShortcuts} />
         </Row>
       </>

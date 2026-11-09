@@ -454,6 +454,11 @@ impl AppState {
         self.lock().settings.close_to_tray
     }
 
+    /// Draw keyboard shortcut hints (opt-in, default off).
+    pub fn show_shortcuts(&self) -> bool {
+        self.lock().settings.show_shortcuts
+    }
+
     /// Tell the user when a running chat finishes or waits for them (opt-in, default off).
     pub fn notify_on_finish(&self) -> bool {
         self.lock().settings.notify_on_finish

@@ -60,7 +60,7 @@ describe("navigation", () => {
   it("shows no shortcut hint and no hover on named nav items until Show shortcuts is on", () => {
     mount();
     const main = screen.getByRole("navigation", { name: "Main" });
-    for (const b of main.querySelectorAll("button")) expect(b).not.toHaveAttribute("title");
+    for (const b of main.querySelectorAll("button")) expect(b.getAttribute("title") ?? "").toBe("");
     // The gear and the gift are icon-only, so they keep their name, without the keys.
     expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "Settings");
     expect(screen.getByRole("button", { name: "Wrapped" })).toHaveAttribute("title", "Wrapped");
