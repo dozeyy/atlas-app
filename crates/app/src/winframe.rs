@@ -252,6 +252,14 @@ impl<H: Host> Machine<H> {
         }
     }
 
+    /// Put the cover up, timed for the log (it runs on the UI thread mid-drag).
+    fn cover_up(&mut self, cl: RECT, shift: (i32, i32)) -> bool {
+        let t = Instant::now();
+        let up = self.host.cover(cl, shift);
+        self.trace(&format!("cover up ({:.1} ms)", t.elapsed().as_secs_f64() * 1000.0));
+        up
+    }
+
     fn trace(&self, what: &str) {
         if self.log {
             eprintln!("[atlas] frame sync {:>7.1} ms: {what}", self.t0.elapsed().as_secs_f64() * 1000.0);
@@ -337,20 +345,58 @@ impl<H: Host> Machine<H> {
         let cl = self.host.client();
         if self.canvas.left != cl.left || self.canvas.top != cl.top {
             // Until the page's canvas-sized frame is on screen, the old one sits at the canvas origin.
-            self.covered = self.host.cover(cl, (self.canvas.left - cl.left, self.canvas.top - cl.top));
+            self.covered = self.cover_up(cl, (self.canvas.left - cl.left, self.canvas.top - cl.top));
         }
         self.host.grow(self.canvas, cl);
         self.phase = Phase::Growing;
         self.post(true, offset(cl, self.canvas));
     }
 
-    /// The size loop proposes `rect`. Returns the rect the window keeps for now, or None for the
-    /// normal path.
-    fn on_sizing(&mut self, rect: RECT) -> Option<RECT> {
+    /// The cap's verdict on the answer the page owes, at `now`.
+    fn late(&self, now: Instant) -> Late {
+        if self.post_failed {
+            return Late::HandBack;
+        }
+        match self.waiting {
+            Some((_, at)) if self.confirm.is_none() => late_action(self.phase, now.saturating_duration_since(at), self.step_cap),
+            _ => Late::Wait,
+        }
+    }
+
+    fn late_why(&self) -> &'static str {
+        if self.post_failed { "the page could not be reached" } else { "no answer from the page in time" }
+    }
+
+    /// The cap gives up on the step in flight: the window takes it without the page's answer.
+    fn cap_step(&mut self) -> Option<RECT> {
+        let seq = self.waiting.take().map(|(q, _)| q).unwrap_or(0);
+        self.capped += 1;
+        self.trace(&format!("step {seq} late: applied without the page"));
+        let r = self.in_flight.take()?;
+        self.held = r;
+        Some(r)
+    }
+
+    /// The size loop proposes `rect` (the mouse moved). Returns the rect the window keeps for
+    /// now, or None for the normal path. The cap is checked here too: WM_SIZING comes with every
+    /// mouse move, while the tick's WM_TIMER is the lowest-priority message and can starve.
+    fn on_sizing(&mut self, rect: RECT, now: Instant) -> Option<RECT> {
         if matches!(self.phase, Phase::Idle | Phase::Ending) {
             return None;
         }
         let rect = self.at_least_min(rect);
+        match self.late(now) {
+            Late::Wait => {}
+            // The size loop sets the rect returned below, so the capped step needs no SetWindowPos.
+            Late::ApplyStep => {
+                self.cap_step();
+            }
+            Late::HandBack => {
+                // The size loop applies `rect` itself on the normal path.
+                self.hand_back(Some(self.late_why()), Some(rect));
+                return None;
+            }
+        }
         self.wanted = Some(rect);
         self.asked = Some(rect);
         if self.phase == Phase::Live && self.waiting.is_none() {
@@ -430,26 +476,13 @@ impl<H: Host> Machine<H> {
             self.host.tick_timer(false);
             return After::None;
         }
-        if self.post_failed {
-            return self.hand_back(Some("the page could not be reached"), None);
-        }
-        let late = match self.waiting {
-            Some((_, at)) if self.confirm.is_none() => late_action(self.phase, now.saturating_duration_since(at), self.step_cap),
-            _ => Late::Wait,
-        };
-        match late {
+        match self.late(now) {
             Late::Wait => After::None,
-            Late::HandBack => self.hand_back(Some("no answer from the page in time"), None),
+            Late::HandBack => self.hand_back(Some(self.late_why()), None),
             Late::ApplyStep => {
-                let seq = self.waiting.take().map(|(q, _)| q).unwrap_or(0);
-                self.capped += 1;
-                self.trace(&format!("step {seq} late: applied without the page"));
                 // The next step waits for the page again.
-                match self.in_flight.take() {
-                    Some(r) => {
-                        self.held = r;
-                        After::Apply(r)
-                    }
+                match self.cap_step() {
+                    Some(r) => After::Apply(r),
                     None => self.next(),
                 }
             }
@@ -555,7 +588,7 @@ impl<H: Host> Machine<H> {
         if self.canvas.left != cl.left || self.canvas.top != cl.top {
             // Until the page's window-sized frame is on screen, the canvas frame sits at the
             // window's origin, its content pushed right and down by the canvas offset.
-            self.covered = self.host.cover(cl, (cl.left - self.canvas.left, cl.top - self.canvas.top));
+            self.covered = self.cover_up(cl, (cl.left - self.canvas.left, cl.top - self.canvas.top));
         }
         self.host.reset_webview();
         self.phase = Phase::Ending;
@@ -697,7 +730,7 @@ unsafe extern "system" fn subclass_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
         }
         WM_SIZING => {
             let rect = &mut *(lp.0 as *mut RECT);
-            if let Some(h) = with(|m| m.on_sizing(*rect)).flatten() {
+            if let Some(h) = with(|m| m.on_sizing(*rect, Instant::now())).flatten() {
                 *rect = h;
                 return LRESULT(1);
             }
@@ -862,8 +895,10 @@ impl Win {
     /// is a separate window and is not in it), shrunk before it is read back.
     fn shows_new_frame(&self) -> Option<(f64, f64)> {
         let c = self.cover.as_ref()?;
-        let now = unsafe { grab_client(self.top, c.full) }?;
-        Some((mean_diff(&now, &c.px, c.w, c.h, (0, 0)), mean_diff(&now, &c.px, c.w, c.h, c.shift)))
+        let rows = check_rows(c.full.1);
+        let now = unsafe { grab_client(self.top, (c.full.0, rows)) }?;
+        let band = rows / CHECK_SCALE;
+        Some((band_diff(&now, band, &c.px, c.w, c.h, (0, 0)), band_diff(&now, band, &c.px, c.w, c.h, c.shift)))
     }
 }
 
@@ -1029,7 +1064,9 @@ unsafe fn shrink(screen: HDC, src: HDC, w: i32, h: i32) -> Option<(Vec<u8>, i32,
     px.map(|p| (p, sw, sh))
 }
 
-/// The window's client area as DWM composes it (the webview's presented frame included), shrunk.
+/// The top `h` rows of the window's client area as DWM composes it (the webview's presented
+/// frame included), shrunk. PrintWindow always draws from the client's top-left and ignores the
+/// DC's origin; a shorter bitmap clips it and costs about half of a whole-client grab.
 unsafe fn grab_client(top: HWND, (w, h): (i32, i32)) -> Option<Vec<u8>> {
     let screen = GetDC(None);
     let mem = CreateCompatibleDC(Some(screen));
@@ -1044,12 +1081,26 @@ unsafe fn grab_client(top: HWND, (w, h): (i32, i32)) -> Option<Vec<u8>> {
     px
 }
 
+/// How many rows of an `h`-row client the cover check reads: the top quarter (nav, title buttons
+/// and the first cards, which show a stale frame's shift either way), in whole shrunk rows.
+fn check_rows(h: i32) -> i32 {
+    let rows = (h / 4).max(CHECK_SCALE * 16).min(h);
+    (rows / CHECK_SCALE).max(1) * CHECK_SCALE
+}
+
 /// Mean absolute channel difference between `a` and `b` moved by `shift` (a[x, y] against
 /// b[x - dx, y - dy]) over the overlap.
+#[cfg(test)]
 fn mean_diff(a: &[u8], b: &[u8], w: i32, h: i32, shift: (i32, i32)) -> f64 {
+    band_diff(a, h, b, w, h, shift)
+}
+
+/// The same with `a` holding only the top `rows` rows of a `w` x `h` picture, compared with all
+/// of `b` moved by `shift` over the overlap. No overlap at all reads as different.
+fn band_diff(a: &[u8], rows: i32, b: &[u8], w: i32, h: i32, shift: (i32, i32)) -> f64 {
     let (dx, dy) = shift;
     let (mut sum, mut n) = (0u64, 0u64);
-    for y in dy.max(0)..h.min(h + dy) {
+    for y in dy.max(0)..rows.min(h + dy) {
         for x in dx.max(0)..w.min(w + dx) {
             let i = ((y * w + x) * 4) as usize;
             let j = (((y - dy) * w + (x - dx)) * 4) as usize;
@@ -1237,7 +1288,7 @@ mod tests {
         let mut m = live(WMSZ_LEFT);
         assert_eq!(m.host.covers, 1, "a left drag covers the webview's move to the canvas");
         let to = rect(250, 200, 1400, 960);
-        assert_eq!(m.on_sizing(to), Some(rect(300, 200, 1400, 960)), "the window waits for the page");
+        assert_eq!(m.on_sizing(to, Instant::now()), Some(rect(300, 200, 1400, 960)), "the window waits for the page");
         assert_eq!(m.in_flight, Some(to));
         ack_last(&mut m);
         assert_eq!(m.host.win, to);
@@ -1258,9 +1309,9 @@ mod tests {
         // Flick the right edge past the monitor while a step at the clamped edge is in flight.
         let mut m = live(WMSZ_RIGHT);
         let at_edge = rect(300, 200, 2568, 960); // client right = 2560, the monitor's edge
-        m.on_sizing(at_edge);
+        m.on_sizing(at_edge, Instant::now());
         let past = rect(300, 200, 2600, 960);
-        m.on_sizing(past); // waits behind the step in flight
+        m.on_sizing(past, Instant::now()); // waits behind the step in flight
         let a = m.on_exit();
         settle(&mut m, a);
         assert_eq!(m.phase, Phase::Live);
@@ -1272,8 +1323,8 @@ mod tests {
     #[test]
     fn a_capped_step_at_the_monitor_edge_still_lets_the_drag_end() {
         let mut m = live(WMSZ_RIGHT);
-        m.on_sizing(rect(300, 200, 2568, 960));
-        m.on_sizing(rect(300, 200, 2600, 960));
+        m.on_sizing(rect(300, 200, 2568, 960), Instant::now());
+        m.on_sizing(rect(300, 200, 2600, 960), Instant::now());
         let a = m.on_exit();
         settle(&mut m, a);
         let after = m.tick(Instant::now() + STEP_CAP);
@@ -1285,7 +1336,7 @@ mod tests {
     #[test]
     fn a_drag_inside_the_monitor_ends_through_the_page() {
         let mut m = live(WMSZ_RIGHT);
-        m.on_sizing(rect(300, 200, 1500, 960));
+        m.on_sizing(rect(300, 200, 1500, 960), Instant::now());
         ack_last(&mut m);
         let a = m.on_exit();
         settle(&mut m, a);
@@ -1326,7 +1377,7 @@ mod tests {
     fn a_mid_drag_abort_unpins_the_page_at_the_size_the_window_ends_at() {
         let mut m = live(WMSZ_LEFT);
         let to = rect(250, 200, 1400, 960);
-        m.on_sizing(to);
+        m.on_sizing(to, Instant::now());
         let after = m.abort("dpi change");
         assert_eq!(after, After::HandBack(Some(to)));
         settle(&mut m, after);
@@ -1361,11 +1412,11 @@ mod tests {
             (WMSZ_BOTTOM, rect(300, 200, 1400, 500), rect(300, 200, 1400, 808)),
         ] {
             let mut m = live(edge);
-            m.on_sizing(past);
+            m.on_sizing(past, Instant::now());
             ack_last(&mut m);
             assert_eq!(m.host.win, stop, "edge {edge}");
             // Still past the minimum: nothing moves at all.
-            m.on_sizing(past);
+            m.on_sizing(past, Instant::now());
             assert!(m.waiting.is_none(), "edge {edge}: a step was sent for a window that cannot change");
             assert_eq!(m.host.win, stop);
             let a = m.on_exit();
@@ -1378,14 +1429,56 @@ mod tests {
     #[test]
     fn a_slow_answer_applies_the_step_and_the_next_quick_one_is_synced_again() {
         let mut m = live(WMSZ_RIGHT);
-        m.on_sizing(rect(300, 200, 1450, 960));
+        m.on_sizing(rect(300, 200, 1450, 960), Instant::now());
         let a = m.tick(Instant::now() + STEP_CAP);
         settle(&mut m, a);
         assert_eq!((m.capped, m.host.win.right), (1, 1450));
-        m.on_sizing(rect(300, 200, 1500, 960));
+        m.on_sizing(rect(300, 200, 1500, 960), Instant::now());
         assert_eq!(m.host.win.right, 1450, "the next step waits for the page again");
         ack_last(&mut m);
         assert_eq!((m.capped, m.host.win.right), (1, 1500));
+    }
+
+    /// WM_TIMER is the lowest-priority message: while the user keeps dragging it can starve.
+    /// The size loop's own WM_SIZING must carry the cap without a single tick.
+    #[test]
+    fn a_late_step_is_applied_from_the_size_loop_when_the_timer_never_fires() {
+        let mut m = live(WMSZ_RIGHT);
+        m.on_sizing(rect(300, 200, 1450, 960), Instant::now());
+        let t = Instant::now(); // no earlier than the step was sent
+        let posted = m.host.posts.len();
+        // Still inside the cap: the window keeps waiting for the page.
+        assert_eq!(m.on_sizing(rect(300, 200, 1480, 960), t + STEP_CAP / 2), Some(rect(300, 200, 1400, 960)));
+        assert_eq!(m.capped, 0);
+        // Past the cap: the late step is what the size loop sets now, and the newest rect is asked
+        // of the page straight away.
+        let kept = m.on_sizing(rect(300, 200, 1500, 960), t + STEP_CAP);
+        assert_eq!(kept, Some(rect(300, 200, 1450, 960)), "the late step is applied by the size loop");
+        if let Some(r) = kept {
+            m.host.win = r;
+        }
+        assert_eq!(m.capped, 1);
+        assert_eq!(m.host.posts.len(), posted + 1, "the next step is asked of the page at once");
+        assert!(m.host.posts.last().unwrap().live);
+        ack_last(&mut m);
+        assert_eq!((m.capped, m.host.win.right), (1, 1500), "the next step is synced again");
+        let a = m.on_exit();
+        settle(&mut m, a);
+        ack_last(&mut m);
+        assert_idle(&m);
+    }
+
+    /// While arming, a page that has not answered in time hands the drag back from the size loop
+    /// too, at the rect the mouse asks for.
+    #[test]
+    fn a_page_that_never_answers_while_arming_is_handed_back_from_the_size_loop() {
+        let mut m = machine();
+        begin(&mut m, WMSZ_RIGHT);
+        let t = Instant::now();
+        assert!(m.on_sizing(rect(300, 200, 1450, 960), t).is_some());
+        assert_eq!(m.on_sizing(rect(300, 200, 1500, 960), t + STEP_CAP), None, "the size loop sets the rect itself");
+        assert_idle(&m);
+        assert_eq!(m.host.posts.last().unwrap().vw, 1500 - 300 - 16, "unpinned at the size the window ends at");
     }
 
     #[test]
@@ -1428,5 +1521,37 @@ mod tests {
         assert_eq!(mean_diff(&stale, &cover, 16, 16, (4, 0)), 0.0);
         // and pushed up-left (the start of a left drag)
         assert_eq!(mean_diff(&pic(4), &cover, 16, 16, (-4, 0)), 0.0);
+    }
+
+    /// A 16x16 picture, light with a dark band 4 rows tall from row `top`.
+    fn rows_pic(top: i32) -> Vec<u8> {
+        let mut v = Vec::new();
+        for y in 0..16 {
+            for _x in 0..16 {
+                let c = if (top..top + 4).contains(&y) { 20 } else { 220 };
+                v.extend_from_slice(&[c, c, c, 0]);
+            }
+        }
+        v
+    }
+
+    /// The check reads only the top rows of the window; that band still tells the new frame
+    /// from the old one moved, down or up.
+    #[test]
+    fn the_top_band_tells_the_new_frame_from_the_old_one_moved() {
+        let cover = rows_pic(2);
+        let top = |p: &[u8]| p[..16 * 6 * 4].to_vec(); // the top 6 rows
+        assert_eq!(band_diff(&top(&cover), 6, &cover, 16, 16, (0, 0)), 0.0);
+        // pushed down by 3: not the new frame, the old one moved
+        let down = rows_pic(5);
+        assert!(band_diff(&top(&down), 6, &cover, 16, 16, (0, 0)) > 40.0);
+        assert_eq!(band_diff(&top(&down), 6, &cover, 16, 16, (0, 3)), 0.0);
+        // pushed up by 2 (the start of a top drag)
+        assert_eq!(band_diff(&top(&rows_pic(0)), 6, &cover, 16, 16, (0, -2)), 0.0);
+        // moved further than the band is tall: nothing to compare, never a match
+        assert_eq!(band_diff(&top(&cover), 6, &cover, 16, 16, (0, 8)), f64::INFINITY);
+        assert_eq!(check_rows(791), 196);
+        assert_eq!(check_rows(100), 64);
+        assert_eq!(check_rows(40), 40);
     }
 }
