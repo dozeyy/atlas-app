@@ -130,9 +130,10 @@ function List({ title, count, children }: { title: string; count: number; childr
   );
 }
 
-function Stat({ fig, cap, title, optional }: { fig: string; cap: string; title?: string; optional?: boolean }) {
+/** `optional` ranks what a narrow row drops: 1 goes first, then 2; the unranked figure always stays. */
+function Stat({ fig, cap, title, optional }: { fig: string; cap: string; title?: string; optional?: 1 | 2 }) {
   return (
-    <div className="now-stat" title={title} data-opt={optional || undefined}>
+    <div className="now-stat" title={title} data-opt={optional}>
       <p className="d d-small now-stat-fig">{fig}</p>
       <p className="nc-cap">{cap}</p>
     </div>
@@ -159,8 +160,8 @@ function WaitRow({ chat, now }: { chat: NowChat; now: number }) {
           </span>
         </p>
       </div>
-      {chat.workedMs !== null && <Stat fig={formatDuration(chat.workedMs)} cap="Last turn" optional />}
-      <Stat fig={compact(chat.tokens)} cap="Tokens" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))} />
+      {chat.workedMs !== null && <Stat fig={formatDuration(chat.workedMs)} cap="Last turn" optional={1} />}
+      <Stat fig={compact(chat.tokens)} cap="Tokens" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))} optional={2} />
       <Stat fig={ago(chat.lastWriteMs, now).replace(/ ago$/, "")} cap="Stopped" />
     </li>
   );
@@ -182,7 +183,7 @@ function DoneRow({ last, now }: { last: NowLast; now: number }) {
           {last.model && <span className="chip">{modelLabel(last.model)}</span>}
         </p>
       </div>
-      {last.tokens !== null && <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false))} />}
+      {last.tokens !== null && <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false))} optional={2} />}
       <Stat fig={ago(last.endedMs, now).replace(/ ago$/, "")} cap="Ended" />
     </li>
   );

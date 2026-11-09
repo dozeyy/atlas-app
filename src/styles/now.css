@@ -86,6 +86,9 @@
   max-height: clamp(150px, 36vh, 252px);
   display: grid;
   grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
+  /* The one row is as tall as the band lets it be, so a long list scrolls inside itself
+     instead of spilling out of the band onto the window's bottom edge. */
+  grid-template-rows: minmax(0, 1fr);
   gap: 16px;
 }
 .now-band[data-cols="1"] {
@@ -163,21 +166,28 @@
   color: var(--ink);
 }
 
+/* One line. What does not fit whole wraps to a second line that is not shown, so a chip or a
+   status is either all there or gone, never cut mid-word. */
 .now-row-sub {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 0 8px;
   min-width: 0;
+  height: 22px;
   margin: 2px 0 0;
+  overflow: hidden;
 }
 .now-row-sub .chip {
   flex: none;
-  max-width: 45%;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .now-row-doing {
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -197,8 +207,14 @@
 .now-stat .nc-cap {
   margin: 0;
 }
-/* A list too narrow for every number drops the optional one first. */
+/* A list too narrow for every number gives the title the room: the last-turn time goes first,
+   then the token count; how long ago always stays. */
 @container nowlist (max-width: 520px) {
+  .now-stat[data-opt="1"] {
+    display: none;
+  }
+}
+@container nowlist (max-width: 440px) {
   .now-stat[data-opt] {
     display: none;
   }
@@ -629,12 +645,13 @@ html.reduced .nc-sweep.is-on::after {
 /* Short (three chats): one row of head, doing, numbers, clock; the trail beneath. */
 @container nowcard (max-height: 235px) and (min-width: 721px) {
   .nc-body {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.5fr) minmax(0, 0.9fr) auto;
+    /* The title column gets the most room: it is the one part that is text and gets cut. */
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.2fr) minmax(88px, 0.6fr) auto;
     grid-template-rows: minmax(0, 1fr) auto;
     grid-template-areas:
       "head doing numbers clock"
       "trail trail trail trail";
-    gap: 12px 24px;
+    gap: 12px 20px;
   }
   .nc-people {
     display: none;
