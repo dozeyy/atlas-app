@@ -51,8 +51,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 const SUBCLASS_ID: usize = 0x4154_4C46; // "ATLF"
-/// A page that has not answered in this long gets the drag handed back to the normal path.
+/// Responsiveness cap: a size step the page has not answered in this long is applied without
+/// it (the window follows the cursor; the page catches up a frame late). The next step waits for
+/// the page again, so a quick answer goes straight back to synced. Before the drag is live
+/// (arming, growing) a late answer hands the whole drag back to the normal path.
+const STEP_CAP: Duration = Duration::from_millis(150);
+/// After the drag: how long to wait for the page's window-sized frame before giving up on it.
 const ACK_TIMEOUT: Duration = Duration::from_millis(400);
+/// How often the cap is checked while the page owes an answer.
+const TICK_MS: u32 = 25;
 /// How often, and how many times, the cover checks that the window shows the page's new frame.
 const CONFIRM_EVERY_MS: u32 = 10;
 const CONFIRM_TRIES: u32 = 30;
@@ -122,6 +129,11 @@ struct Sync {
     loop_rect: Option<RECT>,
     timer: usize,
     failures: u32,
+    /// Answers the page has given this session: a hand-back from a page that has answered before
+    /// is a busy moment, not a broken page, and does not count toward turning sync off.
+    acks: u64,
+    /// Steps of this drag applied by the cap without the page's answer.
+    capped: u32,
     log: bool,
     t0: Instant,
 }
@@ -173,6 +185,8 @@ unsafe fn attach(controller: ICoreWebView2Controller) -> windows::core::Result<(
             loop_rect: None,
             timer: 0,
             failures: 0,
+            acks: 0,
+            capped: 0,
             log: std::env::var("ATLAS_FRAME_SYNC_LOG").as_deref() == Ok("1"),
             t0: Instant::now(),
         })
@@ -327,6 +341,7 @@ pub fn on_ack(seq: u64, via: u8) {
             _ => return After::None,
         };
         s.waiting = None;
+        s.acks += 1;
         let how = match via {
             1 => "presented",
             2 => "presentation not reported",
@@ -380,11 +395,54 @@ unsafe extern "system" fn confirm_tick(_: HWND, _: u32, _: usize, _: u32) {
     }
 }
 
-/// Deadlock guard only: a page that never answers must not freeze the window.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Late {
+    Wait,
+    /// Apply the step in flight without the page's answer.
+    ApplyStep,
+    /// Give the drag back to the normal path.
+    HandBack,
+}
+
+/// What to do about an answer the page has owed for `waited`.
+fn late_action(phase: Phase, waited: Duration) -> Late {
+    match phase {
+        Phase::Live if waited >= STEP_CAP => Late::ApplyStep,
+        Phase::Arming | Phase::Growing if waited >= STEP_CAP => Late::HandBack,
+        Phase::Ending if waited >= ACK_TIMEOUT => Late::HandBack,
+        _ => Late::Wait,
+    }
+}
+
+/// The cap: a page that is slow to answer must not hold the window still.
 unsafe extern "system" fn tick(_: HWND, _: u32, _: usize, _: u32) {
-    let late = with(|s| s.waiting.is_some_and(|(_, at)| at.elapsed() > ACK_TIMEOUT)).unwrap_or(false);
-    if late {
-        abort("no answer from the page");
+    let action = with(|s| match s.waiting {
+        Some((_, at)) if s.confirm.is_none() => late_action(s.phase, at.elapsed()),
+        _ => Late::Wait,
+    })
+    .unwrap_or(Late::Wait);
+    match action {
+        Late::Wait => {}
+        Late::HandBack => abort("no answer from the page in time"),
+        Late::ApplyStep => {
+            let after = with(|s| {
+                let seq = s.waiting.take().map(|(q, _)| q).unwrap_or(0);
+                s.capped += 1;
+                s.trace(&format!("step {seq} late: applied without the page"));
+                match s.in_flight.take() {
+                    Some(r) => {
+                        s.held = r;
+                        After::Apply(r)
+                    }
+                    None => After::None,
+                }
+            })
+            .unwrap_or(After::None);
+            run(after);
+            // The next step waits for the page again.
+            let after = with(|s| s.next()).unwrap_or(After::None);
+            run(after);
+        }
     }
 }
 
@@ -395,7 +453,9 @@ fn abort(why: &str) {
             return None;
         }
         eprintln!("[atlas] frame sync: {why}; this drag continues without it");
-        s.failures += 1;
+        if s.acks == 0 {
+            s.failures += 1;
+        }
         let wanted = s.wanted.take().or(s.in_flight.take());
         s.waiting = None;
         s.reset_webview();
@@ -463,6 +523,7 @@ impl Sync {
         }
         self.exit = false;
         self.loop_rect = None;
+        self.capped = 0;
         self.wanted = None;
         self.in_flight = None;
         self.t0 = Instant::now();
@@ -472,7 +533,7 @@ impl Sync {
         // webview, so growing the webview next changes nothing on screen.
         let cl = self.client_screen();
         self.post(true, RECT { left: 0, top: 0, right: cl.right - cl.left, bottom: cl.bottom - cl.top });
-        self.timer = unsafe { SetTimer(None, 0, 100, Some(tick)) };
+        self.timer = unsafe { SetTimer(None, 0, TICK_MS, Some(tick)) };
     }
 
     /// Step 2: grow the webview to the canvas. Its origin moves for a left or top drag, so a still
@@ -608,7 +669,7 @@ impl Sync {
         self.reset_webview();
         self.phase = Phase::Ending;
         self.post(false, RECT { left: 0, top: 0, right: cl.right - cl.left, bottom: cl.bottom - cl.top });
-        self.trace("end");
+        self.trace(&format!("end ({} steps applied by the cap)", self.capped));
         After::Resized
     }
 
@@ -818,7 +879,8 @@ unsafe fn create_overlay(owner: HWND) -> Option<HWND> {
 
 #[cfg(test)]
 mod tests {
-    use super::mean_diff;
+    use super::{late_action, mean_diff, Late, Phase};
+    use std::time::Duration;
 
     /// A 16x16 picture, dark left of `edge`, light from it on.
     fn pic(edge: i32) -> Vec<u8> {
@@ -830,6 +892,21 @@ mod tests {
             }
         }
         v
+    }
+
+    #[test]
+    fn a_slow_answer_applies_the_step_while_live_and_hands_back_before() {
+        let ms = Duration::from_millis;
+        assert_eq!(late_action(Phase::Live, ms(20)), Late::Wait);
+        assert_eq!(late_action(Phase::Live, ms(149)), Late::Wait);
+        assert_eq!(late_action(Phase::Live, ms(150)), Late::ApplyStep);
+        assert_eq!(late_action(Phase::Arming, ms(160)), Late::HandBack);
+        assert_eq!(late_action(Phase::Growing, ms(160)), Late::HandBack);
+        assert_eq!(late_action(Phase::Arming, ms(100)), Late::Wait);
+        // After the drag the window already has its size: wait longer before giving up on the page.
+        assert_eq!(late_action(Phase::Ending, ms(200)), Late::Wait);
+        assert_eq!(late_action(Phase::Ending, ms(400)), Late::HandBack);
+        assert_eq!(late_action(Phase::Idle, ms(5000)), Late::Wait);
     }
 
     #[test]

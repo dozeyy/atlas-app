@@ -334,9 +334,3 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Not seen in the app: the same-chat skip, year-boundary ranges, short stories under 7 days, the skill/helper/tool slides, Silver, 150% DPI. Unit tests only.
 - No first-launch Christmas intro into Wrapped exists yet (Phase 7). The only route in is the title-bar gift button.
 - Will kept the slide 2 novels hover (the conversion explanation), 2026-11-09.
-
-## 2026-11-09 - Windows edge-drag resize: frame sync (b330d7b + presentation ack)
-- Root cause of stale/out-of-place frames while dragging an edge: the window took each new size before WebView2 had drawn the page at it. Fix: `crates/app/src/winframe.rs` grows the webview to a screen-fixed canvas, the page lays out inside the window rect (`src/lib/frameSync.ts`, `html.frame-live`, vw/vh -> `--app-w/--app-h`), and the window takes a size only after `frame_ack`. A cover hides the origin swap on left/top drags until PrintWindow shows the new frame.
-- Two rAFs is not "on screen" under load; the ack now waits for an Element Timing report of a marker painted outside the window rect (falls back to two rAFs; gives up after 12 frames). Trace shows `presented` 111/123 acks, ~13-25 ms each.
-- Proven (tools/resize-drag.ps1 + analyze-resize.py, sync on, load 44-86%): L, TL, R, BR, B 0-1/40 mid-drag frames out of place, press/release clean. T is not settled yet: one run got erratic foreign cursor positions (tops 165<->381); at 94% load the app posted its first frame 1.8 s late and the window held still for the whole drag. Rerun T on a quiet machine.
-- Disk: C: hit 0 MB mid-session; build with CARGO_TARGET_DIR=D:\AtlasBuildScratch\target and TMP on D:.
