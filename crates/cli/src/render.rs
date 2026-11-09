@@ -175,7 +175,7 @@ fn activity(r: &ScopeReport, today: NaiveDate) -> String {
         && dated.len() == r.points.len()
         && let Some(g) = grid(&dated, today)
     {
-        return format!("Activity{}7 days a row\n{g}\n", dot());
+        return format!("Activity{}7 days per row\n{g}\n", dot());
     }
     let mut s = String::from("Activity\n");
     s.push_str(&bars(&series(&r.points, &r.bucket, today), true));
@@ -604,7 +604,7 @@ mod tests {
         let out = range(&range_of(&sp, &rep, None, 2));
         assert!(out.starts_with("**This week** \u{00B7} Nov 2 - Nov 8 \u{00B7} all projects\n**1.4k tokens** plus 5.2M cache reads \u{00B7} 4 sessions\n"), "{out}");
         assert!(out.contains("Activity\n```text\n"), "a week is bars: {out}");
-        assert!(!out.contains("7 days a row"), "{out}");
+        assert!(!out.contains("7 days per row"), "{out}");
         // Two Sonnet 4.5 ids are one row (800 of 1400), counted before the row limit of 2.
         assert_eq!(out.matches("Sonnet 4.5").count(), 1, "{out}");
         assert!(out.lines().any(|l| l.starts_with("Sonnet 4.5") && l.contains("800") && l.ends_with("57%")), "{out}");
@@ -651,9 +651,9 @@ mod tests {
             let rep = report("day", points_to(TODAY, &vec![7; n]), &[(SONNET, 700)], vec![], vec![]);
             let sp = span("2026-01-01", TODAY, "A range");
             let out = range(&range_of(&sp, &rep, None, 5));
-            assert_eq!(out.contains("Activity \u{00B7} 7 days a row\n```text\n"), expect_grid, "{n} days: {out}");
+            assert_eq!(out.contains("Activity \u{00B7} 7 days per row\n```text\n"), expect_grid, "{n} days: {out}");
             if expect_grid {
-                let rows = grid_rows(&out, "7 days a row");
+                let rows = grid_rows(&out, "7 days per row");
                 assert_eq!(rows.len(), n.div_ceil(7), "{n} days: {out}");
                 assert!(rows.last().unwrap().ends_with("Today"), "{n} days: today is bottom-right: {out}");
                 // Whole weeks have no empty slot; 15 days leaves 6 empty slots in row one.
@@ -682,7 +682,7 @@ mod tests {
         assert!(grid(&[], d(TODAY)).is_none());
         let rep = report("day", pts, &[(SONNET, 70)], vec![], vec![]);
         let out = range(&range_of(&span("2026-10-25", TODAY, "A range"), &rep, None, 5));
-        assert!(!out.contains("7 days a row"), "{out}");
+        assert!(!out.contains("7 days per row"), "{out}");
         assert!(out.contains("Activity\n```text\n"), "{out}");
     }
 
