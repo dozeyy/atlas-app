@@ -19,7 +19,7 @@
      gh secret delete TAURI_SIGNING_PRIVATE_KEY
      gh secret delete TAURI_SIGNING_PRIVATE_KEY_PASSWORD
      ```
-  4. Optional, recommended: also ask for your approval before each release job starts. Get your id with `gh api user --jq .id`, then `'{"reviewers":[{"type":"User","id":<id>}],"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' | gh api -X PUT repos/dozeyy/atlas/environments/release --input -` (the same PUT again; it keeps the tag rule).
+  4. Required: also ask for your approval before each release job starts. Get your id with `gh api user --jq .id`, then `'{"reviewers":[{"type":"User","id":<id>}],"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' | gh api -X PUT repos/dozeyy/atlas/environments/release --input -` (the same PUT again; it keeps the tag rule).
   5. Check: `gh api repos/dozeyy/atlas/environments/release --jq '.deployment_branch_policy'` and `gh api repos/dozeyy/atlas/environments/release/deployment-branch-policies --jq '.branch_policies[] | [.name,.type]'` should show `v*` / `tag`; `gh secret list --env release` shows the key.
 - Update address: `https://github.com/dozeyy/atlas/releases/latest/download/latest.json`, built from the one constant `REPO` in `crates/app/src/update.rs` (change it there if the repository moves). The repository must be public for installed copies to reach it.
 
