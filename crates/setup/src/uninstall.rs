@@ -116,7 +116,7 @@ pub fn pass_on(exe: &Path, cmdline: &str) -> i32 {
     }
     let code = cmd.status().ok().and_then(|s| s.code()).unwrap_or(1);
     if code == 0 && is_plain_silent_uninstall(raw_tail(cmdline)) {
-        erase_installed_remover(exe);
+        erase_installed_remover(&dir);
     }
     code
 }
@@ -124,20 +124,22 @@ pub fn pass_on(exe: &Path, cmdline: &str) -> i32 {
 /// `/S` alone: someone removing Atlas without a window. An update passes more (`/UPDATE`,
 /// `/P`, `/R`, `_?=`) and keeps this file, which the new installer replaces.
 pub fn is_plain_silent_uninstall(tail: &str) -> bool {
-    let words: Vec<String> = tail.split_whitespace().map(str::to_ascii_lowercase).collect();
+    // `--uninstall` is only how a Setup file asks to be the remover; it is not an installer switch.
+    let words: Vec<String> = tail.split_whitespace().map(str::to_ascii_lowercase).filter(|w| w != "--uninstall").collect();
     words.iter().any(|w| w == "/s") && words.iter().all(|w| w == "/s")
 }
 
-/// The installer's uninstaller cannot delete this file while it runs, so a plain silent
-/// uninstall would leave it (and its folder) behind. A hidden shell waits for this program to
-/// exit and the installer's own cleanup to finish, deletes only this one file, then removes
-/// the folder if it is empty.
-fn erase_installed_remover(exe: &Path) {
-    let (Some(dir), Some(name)) = (exe.parent(), exe.file_name()) else { return };
-    if !name.eq_ignore_ascii_case(REMOVER_NAME) {
+/// The installer's uninstaller does not know the remover file this program put in the install
+/// folder, and cannot delete it while it runs, so a plain silent uninstall would leave it (and
+/// the folder) behind. A hidden shell waits for this program and the installer's own cleanup to
+/// finish, deletes only that one file, then removes the folder if it is empty. The folder is the
+/// resolved install folder, whichever file started this run.
+fn erase_installed_remover(dir: &Path) {
+    let file = dir.join(REMOVER_NAME);
+    if !is_plain_file(&file) {
         return;
     }
-    let (f, d) = (exe.display().to_string(), dir.display().to_string());
+    let (f, d) = (file.display().to_string(), dir.display().to_string());
     if !cmd_safe(&f) || !cmd_safe(&d) {
         return;
     }
@@ -512,7 +514,8 @@ mod tests {
     fn only_a_bare_silent_uninstall_erases_the_remover_an_update_keeps_it() {
         assert!(is_plain_silent_uninstall("/S"));
         assert!(is_plain_silent_uninstall("/s"));
-        for t in ["", "/S _?=C:\\Atlas", "/S /UPDATE", "/P", "/S /P /R", "/UPDATE"] {
+        assert!(is_plain_silent_uninstall("--uninstall /S"), "a Setup file asked to remove, silently");
+        for t in ["", "/S _?=C:\\Atlas", "/S /UPDATE", "/P", "/S /P /R", "/UPDATE", "--uninstall", "--uninstall /S /P"] {
             assert!(!is_plain_silent_uninstall(t), "{t}");
         }
     }
