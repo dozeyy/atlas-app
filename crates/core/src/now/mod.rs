@@ -85,12 +85,14 @@ impl NowEngine {
         let mut watcher = None;
         if cfg.projects_dir.is_dir() {
             let (tx2, pd) = (tx.clone(), cfg.projects_dir.clone());
+            let canon = crate::usage::watch::canon_root(&pd);
             let made = notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
                 Ok(ev) => {
                     if matches!(ev.kind, EventKind::Access(_)) {
                         return;
                     }
                     for p in ev.paths {
+                        let p = crate::usage::watch::rebase(&pd, &canon, p);
                         if scan::classify(&pd, &p).is_some() {
                             let _ = tx2.send(Msg::Path(p));
                         }

@@ -25,6 +25,24 @@ fn is_jsonl(p: &Path) -> bool {
     p.extension().is_some_and(|e| e.eq_ignore_ascii_case("jsonl"))
 }
 
+/// Map an event path back onto the root as it was configured. macOS FSEvents reports
+/// the resolved path (`/private/var/...` for a watched `/var/...`, or the target of a
+/// symlinked `~/.claude`), which would never match the configured prefix.
+pub fn rebase(root: &Path, canon_root: &Path, p: PathBuf) -> PathBuf {
+    if p.starts_with(root) {
+        return p;
+    }
+    match p.strip_prefix(canon_root) {
+        Ok(rest) => root.join(rest),
+        Err(_) => p,
+    }
+}
+
+/// The resolved form of a watched root, for [`rebase`].
+pub fn canon_root(root: &Path) -> PathBuf {
+    root.canonicalize().unwrap_or_else(|_| root.to_path_buf())
+}
+
 /// Translate one raw event (pure, so it is unit-testable).
 pub fn translate(ev: &Event, pricing_name: &str) -> Vec<Seen> {
     if matches!(ev.kind, EventKind::Access(_)) {
@@ -59,8 +77,10 @@ pub fn start(
     pricing_name: &'static str,
     emit: impl Fn(Seen) + Send + 'static,
 ) -> Result<Watch, notify::Error> {
+    let (root, canon) = (projects_dir.to_path_buf(), canon_root(projects_dir));
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| match res {
-        Ok(ev) => {
+        Ok(mut ev) => {
+            ev.paths = ev.paths.into_iter().map(|p| rebase(&root, &canon, p)).collect();
             for s in translate(&ev, pricing_name) {
                 emit(s);
             }
@@ -89,6 +109,15 @@ mod tests {
 
     fn ev(kind: EventKind, p: &str) -> Event {
         Event::new(kind).add_path(PathBuf::from(p))
+    }
+
+    #[test]
+    fn resolved_event_paths_map_back_onto_the_configured_root() {
+        let (root, canon) = (Path::new("/var/t/projects"), Path::new("/private/var/t/projects"));
+        let p = rebase(root, canon, PathBuf::from("/private/var/t/projects/a/s.jsonl"));
+        assert_eq!(p, PathBuf::from("/var/t/projects/a/s.jsonl"));
+        assert_eq!(rebase(root, canon, PathBuf::from("/var/t/projects/a/s.jsonl")), p);
+        assert_eq!(rebase(root, canon, PathBuf::from("/elsewhere/x.jsonl")), PathBuf::from("/elsewhere/x.jsonl"));
     }
 
     #[test]
