@@ -199,8 +199,21 @@ pub fn place_remover(dir: &Path) -> std::io::Result<PathBuf> {
     Ok(to)
 }
 
-/// Start Atlas on its own, so closing Setup does not close it.
-pub fn launch(dir: &Path) -> std::io::Result<()> {
+/// What `launch` did.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Launched {
+    Started,
+    /// Setup runs as administrator: Atlas would inherit that token, and a chat reader has no
+    /// business running elevated. It is left for the person to open from the Start menu.
+    SkippedElevated,
+}
+
+/// Start Atlas on its own, so closing Setup does not close it. Never from an elevated Setup.
+pub fn launch(dir: &Path) -> std::io::Result<Launched> {
+    #[cfg(windows)]
+    if crate::winsys::is_elevated() {
+        return Ok(Launched::SkippedElevated);
+    }
     let mut cmd = Command::new(atlas_exe(dir));
     cmd.current_dir(dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(windows)]
@@ -208,7 +221,7 @@ pub fn launch(dir: &Path) -> std::io::Result<()> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0000_0008 | 0x0000_0200); // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     }
-    cmd.spawn().map(|_| ())
+    cmd.spawn().map(|_| Launched::Started)
 }
 
 /// Wait for a condition, polling; true when it held before the limit.

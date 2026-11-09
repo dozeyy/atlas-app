@@ -497,10 +497,11 @@ impl Setup {
             Ok(_) => self.log("install: remover placed"),
             Err(e) => self.log(&format!("install: remover not placed ({e})")),
         }
-        if install::launch(&dir).is_err() {
-            return self.fail("Atlas is installed but would not start. Open it from the Start menu.");
+        match install::launch(&dir) {
+            Err(_) => return self.fail("Atlas is installed but would not start. Open it from the Start menu."),
+            Ok(install::Launched::Started) => self.log("install: atlas started"),
+            Ok(install::Launched::SkippedElevated) => self.log("install: atlas not started (Setup runs as administrator); open it from the Start menu"),
         }
-        self.log("install: atlas started");
         self.update(|g| {
             g.phase = Phase::Done;
             g.stage = "";

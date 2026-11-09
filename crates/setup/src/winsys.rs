@@ -24,6 +24,32 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// Whether this process runs with an elevated (administrator) token. When the answer cannot be
+/// read it is "yes": the safe side for the caller, which then declines to start Atlas.
+pub fn is_elevated() -> bool {
+    use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation};
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    // SAFETY: the token handle is closed on every path; the out buffer is a TOKEN_ELEVATION of
+    // exactly the size passed.
+    unsafe {
+        let mut token = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            return true;
+        }
+        let mut info = TOKEN_ELEVATION { TokenIsElevated: 0 };
+        let mut got = 0u32;
+        let ok = GetTokenInformation(
+            token,
+            TokenElevation,
+            (&mut info as *mut TOKEN_ELEVATION).cast(),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut got,
+        );
+        CloseHandle(token);
+        ok == 0 || info.TokenIsElevated != 0
+    }
+}
+
 /// From now on this process loads libraries only from System32 (never the folder it runs from
 /// or the current folder). Call it first thing in `main`. Failure is harmless: the link-time
 /// `/DEPENDENTLOADFLAG` already covers the DLLs the program imports.

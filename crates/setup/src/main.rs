@@ -64,11 +64,17 @@ fn windowless_install() -> i32 {
         return 1;
     }
     let _ = install::place_remover(&dir);
-    if install::launch(&dir).is_err() {
-        winsys::message("Atlas Setup", "Atlas is installed but would not start. Open it from the Start menu.");
-        return 1;
+    match install::launch(&dir) {
+        Err(_) => {
+            winsys::message("Atlas Setup", "Atlas is installed but would not start. Open it from the Start menu.");
+            1
+        }
+        Ok(install::Launched::SkippedElevated) => {
+            winsys::message("Atlas Setup", "Atlas is installed. Setup was run as administrator, so it did not open Atlas. Open it from the Start menu.");
+            0
+        }
+        Ok(install::Launched::Started) => 0,
     }
-    0
 }
 
 /// The same for removing: no window, the installer's own uninstaller does the work.
