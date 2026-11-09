@@ -21,6 +21,12 @@ dirs = "6"
 tempfile = "3"
 atlas-core = { path = "crates/core" }
 
+# Debug builds still optimise the byte searcher every transcript read runs on. Unoptimised it ran
+# about 100x slower than in release (44 vs 4,533 MB/s on a 400 KB tool-result line), which made a
+# debug build's first receipt of a big chat crawl. Our own crates stay unoptimised for debugging.
+[profile.dev.package.memchr]
+opt-level = 3
+
 [profile.release]
 opt-level = 3
 lto = "thin"

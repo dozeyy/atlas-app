@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use memchr::memmem;
 use serde::de::{self, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor};
@@ -212,9 +213,46 @@ fn est_tokens(bytes: usize) -> u64 {
     (bytes as u64).div_ceil(4)
 }
 
+/// The byte patterns a line is sorted by, built once per scan and shared by every worker.
+struct Needles {
+    notice: memmem::Finder<'static>,
+    user: memmem::Finder<'static>,
+    assistant: memmem::Finder<'static>,
+    tool_result: memmem::Finder<'static>,
+    /// The tail both interrupt markers share: `"text":"[Request...` and `"content":"[Request...`.
+    interrupt: memmem::Finder<'static>,
+}
+
+impl Needles {
+    fn new() -> Self {
+        Needles {
+            notice: memmem::Finder::new(b"<task-notification>"),
+            user: memmem::Finder::new(br#""type":"user""#),
+            assistant: memmem::Finder::new(br#""type":"assistant""#),
+            tool_result: memmem::Finder::new(br#""tool_result""#),
+            interrupt: memmem::Finder::new(br#"":"[Request interrupted by user"#),
+        }
+    }
+
+    /// The line carries `"text":"[Request interrupted by user` or `"content":"[Request interrupted
+    /// by user`: one pass over the line finds either.
+    fn interrupted(&self, line: &[u8]) -> bool {
+        let mut from = 0;
+        while let Some(i) = self.interrupt.find(&line[from..]) {
+            // `at` is the quote that closes the key.
+            let at = from + i;
+            let key = &line[..=at];
+            if key.ends_with(br#""text""#) || key.ends_with(br#""content""#) {
+                return true;
+            }
+            from = at + 1;
+        }
+        false
+    }
+}
+
 /// Every `<task-notification>` in a raw line: which helper, how it ended.
-fn notices_in(line: &[u8], out: &mut Vec<Notice>) {
-    let open = memmem::Finder::new(b"<task-notification>");
+fn notices_in(line: &[u8], open: &memmem::Finder<'_>, out: &mut Vec<Notice>) {
     let mut from = 0;
     while let Some(i) = open.find(&line[from..]) {
         let start = from + i + 19;
@@ -241,25 +279,25 @@ fn notices_in(line: &[u8], out: &mut Vec<Notice>) {
     }
 }
 
-fn scan_one(file: &ScanFile, stats: &ReadStats, notices: &mut Vec<Notice>) -> Option<ThreadScan> {
+/// One file's thread and the notices found in it, in the order they were written.
+fn scan_one(file: &ScanFile, stats: &ReadStats, n: &Needles) -> Option<(ThreadScan, Vec<Notice>)> {
     let f = open_read_only(&file.path).ok()?;
     let mut t = ThreadScan { agent_id: file.agent_id.clone(), ..Default::default() };
+    let mut notices = Vec::new();
     let mut uses: HashMap<String, (String, Option<String>)> = HashMap::new();
     let mut last_id = String::new();
     let _ = read_lines(f, 0, LINE_CAP, stats, |item, _| {
         let Item::Line(line) = item else { return true };
-        if memmem::find(line, b"<task-notification>").is_some() {
-            notices_in(line, notices);
+        if n.notice.find(line).is_some() {
+            notices_in(line, &n.notice, &mut notices);
         }
+        let user = n.user.find(line).is_some();
         // Only Claude Code's own marker: a user line whose text (or plain content) starts with it.
-        // A file or tool result that quotes the marker carries it escaped mid-string, which these miss.
-        if memmem::find(line, br#""type":"user""#).is_some()
-            && (memmem::find(line, br#""text":"[Request interrupted by user"#).is_some()
-                || memmem::find(line, br#""content":"[Request interrupted by user"#).is_some())
-        {
+        // A file or tool result that quotes the marker carries it escaped mid-string, which this misses.
+        if user && n.interrupted(line) {
             t.interrupted = true;
         }
-        if memmem::find(line, br#""type":"assistant""#).is_some() {
+        if n.assistant.find(line).is_some() {
             let Ok(l) = serde_json::from_slice::<ALine>(line) else { return true };
             let api_error = l.api_error == Some(true);
             t.last_api_error = api_error;
@@ -282,7 +320,7 @@ fn scan_one(file: &ScanFile, stats: &ReadStats, notices: &mut Vec<Notice>) -> Op
                     }
                 }
             }
-        } else if memmem::find(line, br#""tool_result""#).is_some() && memmem::find(line, br#""type":"user""#).is_some() {
+        } else if user && n.tool_result.find(line).is_some() {
             let Ok(l) = serde_json::from_slice::<ULine>(line) else { return true };
             let blocks = l.message.and_then(|m| m.content).map(|c| c.0).unwrap_or_default();
             for b in blocks {
@@ -306,17 +344,66 @@ fn scan_one(file: &ScanFile, stats: &ReadStats, notices: &mut Vec<Notice>) -> Op
         t.results.sort_by_key(|r| std::cmp::Reverse(r.tokens));
         t.results.truncate(KEEP_MAX);
     }
-    Some(t)
+    Some((t, notices))
+}
+
+/// The most files read at once. Each reader holds a 1 MiB buffer and its current line (at most
+/// `LINE_CAP`), as the single reader did before.
+const MAX_WORKERS: usize = 8;
+
+/// `scan_one` for every file, answered in the files' order. A chat with many helpers has many
+/// files, so they are read side by side rather than one after another.
+fn scan_each(files: &[ScanFile], stats: &ReadStats, workers: usize) -> Vec<Option<(ThreadScan, Vec<Notice>)>> {
+    let needles = Needles::new();
+    let workers = workers.min(files.len());
+    if workers <= 1 {
+        return files.iter().map(|f| scan_one(f, stats, &needles)).collect();
+    }
+    let next = AtomicUsize::new(0);
+    let mut out: Vec<Option<(ThreadScan, Vec<Notice>)>> = files.iter().map(|_| None).collect();
+    std::thread::scope(|s| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                s.spawn(|| {
+                    let mut got = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(f) = files.get(i) else { break };
+                        got.push((i, scan_one(f, stats, &needles)));
+                    }
+                    got
+                })
+            })
+            .collect();
+        for h in handles {
+            match h.join() {
+                Ok(got) => {
+                    for (i, r) in got {
+                        out[i] = r;
+                    }
+                }
+                Err(p) => std::panic::resume_unwind(p),
+            }
+        }
+    });
+    out
 }
 
 /// Scan every file of a chat. Files that cannot be opened are skipped; `readable` says whether any could.
+/// The files are read side by side (up to `MAX_WORKERS` at once); the answer is the same as
+/// reading them one after another in the given order.
 pub fn scan_files(files: &[ScanFile], stats: &ReadStats) -> Scan {
+    let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).min(MAX_WORKERS);
+    scan_files_with(files, stats, workers)
+}
+
+fn scan_files_with(files: &[ScanFile], stats: &ReadStats, workers: usize) -> Scan {
     let mut threads: Vec<ThreadScan> = Vec::new();
     let mut notices: Vec<Notice> = Vec::new();
     let mut readable = false;
-    for f in files {
-        let Some(t) = scan_one(f, stats, &mut notices) else { continue };
+    for (t, found) in scan_each(files, stats, workers).into_iter().flatten() {
         readable = true;
+        notices.extend(found);
         match threads.iter_mut().find(|x| x.agent_id == t.agent_id) {
             Some(x) => {
                 let offset = x.turns;
@@ -353,8 +440,79 @@ mod tests {
     fn notices_read_the_id_and_status_only() {
         let line = br#"{"type":"queue-operation","content":"<task-notification>\n<task-id>a1b2</task-id>\n<tool-use-id>toolu_x</tool-use-id>\n<output-file>C:\\x</output-file>\n<status>failed</status>\n<summary>nope</summary></task-notification>"}"#;
         let mut out = Vec::new();
-        notices_in(line, &mut out);
+        notices_in(line, &Needles::new().notice, &mut out);
         assert_eq!(out, vec![Notice { agent_id: "a1b2".into(), status: "failed".into() }]);
+    }
+
+    #[test]
+    fn the_interrupt_marker_is_found_in_one_pass_exactly_as_the_two_searches_did() {
+        let two = |l: &[u8]| {
+            memmem::find(l, br#""text":"[Request interrupted by user"#).is_some()
+                || memmem::find(l, br#""content":"[Request interrupted by user"#).is_some()
+        };
+        let lines: [&[u8]; 8] = [
+            br#"{"type":"user","message":{"content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#,
+            br#"{"type":"user","message":{"content":"[Request interrupted by user]"}}"#,
+            br#"{"type":"user","message":{"content":"quoted: \"text\":\"[Request interrupted by user\""}}"#,
+            br#"{"type":"user","x":"[Request interrupted by user","message":{"content":"plain"}}"#,
+            br#"{"type":"user","subtext":"[Request interrupted by user","y":1}"#,
+            br#"{"type":"user","a":"[Request interrupted by user","text":"[Request interrupted by user"}"#,
+            br#"":"[Request interrupted by user"#,
+            br#"{"type":"user","message":{"content":"nothing here"}}"#,
+        ];
+        let n = Needles::new();
+        for l in lines {
+            assert_eq!(n.interrupted(l), two(l), "{}", String::from_utf8_lossy(l));
+        }
+        assert!(n.interrupted(lines[0]) && n.interrupted(lines[1]) && n.interrupted(lines[5]));
+        assert!(!n.interrupted(lines[2]) && !n.interrupted(lines[3]) && !n.interrupted(lines[6]));
+    }
+
+    #[test]
+    fn reading_files_side_by_side_gives_the_same_scan_as_one_after_another() {
+        let dir = tempfile::tempdir().unwrap();
+        let notice = |id: &str, status: &str| {
+            format!(r#"{{"type":"queue-operation","content":"<task-notification>\n<task-id>{id}</task-id>\n<status>{status}</status>\n</task-notification>"}}"#)
+        };
+        let turn = |id: &str, k: usize, stop: &str, bytes: usize| {
+            format!(
+                "{}\n{}",
+                format_args!(r#"{{"type":"assistant","message":{{"id":"m_{id}_{k}","stop_reason":"{stop}","content":[{{"type":"tool_use","id":"t_{id}_{k}","name":"Read","input":{{"file_path":"f{k}.rs"}}}}]}}}}"#),
+                format_args!(r#"{{"type":"user","message":{{"content":[{{"type":"tool_result","tool_use_id":"t_{id}_{k}","content":"{}"}}]}}}}"#, "x".repeat(bytes)),
+            )
+        };
+        let mut files = Vec::new();
+        let mut put = |name: &str, agent: Option<&str>, lines: Vec<String>| {
+            let p = dir.path().join(name);
+            std::fs::write(&p, lines.join("\n") + "\n").unwrap();
+            files.push(ScanFile { path: p, agent_id: agent.map(str::to_string) });
+        };
+        // The main chat's notices: h3 "failed" first, then a later file says "completed".
+        put("main.jsonl", None, vec![turn("main", 0, "tool_use", 4_000), notice("h3", "failed"), notice("h5", "killed")]);
+        for h in 0..24 {
+            let id = format!("h{h}");
+            let lines = (0..3 + h % 4).map(|k| turn(&id, k, if k == 2 + h % 4 { "end_turn" } else { "tool_use" }, 2_000 + 500 * k)).collect();
+            put(&format!("agent-{id}.jsonl"), Some(&id), lines);
+        }
+        // A second file of one helper (its turns continue the first file's), a note after it, and
+        // a file that is gone.
+        put("agent-h7-b.jsonl", Some("h7"), vec![turn("h7b", 0, "tool_use", 9_000), notice("h3", "completed")]);
+        files.push(ScanFile { path: dir.path().join("gone.jsonl"), agent_id: Some("h99".into()) });
+
+        let one = scan_files_with(&files, &ReadStats::default(), 1);
+        for workers in [2, 3, 8] {
+            assert_eq!(scan_files_with(&files, &ReadStats::default(), workers), one, "{workers} workers");
+        }
+        assert!(one.readable);
+        assert_eq!(one.threads.len(), 25, "main chat and 24 helpers; the missing file adds nothing");
+        assert_eq!(one.threads[0].agent_id, None, "threads keep the files' order");
+        let status = |id: &str| one.notices.iter().find(|n| n.agent_id == id).map(|n| n.status.as_str());
+        assert_eq!(status("h3"), Some("completed"), "the note written last wins");
+        assert_eq!(status("h5"), Some("killed"));
+        let h7 = one.threads.iter().find(|t| t.agent_id.as_deref() == Some("h7")).unwrap();
+        assert_eq!(h7.turns, 6 + 1);
+        assert_eq!(h7.results.last().unwrap().turn, 6 + 1, "the second file's turns count on from the first's");
+        assert_eq!(h7.last_stop.as_deref(), Some("tool_use"), "the later file says how it ended");
     }
 
     #[test]
