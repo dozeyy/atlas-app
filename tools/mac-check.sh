@@ -198,7 +198,16 @@ if [ -d "$DBG" ]; then
       [ -f "$req" ] || continue
       name=$(basename "$req" .rect)
       rect=$(cat "$req")
-      screencapture -x -R"$rect" "$TOUR/$name.png" 2>>"$OUT/tour/screencapture.log"
+      # The window itself by its id (exact, whatever the screen size); the app's rectangle only
+      # when the window cannot be found. The window's real size goes in sizes.txt.
+      win=$(main_window "$pid")
+      if [ -n "$win" ]; then
+        screencapture -x -o -l"${win%% *}" "$TOUR/$name.png" 2>>"$OUT/tour/screencapture.log"
+        echo "$name ${win#* }" >>"$OUT/tour/sizes.txt"
+      else
+        screencapture -x -R"$rect" "$TOUR/$name.png" 2>>"$OUT/tour/screencapture.log"
+        echo "$name $rect (by rectangle)" >>"$OUT/tour/sizes.txt"
+      fi
       rm -f "$req"
       shots=$((shots + 1))
     done
@@ -209,7 +218,8 @@ if [ -d "$DBG" ]; then
   wait "$pid" 2>/dev/null
   rm -rf "$TOUR/req"
   n=$(ls "$TOUR"/*.png 2>/dev/null | wc -l | tr -d ' ')
-  [ "$n" -ge 35 ] && ok "$n tour pictures (expected 35)" || bad "only $n tour pictures (expected 35)"
+  [ "$n" -ge 36 ] && ok "$n tour pictures (expected 36)" || bad "only $n tour pictures (expected 36)"
+  [ -f "$TOUR/sizes.txt" ] && note "window sizes captured: $(awk '{ split($2, r, ","); print r[3] "x" r[4] }' "$TOUR/sizes.txt" | sort | uniq -c | tr -s ' ' | tr '\n' ';')"
   if grep -E 'no picture|failed|tour stopped' "$TOUR/tour.log" >/dev/null 2>&1; then
     bad "tour steps went wrong: $(grep -cE 'no picture|failed|tour stopped' "$TOUR/tour.log") (tour/tour.log)"
   fi

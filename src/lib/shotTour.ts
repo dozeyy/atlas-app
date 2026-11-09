@@ -206,7 +206,7 @@ export async function startTour(): Promise<void> {
   await sleep(1200);
   await d.log(`tour: ${real ? "app" : "browser"}, platform ${document.documentElement.dataset.platform}`);
   await waitForIndex(d.log);
-  const small = ["dashboard", "sessions", "session-detail", "toolkit", "skill-item", "settings", "wrapped-1"];
+  const small = ["dashboard", "sessions", "session-detail", "toolkit", "toolkit-skills", "skill-item", "settings", "wrapped-1"];
   const passes: Pass[] = real
     ? [
         { prefix: "light", theme: "light", size: [1280, 800] },
