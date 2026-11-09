@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { GiftIcon } from "./GiftIcon";
 import { IconMotion } from "./IconMotion";
+import { UpdateButton } from "./UpdateButton";
 import type { Motion } from "./IconMotion";
 import { useAtlas } from "../state/AtlasProvider";
 import { modName } from "../lib/appMenu";
@@ -93,8 +94,10 @@ export function Sidebar() {
             </span>
           </div>
         )}
-        {/* Settings: icon only, in the sidebar's bottom-right corner (centred when folded). */}
+        {/* Settings: icon only, in the sidebar's bottom-right corner (centred when folded). The
+            update icon, when there is one, mirrors it at the bottom-left (above it when folded). */}
         <nav aria-label="Secondary" className="nav-settings-row">
+          <UpdateButton />
           {item(NAV.find((n) => n.view === "settings")!, true)}
         </nav>
       </div>

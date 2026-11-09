@@ -1,0 +1,39 @@
+[package]
+name = "atlas-setup"
+description = "Atlas Setup: the styled installer. It carries the real Windows installer and reads your Claude Code chats while it runs."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+atlas-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[features]
+# `tools/build-setup.ps1` and CI turn both on: the front end is served from the binary
+# (custom-protocol) and the real Atlas installer is carried inside (payload). Without
+# `payload` the program still builds and runs (tests, UI work) but Install reports that
+# this build has no installer inside.
+custom-protocol = ["tauri/custom-protocol"]
+payload = []
+
+[dev-dependencies]
+tempfile.workspace = true

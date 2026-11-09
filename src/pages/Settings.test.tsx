@@ -5,6 +5,7 @@ import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
 import { MockBackend } from "../lib/mock";
+import { resetUpdateStore } from "../lib/updateStore";
 
 function mount(prep?: (b: MockBackend) => void) {
   localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "settings" }));
@@ -20,6 +21,7 @@ function mount(prep?: (b: MockBackend) => void) {
 }
 
 beforeEach(() => {
+  resetUpdateStore();
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
 });
@@ -45,6 +47,20 @@ describe("Settings", () => {
     await userEvent.click(within(rail).getByRole("button", { name: "About" }));
     expect(screen.getByText("Atlas never sends your data anywhere", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("Version")).toBeInTheDocument();
+  });
+
+  it("About shows the version and a Check for updates button that answers in plain words", async () => {
+    const backend = mount();
+    const rail = await screen.findByRole("navigation", { name: "Settings sections" });
+    await userEvent.click(within(rail).getByRole("button", { name: "About" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Check for updates" }));
+    expect(await screen.findByText("You have the latest version.")).toBeInTheDocument();
+    expect(backend.updates.checks).toBe(1);
+
+    backend.updates.available = { version: "0.2.0", notes: "", current: "0.1.0" };
+    await userEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    expect(await screen.findByText("Version 0.2.0 is ready.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Update and restart" })).toBeInTheDocument();
   });
 
   it("turns Keep running when closed on and off", async () => {

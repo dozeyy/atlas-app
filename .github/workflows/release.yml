@@ -1,0 +1,295 @@
+name: release
+
+# A tag `vX.Y.Z` builds every download and publishes the GitHub Release. Run by hand
+# (workflow_dispatch) it builds everything and keeps the files as workflow artifacts, but publishes
+# nothing.
+#
+# Secrets (set once, see docs/releasing.md):
+#   TAURI_SIGNING_PRIVATE_KEY           the in-app update signing key (content of atlas-updater.key)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (empty: the key has none)
+#
+# Release assets (stable names, linked from the README and the skill):
+#   Atlas-Setup-Windows-x64.exe  Atlas-macOS.dmg  atlas-usage-windows-x64.exe
+#   atlas-usage-macos-universal  atlas-usage-linux-x64  SHA256SUMS.txt  latest.json
+# plus the update bundles and their .sig files under the names Tauri gives them. The MSI is not
+# published.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  versions:
+    name: Versions agree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: v
+        shell: bash
+        run: |
+          app=$(jq -r .version crates/app/tauri.conf.json)
+          plugin=$(jq -r .version skill/.claude-plugin/plugin.json)
+          echo "tauri.conf.json: $app"
+          echo "plugin.json:     $plugin"
+          if [ "$app" != "$plugin" ]; then
+            echo "::error::crates/app/tauri.conf.json ($app) and skill/.claude-plugin/plugin.json ($plugin) disagree."
+            exit 1
+          fi
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            echo "tag:             $tag"
+            if [ "$tag" != "$app" ]; then
+              echo "::error::The tag says $tag but the files say $app. Fix the versions, then tag again."
+              exit 1
+            fi
+          fi
+          echo "version=$app" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: Windows
+    needs: versions
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1 (the toolchain itself is pinned by the input below)
+        with:
+          toolchain: 1.97.1
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # atlas-usage.exe, then the signed installer with it inside, then Atlas Setup with that
+      # installer inside. tools/build-setup.ps1 is the same chain anyone runs locally.
+      - name: Build installer and Atlas Setup
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: ./tools/build-setup.ps1 -OutDir out
+
+      - name: Collect files
+        shell: bash
+        run: |
+          set -euo pipefail
+          v="${{ needs.versions.outputs.version }}"
+          nsis="target/release/bundle/nsis/Atlas_${v}_x64-setup.exe"
+          for f in "$nsis" "$nsis.sig" out/Atlas-Setup-Windows-x64.exe target/release/atlas-usage.exe; do
+            [ -f "$f" ] || { echo "::error::Missing $f. A release without it would break updates or downloads."; exit 1; }
+          done
+          cp "$nsis" "$nsis.sig" out/
+          cp target/release/atlas-usage.exe out/atlas-usage-windows-x64.exe
+          rm -f out/atlas-usage.exe
+          ls -l out
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: files-windows
+          if-no-files-found: error
+          path: out/*
+
+  macos:
+    name: macOS (universal)
+    needs: versions
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1 (the toolchain itself is pinned by the input below)
+        with:
+          toolchain: 1.97.1
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build app, dmg and update bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build --target universal-apple-darwin
+
+      - name: Build atlas-usage
+        run: |
+          cargo build -p atlas-cli --release --target aarch64-apple-darwin --target x86_64-apple-darwin
+          lipo -create -output atlas-usage-macos-universal target/aarch64-apple-darwin/release/atlas-usage target/x86_64-apple-darwin/release/atlas-usage
+
+      - name: Collect files
+        run: |
+          set -euo pipefail
+          b=target/universal-apple-darwin/release/bundle
+          mkdir out
+          dmg=$(ls "$b"/dmg/*.dmg | head -n 1)
+          for f in "$dmg" "$b/macos/Atlas.app.tar.gz" "$b/macos/Atlas.app.tar.gz.sig" atlas-usage-macos-universal; do
+            [ -f "$f" ] || { echo "::error::Missing $f. A release without it would break updates or downloads."; exit 1; }
+          done
+          cp "$dmg" out/Atlas-macOS.dmg
+          cp "$b/macos/Atlas.app.tar.gz" "$b/macos/Atlas.app.tar.gz.sig" atlas-usage-macos-universal out/
+          ls -l out
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: files-macos
+          if-no-files-found: error
+          path: out/*
+
+  linux-cli:
+    name: atlas-usage (Linux)
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1 (the toolchain itself is pinned by the input below)
+        with:
+          toolchain: 1.97.1
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - run: cargo build -p atlas-cli --release
+
+      - run: |
+          mkdir out
+          cp target/release/atlas-usage out/atlas-usage-linux-x64
+          ls -l out
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: files-linux
+          if-no-files-found: error
+          path: out/*
+
+  publish:
+    name: Publish
+    needs: [versions, windows, macos, linux-cli]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The only job that writes: it makes the Release and commits the pinned skill checksums.
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.versions.outputs.version }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: files-*
+          merge-multiple: true
+          path: dist
+
+      - name: Check every file is there
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in Atlas-Setup-Windows-x64.exe "Atlas_${VERSION}_x64-setup.exe" "Atlas_${VERSION}_x64-setup.exe.sig" \
+                   Atlas-macOS.dmg Atlas.app.tar.gz Atlas.app.tar.gz.sig \
+                   atlas-usage-windows-x64.exe atlas-usage-macos-universal atlas-usage-linux-x64; do
+            [ -s "dist/$f" ] || { echo "::error::dist/$f is missing or empty."; exit 1; }
+          done
+          ls -l dist
+
+      # What the in-app updater reads: the version, the notes and, per platform, the signed bundle.
+      - name: Write latest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          notes="Atlas ${VERSION}"
+          if [ -f RELEASE_NOTES.md ]; then notes="$(cat RELEASE_NOTES.md)"; fi
+          jq -n \
+            --arg v "$VERSION" \
+            --arg notes "$notes" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg win_url "$base/Atlas_${VERSION}_x64-setup.exe" \
+            --arg win_sig "$(cat "dist/Atlas_${VERSION}_x64-setup.exe.sig")" \
+            --arg mac_url "$base/Atlas.app.tar.gz" \
+            --arg mac_sig "$(cat dist/Atlas.app.tar.gz.sig)" \
+            '{
+               version: $v, notes: $notes, pub_date: $date,
+               platforms: {
+                 "windows-x86_64":   { signature: $win_sig, url: $win_url },
+                 "darwin-universal": { signature: $mac_sig, url: $mac_url },
+                 "darwin-aarch64":   { signature: $mac_sig, url: $mac_url },
+                 "darwin-x86_64":    { signature: $mac_sig, url: $mac_url }
+               }
+             }' > dist/latest.json
+          jq . dist/latest.json
+
+      # One list covering every asset in the Release.
+      - name: Write SHA256SUMS.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum $(ls | grep -v '^SHA256SUMS.txt$' | sort) > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create the Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" dist/* --verify-tag --title "Atlas ${VERSION}" --generate-notes
+
+      # The skill downloads atlas-usage and checks it against skill/skills/atlas/bin/checksums.txt;
+      # pin the three binaries of THIS release there. tools/pin-skill-checksums.ps1 arrives with the
+      # skill branch: without it the release still stands, and the step says so.
+      - name: Pin skill checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f tools/pin-skill-checksums.ps1 ]; then
+            echo "::warning::tools/pin-skill-checksums.ps1 does not exist in this tag, so the skill checksums were not pinned."
+            exit 0
+          fi
+          mkdir pin
+          cp dist/atlas-usage-windows-x64.exe dist/atlas-usage-macos-universal dist/atlas-usage-linux-x64 pin/
+          pwsh tools/pin-skill-checksums.ps1 -Dir pin -Version "$VERSION"
+          cp skill/skills/atlas/bin/checksums.txt "$RUNNER_TEMP/checksums.txt"
+          git checkout -- .
+          git fetch origin main
+          git switch -C main origin/main
+          cp "$RUNNER_TEMP/checksums.txt" skill/skills/atlas/bin/checksums.txt
+          git add skill/skills/atlas/bin/checksums.txt
+          if git diff --cached --quiet; then
+            echo "checksums.txt already matches v${VERSION}."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Pin skill checksums for v${VERSION}"
+          git push origin HEAD:main

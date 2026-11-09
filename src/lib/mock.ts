@@ -10,6 +10,7 @@ import { MockUsage } from "./mockUsage";
 import { MockSearch } from "./mockSearch";
 import { MockHistory } from "./mockHistory";
 import { MockNow } from "./mockNow";
+import { MockUpdates } from "./mockUpdate";
 
 const KEY = "atlas.mock.settings";
 
@@ -199,6 +200,11 @@ export class MockBackend {
     ...(await this.history.settingsOverview()),
     keepVersions: this.info.settings.historyKeepVersions,
   });
+  // ---- updates: the stand-in lives in mockUpdate.ts ----
+  readonly updates = new MockUpdates();
+  updateCheck: Backend["updateCheck"] = () => this.updates.updateCheck();
+  updateInstall: Backend["updateInstall"] = () => this.updates.updateInstall();
+  onUpdateProgress: Backend["onUpdateProgress"] = (cb) => this.updates.onUpdateProgress(cb);
   // ---- Now: the stand-in lives in mockNow.ts ----
   readonly now = new MockNow();
   nowSnapshot: Backend["nowSnapshot"] = () => this.now.nowSnapshot();

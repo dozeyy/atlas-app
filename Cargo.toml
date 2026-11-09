@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/app", "crates/mcp", "crates/cli"]
+members = ["crates/core", "crates/app", "crates/mcp", "crates/cli", "crates/setup"]
 # Plain `cargo test` / `cargo build` covers the crates that need neither the
 # front end nor WebView2. CI and `cargo test --workspace` include the Tauri app
 # (its build needs `dist/`, so run `npm run build` first).

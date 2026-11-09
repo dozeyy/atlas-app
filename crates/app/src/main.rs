@@ -9,6 +9,7 @@ mod search;
 mod setup_service;
 mod state;
 mod tray;
+mod update;
 mod usage;
 
 use std::sync::Arc;
@@ -57,6 +58,7 @@ fn main() {
     }
     let app = builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 // The splash is a fixed overlay, never a window to remember.
@@ -71,6 +73,7 @@ fn main() {
         )
         .manage(Arc::clone(&state))
         .manage(Arc::new(setup_service::SetupHub::default()))
+        .manage(Arc::new(update::Updates::default()))
         .invoke_handler(tauri::generate_handler![
             commands::get_app_info,
             commands::update_settings,
@@ -113,6 +116,8 @@ fn main() {
             intro::intro_skip,
             intro::intro_main_painted,
             intro::splash_done,
+            update::update_check,
+            update::update_install,
             setup_service::setup_snapshot,
             setup_service::setup_cost,
             setup_service::setup_read_source,

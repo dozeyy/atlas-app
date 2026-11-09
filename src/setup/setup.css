@@ -1,0 +1,413 @@
+/* Atlas Setup. Colors, radii, easings and the number face all come from tokens.css; the only
+   values here are the layout of this one 560 x 380 sheet (an 8 px grid) and the trail art. */
+
+@font-face {
+  font-family: "Recursive Variable";
+  font-style: normal;
+  font-display: block;
+  font-weight: 300 1000;
+  src: url("../../node_modules/@fontsource-variable/recursive/files/recursive-latin-casl-normal.woff2") format("woff2-variations");
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+  font-family: var(--font-ui);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The window is 600 x 420 and transparent; the sheet sits 20 px in so its shadow has room. */
+.sheet {
+  position: fixed;
+  left: 20px;
+  top: 20px;
+  width: 560px;
+  height: 380px;
+  box-sizing: border-box;
+  background: var(--bg);
+  /* The hairline is an inset shadow, not a border: a border would shrink the padding box to
+     558 x 378 and the map (560 x 380 units) would no longer line up one to one with the page. */
+  border-radius: var(--r-sheet);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    var(--shadow-pop);
+  overflow: hidden;
+  /* Hidden until the page says it is ready, so the first frame is the drawing, not a flash. */
+  opacity: 0;
+  transform-origin: 50% 50%;
+}
+
+.sheet.show {
+  opacity: 1;
+}
+
+.sheet.leaving {
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out);
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* ---- the map ---- */
+
+.rings path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0;
+  vector-effect: non-scaling-stroke;
+}
+
+.trail-base {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 2 7;
+  opacity: 0;
+}
+
+.trail-done {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 2 7;
+  opacity: 0;
+}
+
+.trail-reveal {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 12;
+  stroke-linecap: butt;
+  transition: stroke-dashoffset 420ms var(--ease-out);
+}
+
+/* In the unlit trail's mask the same stroke is black: it hides what the lit trail covers. */
+.trail-hide {
+  stroke: #000;
+}
+
+/* ---- the gaps: black shapes in the contours' mask ---- */
+
+.hole {
+  fill: #000;
+  stroke: none;
+}
+
+.hole-line {
+  fill: none;
+  stroke: #000;
+  /* The trail is 3 px of dots and its head dot 12 px across: this leaves 10 px clear either side. */
+  stroke-width: 20;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#hole-mark use {
+  fill: #000;
+  stroke: #000;
+  stroke-linejoin: round;
+}
+
+.walker {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 2;
+  opacity: 0;
+  transition: transform 420ms var(--ease-out);
+}
+
+.mark-ink {
+  fill: var(--brand-mark);
+  fill-opacity: 0;
+  stroke: var(--brand-mark);
+  stroke-width: 14;
+  stroke-linejoin: round;
+}
+
+.rays line {
+  stroke: var(--brand-mark);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0;
+}
+
+/* ---- the words and buttons ---- */
+
+.copy {
+  position: absolute;
+  left: 40px;
+  top: 72px;
+  width: 296px;
+  opacity: 0;
+}
+
+.line {
+  margin: 0;
+  min-height: 48px;
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--ink-2);
+}
+
+.line .num {
+  font-family: var(--font-display);
+  font-variation-settings: var(--display-axes);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.line {
+  /* No lone word or number on the last line ("(code" / "2)"). */
+  text-wrap: pretty;
+  /* A "\n" in the text is a real line break (the install step, then the reading count). */
+  white-space: pre-line;
+}
+
+/* The contours run behind the words. Measured: a contour pixel under a glyph drops the grey
+   text to 3.8:1 (light) and the error red to 3.7:1 (dark), under the 4.5:1 floor. A soft halo
+   in the sheet's own color, hugging the glyphs only, keeps that pixel at the page's contrast
+   without cutting a gap in the line. */
+:is(.line, .opt-toggle, .check, .btn.quiet) {
+  text-shadow:
+    0 0 2px var(--bg),
+    0 0 5px var(--bg);
+}
+
+.line.bad {
+  color: var(--danger);
+}
+
+/* A number inside an error stays the error's colour, not the page's. */
+.line.bad .num {
+  color: inherit;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  min-height: 40px;
+}
+
+.btn {
+  height: 40px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--r-control);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--dur-hover) var(--ease-out),
+    transform var(--dur-press) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+.btn[hidden] {
+  display: none;
+}
+
+.btn:active {
+  transform: scale(var(--press-scale));
+}
+
+.btn.primary {
+  background: var(--accent-solid);
+  color: var(--on-accent);
+  box-shadow: var(--shadow-accent);
+}
+
+.btn.primary:hover {
+  background: var(--accent-solid-hover);
+  box-shadow: var(--shadow-accent-hover);
+}
+
+.btn.quiet {
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.btn.quiet:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+:is(.btn, .x, .opt-toggle, .check input):focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
+/* A 40 px target (the glyph stays 14 px); its middle is (532, 28) on the sheet, where the
+   map's gap for it is centred. */
+.x {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    background var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+
+.x:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.x:active {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  transform: scale(var(--press-scale));
+}
+
+.x:disabled {
+  opacity: 0.25 !important;
+  cursor: default;
+  background: transparent;
+}
+
+.sheet.show .x {
+  opacity: 1;
+}
+
+.opts {
+  margin-top: 24px;
+}
+
+.opt-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px 0 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.opt-toggle:hover {
+  color: var(--ink);
+}
+
+.opt-toggle svg {
+  transition: transform var(--dur) var(--ease-out);
+}
+
+.opt-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.opt-body {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.opt-body[hidden] {
+  display: none;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.check input {
+  position: absolute;
+  opacity: 0;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.check .box {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  transition:
+    background var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out);
+}
+
+.check input:checked + .box {
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+}
+
+.check input:checked + .box::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--on-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* Reduced motion: nothing travels or scales; the page only fades. */
+.reduce .opt-toggle svg,
+.reduce .btn,
+.reduce .x,
+.reduce .sheet.leaving {
+  transition-property: opacity, background, color;
+}
+
+.reduce .sheet.leaving {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet.leaving {
+    transform: none;
+  }
+}

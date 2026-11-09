@@ -50,6 +50,7 @@ import type {
   SettingsOverview,
 } from "./historyTypes";
 import type { NowSnapshot } from "./nowTypes";
+import type { UpdateInfo, UpdateProgress } from "./updateTypes";
 import { MockBackend } from "./mock";
 
 declare global {
@@ -65,6 +66,7 @@ export const USAGE_PROGRESS_EVENT = "atlas://usage/progress";
 export const USAGE_CHANGED_EVENT = "atlas://usage/changed";
 export const SEARCH_STATUS_EVENT = "atlas://search/status";
 export const NOW_UPDATE_EVENT = "atlas://now/update";
+export const UPDATE_PROGRESS_EVENT = "atlas://update/progress";
 
 export type Unlisten = () => void;
 export const SETUP_EVENT = "atlas://setup-changed";
@@ -175,6 +177,13 @@ export interface Backend {
   onHistoryChanged(cb: () => void): Promise<Unlisten>;
   /** Sizes and Claude Code's own cleanup setting, for the Settings page. */
   settingsOverview(): Promise<SettingsOverview>;
+
+  // Updates: Atlas asks whether a newer version exists and installs it only when told to.
+  /** The newer version, or null when this one is current. Rejects with one plain sentence. */
+  updateCheck(): Promise<UpdateInfo | null>;
+  /** Download, verify and install what the last check found, then start the new version. Resolves only on failure (the app is gone otherwise). */
+  updateInstall(): Promise<void>;
+  onUpdateProgress(cb: (p: UpdateProgress) => void): Promise<Unlisten>;
 }
 
 const tauriBackend: Backend = {
@@ -249,6 +258,11 @@ const tauriBackend: Backend = {
   },
   onHistoryChanged: (cb) => listen(HISTORY_EVENT, () => cb()),
   settingsOverview: () => invoke<SettingsOverview>("settings_overview"),
+  updateCheck: () => invoke<UpdateInfo | null>("update_check"),
+  updateInstall: async () => {
+    await invoke("update_install");
+  },
+  onUpdateProgress: (cb) => listen<UpdateProgress>(UPDATE_PROGRESS_EVENT, (e) => cb(e.payload)),
 };
 
 let backend: Backend | null = null;
