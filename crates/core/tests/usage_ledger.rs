@@ -1,6 +1,7 @@
 //! The helper-run ledger and its queries (`docs/specs/agent-scorecard.md` Unit 1) against
 //! `fixtures/claude-ledger`. Fixture ids: chat S1 `aaaa1001`, S2 `bbbb1002` (headless, ran as the
-//! code-reviewer agent), S3 `cccc1003`; workers W1..W7 and reviewers R1..R4 are `a0...01..0b`.
+//! code-reviewer agent), S3 `cccc1003`; workers W1..W8 and reviewers R1..R6 are `a0...01..0e`; W8 is woken by a message and works in two
+//! stretches, R5 (verifier) and R6 (code-reviewer) end with Overall / VERDICT lines that name no one.
 
 mod common;
 
@@ -64,7 +65,7 @@ fn runs_end_by_notice_then_sidecar_then_thread() {
     // The headless chat that ran as the code-reviewer agent has one run with an empty id.
     let main = run(&fx, S2, "");
     assert_eq!((main.0.as_deref(), main.3.as_deref()), (Some("finished"), Some("pass")));
-    assert_eq!(fx.one("SELECT COUNT(*) FROM agent_runs"), 12);
+    assert_eq!(fx.one("SELECT COUNT(*) FROM agent_runs"), 15);
 }
 
 #[test]
@@ -78,14 +79,14 @@ fn reviews_tie_by_name_by_window_and_by_branch_and_sent_back_follows_a_findings_
     assert_eq!(rv.tied, 4, "{rv:?}");
     assert_eq!(rv.passed, 3, "{rv:?}");
     assert_eq!(rv.sent_back, 1, "{rv:?}");
-    // W3 (two workers ended in R3's window, none named) and W7 (never reviewed) are not tied.
-    assert_eq!(rv.not_tied, 2, "{rv:?}");
+    // W3 (two workers ended in R3's window, none named), W7 and W8 (never reviewed) are not tied.
+    assert_eq!(rv.not_tied, 3, "{rv:?}");
     assert!(!rv.rate_ok, "four tied reviews is below the rate threshold");
     // The reviewer types carry verdicts, never review ties.
     let cr = card(&sc, "code-reviewer");
     assert!(cr.reviewer && cr.reviews.is_none());
     let v = cr.verdicts.unwrap();
-    assert_eq!((v.pass, v.findings, v.other, v.none), (2, 1, 0, 0)); // R1, S2's own run; R3
+    assert_eq!((v.pass, v.findings, v.partial, v.other, v.none), (2, 2, 0, 0, 0)); // R1, S2's own run; R3, R6 ("VERDICT: fix-required (FAIL)")
 }
 
 // Criterion 4: no prompt, no key ever reaches the cache file.
@@ -120,7 +121,7 @@ fn a_version_4_cache_migrates_and_matches_a_fresh_index() {
             .collect()
     };
     let fresh = totals(&first);
-    assert_eq!(fresh, vec![12, 14, 3, 1, 12]);
+    assert_eq!(fresh, vec![15, 18, 3, 1, 15]);
     first.engine.stop();
     let Fx { engine, data, config, cache } = first;
     drop(engine);
@@ -170,14 +171,14 @@ fn a_full_reread_leaves_the_ledger_unchanged() {
 fn the_scorecard_counts_ends_time_and_the_started_from_split() {
     let fx = fx();
     let all = fx.engine.agent_scorecard(&ScorecardArgs::default()).unwrap();
-    assert_eq!(all.total_runs, 12);
+    assert_eq!(all.total_runs, 15);
     let coder = card(&all, "coder");
-    assert_eq!(coder.runs, 5);
-    assert_eq!((coder.ends.finished, coder.ends.unknown, coder.ends.errored, coder.ends.stopped), (4, 1, 0, 0));
+    assert_eq!(coder.runs, 6);
+    assert_eq!((coder.ends.finished, coder.ends.unknown, coder.ends.errored, coder.ends.stopped), (5, 1, 0, 0));
     assert_eq!(coder.finish_rate, Some(1.0));
     assert_eq!(coder.weekly.len(), 12);
-    assert_eq!(coder.weekly.iter().sum::<u32>(), 5);
-    assert_eq!((coder.started.interactive, coder.started.headless), (5, 0));
+    assert_eq!(coder.weekly.iter().sum::<u32>(), 6);
+    assert_eq!((coder.started.interactive, coder.started.headless), (6, 0));
     assert!(!coder.reviewer);
     let ex = card(&all, "Explore");
     assert_eq!(ex.ends.stopped, 1);
@@ -188,7 +189,7 @@ fn the_scorecard_counts_ends_time_and_the_started_from_split() {
     assert!((100_000..=140_000).contains(&m), "{m}");
     // The headless run is the code-reviewer's second run and the only Headless one.
     let cr = card(&all, "code-reviewer");
-    assert_eq!((cr.started.interactive, cr.started.headless), (2, 1));
+    assert_eq!((cr.started.interactive, cr.started.headless), (3, 1));
     let head = fx.engine.agent_scorecard(&ScorecardArgs { started_from: StartedFrom::Headless, ..Default::default() }).unwrap();
     assert_eq!(head.total_runs, 1);
     assert_eq!(head.types.len(), 1);
@@ -196,11 +197,11 @@ fn the_scorecard_counts_ends_time_and_the_started_from_split() {
     let one = fx.engine.agent_scorecard(&ScorecardArgs { agent_type: Some("verifier".into()), ..Default::default() }).unwrap();
     assert_eq!(one.types.len(), 1);
     assert_eq!(one.types[0].display_name, "Verifier");
-    // The range: the chats sit 2.4 days before NOW, so a 2-day window is empty and a 3-day one holds all 12.
+    // The range: the chats sit 2.4 days before NOW, so a 2-day window is empty and a 3-day one holds all 15.
     let none = fx.engine.agent_scorecard(&ScorecardArgs { days: Some(2), ..Default::default() }).unwrap();
     assert_eq!(none.total_runs, 0);
     assert!(none.types.is_empty());
-    assert_eq!(fx.engine.agent_scorecard(&ScorecardArgs { days: Some(3), ..Default::default() }).unwrap().total_runs, 12);
+    assert_eq!(fx.engine.agent_scorecard(&ScorecardArgs { days: Some(3), ..Default::default() }).unwrap().total_runs, 15);
     assert!(all.history_days.unwrap() >= 2);
     // The newest run comes first and its cost can be priced or honestly unpriced.
     let rows = &coder.recent;
@@ -221,18 +222,18 @@ fn themes_need_three_findings_from_two_runs() {
 fn the_debrief_gathers_one_chats_helpers_and_reviews() {
     let fx = fx();
     let d = fx.engine.run_debrief(&DebriefArgs { session_id: S1.into(), since: None }).unwrap().unwrap();
-    assert_eq!(d.helpers.len(), 11);
-    assert_eq!(d.ends.finished, 8);
+    assert_eq!(d.helpers.len(), 14);
+    assert_eq!(d.ends.finished, 11);
     assert_eq!(d.ends.errored, 1);
     assert_eq!(d.ends.stopped, 1);
     assert_eq!(d.ends.unknown, 1);
     assert_eq!(d.open.len(), 1);
     assert_eq!(d.open[0].agent_id, id(11));
-    assert_eq!((d.reviews.passed, d.reviews.findings, d.reviews.no_verdict), (3, 1, 0));
+    assert_eq!((d.reviews.passed, d.reviews.findings, d.reviews.no_verdict), (3, 3, 0));
     assert_eq!(d.reviews.sent_back, 1);
     // Since the 4th dispatch: only later helpers.
     let late = fx.engine.run_debrief(&DebriefArgs { session_id: S1.into(), since: Some(1_793_956_800_000) }).unwrap().unwrap();
-    assert_eq!(late.helpers.len(), 3);
+    assert_eq!(late.helpers.len(), 6);
     assert!(fx.engine.run_debrief(&DebriefArgs { session_id: "nope".into(), since: None }).unwrap().is_none());
 }
 
@@ -251,7 +252,7 @@ fn runs_carry_their_model_and_effort() {
     assert_eq!(
         mix,
         vec![
-            ("claude-sonnet-5-5", "Sonnet 5.5", Some("high"), 6, 3),
+            ("claude-sonnet-5-5", "Sonnet 5.5", Some("high"), 10, 4),
             ("claude-fable-5-2", "Fable 5.2", None, 2, 1),
             ("claude-opus-5-5", "Opus 5.5", Some("medium"), 2, 1),
         ]
@@ -268,7 +269,7 @@ fn runs_carry_their_model_and_effort() {
     assert!(cr.recent.iter().any(|r| r.agent_id.is_empty() && r.model.is_some()));
     // The debrief names them as well.
     let d = fx.engine.run_debrief(&DebriefArgs { session_id: S1.into(), since: None }).unwrap().unwrap();
-    assert_eq!(d.helpers.iter().filter(|h| h.model.is_some()).count(), 11);
+    assert_eq!(d.helpers.iter().filter(|h| h.model.is_some()).count(), 14);
     // A full re-read does not double the counts.
     fx.full_reread();
     let again = fx.engine.agent_scorecard(&ScorecardArgs::default()).unwrap();
@@ -302,4 +303,68 @@ fn model_ids_are_named_from_the_id() {
     assert_eq!(model_name("gpt-9"), "gpt-9");
     assert_eq!(model_name("claude-new-fancy-7"), "claude-new-fancy-7");
     assert_eq!(model_name("claude-opus-5-5-6-7"), "claude-opus-5-5-6-7");
+}
+
+// Verifier and code-reviewer reports end in many shapes; each is read for what it says.
+#[test]
+fn reviewer_reports_read_as_pass_fail_partial_or_unknown() {
+    let fx = fx();
+    // R5: "**Overall: FAIL**" -> findings; R6: "VERDICT: fix-required (FAIL)" -> findings.
+    let r5 = run(&fx, S1, &id(13));
+    assert_eq!((r5.2.as_deref(), r5.3.as_deref()), (Some("FAIL"), Some("findings")));
+    let r6 = run(&fx, S1, &id(14));
+    assert_eq!((r6.2.as_deref(), r6.3.as_deref()), (Some("FIX-REQUIRED"), Some("findings")));
+    // W8 (a coder): its last line is "STATUS: partial", read from the STATUS line and marked as such.
+    let w8 = run(&fx, S1, &id(12));
+    assert_eq!((w8.2.as_deref(), w8.3.as_deref()), (Some("STATUS:PARTIAL"), Some("partial")));
+    // W1's "All done." states no verdict.
+    assert_eq!(run(&fx, S1, &id(1)).3, None);
+    let sc = fx.engine.agent_scorecard(&ScorecardArgs::default()).unwrap();
+    // The verifier's R2 (MERGE) passed and R5 failed; it has two runs, so it is a type with too few runs.
+    let ver = card(&sc, "verifier");
+    assert_eq!(ver.runs, 2);
+    let v = ver.verdicts.expect("two verdicts in two runs make it a reviewer type");
+    assert_eq!((v.pass, v.findings, v.partial, v.other, v.none), (1, 1, 0, 0, 0));
+}
+
+// A helper messaged after it finished is one run; its time is the time it worked.
+#[test]
+fn a_resumed_helper_has_the_time_it_worked_and_a_resume_count() {
+    let fx = fx();
+    let (active, resumes, first, last): (i64, i64, i64, i64) = fx
+        .db()
+        .query_row(
+            "SELECT active_ms, resumes, first_ts, last_ts FROM agent_runs WHERE session_id=?1 AND agent_id=?2",
+            [S1, &id(12)],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!((active, resumes), (60_000, 1));
+    assert_eq!(last - first, 600_000, "first line 9:26:00 to last line 9:36:00");
+    let sc = fx.engine.agent_scorecard(&ScorecardArgs::default()).unwrap();
+    let w8 = card(&sc, "coder").recent.iter().find(|r| r.agent_id == id(12)).unwrap();
+    assert_eq!((w8.duration_ms, w8.resumes), (120_000, 1));
+    // The other coders never resumed.
+    assert!(card(&sc, "coder").recent.iter().filter(|r| r.agent_id != id(12)).all(|r| r.resumes == 0));
+    assert_eq!(card(&sc, "coder").resumed_runs, 1);
+    // A reread of every file gives the same stretches.
+    fx.full_reread();
+    let again: (i64, i64) = fx.db().query_row("SELECT active_ms, resumes FROM agent_runs WHERE agent_id=?1", [id(12)], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!(again, (60_000, 1));
+}
+
+// A median is shown only from three runs; below that the card keeps its counts and says so.
+#[test]
+fn medians_are_hidden_below_three_runs() {
+    let fx = fx();
+    let sc = fx.engine.agent_scorecard(&ScorecardArgs::default()).unwrap();
+    let ver = card(&sc, "verifier");
+    assert!(ver.too_few_runs && ver.runs == 2);
+    assert_eq!((ver.tool_calls_median, ver.duration_ms_median), (None, None));
+    let ex = card(&sc, "Explore");
+    assert!(ex.too_few_runs && ex.runs == 1 && ex.duration_ms_median.is_none());
+    let coder = card(&sc, "coder");
+    assert!(!coder.too_few_runs && coder.duration_ms_median.is_some() && coder.tool_calls_median.is_some());
+    // Three runs of a type are enough: the code-reviewer has four.
+    assert!(!card(&sc, "code-reviewer").too_few_runs);
 }

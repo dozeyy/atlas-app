@@ -5,7 +5,7 @@
 use rusqlite::Connection;
 
 /// The newest schema this build knows.
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 
 /// `PRAGMA user_version` of an open database.
 pub fn user_version(conn: &Connection) -> rusqlite::Result<i64> {
@@ -24,6 +24,7 @@ pub fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
             3 => m0004(&tx)?,
             4 => m0005_effort(&tx)?,
             5 => m0006(&tx)?,
+            6 => m0007(&tx)?,
             _ => unreachable!("no migration from version {v}"),
         }
         v += 1;
@@ -195,6 +196,19 @@ CREATE TABLE IF NOT EXISTS agent_run_models (
 CREATE INDEX IF NOT EXISTS agent_run_models_file ON agent_run_models(file_id);
 "#,
     )
+}
+
+/// How long a helper really worked: `active_ms` is the sum of its finished stretches, `seg_start`
+/// the start of the stretch it is in (NULL = its first line), `resumes` how many times a message
+/// woke it after it had finished. Added columns only; guarded so a database that has them is fine.
+fn m0007(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
+    for (col, def) in [("active_ms", "INTEGER NOT NULL DEFAULT 0"), ("resumes", "INTEGER NOT NULL DEFAULT 0"), ("seg_start", "INTEGER")] {
+        let has: bool = tx.query_row("SELECT COUNT(*) FROM pragma_table_info('agent_runs') WHERE name = ?1", [col], |r| r.get::<_, i64>(0))? > 0;
+        if !has {
+            tx.execute_batch(&format!("ALTER TABLE agent_runs ADD COLUMN {col} {def};"))?;
+        }
+    }
+    Ok(())
 }
 
 fn m0001(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {

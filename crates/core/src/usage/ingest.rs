@@ -119,6 +119,16 @@ struct RunBatch {
     /// `(exact model id, effort or "")` -> assistant messages (each message counted once) in the
     /// batch. Unknown model ids are kept as they are.
     models: HashMap<(String, String), u32>,
+    /// Stretches of work this batch closed: a message woke the helper after it had finished.
+    stretches: Vec<Stretch>,
+}
+
+/// One finished stretch of a helper's work and when the next one began (a resume).
+struct Stretch {
+    /// Where it began; None = before this read (the stored `seg_start` or first line applies).
+    start: Option<i64>,
+    end: i64,
+    next: i64,
 }
 
 struct Report {
@@ -172,6 +182,33 @@ struct RunScan {
     known: Option<Known>,
     /// Message keys already counted in `RunBatch::models` (a message streams as several lines).
     msg_seen: HashSet<String>,
+    /// The last assistant text ended its turn, so the next real message is a resume.
+    ended: bool,
+    /// A real prompt was seen in this file (the first is the dispatch, not a resume).
+    prompted: bool,
+    /// The current stretch began / last had a line at these times.
+    seg_start: Option<i64>,
+    seg_last: Option<i64>,
+}
+
+/// Finders for the stretch scan, made once per worker.
+struct SegFinders {
+    user: memchr::memmem::Finder<'static>,
+    tool_result: memchr::memmem::Finder<'static>,
+    compaction: memchr::memmem::Finder<'static>,
+    end_turn: memchr::memmem::Finder<'static>,
+}
+
+impl SegFinders {
+    fn new() -> Self {
+        let f = |s: &'static str| memchr::memmem::Finder::new(s.as_bytes()).into_owned();
+        SegFinders {
+            user: f(r#""type":"user""#),
+            tool_result: f(r#""type":"tool_result""#),
+            compaction: f("This session is being continued"),
+            end_turn: f(r#""stop_reason":"end_turn""#),
+        }
+    }
 }
 
 fn helpers_dir(task: &FileTask) -> PathBuf {
@@ -223,6 +260,7 @@ fn mentioned(prompt: &str, k: &Known) -> Vec<String> {
 fn scan_ledger_line(
     pf: &Prefilter,
     notice: &memchr::memmem::Finder<'static>,
+    seg: &SegFinders,
     task: &FileTask,
     l: &[u8],
     rs: &mut RunScan,
@@ -231,17 +269,43 @@ fn scan_ledger_line(
     let tracking = task.is_subagent || rs.setting_seen;
     if tracking {
         run.tracked = true;
-        if let Some(ts) = pf.line_ts(l) {
+        let ts = pf.line_ts(l);
+        let interrupt = pf.is_interrupt(l);
+        // A real message after the helper's last text ended its turn wakes it again (SendMessage):
+        // that closes one stretch of work and opens the next. The first real message is the dispatch.
+        if task.is_subagent
+            && !interrupt
+            && seg.user.find(l).is_some()
+            && seg.tool_result.find(l).is_none()
+            && seg.compaction.find(l).is_none()
+        {
+            if rs.prompted
+                && rs.ended
+                && let (Some(ts), Some(end)) = (ts, rs.seg_last)
+            {
+                run.stretches.push(Stretch { start: rs.seg_start, end, next: ts });
+                rs.seg_start = Some(ts);
+            }
+            rs.prompted = true;
+            rs.ended = false;
+        }
+        if let Some(ts) = ts {
             run.first_ts = Some(run.first_ts.map_or(ts, |c| c.min(ts)));
             run.last_ts = Some(run.last_ts.map_or(ts, |c| c.max(ts)));
+            if rs.seg_last.is_none() && task.start == 0 {
+                rs.seg_start = Some(ts);
+            }
+            rs.seg_last = Some(rs.seg_last.map_or(ts, |c| c.max(ts)));
         }
-        if pf.is_interrupt(l) {
+        if interrupt {
             run.interrupted = true;
         } else if pf.is_assistant_text(l) {
             rs.rc.put(l);
             rs.text.put(l);
+            rs.ended = seg.end_turn.find(l).is_some();
         } else if pf.is_assistant_call(l) {
             rs.rc.put(l);
+            rs.ended = false;
         }
     }
     if notice.find(l).is_some() {
@@ -339,6 +403,7 @@ fn worker(
 ) {
     let pf = Prefilter::new();
     let notice = memchr::memmem::Finder::new(b"<task-notification>").into_owned();
+    let seg = SegFinders::new();
     loop {
         if cancel.load(Ordering::Relaxed) {
             return;
@@ -379,12 +444,12 @@ fn worker(
         let mut batch_first_off = task.start;
         let mut lines = 0usize;
         let mut alive = true;
-        let mut rs = RunScan::default();
+        let mut rs = RunScan { prompted: task.start > 0, ..RunScan::default() };
         let result = read_lines(file, task.start, opts.line_cap, stats, |item, end| {
             match item {
                 Item::Line(l) => {
                     line_no += 1;
-                    scan_ledger_line(&pf, &notice, task, l, &mut rs, &mut batch.run);
+                    scan_ledger_line(&pf, &notice, &seg, task, l, &mut rs, &mut batch.run);
                     if want_prompt {
                         if line_no > 80 {
                             want_prompt = false;
@@ -1058,6 +1123,22 @@ fn apply_ledger(tx: &rusqlite::Transaction, task: &FileTask, b: &Batch, file_age
                    interrupted = MAX(interrupted, ?8)
                  WHERE session_id = ?1 AND agent_id = ?2",
                 params![sid, aid, r.first_ts, r.last_ts, has_end, stop, api, r.interrupted as i64],
+            )?;
+        }
+        if !r.stretches.is_empty() && !aid.is_empty() {
+            let (mut active, mut seg, first): (i64, Option<i64>, Option<i64>) = tx.query_row(
+                "SELECT active_ms, seg_start, first_ts FROM agent_runs WHERE session_id = ?1 AND agent_id = ?2",
+                params![sid, aid],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )?;
+            for st in &r.stretches {
+                let from = st.start.or(seg).or(first).unwrap_or(st.end);
+                active += (st.end - from).max(0);
+                seg = Some(st.next);
+            }
+            tx.execute(
+                "UPDATE agent_runs SET active_ms = ?3, seg_start = ?4, resumes = resumes + ?5 WHERE session_id = ?1 AND agent_id = ?2",
+                params![sid, aid, active, seg, r.stretches.len() as i64],
             )?;
         }
         if !r.models.is_empty() {

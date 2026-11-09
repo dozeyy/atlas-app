@@ -730,7 +730,7 @@ def ledger():
     def hid(n):
         return "a" + format(n, "016x")
 
-    W1, R1, W2, R2, W3, W4, R3, R4, W5, W6, W7 = (hid(n) for n in range(1, 12))
+    W1, R1, W2, R2, W3, W4, R3, R4, W5, W6, W7, W8, R5, R6 = (hid(n) for n in range(1, 15))
 
     def t(h, m, s=0):
         return f"2026-11-06T{h:02d}:{m:02d}:{s:02d}.000Z"
@@ -825,6 +825,21 @@ def ledger():
                        api_err])
     helper(W7, "coder", "toolu_d_w7", (9, 25, 0), None,
            side_lines=work(W7, (9, 25, 0), (9, 25, 50), [call(f"toolu_{W7}_1", "Edit", {})], stop="tool_use"))
+    # W8 finishes at 9:27, is woken by a message at 9:35 and finishes again at 9:36: one helper, two
+    # stretches of a minute each, so its duration is 120 s (not the 10 minutes between first and last line).
+    w8_ex = {"effort": "high", "perTurnEffort": "high"}
+    w8 = work(W8, (9, 26, 0), (9, 27, 0), final("Built the exporter.\n\nSTATUS: done"))
+    w8 += [
+        prompt(S1, t(9, 35, 0), "[fixture resume message]", side=True),
+        line(S1, t(9, 35, 10), [text("[fixture work]"), call(f"toolu_{W8}_2", "Edit", {})], stop="tool_use", side=True, agentId=W8, **w8_ex),
+        line(S1, t(9, 36, 0), final("Fixed the exporter.\n\nSTATUS: partial"), stop="end_turn", side=True, agentId=W8, **w8_ex),
+    ]
+    helper(W8, "coder", "toolu_d_w8", (9, 26, 0), None, side_lines=w8)
+    # Reviewers that name no one and follow several ended helpers: not tied, but their verdicts are real.
+    helper(R5, "verifier", "toolu_d_r5", (9, 50, 0), None,
+           side_lines=work(R5, (9, 50, 0), (9, 51, 0), final("Ran the app.\n\n**Overall: FAIL**")))
+    helper(R6, "code-reviewer", "toolu_d_r6", (9, 50, 30), None,
+           side_lines=work(R6, (9, 50, 30), (9, 51, 30), final("Read the diff.\n\nVERDICT: fix-required (FAIL)")))
 
     # ---- S1 main chat
     def dispatch(ts, tool, ty, desc, body):
@@ -847,7 +862,11 @@ def ledger():
         dispatch(t(9, 20, 0), "toolu_d_w5", "Explore", "Look around", "Look around."),
         dispatch(t(9, 22, 0), "toolu_d_w6", "general-purpose", "A one-off", "A one-off job."),
         dispatch(t(9, 25, 0), "toolu_d_w7", "coder", "Keep going", "Keep going."),
-        line(S1, t(9, 30, 0), [text("[fixture main reply]")], stop="end_turn"),
+        dispatch(t(9, 26, 0), "toolu_d_w8", "coder", "Export it", "Build the exporter."),
+        line(S1, t(9, 34, 50), [call("toolu_s_w8", "SendMessage", {"to": W8, "message": "one more fix", "summary": "one more fix"})], stop="tool_use"),
+        dispatch(t(9, 50, 0), "toolu_d_r5", "verifier", "Verify the app", "Run the app and check it."),
+        dispatch(t(9, 50, 30), "toolu_d_r6", "code-reviewer", "Review it", "Review the latest changes."),
+        line(S1, t(9, 55, 0), [text("[fixture main reply]")], stop="end_turn"),
     ]
     put(base, f"{P}/{S1}.jsonl", jl(*main))
 

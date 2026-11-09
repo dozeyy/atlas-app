@@ -18,8 +18,14 @@
 //!   renders them, Atlas supplies facts and never a format.
 //!
 //! Honesty limits (spec 1.3), kept in the numbers rather than papered over:
-//! * A verdict exists only when a report has a `Verdict:` line; every other reviewer run counts as
-//!   "no verdict", never as a pass.
+//! * A verdict is what the report says: a `Verdict:` or `Overall:` line, else its `STATUS:` line
+//!   (`partial`, or one pass/fail word on a `done` line). A bare `STATUS: done` states none; every
+//!   run without one counts as "no verdict", never as a pass.
+//! * A median needs `Thresholds::MEDIAN_MIN_RUNS` runs; below that the card says "too few runs" and
+//!   shows counts only (`TypeCard::too_few_runs`).
+//! * A helper that was messaged after it finished works in several stretches: its duration is the
+//!   time it spent in them (`RunRow::duration_ms`), not the idle gap between, and `resumes` counts
+//!   the wake-ups. It stays one run (one id): its ties, verdict and models are per helper.
 //! * A review is tied to a worker only by the rules of D10; otherwise it is "not tied". A review
 //!   that names no worker and follows two or more finished workers stays not tied.
 //! * "Sent back" means a message or dispatch naming the worker followed a `findings` review; it is
@@ -90,7 +96,7 @@ pub struct StartedSplit {
     pub headless: u32,
 }
 
-/// A reviewer type's own verdicts (D6): "no verdict" is every run without a `Verdict:` line.
+/// A reviewer type's own verdicts (D6): "no verdict" is every run whose report states none.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerdictCounts {
@@ -154,13 +160,16 @@ pub struct RunRow {
     /// Empty: the chat itself ran as this agent ("ran as the main chat").
     pub agent_id: String,
     pub started: i64,
+    /// Time the helper spent working: first to last line, minus the idle gaps before each resume.
     pub duration_ms: i64,
+    /// How many times a message woke the helper after it had finished.
+    pub resumes: u32,
     pub tool_calls: u64,
     /// `finished` | `errored` | `stopped`, or None.
     pub end_status: Option<String>,
     /// `notice` | `sidecar` | `thread`.
     pub end_source: Option<String>,
-    /// `pass` | `findings` | `other`, or None (no verdict line).
+    /// `pass` | `findings` | `partial` | `other`, or None (the report states no verdict).
     pub verdict: Option<String>,
     pub verdict_word: Option<String>,
     pub tokens: u64,
@@ -186,9 +195,15 @@ pub struct TypeCard {
     pub ends: EndCounts,
     /// Finished out of the runs whose end is known; None when none is.
     pub finish_rate: Option<f64>,
+    /// Fewer than `Thresholds::MEDIAN_MIN_RUNS` runs: the medians are hidden ("Too few runs yet").
+    pub too_few_runs: bool,
+    /// None when `too_few_runs`.
     pub tool_calls_median: Option<u64>,
-    /// Median of the helper's own `last_ts - first_ts` (D4); never summed across parallel helpers.
+    /// Median of the helpers' own working time (D4, `RunRow::duration_ms`), over the runs that are
+    /// not still running; never summed across parallel helpers. None when `too_few_runs`.
     pub duration_ms_median: Option<i64>,
+    /// Runs a message woke after they had finished.
+    pub resumed_runs: u32,
     pub tokens: Tokens,
     pub cost: Cost,
     /// Runs started per rolling week, oldest first, the last one ending today (always 12).
@@ -290,6 +305,9 @@ struct RunRec {
     agent_type: String,
     first_ts: i64,
     last_ts: i64,
+    /// Time spent working (see `RunRow::duration_ms`).
+    duration_ms: i64,
+    resumes: u32,
     tool_calls: u64,
     end_status: Option<String>,
     end_source: Option<String>,
@@ -307,6 +325,10 @@ struct RunRec {
 impl RunRec {
     fn headless(&self) -> bool {
         is_headless(self.entrypoint.as_deref())
+    }
+    /// Still going: no source says it ended and its last line is recent.
+    fn running(&self, now_ms: i64) -> bool {
+        self.end_status.is_none() && now_ms - self.last_ts < Thresholds::RUNNING_MS
     }
     fn facts(&self) -> RunFacts {
         RunFacts {
@@ -336,7 +358,8 @@ fn load_ledger(conn: &Connection) -> rusqlite::Result<Ledger> {
     let mut st = conn.prepare_cached(
         "SELECT r.session_id, r.agent_id, r.agent_type, COALESCE(r.first_ts, 0), COALESCE(r.last_ts, r.first_ts, 0),
                 r.tool_calls, r.end_status, r.end_source, r.verdict, r.verdict_word, r.worktree_branch, a.tool_use_id,
-                COALESCE(s.project_key, ''), COALESCE(s.project_path, ''), s.entrypoint
+                COALESCE(s.project_key, ''), COALESCE(s.project_path, ''), s.entrypoint,
+                r.active_ms, r.resumes, COALESCE(r.seg_start, r.first_ts, 0)
          FROM agent_runs r
          LEFT JOIN agents a ON a.session_id = r.session_id AND a.agent_id = r.agent_id
          LEFT JOIN sessions s ON s.session_id = r.session_id",
@@ -344,13 +367,17 @@ fn load_ledger(conn: &Connection) -> rusqlite::Result<Ledger> {
     let runs: Vec<RunRec> = st
         .query_map([], |r| {
             let word: Option<String> = r.get(9)?;
+            let (first, last): (i64, i64) = (r.get(3)?, r.get(4)?);
+            let (active, resumes, seg_start): (i64, i64, i64) = (r.get(15)?, r.get(16)?, r.get(17)?);
             let from_status = word.as_deref().is_some_and(|w| w.starts_with(reviews::STATUS_PREFIX));
             Ok(RunRec {
                 session_id: r.get(0)?,
                 agent_id: r.get(1)?,
                 agent_type: r.get(2)?,
-                first_ts: r.get(3)?,
-                last_ts: r.get(4)?,
+                first_ts: first,
+                last_ts: last,
+                duration_ms: if first > 0 { (active + (last - seg_start).max(0)).max(0) } else { 0 },
+                resumes: resumes.max(0) as u32,
                 tool_calls: u(r.get::<_, i64>(5)?),
                 end_status: r.get(6)?,
                 end_source: r.get(7)?,
@@ -598,6 +625,7 @@ pub fn agent_scorecard(conn: &Connection, ctx: &QueryCtx, a: &ScorecardArgs) -> 
         let mut started = StartedSplit::default();
         let mut tools: Vec<u64> = Vec::new();
         let mut durs: Vec<i64> = Vec::new();
+        let mut resumed_runs = 0u32;
         let mut weekly = vec![0u32; WEEKS];
         let mut groups: Vec<Group> = Vec::new();
         let mut verdicts = VerdictCounts::default();
@@ -625,8 +653,12 @@ pub fn agent_scorecard(conn: &Connection, ctx: &QueryCtx, a: &ScorecardArgs) -> 
                     c.1 += 1;
                 }
             }
-            if r.last_ts > r.first_ts && r.first_ts > 0 {
-                durs.push(r.last_ts - r.first_ts);
+            // A run that is still going has no duration yet; every other run with times has one.
+            if r.first_ts > 0 && !r.running(ctx.now_ms) {
+                durs.push(r.duration_ms);
+                if r.resumes > 0 {
+                    resumed_runs += 1;
+                }
             }
             if let Some(w) = week_of(r.first_ts) {
                 weekly[w] += 1;
@@ -678,7 +710,8 @@ pub fn agent_scorecard(conn: &Connection, ctx: &QueryCtx, a: &ScorecardArgs) -> 
                     session_id: r.session_id.clone(),
                     agent_id: r.agent_id.clone(),
                     started: r.first_ts,
-                    duration_ms: (r.last_ts - r.first_ts).max(0),
+                    duration_ms: r.duration_ms,
+                    resumes: r.resumes,
                     tool_calls: r.tool_calls,
                     end_status: r.end_status.clone(),
                     end_source: r.end_source.clone(),
@@ -708,8 +741,10 @@ pub fn agent_scorecard(conn: &Connection, ctx: &QueryCtx, a: &ScorecardArgs) -> 
             runs: runs.len() as u32,
             ends,
             finish_rate: (known > 0).then(|| f64::from(ends.finished) / f64::from(known)),
-            tool_calls_median: median(&mut tools),
-            duration_ms_median: median(&mut durs),
+            too_few_runs: runs.len() < Thresholds::MEDIAN_MIN_RUNS,
+            tool_calls_median: if runs.len() < Thresholds::MEDIAN_MIN_RUNS { None } else { median(&mut tools) },
+            duration_ms_median: if durs.len() < Thresholds::MEDIAN_MIN_RUNS { None } else { median(&mut durs) },
+            resumed_runs,
             tokens,
             cost,
             weekly,
@@ -787,8 +822,8 @@ fn build_themes(
         }
     }
 
-    let entries: Vec<(String, i64)> = rows.iter().map(|f| (textgroup::normalize(&f.text), f.ts)).collect();
-    let clusters = textgroup::cluster(&entries, Thresholds::THEME_JACCARD);
+    let entries: Vec<(String, i64)> = rows.iter().map(|f| (textgroup::normalize_finding(&f.text), f.ts)).collect();
+    let clusters = textgroup::cluster(&entries);
     let mut out: Vec<Theme> = Vec::new();
     for c in clusters {
         let members: Vec<&FindingRec> = c.members.iter().filter(|&&i| !entries[i].0.is_empty()).map(|&i| &rows[i]).collect();

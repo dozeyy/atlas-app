@@ -49,7 +49,12 @@ fn measure_the_real_corpus() {
         ("runs with a verdict", "SELECT COUNT(*) FROM agent_runs WHERE verdict IS NOT NULL"),
         ("verdict pass", "SELECT COUNT(*) FROM agent_runs WHERE verdict='pass'"),
         ("verdict findings", "SELECT COUNT(*) FROM agent_runs WHERE verdict='findings'"),
+        ("verdict partial", "SELECT COUNT(*) FROM agent_runs WHERE verdict='partial'"),
         ("verdict other", "SELECT COUNT(*) FROM agent_runs WHERE verdict='other'"),
+        ("verdicts read from a STATUS line", "SELECT COUNT(*) FROM agent_runs WHERE verdict_word LIKE 'STATUS:%'"),
+        ("runs with first and last line", "SELECT COUNT(*) FROM agent_runs WHERE first_ts > 0 AND last_ts >= first_ts"),
+        ("runs resumed", "SELECT COUNT(*) FROM agent_runs WHERE resumes > 0"),
+        ("resumes", "SELECT COALESCE(SUM(resumes),0) FROM agent_runs"),
         ("findings stored", "SELECT COUNT(*) FROM review_findings"),
         ("findings with a severity", "SELECT COUNT(*) FROM review_findings WHERE severity IS NOT NULL"),
         ("runs with findings", "SELECT COUNT(DISTINCT session_id||agent_id) FROM review_findings"),
@@ -95,9 +100,9 @@ fn measure_the_real_corpus() {
     println!("scorecard: {:.0} ms, {} runs, {} types", t.elapsed().as_secs_f64() * 1000.0, sc.total_runs, sc.types.len());
     for c in sc.types.iter().take(12) {
         let rv = c.reviews.map(|r| format!("tied {} passed {} sent_back {} not_tied {}", r.tied, r.passed, r.sent_back, r.not_tied));
-        let vd = c.verdicts.map(|v| format!("pass {} findings {} other {} none {}", v.pass, v.findings, v.other, v.none));
+        let vd = c.verdicts.map(|v| format!("pass {} findings {} partial {} other {} none {}", v.pass, v.findings, v.partial, v.other, v.none));
         println!(
-            "  {} [{}] runs {} ends {:?} rate {:?} tools~{:?} dur~{:?}s tokens {} cost {:?} reviews {:?} verdicts {:?}",
+            "  {} [{}] runs {} ends {:?} rate {:?} tools~{:?} dur~{:?}s too_few {} resumed {} tokens {} cost {:?} reviews {:?} verdicts {:?}",
             c.agent_type,
             if c.reviewer { "reviewer" } else { "worker" },
             c.runs,
@@ -105,6 +110,8 @@ fn measure_the_real_corpus() {
             c.finish_rate.map(|r| (r * 100.0).round()),
             c.tool_calls_median,
             c.duration_ms_median.map(|d| d / 1000),
+            c.too_few_runs,
+            c.resumed_runs,
             c.tokens.total,
             c.cost.usd.map(|u| (u * 100.0).round() / 100.0),
             rv,

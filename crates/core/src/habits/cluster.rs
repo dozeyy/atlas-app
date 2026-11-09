@@ -201,7 +201,7 @@ fn hash_window(w: &[char]) -> u64 {
 
 /// The sorted, de-duplicated character 5-grams of `s`, hashed. A string shorter than five
 /// characters is one shingle.
-fn shingles(s: &str) -> Vec<u64> {
+pub(crate) fn shingles(s: &str) -> Vec<u64> {
     let cs: Vec<char> = s.chars().collect();
     let mut v: Vec<u64> = if cs.len() < SHINGLE { vec![hash_window(&cs)] } else { cs.windows(SHINGLE).map(hash_window).collect() };
     v.sort_unstable();
@@ -210,7 +210,7 @@ fn shingles(s: &str) -> Vec<u64> {
 }
 
 /// (intersection, union) sizes of two sorted shingle sets.
-fn overlap(a: &[u64], b: &[u64]) -> (usize, usize) {
+pub(crate) fn overlap(a: &[u64], b: &[u64]) -> (usize, usize) {
     let (mut i, mut j, mut inter) = (0, 0, 0);
     while i < a.len() && j < b.len() {
         match a[i].cmp(&b[j]) {
@@ -226,7 +226,7 @@ fn overlap(a: &[u64], b: &[u64]) -> (usize, usize) {
     (inter, a.len() + b.len() - inter)
 }
 
-fn seeds() -> [u64; HASHES] {
+pub(crate) fn seeds() -> [u64; HASHES] {
     let mut s = [0u64; HASHES];
     for (i, v) in s.iter_mut().enumerate() {
         *v = mix((i as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15));
@@ -235,7 +235,7 @@ fn seeds() -> [u64; HASHES] {
 }
 
 /// One LSH key per band from the MinHash signature of `sh`.
-fn band_keys(sh: &[u64], seeds: &[u64; HASHES]) -> [u64; BANDS] {
+pub(crate) fn band_keys(sh: &[u64], seeds: &[u64; HASHES]) -> [u64; BANDS] {
     let mut sig = [u64::MAX; HASHES];
     for &x in sh {
         for (s, seed) in sig.iter_mut().zip(seeds) {

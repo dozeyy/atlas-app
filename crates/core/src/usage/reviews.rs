@@ -23,8 +23,13 @@ impl Thresholds {
     pub const THEME_MIN_FINDINGS: usize = 3;
     /// ...from at least this many different runs.
     pub const THEME_MIN_RUNS: usize = 2;
-    /// Exact shingle Jaccard at which two finding texts are one theme.
-    pub const THEME_JACCARD: f64 = 0.55;
+    // The overlap at which two finding texts are one theme is the repeated-request finder's
+    // (`habits::cluster::JACCARD_PCT`, 55 %): one bar for "the same text in other words".
+    /// A median (tool calls, duration) is shown only from this many runs; fewer = "Too few runs yet".
+    pub const MEDIAN_MIN_RUNS: usize = 3;
+    /// A run with no end source whose last line is newer than this is still running (no duration yet);
+    /// an older one stopped writing and has a duration, first line to last.
+    pub const RUNNING_MS: i64 = 10 * 60_000;
     /// A rate sentence ("Passed 9 of 12 reviews") needs at least this many tied reviews.
     pub const RATE_MIN_REVIEWS: u32 = 5;
     /// A type with at least this many runs and a verdict on at least half of them is a reviewer.
