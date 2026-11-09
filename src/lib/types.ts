@@ -19,6 +19,8 @@ export interface Settings {
   notifyOnFinish: boolean;
   /** Show keyboard shortcut hints in tooltips, badges and menus (default off). */
   showShortcuts: boolean;
+  /** Let Claude Code use Atlas: Atlas connects its MCP server by itself (default on). */
+  mcpAutoConnect: boolean;
   /** How many copies of each file History keeps (10 to 200). */
   historyKeepVersions: number;
 }

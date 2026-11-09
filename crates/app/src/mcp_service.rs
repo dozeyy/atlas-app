@@ -12,7 +12,7 @@ use atlas_core::connect::{self, CliChoice, ConnectCtx, ConnectOutcome, ConnectSt
 use serde::Serialize;
 use tauri::State;
 
-use crate::state::AppState;
+use crate::state::{AppState, SettingsPatch};
 
 type Shared<'a> = State<'a, Arc<AppState>>;
 
@@ -68,12 +68,34 @@ fn with_ctx(state: &AppState, f: impl FnOnce(&ConnectCtx) -> Result<ConnectOutco
     f(&ConnectCtx { root: &root, server: &server, backups: &backups, data_dir_flag: state.launch.data_dir.as_deref(), cli: CliChoice::Auto })
 }
 
+/// Turning "Let Claude Code use Atlas" on: remember the choice, then connect now.
 #[tauri::command(async)]
 pub fn mcp_connect(state: Shared) -> Result<ConnectOutcome, String> {
+    state.update_settings(SettingsPatch { mcp_auto_connect: Some(true), ..Default::default() });
     with_ctx(&state, connect::connect)
 }
 
+/// Turning it off: remember the choice first (so Atlas never reconnects by itself, whatever
+/// happens next), then remove the registration.
 #[tauri::command(async)]
 pub fn mcp_disconnect(state: Shared) -> Result<ConnectOutcome, String> {
+    state.update_settings(SettingsPatch { mcp_auto_connect: Some(false), ..Default::default() });
     with_ctx(&state, connect::disconnect)
+}
+
+/// After the first paint, on its own thread: connect Atlas to Claude Code if it should be, and
+/// repair a registration that points at a moved or old copy. Never shows anything; a missing
+/// `claude` command just means a later launch tries again. All spawns are quiet (no window), and
+/// a debug build refuses to touch the real Claude folder, so development never changes it.
+pub fn auto_connect_in_background(state: &Arc<AppState>) {
+    let state = Arc::clone(state);
+    std::thread::spawn(move || {
+        // Let the first screen and the usage index settle before a child process starts.
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let (Some(root), Some(server)) = (state.history_root(), server_path()) else { return };
+        let backups = state.data_dir.join("setup-backups");
+        let ctx = ConnectCtx { root: &root, server: &server, backups: &backups, data_dir_flag: state.launch.data_dir.as_deref(), cli: CliChoice::Auto };
+        let out = connect::auto_connect(&ctx, state.mcp_auto_connect());
+        eprintln!("[atlas] claude code connection: {out:?}");
+    });
 }

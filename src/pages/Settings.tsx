@@ -64,6 +64,7 @@ export function Settings() {
     setCloseToTray,
     setNotifyOnFinish,
     setShowShortcuts,
+    setMcpAutoConnect,
     setHistoryKeep,
     setSandbox,
     chooseConfigDir,
@@ -140,8 +141,10 @@ export function Settings() {
   const changeMcp = async (connect: boolean) => {
     setMcpBusy(true);
     try {
+      // The choice is recorded first, so a failure below never leaves Atlas free to reconnect on its own.
+      await setMcpAutoConnect(connect);
       await (connect ? backend.mcpConnect() : backend.mcpDisconnect());
-      pushToast({ message: connect ? "Connected. New Claude Code chats can use Atlas." : "Disconnected from Claude Code.", tone: "info" });
+      pushToast({ message: connect ? "Claude Code can use Atlas now. Open a new chat to see it." : "Atlas is disconnected from Claude Code and will stay that way.", tone: "info" });
     } catch (e) {
       pushToast({ message: typeof e === "string" ? e : e instanceof Error ? e.message : "Could not change the connection.", tone: "error" });
     } finally {
@@ -149,17 +152,24 @@ export function Settings() {
       void refreshMcp();
     }
   };
-  const mcpHint = !mcp
+  const mcpWanted = info.settings.mcpAutoConnect !== false;
+  const mcpState = !mcp
     ? "Checking"
     : mcp.sandbox
-      ? "Turn Sandbox mode off to connect. Connecting changes your real Claude settings."
+      ? "Turn Sandbox mode off to change this."
       : mcp.server === null
         ? "The connector program is missing from this install. Reinstalling Atlas puts it back."
-        : mcp.state === "connected"
-          ? "Connected. Claude Code can list and edit your skills, agents and commands through Atlas, and every change is backed up first. Open a new chat to use it."
-          : mcp.state === "moved"
-            ? "Connected, but to a different copy of Atlas. Reconnect to point it here."
-            : "Not connected. Connecting lets Claude Code work with your setup through Atlas, with a backup before every change.";
+        : !mcpWanted
+          ? mcp.state === "connected"
+            ? "Connected"
+            : "Off"
+          : mcp.state === "connected"
+            ? "Connected"
+            : !mcp.cliFound
+              ? "Claude Code not found"
+              : mcp.state === "moved"
+                ? "Pointing at another copy of Atlas. Atlas fixes this when it starts."
+                : "Not connected yet";
 
   // Updates (About): the same state the sidebar icon shows; the button asks right now.
   const upd = useUpdate();
@@ -289,23 +299,20 @@ export function Settings() {
     ),
     claude: (
       <>
-        <Row label="Atlas in Claude Code" hint={mcpHint}>
-          {mcp?.state === "connected" ? (
-            <Button onClick={() => void changeMcp(false)} disabled={mcpBusy || mcp.sandbox}>
-              {mcpBusy ? "Working" : "Disconnect"}
-            </Button>
-          ) : (
-            <Button variant="primary" onClick={() => void changeMcp(true)} disabled={mcpBusy || !mcp || mcp.sandbox || mcp.server === null}>
-              {mcpBusy ? "Working" : mcp?.state === "moved" ? "Reconnect" : "Connect"}
-            </Button>
-          )}
+        <Row
+          label="Let Claude Code use Atlas"
+          hint={
+            <>
+              Claude Code can list and edit your skills, agents and commands through Atlas, with a backup before every change.
+              <div role="status" className="mt-1 text-caption">
+                {mcpBusy ? "Working" : mcpState}
+              </div>
+            </>
+          }
+        >
+          <Toggle label="Let Claude Code use Atlas" checked={mcpWanted} onChange={(v) => void changeMcp(v)} disabled={mcpBusy || !mcp || mcp.sandbox || mcp.server === null} />
         </Row>
         {mcp?.server && <Row label="Connector program" hint={<Path>{mcp.server}</Path>} />}
-        {mcp && !mcp.cliFound && !mcp.sandbox && (
-          <p role="status" className="border-t border-line px-5 py-3 text-caption text-ink-2">
-            Claude Code's command was not found, so Atlas will edit its settings file directly, changing only the one entry for Atlas.
-          </p>
-        )}
         <Row label="Private to you" tip="The connector talks to Claude Code through a pipe on this computer. It opens no network port, and it never reads or shows Claude's sign-in files or keys.">
           <span className="text-body text-ink-2">No network access</span>
         </Row>

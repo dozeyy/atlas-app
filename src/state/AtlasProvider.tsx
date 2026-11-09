@@ -17,6 +17,8 @@ interface AtlasContext {
   setCloseToTray: (on: boolean) => void;
   setNotifyOnFinish: (on: boolean) => void;
   setShowShortcuts: (on: boolean) => void;
+  /** Remember the "Let Claude Code use Atlas" choice (the page then connects or disconnects). */
+  setMcpAutoConnect: (on: boolean) => Promise<void>;
   setHistoryKeep: (n: number) => void;
   setSandbox: (enabled: boolean) => Promise<void>;
   chooseConfigDir: () => Promise<void>;
@@ -158,6 +160,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       setCloseToTray,
       setNotifyOnFinish,
       setShowShortcuts,
+      setMcpAutoConnect: (on) => run(backend.updateSettings({ mcpAutoConnect: on })),
       setHistoryKeep,
       setSandbox: (enabled) => run(backend.setSandbox(enabled)),
       chooseConfigDir: () => run(backend.chooseConfigDir()),

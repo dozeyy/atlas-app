@@ -109,6 +109,8 @@ export interface SettingsPatch {
   notifyOnFinish?: boolean;
   /** Show keyboard shortcut hints in tooltips, badges and menus. Off by default. */
   showShortcuts?: boolean;
+  /** Let Claude Code use Atlas (the Settings switch). Turning it off is remembered. */
+  mcpAutoConnect?: boolean;
   /** Copies kept per file in History (clamped to 10-200 by the backend). */
   historyKeepVersions?: number;
 }

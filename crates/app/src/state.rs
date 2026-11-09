@@ -176,6 +176,7 @@ pub struct SettingsPatch {
     pub close_to_tray: Option<bool>,
     pub notify_on_finish: Option<bool>,
     pub show_shortcuts: Option<bool>,
+    pub mcp_auto_connect: Option<bool>,
     pub history_keep_versions: Option<u32>,
 }
 
@@ -437,6 +438,10 @@ impl AppState {
                 changed |= inner.settings.show_shortcuts != s;
                 inner.settings.show_shortcuts = s;
             }
+            if let Some(m) = patch.mcp_auto_connect {
+                changed |= inner.settings.mcp_auto_connect != m;
+                inner.settings.mcp_auto_connect = m;
+            }
             if let Some(k) = patch.history_keep_versions.map(settings::clamp_keep_versions) {
                 changed |= inner.settings.history_keep_versions != k;
                 inner.settings.history_keep_versions = k;
@@ -457,6 +462,11 @@ impl AppState {
     /// Draw keyboard shortcut hints (opt-in, default off).
     pub fn show_shortcuts(&self) -> bool {
         self.lock().settings.show_shortcuts
+    }
+
+    /// Atlas connects itself to Claude Code (default on; the user's off choice is kept).
+    pub fn mcp_auto_connect(&self) -> bool {
+        self.lock().settings.mcp_auto_connect
     }
 
     /// Tell the user when a running chat finishes or waits for them (opt-in, default off).
@@ -806,6 +816,15 @@ mod tests {
         // And so a sweep by another instance keeps it.
         assert_eq!(sandbox::cleanup_stale(&state.sandbox_parent, Duration::from_secs(24 * 3600)), 0);
         assert!(copy.exists());
+    }
+
+    #[test]
+    fn the_off_choice_for_claude_code_is_saved_and_a_new_launch_still_sees_it() {
+        let (tmp, state) = fixture(false);
+        assert!(state.mcp_auto_connect(), "on by default");
+        let info = state.update_settings(SettingsPatch { mcp_auto_connect: Some(false), ..Default::default() });
+        assert!(!info.settings.mcp_auto_connect);
+        assert!(!settings::load(&tmp.path().join("data")).settings.mcp_auto_connect);
     }
 
     #[test]

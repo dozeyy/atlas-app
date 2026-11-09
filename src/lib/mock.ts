@@ -51,6 +51,7 @@ function loadSettings(): Settings {
     closeToTray: false,
     notifyOnFinish: false,
     showShortcuts: false,
+    mcpAutoConnect: true,
     historyKeepVersions: 50,
   };
   try {
@@ -181,7 +182,8 @@ export class MockBackend {
   }
   async uninstallAtlas(): Promise<void> {}
 
-  private mcpOn = false;
+  /** Atlas connects itself by default, so the mock starts connected (like the real app after launch). */
+  private mcpOn = true;
   async mcpStatus(): Promise<McpStatus> {
     return {
       state: this.mcpOn ? "connected" : "notConnected",
@@ -194,11 +196,13 @@ export class MockBackend {
   }
   async mcpConnect(): Promise<McpOutcome> {
     this.mcpOn = true;
+    await this.updateSettings({ mcpAutoConnect: true });
     const { sandbox: _s, ...state } = await this.mcpStatus();
     return { state, via: "cli", backupId: null };
   }
   async mcpDisconnect(): Promise<McpOutcome> {
     this.mcpOn = false;
+    await this.updateSettings({ mcpAutoConnect: false });
     const { sandbox: _s, ...state } = await this.mcpStatus();
     return { state, via: "cli", backupId: null };
   }

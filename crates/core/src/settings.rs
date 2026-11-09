@@ -66,6 +66,9 @@ pub struct Settings {
     /// Show keyboard shortcut hints (tooltips, search badges, menu accelerators). Default off;
     /// the shortcuts work either way and Help > Keyboard shortcuts always lists them.
     pub show_shortcuts: bool,
+    /// Let Claude Code use Atlas: Atlas registers its MCP server by itself (default on). Turning
+    /// it off in Settings disconnects and is remembered, so it never reconnects on its own.
+    pub mcp_auto_connect: bool,
     /// How many versions of each file History keeps (10 to 200, default 50).
     pub history_keep_versions: u32,
     /// Keys this version does not know, kept as they were.
@@ -85,6 +88,7 @@ impl Default for Settings {
             close_to_tray: false,
             notify_on_finish: false,
             show_shortcuts: false,
+            mcp_auto_connect: true,
             history_keep_versions: DEFAULT_KEEP_VERSIONS,
             extra: Map::new(),
         }
@@ -98,7 +102,7 @@ pub fn clamp_keep_versions(n: u32) -> u32 {
     n.clamp(10, 200)
 }
 
-const KNOWN: [&str; 10] = [
+const KNOWN: [&str; 11] = [
     "schemaVersion",
     "theme",
     "lastView",
@@ -108,6 +112,7 @@ const KNOWN: [&str; 10] = [
     "closeToTray",
     "notifyOnFinish",
     "showShortcuts",
+    "mcpAutoConnect",
     "historyKeepVersions",
 ];
 
@@ -136,6 +141,7 @@ impl Settings {
         let close_to_tray = take("closeToTray").and_then(|v| v.as_bool()).unwrap_or(d.close_to_tray);
         let notify_on_finish = take("notifyOnFinish").and_then(|v| v.as_bool()).unwrap_or(d.notify_on_finish);
         let show_shortcuts = take("showShortcuts").and_then(|v| v.as_bool()).unwrap_or(d.show_shortcuts);
+        let mcp_auto_connect = take("mcpAutoConnect").and_then(|v| v.as_bool()).unwrap_or(d.mcp_auto_connect);
         let history_keep_versions = take("historyKeepVersions")
             .and_then(|v| v.as_u64())
             .map(|n| clamp_keep_versions(n.min(u32::MAX as u64) as u32))
@@ -153,6 +159,7 @@ impl Settings {
             close_to_tray,
             notify_on_finish,
             show_shortcuts,
+            mcp_auto_connect,
             history_keep_versions,
             extra: map,
         })
@@ -302,6 +309,19 @@ mod tests {
         assert!(fs::read_to_string(path_in(d.path())).unwrap().contains("\"showShortcuts\": true"));
         assert!(load(d.path()).settings.show_shortcuts);
         assert!(!load(d.path()).settings.extra.contains_key("showShortcuts"));
+    }
+
+    #[test]
+    fn letting_claude_code_use_atlas_defaults_on_and_an_off_choice_is_remembered() {
+        assert!(Settings::default().mcp_auto_connect);
+        // A file from before this field existed, or a bad value, means on (the default).
+        assert!(Settings::from_json(r#"{"schemaVersion":1,"theme":"dark"}"#).unwrap().mcp_auto_connect);
+        assert!(Settings::from_json(r#"{"mcpAutoConnect":"no"}"#).unwrap().mcp_auto_connect);
+        let d = tempdir().unwrap();
+        save(d.path(), &Settings { mcp_auto_connect: false, ..Settings::default() }).unwrap();
+        assert!(fs::read_to_string(path_in(d.path())).unwrap().contains("\"mcpAutoConnect\": false"));
+        assert!(!load(d.path()).settings.mcp_auto_connect, "the off choice survives a relaunch");
+        assert!(!load(d.path()).settings.extra.contains_key("mcpAutoConnect"));
     }
 
     #[test]

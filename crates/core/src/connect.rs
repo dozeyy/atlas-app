@@ -258,6 +258,84 @@ pub fn connect_waiting(ctx: &ConnectCtx, wait: Duration) -> Result<ConnectOutcom
     Ok(ConnectOutcome { state: st, via: via.into(), backup_id })
 }
 
+/// What `auto_connect` did (or why it did nothing). Nothing here is an error the user is shown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AutoOutcome {
+    /// The user turned it off in Settings.
+    Off,
+    /// Claude Code's command was not found: try again on a later launch.
+    NoCli,
+    /// The connector program is missing from this install.
+    NoServer,
+    /// Already registered to this install, with the right arguments: nothing was touched.
+    Current,
+    /// An `atlas` entry that is someone else's program: left alone.
+    Foreign,
+    /// Registered for the first time.
+    Connected,
+    /// The registration pointed at a moved or old copy (or had stale arguments): pointed here.
+    Repaired,
+    /// A guard said no (a debug build near the real Claude folder, an unreadable file, a busy
+    /// lock). Nothing was changed; the reason is for the log.
+    Skipped(String),
+}
+
+fn registered_entry(path: &Path) -> Result<Option<Value>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let v = read_cj(path).ok_or("Claude's settings file can't be read, so Atlas left it alone.")?;
+    Ok(v.get("mcpServers").and_then(|m| m.get(SERVER_NAME)).cloned())
+}
+
+/// Is this entry the one Atlas would write for this install (same program, same arguments)?
+fn entry_is_current(entry: &Value, ctx: &ConnectCtx) -> bool {
+    let want = server_json(ctx);
+    let same_cmd = entry.get("command").and_then(Value::as_str).is_some_and(|c| norm(c) == norm(&crate::setup::display_path(ctx.server)));
+    same_cmd && entry.get("args").cloned().unwrap_or(Value::Array(vec![])) == want["args"]
+}
+
+/// Is this entry Atlas's own connector (an old or moved copy), as opposed to another program a
+/// person registered under the same name? A program that no longer exists is stale too.
+fn entry_is_ours(entry: &Value) -> bool {
+    let Some(cmd) = entry.get("command").and_then(Value::as_str) else { return false };
+    let stem = Path::new(&cmd.replace('\\', "/")).file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+    stem.starts_with("atlas-mcp") || !Path::new(cmd).exists()
+}
+
+/// Make sure Claude Code can use Atlas without anyone pressing a button. Runs after the first
+/// paint, off the UI thread. It registers the server when it is absent and the `claude` command
+/// is there, repairs a registration that points at a moved or old copy, and does nothing when
+/// the user turned it off, when everything is already right, or when the command is missing (a
+/// later launch tries again). Writes go through `connect`, so the backup, the lock, the debug-build
+/// guard and the quiet (no window) spawns all apply.
+pub fn auto_connect(ctx: &ConnectCtx, enabled: bool) -> AutoOutcome {
+    if !enabled {
+        return AutoOutcome::Off;
+    }
+    if !ctx.server.is_file() {
+        return AutoOutcome::NoServer;
+    }
+    if !ctx.cli.found() {
+        return AutoOutcome::NoCli;
+    }
+    if let Err(e) = crate::fsutil::check_write_allowed(&ctx.root.claude_json) {
+        return AutoOutcome::Skipped(e.to_string());
+    }
+    let repair = match registered_entry(&ctx.root.claude_json) {
+        Err(e) => return AutoOutcome::Skipped(e),
+        Ok(None) => false,
+        Ok(Some(e)) if entry_is_current(&e, ctx) => return AutoOutcome::Current,
+        Ok(Some(e)) if entry_is_ours(&e) => true,
+        Ok(Some(_)) => return AutoOutcome::Foreign,
+    };
+    match connect_waiting(ctx, Duration::from_secs(3)) {
+        Ok(_) if repair => AutoOutcome::Repaired,
+        Ok(_) => AutoOutcome::Connected,
+        Err(e) => AutoOutcome::Skipped(e),
+    }
+}
+
 /// Remove the registration. Only the `atlas` entry is touched.
 pub fn disconnect(ctx: &ConnectCtx) -> Result<ConnectOutcome, String> {
     disconnect_waiting(ctx, LOCK_WAIT)

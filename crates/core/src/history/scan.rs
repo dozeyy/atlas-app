@@ -329,6 +329,34 @@ fn mcp_pass(store: &Store, known: &HashMap<String, ItemState>, claude_json: Opti
     Ok(Some(McpSeen { text, sha, size, mtime, stat_only: same }))
 }
 
+/// When the only difference between two MCP views is Atlas's own `atlas` server (it was
+/// connected, disconnected or re-pointed), say so in those words.
+fn atlas_connection_summary(old: Option<&str>, new: &str) -> Option<&'static str> {
+    let parse = |t: &str| serde_json::from_str::<Value>(t).ok();
+    let split = |v: Value| -> Option<(Option<Value>, Value)> {
+        let mut v = v;
+        let mine = v.get_mut("mcpServers").and_then(Value::as_object_mut).and_then(|m| m.shift_remove("atlas"));
+        if v.get("mcpServers").and_then(Value::as_object).is_some_and(|m| m.is_empty()) {
+            v.as_object_mut()?.remove("mcpServers");
+        }
+        Some((mine, v))
+    };
+    let (new_mine, new_rest) = split(parse(new)?)?;
+    let (old_mine, old_rest) = match old {
+        Some(o) => split(parse(o)?)?,
+        None => (None, Value::Object(Map::new())),
+    };
+    if old_rest != new_rest {
+        return None;
+    }
+    match (old_mine, new_mine) {
+        (None, Some(_)) => Some("Connected Atlas to Claude Code."),
+        (Some(_), None) => Some("Disconnected Atlas from Claude Code."),
+        (Some(a), Some(b)) if a != b => Some("Pointed the Atlas connection at this copy of Atlas."),
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn mcp_write(tx: &rusqlite::Transaction, store: &Store, known: &HashMap<String, ItemState>, m: &McpSeen, now: i64, baseline: bool, marks: &Marks, report: &mut ScanReport) -> rusqlite::Result<()> {
     if m.stat_only {
@@ -350,12 +378,13 @@ fn mcp_write(tx: &rusqlite::Transaction, store: &Store, known: &HashMap<String, 
             report.items += 1;
         }
         None => {
-            store::add_event(tx, &NewEvent { item_key: MCP_KEY, at: now, kind: "added", from_version: None, to_version: vid, source: src, summary: "New." })?;
+            let summary = atlas_connection_summary(None, &m.text).unwrap_or("New.");
+            store::add_event(tx, &NewEvent { item_key: MCP_KEY, at: now, kind: "added", from_version: None, to_version: vid, source: src, summary })?;
             report.added += 1;
         }
         Some(p) => {
             let summary = match &old_text {
-                Some(o) => diff::one_line("mcp.json", Some(o), &m.text),
+                Some(o) => atlas_connection_summary(Some(o), &m.text).map(str::to_string).unwrap_or_else(|| diff::one_line("mcp.json", Some(o), &m.text)),
                 None => "Changed.".to_string(),
             };
             store::add_event(tx, &NewEvent { item_key: MCP_KEY, at: now, kind: "changed", from_version: p.last_version, to_version: vid, source: src, summary: &summary })?;

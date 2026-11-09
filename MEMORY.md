@@ -334,3 +334,11 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Not seen in the app: the same-chat skip, year-boundary ranges, short stories under 7 days, the skill/helper/tool slides, Silver, 150% DPI. Unit tests only.
 - No first-launch Christmas intro into Wrapped exists yet (Phase 7). The only route in is the title-bar gift button.
 - Will kept the slide 2 novels hover (the conversion explanation), 2026-11-09.
+
+## 2026-11-09 - MCP auto-connect to Claude Code (in-app chat dropped)
+- `connect::auto_connect(ctx, enabled)` runs from `frontend_ready` on a thread after 1.5 s (`mcp_service::auto_connect_in_background`). Outcomes: Off, NoCli (silent, retried next launch), NoServer, Current, Foreign (a real other `atlas` program is left alone), Connected, Repaired (stale command path or args, only for entries that are ours), Skipped.
+- Settings `mcpAutoConnect` (default true) is the single switch "Let Claude Code use Atlas"; off removes the entry and is saved, on connects now. The Connect/Disconnect commands also write the flag.
+- History: one "Connected Atlas to Claude Code." row (scan.rs `atlas_connection_summary`); unchanged launches write nothing.
+- Real app, scratch --config-dir: launch 1 Connected, launch 2 no change, off + relaunch stays off, bogus exe + relaunch Repaired. Switch screenshots in `docs/shots/mcp/auto-connect-switch-{on,off}.png`. Debug builds still refuse the real `~/.claude.json`.
+- Gotcha: the switch did not flip until the provider's `info` was refreshed (`setMcpAutoConnect` runs first in `changeMcp`).
+- Tests use a FakeCli (.cmd on Windows, sh elsewhere). macOS and the sh fake are unverified.

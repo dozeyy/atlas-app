@@ -151,24 +151,37 @@ describe("Settings", () => {
     expect(await screen.findByText(/Claude Code keeps conversation logs for/)).toBeInTheDocument();
   });
 
-  it("Claude Code section connects and disconnects, reading the state back each time", async () => {
+  it("Claude Code section is one switch, on by default, and the state is read back each time", async () => {
     mount();
     await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
-    expect(await screen.findByText(/Not connected\./)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
-    expect(await screen.findByRole("button", { name: "Disconnect" })).toBeInTheDocument();
-    expect(screen.getByText(/Open a new chat to use it/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Disconnect" }));
-    expect(await screen.findByRole("button", { name: "Connect" })).toBeInTheDocument();
+    const sw = await screen.findByRole("switch", { name: "Let Claude Code use Atlas" });
+    expect(sw).toBeChecked();
+    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Disconnect" })).toBeNull();
+    await userEvent.click(sw);
+    expect(await screen.findByText("Off")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Let Claude Code use Atlas" })).not.toBeChecked();
+    await userEvent.click(screen.getByRole("switch", { name: "Let Claude Code use Atlas" }));
+    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Let Claude Code use Atlas" })).toBeChecked();
     expect(screen.getByText("No network access")).toBeInTheDocument();
   });
 
-  it("Claude Code section cannot connect while Sandbox mode is on", async () => {
+  it("Claude Code section says when Claude Code is not found", async () => {
+    mount((b) => {
+      b.mcpStatus = async () => ({ state: "notConnected", command: null, server: "C:/x/atlas-mcp.exe", cliFound: false, configReadable: true, sandbox: false });
+    });
+    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
+    expect(await screen.findByText("Claude Code not found")).toBeInTheDocument();
+  });
+
+  it("Claude Code section cannot change while Sandbox mode is on", async () => {
     mount((b) => {
       b.mcpStatus = async () => ({ state: "notConnected", command: null, server: "C:/x/atlas-mcp.exe", cliFound: true, configReadable: true, sandbox: true });
     });
     await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude Code" }));
-    expect(await screen.findByText(/Turn Sandbox mode off to connect/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
+    expect(await screen.findByText(/Turn Sandbox mode off/)).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Let Claude Code use Atlas" })).toBeDisabled();
   });
 });

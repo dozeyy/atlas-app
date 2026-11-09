@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use atlas_core::connect::{self, CliChoice, ConnectCtx};
+use atlas_core::connect::{self, AutoOutcome, CliChoice, ConnectCtx};
 use atlas_core::history::marks::Marks;
 use atlas_core::history::query::{self, EventFilter};
 use atlas_core::history::store::Store;
@@ -885,4 +885,215 @@ fn a_backup_in_a_deep_code_folder_is_refused_however_the_claude_folder_is_spelle
     plant_backup(&e, "1900000000000-0001-p", "rule", &deep, "# words only\n");
     refused_as_code(o.apply(&Write::RestoreBackup { backup_id: "1900000000000-0001-p".into() }));
     assert!(!e.config.join("hooks").join("sub").join("x.md").exists());
+}
+
+// ---------------------------------------------------------------- auto-connect
+
+/// A stand-in for the `claude` command that answers `mcp add-json` and `mcp remove` by copying a
+/// prepared `.claude.json` into `$CLAUDE_CONFIG_DIR`, and logs every call. It does nothing when
+/// `CLAUDE_CONFIG_DIR` is not set, so it can never reach a real folder.
+struct FakeCli {
+    exe: PathBuf,
+    calls: PathBuf,
+}
+
+impl FakeCli {
+    fn calls(&self) -> Vec<String> {
+        fs::read_to_string(&self.calls).map(|t| t.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()).unwrap_or_default()
+    }
+}
+
+fn fake_cli(e: &Env, with: &serde_json::Value, without: &serde_json::Value) -> FakeCli {
+    let dir = e._t.path().join("fakecli");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("with.json"), serde_json::to_vec_pretty(with).unwrap()).unwrap();
+    fs::write(dir.join("without.json"), serde_json::to_vec_pretty(without).unwrap()).unwrap();
+    #[cfg(windows)]
+    let (exe, body) = (
+        dir.join("claude.cmd"),
+        "@echo off\r\nif \"%CLAUDE_CONFIG_DIR%\"==\"\" exit /b 1\r\necho %2>>\"%~dp0calls.txt\"\r\nif \"%2\"==\"add-json\" copy /Y \"%~dp0with.json\" \"%CLAUDE_CONFIG_DIR%\\.claude.json\" >nul\r\nif \"%2\"==\"remove\" copy /Y \"%~dp0without.json\" \"%CLAUDE_CONFIG_DIR%\\.claude.json\" >nul\r\nexit /b 0\r\n",
+    );
+    #[cfg(not(windows))]
+    let (exe, body) = (
+        dir.join("claude"),
+        "#!/bin/sh\n[ -z \"$CLAUDE_CONFIG_DIR\" ] && exit 1\nd=$(dirname \"$0\")\necho \"$2\" >> \"$d/calls.txt\"\n[ \"$2\" = add-json ] && cp \"$d/with.json\" \"$CLAUDE_CONFIG_DIR/.claude.json\"\n[ \"$2\" = remove ] && cp \"$d/without.json\" \"$CLAUDE_CONFIG_DIR/.claude.json\"\nexit 0\n",
+    );
+    fs::write(&exe, body).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    FakeCli { exe, calls: dir.join("calls.txt") }
+}
+
+struct Auto {
+    server: PathBuf,
+    backups: PathBuf,
+    cj: PathBuf,
+    without: serde_json::Value,
+    cli: FakeCli,
+}
+
+fn read_json(p: &Path) -> serde_json::Value {
+    serde_json::from_slice(&fs::read(p).unwrap()).unwrap()
+}
+
+/// The pieces every auto-connect test needs: a stand-in connector program in this "install",
+/// and a fake `claude` that writes exactly what a real connect would.
+fn auto_env(e: &Env) -> Auto {
+    let server = e.data.join("install").join(if cfg!(windows) { "atlas-mcp.exe" } else { "atlas-mcp" });
+    fs::create_dir_all(server.parent().unwrap()).unwrap();
+    fs::write(&server, b"stand-in").unwrap();
+    let backups = e.data.join("setup-backups");
+    let cj = e.config.join(".claude.json");
+    let without = read_json(&cj);
+    let plain = ConnectCtx { root: &e.inputs.root, server: &server, backups: &backups, data_dir_flag: Some(&e.data), cli: CliChoice::Missing };
+    let mut with = without.clone();
+    with["mcpServers"]["atlas"] = connect::server_json(&plain);
+    let cli = fake_cli(e, &with, &without);
+    Auto { server, backups, cj, without, cli }
+}
+
+fn auto_ctx<'a>(e: &'a Env, a: &'a Auto, cli: CliChoice) -> ConnectCtx<'a> {
+    ConnectCtx { root: &e.inputs.root, server: &a.server, backups: &a.backups, data_dir_flag: Some(&e.data), cli }
+}
+
+fn atlas_history_rows(store: &Store) -> Vec<String> {
+    let ev = query::events(store, &EventFilter { limit: 100, ..Default::default() }).unwrap().events;
+    ev.into_iter().filter(|x| x.summary.contains("Atlas")).map(|x| x.summary).collect()
+}
+
+fn scan_cj(e: &Env, store: &Store, now: i64) {
+    let o = ops(e, "mcp");
+    scan::scan(store, &tracked_from(&o.discovery().snapshot), Some(&e.inputs.root.claude_json), now).unwrap();
+}
+
+#[test]
+fn the_first_launch_connects_atlas_once_and_later_launches_do_nothing() {
+    let e = env();
+    let a = auto_env(&e);
+    let store = Store::open(&e.data.join("history")).unwrap();
+    scan_cj(&e, &store, 1_800_000_000_000);
+    assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "notConnected");
+
+    let ctx = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
+    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Connected);
+    assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "connected");
+    assert_eq!(a.cli.calls(), ["add-json"], "went through Claude Code's own command");
+    let entry = &read_json(&a.cj)["mcpServers"]["atlas"];
+    assert_eq!(entry["type"], "stdio");
+    // Everything else in the file is as it was.
+    let mut back = read_json(&a.cj);
+    back["mcpServers"].as_object_mut().unwrap().remove("atlas");
+    assert_eq!(back, a.without);
+
+    scan_cj(&e, &store, 1_800_000_001_000);
+    assert_eq!(atlas_history_rows(&store), ["Connected Atlas to Claude Code."], "one History row for the first connect");
+
+    // Launches two and three: nothing is run, nothing is written, History gets no new row.
+    let before = fs::read(&a.cj).unwrap();
+    for t in 2..4 {
+        assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Current);
+        scan_cj(&e, &store, 1_800_000_000_000 + t * 1000);
+    }
+    assert_eq!(a.cli.calls(), ["add-json"]);
+    assert_eq!(fs::read(&a.cj).unwrap(), before);
+    assert_eq!(atlas_history_rows(&store), ["Connected Atlas to Claude Code."]);
+}
+
+#[test]
+fn nothing_reconnects_after_the_user_turned_it_off() {
+    let e = env();
+    let a = auto_env(&e);
+    let ctx = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
+    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Connected);
+    // The switch goes off: the app records the choice and disconnects.
+    connect::disconnect(&ctx).unwrap();
+    assert_eq!(read_json(&a.cj), a.without);
+    let calls = a.cli.calls();
+    // Every later launch sees "off" and touches nothing, however often it runs.
+    for _ in 0..3 {
+        assert_eq!(connect::auto_connect(&ctx, false), AutoOutcome::Off);
+    }
+    assert_eq!(read_json(&a.cj), a.without);
+    assert_eq!(a.cli.calls(), calls, "no command ran");
+    // Turning it on again connects right away (the same path the switch uses).
+    connect::connect(&ctx).unwrap();
+    assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "connected");
+}
+
+#[test]
+fn a_registration_that_points_at_a_moved_copy_or_has_stale_arguments_is_repaired() {
+    let e = env();
+    let a = auto_env(&e);
+    let ctx = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
+    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Connected);
+    let good = read_json(&a.cj);
+
+    // An update moved the program: the entry names a place that is gone.
+    let mut moved = good.clone();
+    let gone = if cfg!(windows) { r"C:\Program Files\Atlas Old\atlas-mcp.exe" } else { "/opt/atlas-old/atlas-mcp" };
+    moved["mcpServers"]["atlas"]["command"] = gone.into();
+    fs::write(&a.cj, serde_json::to_vec_pretty(&moved).unwrap()).unwrap();
+    assert_eq!(connect::state(&e.inputs.root, Some(&a.server), true).state, "moved");
+    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Repaired);
+    assert_eq!(read_json(&a.cj), good);
+    assert_eq!(a.cli.calls(), ["add-json", "remove", "add-json"], "removed the stale entry, then added the right one");
+
+    // Same program, stale arguments (the config folder it was started with changed).
+    let mut stale = good.clone();
+    stale["mcpServers"]["atlas"]["args"] = serde_json::json!(["--config-dir", "C:/old/place"]);
+    fs::write(&a.cj, serde_json::to_vec_pretty(&stale).unwrap()).unwrap();
+    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Repaired);
+    assert_eq!(read_json(&a.cj), good);
+
+    // A different program someone registered under the name `atlas` is not ours to replace.
+    let theirs = e.data.join("their-server.exe");
+    fs::write(&theirs, b"x").unwrap();
+    let mut foreign = good.clone();
+    foreign["mcpServers"]["atlas"]["command"] = theirs.to_string_lossy().to_string().into();
+    fs::write(&a.cj, serde_json::to_vec_pretty(&foreign).unwrap()).unwrap();
+    let calls = a.cli.calls().len();
+    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::Foreign);
+    assert_eq!(read_json(&a.cj), foreign);
+    assert_eq!(a.cli.calls().len(), calls);
+}
+
+#[test]
+fn a_missing_claude_command_is_a_silent_no_op_that_a_later_launch_retries() {
+    let e = env();
+    let a = auto_env(&e);
+    let before = fs::read(&a.cj).unwrap();
+    let missing = auto_ctx(&e, &a, CliChoice::Missing);
+    assert_eq!(connect::auto_connect(&missing, true), AutoOutcome::NoCli);
+    assert_eq!(fs::read(&a.cj).unwrap(), before, "the file was not touched");
+    assert!(!a.backups.exists() || fs::read_dir(&a.backups).unwrap().next().is_none(), "no backup was made");
+    assert!(a.cli.calls().is_empty());
+    // A later launch where the command exists connects.
+    let found = auto_ctx(&e, &a, CliChoice::Path(a.cli.exe.clone()));
+    assert_eq!(connect::auto_connect(&found, true), AutoOutcome::Connected);
+    // A missing connector program is just as quiet.
+    let nowhere = e.data.join("not-installed").join("atlas-mcp.exe");
+    let ctx = ConnectCtx { root: &e.inputs.root, server: &nowhere, backups: &a.backups, data_dir_flag: None, cli: CliChoice::Path(a.cli.exe.clone()) };
+    assert_eq!(connect::auto_connect(&ctx, true), AutoOutcome::NoServer);
+}
+
+// Debug and test builds never write the real Claude folder, so auto-connect cannot either.
+#[cfg(debug_assertions)]
+#[test]
+fn auto_connect_in_a_debug_build_refuses_the_real_claude_folder() {
+    let e = env();
+    let a = auto_env(&e);
+    let Some(home) = atlas_core::paths::home_dir() else { return };
+    let real = resolve_config_root(&ConfigInputs { flag: None, settings_override: None, env: None, home: &home, cwd: e._t.path() });
+    let stamp = |p: &Path| fs::metadata(p).ok().map(|m| (m.len(), m.modified().ok()));
+    let before = stamp(&real.claude_json);
+    let ctx = ConnectCtx { root: &real, server: &a.server, backups: &a.backups, data_dir_flag: None, cli: CliChoice::Path(a.cli.exe.clone()) };
+    match connect::auto_connect(&ctx, true) {
+        AutoOutcome::Skipped(why) => assert!(why.contains("real Claude config"), "{why}"),
+        other => panic!("expected the guard to refuse, got {other:?}"),
+    }
+    assert!(a.cli.calls().is_empty(), "no command was started");
+    assert_eq!(stamp(&real.claude_json), before);
 }
