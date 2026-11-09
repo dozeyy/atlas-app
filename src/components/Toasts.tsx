@@ -12,7 +12,7 @@ function ToastCard({ toast }: { toast: Toast }) {
   return (
     <div
       role={toast.tone === "error" ? "alert" : "status"}
-      className="fade-in pointer-events-auto flex max-w-[min(520px,calc(100vw-32px))] items-center gap-3 rounded-card border border-line-strong bg-surface py-2.5 pl-4 pr-2 shadow-float"
+      className="fade-in pointer-events-auto flex max-w-[min(520px,calc(var(--app-w)-32px))] items-center gap-3 rounded-card border border-line-strong bg-surface py-2.5 pl-4 pr-2 shadow-float"
     >
       <Icon size={18} weight="fill" aria-hidden="true" className={`shrink-0 ${TONE[toast.tone]}`} />
       <p className="selectable min-w-0 flex-1 text-body text-ink">{toast.message}</p>

@@ -512,7 +512,7 @@ html.reduced .app-menu {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 12vh 16px 16px;
+  padding: calc(var(--app-h) * 0.12) 16px 16px;
 }
 .qj-scrim {
   position: absolute;
@@ -569,7 +569,7 @@ html.reduced .app-menu {
   white-space: nowrap;
 }
 .qj-list {
-  max-height: min(432px, calc(100vh - 12vh - 56px - 32px));
+  max-height: min(432px, calc(var(--app-h) * 0.88 - 56px - 32px));
   margin: 0;
   padding: 8px;
   overflow-y: auto;
@@ -652,7 +652,7 @@ html.reduced .app-menu {
   right: 0;
   top: calc(100% + 8px);
   z-index: 30;
-  max-width: calc(100vw - 32px);
+  max-width: calc(var(--app-w) - 32px);
   padding: 16px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-card);
@@ -1398,7 +1398,7 @@ html[data-platform="macos"] .side {
   left: 0;
   top: 0;
   z-index: 100; /* above dialogs (60) and toasts (70) */
-  max-width: min(300px, calc(100vw - 16px));
+  max-width: min(300px, calc(var(--app-w) - 16px));
   pointer-events: none;
   padding: 7px 11px 8px;
   border-radius: var(--r-control);
@@ -1976,7 +1976,7 @@ html.reduced .nav-item:active .nav-face {
 .session-fit {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - var(--titlebar-h) - 2 * var(--gutter-y));
+  height: calc(var(--app-h) - var(--titlebar-h) - 2 * var(--gutter-y));
   min-height: 30rem;
 }
 .session-pane {
@@ -2404,7 +2404,7 @@ html[data-input="keyboard"] .upd-btn:focus-visible {
   position: fixed;
   z-index: 60;
   width: 248px;
-  max-width: calc(100vw - 16px);
+  max-width: calc(var(--app-w) - 16px);
   padding: 14px 16px 16px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-card);

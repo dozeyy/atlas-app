@@ -83,7 +83,7 @@
 .now-band {
   flex: 0 1 auto;
   min-height: 0;
-  max-height: clamp(150px, 36vh, 252px);
+  max-height: clamp(150px, calc(var(--app-h) * 0.36), 252px);
   display: grid;
   grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
   /* The one row is as tall as the band lets it be, so a long list scrolls inside itself
@@ -297,7 +297,7 @@
 
 .now-card {
   container: nowcard / size;
-  padding: clamp(16px, 2vw, 32px);
+  padding: clamp(16px, calc(var(--app-w) * 0.02), 32px);
   overflow: hidden;
 }
 

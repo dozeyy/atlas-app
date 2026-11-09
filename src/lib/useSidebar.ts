@@ -1,6 +1,8 @@
 import { useCallback, useSyncExternalStore } from "react";
+import { FRAME_EVENT, liveFrameWidth } from "./frameSync";
 
 /** Below this window width the sidebar folds to icons, unless the user chose otherwise. */
+const NARROW_PX = 1000;
 const NARROW = "(max-width: 999.98px)";
 const KEY = "atlas.sidebar";
 
@@ -31,15 +33,23 @@ export function writeSidebarPref(next: SidebarPref) {
   listeners.forEach((l) => l());
 }
 
-const narrowNow = () => typeof window.matchMedia === "function" && window.matchMedia(NARROW).matches;
+// While a window edge is dragged on Windows the webview is bigger than the window, so the media
+// query reads the webview; the window's own width then comes from the drag (frameSync.ts).
+const narrowNow = () => {
+  const live = liveFrameWidth();
+  if (live !== null) return live < NARROW_PX;
+  return typeof window.matchMedia === "function" && window.matchMedia(NARROW).matches;
+};
 
 function subscribe(cb: () => void) {
   listeners.add(cb);
   const mq = typeof window.matchMedia === "function" ? window.matchMedia(NARROW) : null;
   mq?.addEventListener("change", cb);
+  window.addEventListener(FRAME_EVENT, cb);
   return () => {
     listeners.delete(cb);
     mq?.removeEventListener("change", cb);
+    window.removeEventListener(FRAME_EVENT, cb);
   };
 }
 

@@ -185,6 +185,9 @@ export class MockBackend {
   async windowMaximized(): Promise<boolean> {
     return false;
   }
+  async onMaximized(_cb: (maximized: boolean) => void): Promise<() => void> {
+    return () => {};
+  }
   /** What the page last told Rust about unsaved edits, and the quit it asked about (tests read these). */
   unsaved = false;
   left = 0;

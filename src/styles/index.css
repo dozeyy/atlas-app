@@ -38,6 +38,29 @@ body {
   cursor: default;
 }
 
+/* The window's size. Use these, never 100vw / 100vh: while an edge of the window is dragged on
+   Windows the webview is bigger than the window (winframe.rs, frameSync.ts). */
+:root {
+  --app-w: 100vw;
+  --app-h: 100vh;
+}
+
+/* During that drag the whole app lives in the window's part of the webview, so a frame drawn
+   before the window catches up is still in the right place on screen. `contain` keeps fixed
+   layers (sheets, menus, toasts) inside it too. */
+html.frame-live {
+  --app-w: var(--frame-w);
+  --app-h: var(--frame-h);
+}
+html.frame-live body {
+  position: fixed;
+  left: var(--frame-x);
+  top: var(--frame-y);
+  width: var(--frame-w);
+  height: var(--frame-h);
+  contain: layout paint;
+}
+
 /* Mica / vibrancy: the window itself must be see-through, panels paint their own. */
 html.backdrop,
 html.backdrop body {
@@ -96,9 +119,16 @@ html[data-input="keyboard"] :is(main, h1, h2)[tabindex="-1"]:focus-visible {
   background: var(--accent-tint);
 }
 
-/* Thin, quiet scrollbars. */
+/* Thin, quiet scrollbars that hide at rest: the thumb shows while its container is hovered, being
+   scrolled (data-scrolling, lib/scrollbars.ts) or holds keyboard focus. At rest the bar is
+   background colour, so a window edge drag that clips the page for a frame never shows it blink. */
 * {
   scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+:hover,
+[data-scrolling],
+html[data-input="keyboard"] :focus-within {
   scrollbar-color: var(--line-strong) transparent;
 }
 

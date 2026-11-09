@@ -92,7 +92,13 @@ public static class Drag {
     var list = new List<Frame>();
     var sw = Stopwatch.StartNew();
     SetCursorPos(x, y); Thread.Sleep(150);
-    Btn(0x0002); Thread.Sleep(300);
+    // Step 0: the window before the press, then a burst of frames right after it (sub 90+): the
+    // press alone must not change a pixel.
+    var s0 = new Frame(); s0.Step = 0; s0.Sub = 99; s0.Ms = sw.ElapsedMilliseconds;
+    s0.Win = Bounds(h); s0.Img = Grab(reg); list.Add(s0);
+    Btn(0x0002);
+    Burst(h, reg, sw, 0, list);
+    Thread.Sleep(200);
     for (int s = 1; s <= steps; s++) {
       SetCursorPos(x + dx * s, y + dy * s);
       for (int f = 0; f < frames; f++) {
@@ -107,10 +113,19 @@ public static class Drag {
       st.Win = Bounds(h); st.Img = Grab(reg); list.Add(st);
     }
     Btn(0x0004);
+    Burst(h, reg, sw, steps + 1, list);   // the frames right after the release (sub 90+)
     Thread.Sleep(700);   // "released": did the layout change once the drag ended?
     var rl = new Frame(); rl.Step = steps + 1; rl.Sub = 98; rl.Ms = sw.ElapsedMilliseconds;
     rl.Win = Bounds(h); rl.Img = Grab(reg); list.Add(rl);
     return list;
+  }
+  // Eight composed frames in a row, as subs 90..97 of `step`.
+  static void Burst(IntPtr h, Rectangle reg, Stopwatch sw, int step, List<Frame> list) {
+    for (int f = 0; f < 8; f++) {
+      DwmFlush();
+      var fr = new Frame(); fr.Step = step; fr.Sub = 90 + f; fr.Ms = sw.ElapsedMilliseconds;
+      fr.Win = Bounds(h); fr.Img = Grab(reg); list.Add(fr);
+    }
   }
   // Continuous drag, closer to a hand: a mover thread steps the cursor every moveMs while this
   // thread captures every composed frame (Step = moves done so far, Sub = frame index).

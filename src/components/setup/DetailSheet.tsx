@@ -222,7 +222,7 @@ function CodeView({ src }: { src: SourceView }) {
       destroy();
     };
   }, [src]);
-  return <div ref={host} className="h-[min(420px,50vh)] overflow-hidden rounded-card border border-line bg-surface" />;
+  return <div ref={host} className="h-[min(420px,calc(var(--app-h)*0.5))] overflow-hidden rounded-card border border-line bg-surface" />;
 }
 
 /** A frontmatter key as the scan reports it (lowercase); every other detail label starts with a capital. */
@@ -386,10 +386,10 @@ export function DetailSheet({
     return () => before?.focus?.({ preventScroll: true });
   }, []);
 
-  // Toasts centre inside the sheet while it is open (the panel is min(680px, 100vw) wide).
+  // Toasts centre inside the sheet while it is open (the panel is min(680px, var(--app-w)) wide).
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty("--toast-inset", "calc(100vw - min(680px, 100vw))");
+    root.style.setProperty("--toast-inset", "calc(var(--app-w) - min(680px, var(--app-w)))");
     return () => {
       root.style.removeProperty("--toast-inset");
     };
@@ -458,7 +458,7 @@ export function DetailSheet({
         aria-labelledby={titleId}
         tabIndex={-1}
         onKeyDown={onKey}
-        className="sheet-enter relative flex h-full w-[min(680px,100vw)] flex-col overflow-y-auto border-l border-line bg-bg shadow-float outline-none"
+        className="sheet-enter relative flex h-full w-[min(680px,var(--app-w))] flex-col overflow-y-auto border-l border-line bg-bg shadow-float outline-none"
       >
         <header className="sticky top-0 z-10 flex items-start gap-3 border-b border-line bg-bg px-6 py-4">
           <KindTile kind={item.kind} size={40} />

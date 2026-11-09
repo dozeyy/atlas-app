@@ -248,7 +248,7 @@ export function Dashboard() {
         <EmptyState
           icon={SquaresFour}
           seed={7}
-          className="min-h-[max(320px,calc(100vh-20rem))]"
+          className="min-h-[max(320px,calc(var(--app-h)-20rem))]"
           title="No Claude Code usage found yet"
           body="Atlas reads the conversations Claude Code saves in your Claude folder. Use Claude Code once and the numbers show up here on their own."
         />

@@ -204,6 +204,16 @@ pub fn window_maximized(app: AppHandle) -> bool {
     app.get_webview_window("main").and_then(|w| w.is_maximized().ok()).unwrap_or(false)
 }
 
+/// Windows edge drags: the page has drawn the frame for step `seq` (winframe.rs). Not async, so
+/// Tauri runs it on the UI thread, where the drag's state lives.
+#[tauri::command]
+pub fn frame_ack(seq: u64) {
+    #[cfg(windows)]
+    crate::winframe::on_ack(seq);
+    #[cfg(not(windows))]
+    let _ = seq;
+}
+
 /// The page has painted: show the window and record the time.
 #[tauri::command]
 pub fn frontend_ready(app: AppHandle, state: Shared) -> u64 {
