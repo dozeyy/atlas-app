@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FRAME_EVENT, frameMessage, installFrameSync, liveFrameWidth, viewportMatches } from "./frameSync";
+import { FRAME_EVENT, frameMessage, hiddenSpot, installFrameSync, liveFrameWidth, viewportMatches } from "./frameSync";
 
 type Listener = (e: { data: unknown }) => void;
 
@@ -37,7 +37,7 @@ describe("frameSync", () => {
     Object.defineProperty(window, "devicePixelRatio", { value: 1.5, configurable: true });
     Object.defineProperty(window, "innerWidth", { value: 800, configurable: true });
     Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
-    off = installFrameSync(window, (seq) => host.posted.push({ atlasFrameAck: seq }));
+    off = installFrameSync(window, (seq, via) => host.posted.push(via === 0 ? { atlasFrameAck: seq } : { atlasFrameAck: seq, via }));
   });
   afterEach(() => {
     off();
@@ -103,6 +103,55 @@ describe("frameSync", () => {
     host.send(msg(3, true, 4000, 4000));
     for (let i = 0; i < 40; i++) flush();
     expect(host.posted).toEqual([{ atlasFrameAck: 3 }]);
+  });
+
+  it("puts the presentation marker outside the window's rect, or nowhere", () => {
+    const f = (x: number, y: number, w: number, h: number, vw: number, vh: number) => ({ seq: 1, live: true, x, y, w, h, vw, vh });
+    expect(hiddenSpot(f(300, 150, 1200, 900, 2560, 1440), 1.5)).toEqual({ left: 0, top: 100 });
+    expect(hiddenSpot(f(0, 150, 1200, 900, 2560, 1440), 1)).toEqual({ left: 0, top: 0 });
+    expect(hiddenSpot(f(0, 0, 1200, 900, 2560, 1440), 1)).toEqual({ left: 1202, top: 0 });
+    expect(hiddenSpot(f(0, 0, 2560, 900, 2560, 1440), 1)).toEqual({ left: 0, top: 902 });
+    expect(hiddenSpot(f(0, 0, 2560, 1440, 2560, 1440), 1)).toBeNull();
+  });
+
+  describe("with presentation reports", () => {
+    let report: ((ids: string[]) => void) | null = null;
+    beforeEach(() => {
+      class PO {
+        static supportedEntryTypes = ["element"];
+        constructor(private cb: (l: { getEntries: () => { identifier: string }[] }) => void) {}
+        observe() {
+          report = (ids) => this.cb({ getEntries: () => ids.map((identifier) => ({ identifier })) });
+        }
+        disconnect() {
+          report = null;
+        }
+      }
+      vi.stubGlobal("PerformanceObserver", PO);
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("answers when the frame with the marker is presented, not two frames later", () => {
+      host.send(msg(9, true));
+      const mark = document.querySelector('[elementtiming="atlas-frame-9"]') as HTMLElement;
+      expect(mark).not.toBeNull();
+      expect(mark.style.left).toBe("0px"); // x = 30 physical px: room left of the window
+      flush();
+      flush();
+      expect(host.posted).toEqual([]);
+      report?.(["atlas-frame-8"]);
+      expect(host.posted).toEqual([]);
+      report?.(["atlas-frame-9"]);
+      expect(host.posted).toEqual([{ atlasFrameAck: 9, via: 1 }]);
+      expect(document.querySelector("[elementtiming]")).toBeNull();
+    });
+
+    it("answers anyway when no report comes", () => {
+      host.send(msg(4, true));
+      for (let i = 0; i < 20; i++) flush();
+      expect(host.posted).toEqual([{ atlasFrameAck: 4, via: 2 }]);
+      expect(document.querySelector("[elementtiming]")).toBeNull();
+    });
   });
 
   it("ignores everything else the webview sends", () => {

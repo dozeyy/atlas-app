@@ -18,7 +18,10 @@ type WebviewHost = {
   removeEventListener(type: "message", cb: (e: { data: unknown }) => void): void;
 };
 
-const sendAck = (seq: number) => void invoke("frame_ack", { seq }).catch(() => {});
+/** How the answer was reached (traced by Rust): 0 two animation frames, 1 presented, 2 gave up waiting. */
+export type AckVia = 0 | 1 | 2;
+
+const sendAck = (seq: number, via: AckVia) => void invoke("frame_ack", { seq, via }).catch(() => {});
 
 /** Fired on the window each time a drag moves the app's rect, and when it ends. */
 export const FRAME_EVENT = "atlas:frame";
@@ -50,7 +53,69 @@ export function viewportMatches(win: Pick<Window, "innerWidth" | "innerHeight" |
   return Math.abs(win.innerWidth * dpr - vw) <= 2 && Math.abs(win.innerHeight * dpr - vh) <= 2;
 }
 
-export function installFrameSync(win: Window = window, ack: (seq: number) => void = sendAck): () => void {
+/** Size of the presentation marker, CSS px. */
+const MARK = 6;
+/** Frames to wait for a presentation report before answering anyway. */
+const MAX_PRESENT_FRAMES = 12;
+
+/**
+ * A spot in the canvas outside the window's rect (so it is never on screen) for the
+ * presentation marker, in CSS px, or null when the window covers the whole canvas edge-to-edge.
+ */
+export function hiddenSpot(m: FrameMsg, dpr: number): { left: number; top: number } | null {
+  const [x, y, w, h, vw, vh] = [m.x, m.y, m.w, m.h, m.vw, m.vh].map((v) => v / dpr);
+  const room = MARK + 2;
+  if (x >= room) return { left: 0, top: y };
+  if (y >= room) return { left: x, top: 0 };
+  if (vw - (x + w) >= room) return { left: x + w + 2, top: y };
+  if (vh - (y + h) >= room) return { left: x, top: y + h + 2 };
+  return null;
+}
+
+const observerOf = (win: Window) => (win as unknown as { PerformanceObserver?: typeof PerformanceObserver }).PerformanceObserver;
+
+function presentedSupported(win: Window): boolean {
+  const PO = observerOf(win);
+  return !!PO && Array.isArray(PO.supportedEntryTypes) && PO.supportedEntryTypes.includes("element");
+}
+
+/**
+ * Answer once the frame that carries the current layout has been presented. A tiny text marker
+ * with an `elementtiming` id is painted in that same frame, outside the window's rect; the
+ * browser reports its paint (Element Timing) only after the frame's presentation.
+ */
+function awaitPresented(win: Window, seq: number, spot: { left: number; top: number }, ack: (seq: number, via: AckVia) => void) {
+  const doc = win.document;
+  const id = `atlas-frame-${seq}`;
+  const mark = doc.createElement("i");
+  mark.setAttribute("elementtiming", id);
+  mark.setAttribute("aria-hidden", "true");
+  mark.textContent = ".";
+  mark.style.cssText = `position:fixed;left:${spot.left}px;top:${spot.top}px;width:${MARK}px;height:${MARK}px;font:${MARK}px/1 sans-serif;pointer-events:none;`;
+  let done = false;
+  const finish = (via: AckVia) => {
+    if (done) return;
+    done = true;
+    obs.disconnect();
+    mark.remove();
+    ack(seq, via);
+  };
+  const PO = observerOf(win)!;
+  const obs = new PO((list: PerformanceObserverEntryList) => {
+    if (list.getEntries().some((e: PerformanceEntry) => (e as PerformanceEntry & { identifier?: string }).identifier === id)) finish(1);
+  });
+  obs.observe({ type: "element", buffered: false });
+  doc.documentElement.appendChild(mark);
+  let frames = 0;
+  const guard = () => {
+    if (done) return;
+    if (frames++ >= MAX_PRESENT_FRAMES) return finish(2);
+    win.requestAnimationFrame(guard);
+  };
+  win.requestAnimationFrame(guard);
+}
+
+export function installFrameSync(win: Window = window, ack: (seq: number, via: AckVia) => void = sendAck): () => void {
   const host = (win as unknown as { chrome?: { webview?: WebviewHost } }).chrome?.webview;
   if (!host) return () => {};
   const root = win.document.documentElement;
@@ -71,9 +136,15 @@ export function installFrameSync(win: Window = window, ack: (seq: number) => voi
     win.dispatchEvent(new Event(FRAME_EVENT));
   };
   // Two animation frames: the first runs before the frame that carries the change is drawn, the
-  // second only after that frame has gone out.
-  const answer = (seq: number) =>
-    win.requestAnimationFrame(() => win.requestAnimationFrame(() => ack(seq)));
+  // second only after that frame has gone out. That frame can still be on its way to the screen
+  // when the machine is busy, so where it can, the page waits for the frame's presentation instead.
+  const twoFrames = (seq: number) =>
+    win.requestAnimationFrame(() => win.requestAnimationFrame(() => ack(seq, 0)));
+  const answer = (m: FrameMsg) => {
+    const spot = m.live ? hiddenSpot(m, win.devicePixelRatio || 1) : null;
+    if (!spot || !presentedSupported(win)) return twoFrames(m.seq);
+    awaitPresented(win, m.seq, spot, ack);
+  };
 
   const onMessage = (e: { data: unknown }) => {
     const m = frameMessage(e.data);
@@ -89,7 +160,7 @@ export function installFrameSync(win: Window = window, ack: (seq: number) => voi
         return;
       }
       if (!m.live) unpin();
-      answer(m.seq);
+      answer(m);
     };
     settle();
   };

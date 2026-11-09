@@ -320,14 +320,19 @@ fn run(after: After) {
 
 /// The page has drawn the frame for message `seq`. UI thread only (a sync Tauri command runs
 /// there); from any other thread it does nothing and the drag times out to the normal path.
-pub fn on_ack(seq: u64) {
+pub fn on_ack(seq: u64, via: u8) {
     let after = with(|s| {
-        match s.waiting {
-            Some((want, _)) if want == seq => {}
+        let since = match s.waiting {
+            Some((want, at)) if want == seq => at,
             _ => return After::None,
-        }
+        };
         s.waiting = None;
-        s.trace(&format!("ack {seq} in {:?}", s.phase));
+        let how = match via {
+            1 => "presented",
+            2 => "presentation not reported",
+            _ => "two frames",
+        };
+        s.trace(&format!("ack {seq} in {:?} ({how}, {:.1} ms)", s.phase, since.elapsed().as_secs_f64() * 1000.0));
         match s.phase {
             Phase::Idle => After::None,
             Phase::Arming => {
