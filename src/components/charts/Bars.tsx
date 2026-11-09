@@ -90,7 +90,7 @@ export function Bars({
       onKeyDown={onKey}
       onBlur={() => setActive(null)}
       onPointerLeave={() => setActive(null)}
-      data-tip={tip ? 1 : 0}
+      data-tipping={tip ? 1 : 0}
       className={`chart-wrap${intro ? " intro" : ""}`}
     >
       <svg className="chart" width={width} height={height} aria-hidden="true">

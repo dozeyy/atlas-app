@@ -1501,7 +1501,7 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
 .summit {
   transition: opacity var(--dur-fast) var(--ease-out);
 }
-.chart-wrap[data-tip="1"] .summit {
+.chart-wrap[data-tipping="1"] .summit {
   opacity: 0;
 }
 .grid-line {
