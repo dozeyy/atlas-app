@@ -224,6 +224,12 @@ pub fn path_inside(path: &Path, dir: &Path) -> bool {
     comparable(path).starts_with(comparable(dir))
 }
 
+/// The part of `path` below `dir`, after links, 8.3 short names, `..` and case are resolved on
+/// both sides. `None` when `path` is not inside `dir`. Works for paths that do not exist yet.
+pub fn relative_inside(path: &Path, dir: &Path) -> Option<PathBuf> {
+    comparable(path).strip_prefix(comparable(dir)).ok().map(Path::to_path_buf)
+}
+
 /// True when both paths name the same place (links, `..` and case on Windows resolved).
 pub fn same_place(a: &Path, b: &Path) -> bool {
     comparable(a) == comparable(b)

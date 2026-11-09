@@ -449,15 +449,20 @@ impl Ops {
     }
 
     /// Does this path sit in a folder that holds code (below the Claude folder, or below a
-    /// project's `.claude`)?
-    fn in_code_folder(&self, path: &Path) -> bool {
-        let rel = path.strip_prefix(&self.inputs.root.dir).ok().map(Path::to_path_buf).or_else(|| {
-            let comps: Vec<_> = path.components().collect();
-            let at = comps.iter().rposition(|c| c.as_os_str().eq_ignore_ascii_case(".claude"))?;
-            Some(comps[at + 1..].iter().collect())
-        });
-        match rel {
-            Some(r) => r.parent().into_iter().flat_map(|p| p.components()).any(|c| is_code_folder(&c.as_os_str().to_string_lossy())),
+    /// project's `.claude`)? Paths are compared in their canonical form, so a short (8.3) name,
+    /// a link or a root that is not called `.claude` cannot slip past.
+    fn in_code_folder(&self, path: &Path, d: &Discovery) -> bool {
+        use crate::fsutil::relative_inside;
+        let below = |r: &Path| r.parent().into_iter().flat_map(|p| p.components()).any(|c| is_code_folder(&c.as_os_str().to_string_lossy()));
+        let known = relative_inside(path, &self.inputs.root.dir)
+            .or_else(|| d.snapshot.projects.iter().find_map(|p| relative_inside(path, &Path::new(&p.path).join(".claude"))));
+        if let Some(r) = known {
+            return below(&r);
+        }
+        // Not inside anything Atlas knows: judge by the last `.claude` in the path, else its folder.
+        let comps: Vec<_> = path.components().collect();
+        match comps.iter().rposition(|c| c.as_os_str().eq_ignore_ascii_case(".claude")) {
+            Some(at) => below(&comps[at + 1..].iter().collect::<PathBuf>()),
             None => path.parent().and_then(|p| p.file_name()).is_some_and(|n| is_code_folder(&n.to_string_lossy())),
         }
     }
@@ -466,7 +471,7 @@ impl Ops {
     /// would be written, never from the manifest's own `kind` word: every file must be
     /// markdown, outside the folders that hold hooks and scripts, and its text must not carry a
     /// header key or `!` line that runs something. `None` means it is words only.
-    fn backup_reason(&self, info: &sw::BackupInfo) -> Option<String> {
+    fn backup_reason(&self, info: &sw::BackupInfo, d: &Discovery) -> Option<String> {
         let path = info.path.as_deref().unwrap_or("");
         let p = Path::new(path);
         let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_ascii_lowercase();
@@ -476,7 +481,7 @@ impl Ops {
         if p.extension().is_some_and(|e| !e.eq_ignore_ascii_case("md")) {
             return Some("a file that is not plain markdown (it could be a script)".into());
         }
-        if self.in_code_folder(p) {
+        if self.in_code_folder(p, d) {
             return Some("a hooks, scripts or local folder".into());
         }
         for (rel, bytes) in sw::backup_files(&self.backups, &info.backup_id) {
@@ -493,18 +498,18 @@ impl Ops {
         None
     }
 
-    fn guard_backup(&self, info: &sw::BackupInfo) -> Result<(), String> {
+    fn guard_backup(&self, info: &sw::BackupInfo, d: &Discovery) -> Result<(), String> {
         if self.allow_code {
             return Ok(());
         }
-        match self.backup_reason(info) {
+        match self.backup_reason(info, d) {
             Some(why) => self.guard_code(&why),
             None => Ok(()),
         }
     }
 
     /// What a restore would put where: the saved files (secrets masked) and what is there now.
-    fn restore_view(&self, info: &sw::BackupInfo) -> (Option<String>, Option<String>) {
+    fn restore_view(&self, info: &sw::BackupInfo, d: &Discovery) -> (Option<String>, Option<String>) {
         let show = |name: &str, bytes: &[u8]| {
             let t = String::from_utf8_lossy(bytes).into_owned();
             if name.to_ascii_lowercase().ends_with(".json") { crate::setup::secrets::mask_json(&t).text } else { crate::setup::secrets::mask_plain(&t).text }
@@ -515,7 +520,8 @@ impl Ops {
             1 => Some(show(&files[0].0, &files[0].1)),
             _ => Some(files.iter().map(|(n, b)| format!("=== {n} ===\n{}", show(n, b))).collect::<Vec<_>>().join("\n")),
         };
-        let now = info.path.as_deref().map(Path::new).filter(|p| p.is_file() && p.metadata().is_ok_and(|m| m.len() <= 2 * 1024 * 1024)).and_then(|p| std::fs::read(p).ok());
+        let confine = self.confine(d);
+        let now = info.path.as_deref().map(Path::new).filter(|p| confine.allows(p)).filter(|p| p.is_file() && p.metadata().is_ok_and(|m| m.len() <= 2 * 1024 * 1024)).and_then(|p| std::fs::read(p).ok());
         let before = now.map(|b| show(info.path.as_deref().unwrap_or(""), &b));
         (before, after)
     }
@@ -723,7 +729,7 @@ impl Ops {
                     if !*enabled {
                         return Err("That hook is already off.".into());
                     }
-                    let (before, after) = self.restore_view(&info);
+                    let (before, after) = self.restore_view(&info, &d);
                     return Ok(base(format!("Turn hook {} back on", info.name), "hook", &info.name, info.path.clone().unwrap_or_default(), before, after, runs_commands(None, Some("a hook runs whenever its event happens".into()))));
                 }
                 let item = d.item(id).ok_or("Unknown item. Use list_items to find the id.")?;
@@ -748,8 +754,8 @@ impl Ops {
                 if !info.can_restore {
                     return Err("That backup can't be undone this way.".into());
                 }
-                let (before, after) = self.restore_view(&info);
-                let why = self.backup_reason(&info);
+                let (before, after) = self.restore_view(&info, &d);
+                let why = self.backup_reason(&info, &d);
                 Ok(base(format!("Undo the {} of {} {}", info.action, info.kind, info.name), &info.kind, &info.name, info.path.clone().unwrap_or_default(), before, after, runs_commands(info.summary.clone(), why)))
             }
         }
@@ -891,7 +897,7 @@ impl Ops {
             }
             Write::RestoreBackup { backup_id } => {
                 let info = sw::list_backups_detailed(&self.backups, usize::MAX).into_iter().find(|b| b.backup_id == *backup_id).ok_or("There is no backup with that id.")?;
-                self.guard_backup(&info)?;
+                self.guard_backup(&info, &d)?;
                 let out = sw::restore_any(&self.backups, backup_id, &self.confine(&d)).map_err(wm)?;
                 if info.parked {
                     sw::set_parked(&self.backups, backup_id, false);
