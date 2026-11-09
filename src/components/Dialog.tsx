@@ -31,11 +31,23 @@ export function Dialog({
 
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
+    const panelEl = panel.current;
+    // Focus goes back to where it was. When that element is gone (the answer removed the button
+    // that asked, like Discard after Cancel), it goes to the modal underneath so keys such as
+    // Escape still reach it, never to the page body.
+    const giveBack = () => {
+      if (before?.isConnected) {
+        before.focus?.({ preventScroll: true });
+        return;
+      }
+      const under = Array.from(document.querySelectorAll<HTMLElement>('[aria-modal="true"]')).filter((m) => m !== panelEl);
+      under[under.length - 1]?.focus({ preventScroll: true });
+    };
     // An element that asked for focus (autoFocus) keeps it; else the first input, else the panel.
-    if (panel.current?.contains(document.activeElement)) return () => before?.focus?.({ preventScroll: true });
-    const first = panel.current?.querySelector<HTMLElement>("input, textarea, select");
-    (first ?? panel.current)?.focus({ preventScroll: true });
-    return () => before?.focus?.({ preventScroll: true });
+    if (panelEl?.contains(document.activeElement)) return giveBack;
+    const first = panelEl?.querySelector<HTMLElement>("input, textarea, select");
+    (first ?? panelEl)?.focus({ preventScroll: true });
+    return giveBack;
   }, []);
 
   const onKey = (e: KeyboardEvent) => {

@@ -474,6 +474,28 @@ describe("Setup page: edit", () => {
     expect(screen.queryByRole("textbox", { name: /^Editing / })).not.toBeInTheDocument();
   });
 
+  it("still closes on Escape right after Discard: focus goes back into the sheet, not to the page", async () => {
+    const { dialog, ta } = await openEditor("Skills", /skill deep-research/);
+    fireEvent.input(ta, { target: { value: ta.value + "\nunsaved" } });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard your changes?" })).getByRole("button", { name: "Discard" }));
+    expect(screen.queryByRole("textbox", { name: /^Editing / })).not.toBeInTheDocument();
+    // The Cancel button that opened the question is gone; focus must not fall to the body.
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("closes the sheet on Escape even when focus has been lost to the page", async () => {
+    const { dialog } = await openEditor("Skills", /skill deep-research/);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("textbox", { name: /^Editing / })).not.toBeInTheDocument();
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("does not ask when nothing was changed", async () => {
     const { dialog } = await openEditor("Skills", /skill deep-research/);
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
