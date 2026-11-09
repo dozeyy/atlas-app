@@ -854,6 +854,15 @@ html.reduced .side-main {
   padding: 16px 0 16px 20px;
   border-radius: var(--r-card) 0 0 var(--r-card);
 }
+/* The keyboard ring goes round the whole card, in the card's own radius, not round the button's half of it. */
+html[data-input="keyboard"] .pick-main:focus-visible {
+  outline: none;
+}
+html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--r-card);
+}
 .pick-main > span {
   display: block;
   width: 100%;
