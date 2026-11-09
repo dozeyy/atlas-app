@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowsDownUp, ChatsCircle } from "@phosphor-icons/react";
 import { Button, Card, PageTitle } from "../components/controls";
 import { EmptyState } from "../components/EmptyState";
@@ -56,6 +56,12 @@ export function Sessions() {
   const { status, progress } = useUsageStatus();
 
   const [selected, setSelected] = useState<string | null>(() => peekPendingSession());
+  // The list is hidden, not unmounted, while a chat is open; a hidden pane forgets its scroll, so it is kept here.
+  const listPane = useRef<HTMLDivElement>(null);
+  const listTop = useRef(0);
+  useLayoutEffect(() => {
+    if (selected === null && listPane.current) listPane.current.scrollTop = listTop.current;
+  }, [selected]);
   const [text, setText] = useState("");
   const [project, setProject] = useState(() => peekPendingProject() ?? "");
   useEffect(() => {
@@ -192,8 +198,9 @@ export function Sessions() {
         <SessionDetailView id={selected} onBack={() => setSelected(null)} siblings={rows.map((r) => r.sessionId)} onJump={setSelected} />
       )}
 
-      <div hidden={selected !== null}>
-        <div className="toolbar-tall mb-4 flex items-center gap-2">
+      {/* The page is one window tall: the toolbar and the pick-up card stay put and only the list scrolls. */}
+      <div hidden={selected !== null} className={selected !== null ? "hidden" : "flex min-h-0 flex-1 flex-col"}>
+        <div className="toolbar-tall mb-4 flex shrink-0 items-center gap-2">
           <SearchField tall value={text} onChange={setText} label="Search chats" placeholder="Search titles, projects and messages" />
           <span aria-live="polite" className="min-w-[4.5rem] shrink-0 whitespace-nowrap px-1 text-caption tabular-nums text-ink-2">
             {count}
@@ -232,7 +239,7 @@ export function Sessions() {
           </OptionsMenu>
         </div>
         {note && (
-          <p role="status" className="-mt-2 mb-3 text-caption text-ink-2">
+          <p role="status" className="-mt-2 mb-3 shrink-0 text-caption text-ink-2">
             {note}
           </p>
         )}
@@ -282,7 +289,20 @@ export function Sessions() {
           />
         ) : (
           <>
-          {pick && <PickUp row={pick} onOpen={setSelected} />}
+          {pick && (
+            <div className="shrink-0">
+              <PickUp row={pick} onOpen={setSelected} />
+            </div>
+          )}
+          {/* Side room so a keyboard ring on a row is not cut by the pane's edge. */}
+          <div
+            ref={listPane}
+            onScroll={(e) => {
+              listTop.current = e.currentTarget.scrollTop;
+            }}
+            className="-mx-2 min-h-0 flex-1 overflow-y-auto px-2 pb-1"
+            data-testid="sessions-scroll"
+          >
           <Card>
             {byTime ? (
               groups.map((g, gi) => {
@@ -325,6 +345,7 @@ export function Sessions() {
               </div>
             )}
           </Card>
+          </div>
           </>
         )}
       </div>
