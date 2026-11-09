@@ -1,7 +1,7 @@
 // History shapes. Mirrors crates/core/src/history (serde camelCase).
 
 export type ChangeKind = "added" | "changed" | "removed" | "renamed" | "dated";
-export type ChangeSource = "atlas_snapshot" | "claude_backup" | "claude_edit" | "file_date";
+export type ChangeSource = "atlas_snapshot" | "claude_backup" | "claude_edit" | "atlas_mcp" | "atlas_assistant" | "file_date";
 
 /** Filter groups, in the order the chips show them. */
 export type HistoryGroup = "settings" | "skills" | "agents" | "hooks" | "mcp" | "instructions" | "other";

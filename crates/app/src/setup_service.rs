@@ -168,6 +168,12 @@ fn backups_dir(state: &AppState) -> std::path::PathBuf {
     state.data_dir.join("setup-backups")
 }
 
+/// One change at a time, also against the Atlas MCP server (a separate process that changes the
+/// same files through the same write path). Held until the change is done.
+fn write_lock(state: &AppState) -> Result<atlas_core::writelock::WriteGuard, String> {
+    atlas_core::writelock::acquire(&state.data_dir, std::time::Duration::from_secs(15)).map_err(|e| e.to_string())
+}
+
 impl SetupHub {
     /// Rescan now so the next snapshot already shows what just changed.
     fn refresh(&self, app: &AppHandle, state: &AppState) {
@@ -235,7 +241,7 @@ fn open_text_file(path: &std::path::Path) -> Result<(), String> {
     }
     use std::process::Command;
     #[cfg(windows)]
-    let r = Command::new("rundll32.exe").arg("url.dll,FileProtocolHandler").arg(&path).spawn();
+    let r = atlas_core::proc::quiet(Command::new("rundll32.exe").arg("url.dll,FileProtocolHandler").arg(&path)).spawn();
     #[cfg(target_os = "macos")]
     let r = Command::new("open").arg(&path).spawn();
     #[cfg(not(any(windows, target_os = "macos")))]
@@ -247,7 +253,7 @@ fn show_in_folder(path: &std::path::Path) -> Result<(), String> {
     let path = atlas_core::fsutil::vet_open_path(path)?;
     use std::process::Command;
     #[cfg(windows)]
-    let r = Command::new("explorer.exe").arg(format!("/select,{}", path.display())).spawn();
+    let r = atlas_core::proc::quiet(Command::new("explorer.exe").arg(format!("/select,{}", path.display()))).spawn();
     #[cfg(target_os = "macos")]
     let r = Command::new("open").arg("-R").arg(&path).spawn();
     #[cfg(not(any(windows, target_os = "macos")))]
@@ -260,6 +266,7 @@ fn show_in_folder(path: &std::path::Path) -> Result<(), String> {
 pub async fn setup_duplicate(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, name: String) -> Result<sw::DuplicateOutcome, String> {
     let (st, hub) = (state.inner().clone(), hub.inner().clone());
     blocking(move || {
+        let _lock = write_lock(&st)?;
         let i = st.setup_inputs(false).ok_or_else(|| "Your Claude folder is not ready yet.".to_string())?;
         let out = hub.current(&app, &st)?.duplicate_skill(&id, &name, &i.root.dir).map_err(|e| e.message())?;
         hub.refresh(&app, &st);
@@ -275,6 +282,7 @@ pub async fn setup_duplicate(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: 
 pub async fn setup_save(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String, text: String, stamp: String, force: Option<bool>, file: Option<String>) -> Result<SaveReply, String> {
     let (st, hub) = (state.inner().clone(), hub.inner().clone());
     blocking(move || {
+        let _lock = write_lock(&st)?;
         let d = hub.current(&app, &st)?;
         let plan = d.save_plan_file(&id, file.as_deref()).map_err(|e| e.message())?;
         match sw::apply_save(&plan, &text, &stamp, force.unwrap_or(false), &backups_dir(&st)) {
@@ -294,6 +302,7 @@ pub async fn setup_save(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: Strin
 pub async fn setup_delete(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String) -> Result<sw::DeleteOutcome, String> {
     let (st, hub) = (state.inner().clone(), hub.inner().clone());
     blocking(move || {
+        let _lock = write_lock(&st)?;
         let plan = hub.current(&app, &st)?.delete_plan(&id).map_err(|e| e.message())?;
         let out = sw::apply_delete(&plan, &backups_dir(&st)).map_err(|e| e.message())?;
         hub.refresh(&app, &st);
@@ -307,6 +316,7 @@ pub async fn setup_delete(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: Str
 pub async fn setup_undo(app: AppHandle, state: Info<'_>, hub: Hub<'_>, backup_id: String) -> Result<sw::UndoOutcome, String> {
     let (st, hub) = (state.inner().clone(), hub.inner().clone());
     blocking(move || {
+        let _lock = write_lock(&st)?;
         let out = sw::restore(&backups_dir(&st), &backup_id).map_err(|e| e.message())?;
         hub.refresh(&app, &st);
         Ok(out)
@@ -330,6 +340,7 @@ pub async fn setup_create_draft(state: Info<'_>, kind: String, name: String, eve
 pub async fn setup_create(app: AppHandle, state: Info<'_>, hub: Hub<'_>, kind: String, name: String, event: Option<String>, text: String) -> Result<sw::DeleteOutcome, String> {
     let (st, hub) = (state.inner().clone(), hub.inner().clone());
     blocking(move || {
+        let _lock = write_lock(&st)?;
         let i = st.setup_inputs(false).ok_or_else(|| "Your Claude folder is not ready yet.".to_string())?;
         let out = sw::create_apply(&kind, &name, event.as_deref(), &text, &CreateCtx { root: &i.root.dir, claude_json: &i.root.claude_json }, &backups_dir(&st)).map_err(|e| e.message())?;
         hub.refresh(&app, &st);

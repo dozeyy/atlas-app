@@ -7,6 +7,7 @@ import { ThemePicker } from "../components/ThemePicker";
 import { useAtlas } from "../state/AtlasProvider";
 import { pushToast } from "../state/toastStore";
 import { getBackend } from "../lib/ipc";
+import type { McpStatus } from "../lib/ipc";
 import { describeSource, formatBytes } from "../lib/labels";
 import { agoText } from "../lib/historyModel";
 import { plural } from "../lib/usage";
@@ -22,6 +23,7 @@ const KEEP_STEP = 10;
 const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "folder", label: "Claude folder" },
+  { id: "claude", label: "Claude Code" },
   { id: "data", label: "Your data" },
   { id: "history", label: "History" },
   { id: "about", label: "About" },
@@ -114,6 +116,49 @@ export function Settings() {
       dead = true;
     };
   }, [backend]);
+
+  // Claude Code connection: always read back from Claude's own settings file.
+  const [mcp, setMcp] = useState<McpStatus | null>(null);
+  const [mcpBusy, setMcpBusy] = useState(false);
+  const refreshMcp = () =>
+    backend
+      .mcpStatus()
+      .then(setMcp)
+      .catch(() => setMcp(null));
+  // Sandbox on or off changes which folder is read.
+  useEffect(() => {
+    let dead = false;
+    backend
+      .mcpStatus()
+      .then((s) => !dead && setMcp(s))
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [backend, cfg?.dir, sb.enabled]);
+  const changeMcp = async (connect: boolean) => {
+    setMcpBusy(true);
+    try {
+      await (connect ? backend.mcpConnect() : backend.mcpDisconnect());
+      pushToast({ message: connect ? "Connected. New Claude Code chats can use Atlas." : "Disconnected from Claude Code.", tone: "info" });
+    } catch (e) {
+      pushToast({ message: typeof e === "string" ? e : e instanceof Error ? e.message : "Could not change the connection.", tone: "error" });
+    } finally {
+      setMcpBusy(false);
+      void refreshMcp();
+    }
+  };
+  const mcpHint = !mcp
+    ? "Checking"
+    : mcp.sandbox
+      ? "Turn Sandbox mode off to connect. Connecting changes your real Claude settings."
+      : mcp.server === null
+        ? "The connector program is missing from this install. Reinstalling Atlas puts it back."
+        : mcp.state === "connected"
+          ? "Connected. Claude Code can list and edit your skills, agents and commands through Atlas, and every change is backed up first. Open a new chat to use it."
+          : mcp.state === "moved"
+            ? "Connected, but to a different copy of Atlas. Reconnect to point it here."
+            : "Not connected. Connecting lets Claude Code work with your setup through Atlas, with a backup before every change.";
 
   // Updates (About): the same state the sidebar icon shows; the button asks right now.
   const upd = useUpdate();
@@ -236,6 +281,30 @@ export function Settings() {
             )}
           </div>
         )}
+      </>
+    ),
+    claude: (
+      <>
+        <Row label="Atlas in Claude Code" hint={mcpHint}>
+          {mcp?.state === "connected" ? (
+            <Button onClick={() => void changeMcp(false)} disabled={mcpBusy || mcp.sandbox}>
+              {mcpBusy ? "Working" : "Disconnect"}
+            </Button>
+          ) : (
+            <Button variant="primary" onClick={() => void changeMcp(true)} disabled={mcpBusy || !mcp || mcp.sandbox || mcp.server === null}>
+              {mcpBusy ? "Working" : mcp?.state === "moved" ? "Reconnect" : "Connect"}
+            </Button>
+          )}
+        </Row>
+        {mcp?.server && <Row label="Connector program" hint={<Path>{mcp.server}</Path>} />}
+        {mcp && !mcp.cliFound && !mcp.sandbox && (
+          <p role="status" className="border-t border-line px-5 py-3 text-caption text-ink-2">
+            Claude Code's command was not found, so Atlas will edit its settings file directly, changing only the one entry for Atlas.
+          </p>
+        )}
+        <Row label="Private to you" tip="The connector talks to Claude Code through a pipe on this computer. It opens no network port, and it never reads or shows Claude's sign-in files or keys.">
+          <span className="text-body text-ink-2">No network access</span>
+        </Row>
       </>
     ),
     data: (

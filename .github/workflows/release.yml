@@ -178,6 +178,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # The Claude Code connector (atlas-mcp) rides inside the app: tauri.macos-bundle.conf.json
+      # bundles this universal binary as a resource (Contents/Resources/atlas-mcp).
+      - name: Build atlas-mcp (universal)
+        run: |
+          cargo build -p atlas-mcp --release --target aarch64-apple-darwin --target x86_64-apple-darwin
+          lipo -create -output target/atlas-mcp-universal target/aarch64-apple-darwin/release/atlas-mcp target/x86_64-apple-darwin/release/atlas-mcp
+
       - name: Build app, dmg and update bundle
         env:
           # GitHub sets CI=true, and Tauri then skips the Finder step that lays the icons out on
@@ -192,7 +199,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY=$(cat "$key")
           export TAURI_SIGNING_PRIVATE_KEY
           rm -f "$key" "$key.pub"
-          npx tauri build --target universal-apple-darwin
+          npx tauri build --target universal-apple-darwin --config crates/app/tauri.macos-bundle.conf.json
 
       - name: Build atlas-usage
         run: |

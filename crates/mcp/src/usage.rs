@@ -1,0 +1,126 @@
+//! `get_usage_summary`: Claude Code token use for a period, from the same engine and price
+//! list as the Atlas app (so the numbers match its charts). Read-only on the transcripts; the
+//! index lives in Atlas's own data folder and is only started when this tool is first used.
+
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use atlas_core::usage::query::{Cost, ScopeArgs, Tokens};
+use atlas_core::usage::{Event, EventSink, UsageConfig, UsageEngine, time};
+use serde_json::{Value, json};
+
+struct Quiet;
+impl EventSink for Quiet {
+    fn emit(&self, _: Event) {}
+    fn log(&self, _: &str) {}
+}
+
+/// How long the first call waits for the first read of the transcripts.
+const FIRST_PASS: Duration = Duration::from_secs(90);
+
+pub struct Usage {
+    projects_dir: PathBuf,
+    config_dir: PathBuf,
+    /// `<local app data>/atlas`, the same folder the app and `atlas-usage` use.
+    local_data: PathBuf,
+    engine: Mutex<Option<Arc<UsageEngine>>>,
+}
+
+impl Usage {
+    pub fn new(projects_dir: PathBuf, config_dir: PathBuf, local_data: PathBuf) -> Usage {
+        Usage { projects_dir, config_dir, local_data, engine: Mutex::new(None) }
+    }
+
+    fn engine(&self) -> Result<Arc<UsageEngine>, String> {
+        let mut slot = self.engine.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(e) = &*slot {
+            return Ok(Arc::clone(e));
+        }
+        if !self.projects_dir.is_dir() {
+            return Err("There are no Claude Code chats to read yet (the projects folder does not exist).".into());
+        }
+        let cache_dir = self.local_data.join("cli");
+        if atlas_core::usage::is_inside(&cache_dir, &self.projects_dir) || atlas_core::usage::is_inside(&cache_dir, &self.config_dir) {
+            return Err("Atlas's data folder must not be inside the Claude folder.".into());
+        }
+        std::fs::create_dir_all(&cache_dir).map_err(|e| format!("Atlas can't create its data folder: {e}"))?;
+        copy_pricing(&self.local_data, &cache_dir);
+        let mut cfg = UsageConfig::new(self.projects_dir.clone(), self.config_dir.clone(), cache_dir.clone(), cache_dir.join("cache.sqlite"));
+        cfg.watch = false;
+        cfg.week_starts_sunday = time::week_starts_sunday();
+        let e = UsageEngine::start(cfg, Arc::new(Quiet));
+        *slot = Some(Arc::clone(&e));
+        Ok(e)
+    }
+
+    /// `period`: today | yesterday | 7d | 30d | month | all. `project`: part of a project name.
+    pub fn summary(&self, period: &str, project: Option<&str>) -> Result<Value, String> {
+        let engine = self.engine()?;
+        if !engine.wait_pass(0, FIRST_PASS) {
+            return Err("Atlas is still reading your Claude Code chats for the first time. Try again in a minute.".into());
+        }
+        let today = engine.today_date();
+        let (from, to, label) = match period.trim().to_lowercase().as_str() {
+            "today" => (today.clone(), today.clone(), "today"),
+            "yesterday" => (time::add_days(&today, -1), time::add_days(&today, -1), "yesterday"),
+            "7d" | "week" | "" => (time::add_days(&today, -6), today.clone(), "the last 7 days"),
+            "30d" | "30" => (time::add_days(&today, -29), today.clone(), "the last 30 days"),
+            "month" => (format!("{}01", &today[..today.len().min(8)]), today.clone(), "this month"),
+            "all" => (engine.first_day()?.unwrap_or_else(|| today.clone()), today.clone(), "all time"),
+            other => return Err(format!("Unknown period \"{other}\". Use today, yesterday, 7d, 30d, month or all.")),
+        };
+        let args = |key: Option<String>| ScopeArgs { from: from.clone(), to: to.clone(), project_key: key, bucket: "day".into(), top: 5 };
+        let mut report = engine.scope_report(&args(None))?;
+        let mut project_name = None;
+        if let Some(p) = project.map(str::trim).filter(|p| !p.is_empty()) {
+            let q = p.to_lowercase();
+            let hit = report.projects.iter().find(|u| u.name.to_lowercase() == q).or_else(|| report.projects.iter().find(|u| u.name.to_lowercase().contains(&q) || u.path.to_lowercase().contains(&q)));
+            let Some(hit) = hit else {
+                return Err(format!("No project matching \"{p}\" has any use in {label}. Projects with use: {}.", report.projects.iter().take(10).map(|u| u.name.as_str()).collect::<Vec<_>>().join(", ")));
+            };
+            project_name = Some(hit.name.clone());
+            let key = hit.project_key.clone();
+            report = engine.scope_report(&args(Some(key)))?;
+        }
+        Ok(json!({
+            "period": label,
+            "from": report.from,
+            "to": report.to,
+            "project": project_name,
+            "chats": report.total.sessions,
+            "tokens": tokens(&report.total.tokens),
+            "estimatedCostUsd": cost_usd(&report.total.cost),
+            "costIsComplete": report.total.cost.complete,
+            "costNote": "An estimate at API prices, not a bill. Subscription plans are not billed per token.",
+            "byModel": report.by_model.iter().take(6).map(|m| json!({"model": m.model, "tokens": m.tokens.total, "estimatedCostUsd": cost_usd(&m.cost)})).collect::<Vec<_>>(),
+            "topProjects": report.projects.iter().take(5).map(|p| json!({"name": p.name, "tokens": p.tokens.total, "estimatedCostUsd": cost_usd(&p.cost), "chats": p.sessions})).collect::<Vec<_>>(),
+            "topChats": report.chats.iter().take(5).map(|c| json!({"name": c.name.clone().unwrap_or_else(|| format!("Chat in {}", c.project_name)), "project": c.project_name, "tokens": c.tokens.total, "estimatedCostUsd": cost_usd(&c.cost)})).collect::<Vec<_>>(),
+        }))
+    }
+}
+
+impl Drop for Usage {
+    fn drop(&mut self) {
+        if let Some(e) = self.engine.lock().unwrap_or_else(|p| p.into_inner()).take() {
+            e.stop();
+        }
+    }
+}
+
+fn tokens(t: &Tokens) -> Value {
+    json!({"total": t.total, "input": t.input, "output": t.output, "cacheWrite": t.cache_write5m + t.cache_write1h, "cacheRead": t.cache_read})
+}
+
+fn cost_usd(c: &Cost) -> Option<f64> {
+    c.usd.map(|v| (v * 100.0).round() / 100.0)
+}
+
+fn copy_pricing(app_dir: &Path, cache_dir: &Path) {
+    for name in ["pricing.json", "pricing.seed-hash"] {
+        let src = app_dir.join(name);
+        if src.is_file() {
+            let _ = std::fs::copy(&src, cache_dir.join(name));
+        }
+    }
+}

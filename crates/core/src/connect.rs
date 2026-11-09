@@ -1,0 +1,261 @@
+//! Connect / Disconnect: register the `atlas-mcp` server with Claude Code at user scope.
+//!
+//! The way in is Claude Code's own command (`claude mcp add-json -s user atlas <json>` and
+//! `claude mcp remove -s user atlas`), because it is the owner of `.claude.json`. When the
+//! command is missing, or ran but the file does not show the change, the fallback is the
+//! one-key edit from the recon (`setup_write::edit_json_keys`): back up, change only
+//! `mcpServers.atlas`, look again right before the swap, read it back and prove every other
+//! key is untouched. The connected state is always read from the file, never remembered.
+
+use std::ffi::OsStr;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+use serde::Serialize;
+use serde_json::{Map, Value, json};
+
+use crate::paths::{ConfigRoot, ConfigSource};
+use crate::setup_write::{self as sw, WriteError};
+
+/// The name the server is registered under.
+pub const SERVER_NAME: &str = "atlas";
+const CLI_TIMEOUT: Duration = Duration::from_secs(25);
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectState {
+    /// connected | notConnected | moved (registered, but to a different program path)
+    pub state: String,
+    /// The program the registration points at.
+    pub command: Option<String>,
+    /// The Atlas MCP program that ships with this app (None if it is missing).
+    pub server: Option<String>,
+    /// Claude Code's command was found on this computer.
+    pub cli_found: bool,
+    /// `.claude.json` could be read (false: the file is missing or unreadable).
+    pub config_readable: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectOutcome {
+    pub state: ConnectState,
+    /// cli | file: which way made the change.
+    pub via: String,
+    /// The backup made first, when the file was edited directly.
+    pub backup_id: Option<String>,
+}
+
+/// What `connect` and `disconnect` need to know.
+pub struct ConnectCtx<'a> {
+    pub root: &'a ConfigRoot,
+    /// The Atlas MCP program (absolute).
+    pub server: &'a Path,
+    /// Where backups go (Atlas's `setup-backups`).
+    pub backups: &'a Path,
+    /// Atlas's data folder when it was chosen on the command line (passed on to the server).
+    pub data_dir_flag: Option<&'a Path>,
+    /// Which `claude` command to use.
+    pub cli: CliChoice,
+}
+
+/// Where Claude Code's command comes from.
+pub enum CliChoice {
+    /// Look on `PATH` and in the installers' usual places.
+    Auto,
+    /// This exact program.
+    Path(PathBuf),
+    /// Pretend there is none (the file edit is used).
+    Missing,
+}
+
+impl CliChoice {
+    /// Is there a command to use?
+    pub fn found(&self) -> bool {
+        self.resolve().is_some()
+    }
+
+    fn resolve(&self) -> Option<PathBuf> {
+        match self {
+            CliChoice::Auto => {
+                let home = crate::paths::home_dir().unwrap_or_default();
+                find_claude_cli(std::env::var_os("PATH").as_deref(), &home)
+            }
+            CliChoice::Path(p) => Some(p.clone()),
+            CliChoice::Missing => None,
+        }
+    }
+}
+
+fn norm(p: &str) -> String {
+    p.replace('\\', "/").trim_end_matches('/').to_lowercase()
+}
+
+fn read_cj(path: &Path) -> Option<Value> {
+    let bytes = fs::read(path).ok()?;
+    serde_json::from_slice(bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&bytes)).ok()
+}
+
+/// Where `claude` lives: the first match on `PATH`, then the places the installers use.
+pub fn find_claude_cli(path_var: Option<&OsStr>, home: &Path) -> Option<PathBuf> {
+    let names: &[&str] = if cfg!(windows) { &["claude.exe", "claude.cmd", "claude.bat"] } else { &["claude"] };
+    let mut dirs: Vec<PathBuf> = path_var.map(|p| std::env::split_paths(p).collect()).unwrap_or_default();
+    dirs.push(home.join(".local").join("bin"));
+    dirs.push(home.join(".claude").join("local"));
+    if let Some(app) = std::env::var_os("APPDATA") {
+        dirs.push(PathBuf::from(app).join("npm"));
+    }
+    for d in dirs {
+        for n in names {
+            let p = d.join(n);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+/// The registration as read from the file, for the Settings card.
+pub fn state(root: &ConfigRoot, server: Option<&Path>, cli: bool) -> ConnectState {
+    let cj = read_cj(&root.claude_json);
+    let command = cj.as_ref().and_then(|v| v.get("mcpServers")).and_then(|m| m.get(SERVER_NAME)).and_then(|e| e.get("command")).and_then(Value::as_str).map(str::to_string);
+    let registered = cj.as_ref().and_then(|v| v.get("mcpServers")).and_then(|m| m.get(SERVER_NAME)).is_some();
+    let state = match (&command, server) {
+        (Some(c), Some(s)) if norm(c) == norm(&crate::setup::display_path(s)) => "connected",
+        (Some(_), _) => "moved",
+        (None, _) if registered => "moved",
+        _ => "notConnected",
+    };
+    ConnectState { state: state.into(), command, server: server.map(crate::setup::display_path), cli_found: cli, config_readable: cj.is_some() || !root.claude_json.exists() }
+}
+
+/// The JSON Claude Code stores for the server.
+pub fn server_json(ctx: &ConnectCtx) -> Value {
+    let mut args: Vec<String> = Vec::new();
+    // A config folder that is not the default is passed along, so the server reads the same one.
+    if !matches!(ctx.root.source, ConfigSource::Default) {
+        args.push("--config-dir".into());
+        args.push(crate::setup::display_path(&ctx.root.dir));
+    }
+    if let Some(d) = ctx.data_dir_flag {
+        args.push("--data-dir".into());
+        args.push(crate::setup::display_path(d));
+    }
+    json!({ "type": "stdio", "command": crate::setup::display_path(ctx.server), "args": args, "env": {} })
+}
+
+/// Run `claude mcp ...` quietly. Ok when it exits 0 within the time limit.
+fn run_cli(cli: &Path, args: &[&str], root: &ConfigRoot) -> Result<(), String> {
+    let mut cmd = Command::new(cli);
+    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    // The command finds `.claude.json` from this variable, so a custom folder is passed on.
+    if !matches!(root.source, ConfigSource::Default) {
+        cmd.env("CLAUDE_CONFIG_DIR", &root.dir);
+    }
+    crate::proc::quiet(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| format!("Could not start Claude Code's command: {e}"))?;
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(s)) if s.success() => return Ok(()),
+            Ok(Some(_)) => {
+                let mut msg = String::new();
+                if let Some(mut e) = child.stderr.take() {
+                    let _ = std::io::Read::read_to_string(&mut e, &mut msg);
+                }
+                return Err(msg.lines().next().unwrap_or("Claude Code's command did not finish.").to_string());
+            }
+            Ok(None) if start.elapsed() > CLI_TIMEOUT => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("Claude Code's command took too long.".into());
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(40)),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+}
+
+fn lock_dir(ctx: &ConnectCtx) -> Option<PathBuf> {
+    ctx.backups.parent().map(Path::to_path_buf)
+}
+
+/// Register the server. Returns the new state, read back from the file.
+pub fn connect(ctx: &ConnectCtx) -> Result<ConnectOutcome, String> {
+    crate::fsutil::check_write_allowed(&ctx.root.claude_json).map_err(|e| e.to_string())?;
+    if !ctx.server.is_file() {
+        return Err("The Atlas connector program is missing from this install, so there is nothing to connect. Reinstalling Atlas puts it back.".into());
+    }
+    let _guard = lock_dir(ctx).and_then(|d| crate::writelock::acquire(&d, Duration::from_secs(15)).ok());
+    let cli = ctx.cli.resolve();
+    let want = crate::setup::display_path(ctx.server);
+    let json = server_json(ctx);
+    let ok = |c: &ConnectCtx| state(c.root, Some(c.server), cli.is_some()).state == "connected";
+    let mut via = "file";
+    let mut backup_id = None;
+    if let Some(cli) = &cli {
+        // A registration that points elsewhere has to go first (add-json refuses a name in use).
+        if state(ctx.root, Some(ctx.server), true).command.is_some() {
+            let _ = run_cli(cli, &["mcp", "remove", "-s", "user", SERVER_NAME], ctx.root);
+        }
+        let text = serde_json::to_string(&json).map_err(|e| e.to_string())?;
+        if run_cli(cli, &["mcp", "add-json", "-s", "user", SERVER_NAME, &text], ctx.root).is_ok() && ok(ctx) {
+            via = "cli";
+        }
+    }
+    if via != "cli" {
+        let entry = json.clone();
+        let id = sw::edit_json_keys(&ctx.root.claude_json, ctx.backups, "connect-atlas", "mcpServer", SERVER_NAME, &["mcpServers"], |root| {
+            let obj = root.as_object_mut().ok_or_else(|| WriteError::Refused("The file is not a JSON object.".into()))?;
+            let servers = obj.entry("mcpServers").or_insert_with(|| Value::Object(Map::new()));
+            servers.as_object_mut().ok_or_else(|| WriteError::Refused("\"mcpServers\" in the file is not an object.".into()))?.insert(SERVER_NAME.into(), entry);
+            Ok(())
+        })
+        .map_err(|e| e.message())?;
+        sw::tag_backup(ctx.backups, &id, "user", "Connected Atlas to Claude Code");
+        backup_id = Some(id);
+    }
+    let st = state(ctx.root, Some(ctx.server), cli.is_some());
+    if st.state != "connected" {
+        return Err(format!("Atlas asked, but Claude's settings do not show it as connected (it points at {}). Please check {}.", st.command.as_deref().unwrap_or("nothing"), want));
+    }
+    Ok(ConnectOutcome { state: st, via: via.into(), backup_id })
+}
+
+/// Remove the registration. Only the `atlas` entry is touched.
+pub fn disconnect(ctx: &ConnectCtx) -> Result<ConnectOutcome, String> {
+    crate::fsutil::check_write_allowed(&ctx.root.claude_json).map_err(|e| e.to_string())?;
+    let _guard = lock_dir(ctx).and_then(|d| crate::writelock::acquire(&d, Duration::from_secs(15)).ok());
+    let cli = ctx.cli.resolve();
+    let gone = |c: &ConnectCtx| read_cj(&c.root.claude_json).and_then(|v| v.get("mcpServers").map(|m| m.get(SERVER_NAME).is_none())).unwrap_or(true);
+    let mut via = "file";
+    let mut backup_id = None;
+    if gone(ctx) {
+        let st = state(ctx.root, Some(ctx.server), cli.is_some());
+        return Ok(ConnectOutcome { state: st, via: "none".into(), backup_id: None });
+    }
+    if let Some(cli) = &cli
+        && run_cli(cli, &["mcp", "remove", "-s", "user", SERVER_NAME], ctx.root).is_ok()
+        && gone(ctx)
+    {
+        via = "cli";
+    }
+    if via != "cli" {
+        let id = sw::edit_json_keys(&ctx.root.claude_json, ctx.backups, "disconnect-atlas", "mcpServer", SERVER_NAME, &["mcpServers"], |root| {
+            if let Some(m) = root.get_mut("mcpServers").and_then(Value::as_object_mut) {
+                m.shift_remove(SERVER_NAME);
+            }
+            Ok(())
+        })
+        .map_err(|e| e.message())?;
+        sw::tag_backup(ctx.backups, &id, "user", "Disconnected Atlas from Claude Code");
+        backup_id = Some(id);
+    }
+    if !gone(ctx) {
+        return Err("Atlas asked, but Claude's settings still list it. Please check .claude.json.".into());
+    }
+    Ok(ConnectOutcome { state: state(ctx.root, Some(ctx.server), cli.is_some()), via: via.into(), backup_id })
+}

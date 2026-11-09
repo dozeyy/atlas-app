@@ -430,7 +430,7 @@ fn reveal(path: &std::path::Path) -> Result<(), String> {
         return Err("The price file has not been created yet.".into());
     }
     #[cfg(windows)]
-    let r = Command::new("explorer.exe").arg(format!("/select,{}", path.display())).spawn();
+    let r = atlas_core::proc::quiet(Command::new("explorer.exe").arg(format!("/select,{}", path.display()))).spawn();
     #[cfg(target_os = "macos")]
     let r = Command::new("open").arg("-R").arg(path).spawn();
     #[cfg(not(any(windows, target_os = "macos")))]

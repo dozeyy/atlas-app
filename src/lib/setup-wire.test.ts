@@ -54,7 +54,7 @@ const TYPE_KEYS = {
   } satisfies Record<keyof RawEdit, 1>,
   problem: { message: 1, line: 1 } satisfies Record<keyof Problem, 1>,
   deleteOutcome: { backupId: 1, name: 1, kind: 1, note: 1 } satisfies Record<keyof DeleteOutcome, 1>,
-  undoOutcome: { name: 1, kind: 1 } satisfies Record<keyof UndoOutcome, 1>,
+  undoOutcome: { name: 1, kind: 1, backupId: 1 } satisfies Record<keyof UndoOutcome, 1>,
   draft: { kind: 1, name: 1, title: 1, path: 1, language: 1, text: 1, folderName: 1, whereNote: 1 } satisfies Record<keyof Draft, 1>,
 };
 

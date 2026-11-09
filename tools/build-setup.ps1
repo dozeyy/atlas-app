@@ -1,5 +1,6 @@
 # Builds Atlas-Setup-Windows-x64.exe from a clean checkout, the same chain the release workflow runs:
-#   1. atlas-usage.exe (the command-line tool that ships next to atlas.exe)
+#   1. atlas-usage.exe and atlas-mcp.exe (the command-line tool and the Claude Code connector that
+#      ship next to atlas.exe)
 #   2. the Atlas installer (NSIS) with that tool inside, signed for in-app updates when the key exists
 #   3. atlas-setup with that installer embedded
 #
@@ -27,8 +28,8 @@ function Run($exe, $argList) {
 
 if (-not (Test-Path (Join-Path $root "node_modules"))) { Step "npm ci"; Run "npm" @("ci") }
 
-Step "atlas-usage (release)"
-Run "cargo" @("build", "-p", "atlas-cli", "--release")
+Step "atlas-usage and atlas-mcp (release)"
+Run "cargo" @("build", "-p", "atlas-cli", "-p", "atlas-mcp", "--release")
 
 # Stale installers must not be picked up as the payload.
 $nsisDir = Join-Path $root "target\release\bundle\nsis"

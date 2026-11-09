@@ -189,7 +189,7 @@ pub(crate) fn mtime_ms(m: &fs::Metadata) -> i64 {
         .unwrap_or(0)
 }
 
-pub(crate) fn display_path(p: &Path) -> String {
+pub fn display_path(p: &Path) -> String {
     strip_verbatim(p).to_string_lossy().into_owned()
 }
 

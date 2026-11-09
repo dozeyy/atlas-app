@@ -8,12 +8,16 @@
 //! of every Claude Code setup item).
 
 pub mod cache;
+pub mod connect;
 pub mod fsutil;
 pub mod history;
 pub mod launch;
 pub mod layout;
 pub mod now;
+pub mod ops;
 pub mod paths;
+pub mod pending;
+pub mod proc;
 pub mod quit_signal;
 pub mod readout;
 pub mod redact;
@@ -21,5 +25,6 @@ pub mod sandbox;
 pub mod search;
 pub mod settings;
 pub mod usage;
+pub mod writelock;
 pub mod setup;
 pub mod setup_write;
