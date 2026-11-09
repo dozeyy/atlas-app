@@ -215,6 +215,62 @@ export function groupItems(items: SetupItem[]): Group[] {
   return out;
 }
 
+/**
+ * A sorted list cut into runs of one place (Global, Project - atlas, a plugin, claude.ai). Items
+ * arrive sorted by place already, so a run is just the neighbours that share a label.
+ */
+export function scopeRuns(items: SetupItem[]): { label: string; items: SetupItem[] }[] {
+  const out: { label: string; items: SetupItem[] }[] = [];
+  for (const i of items) {
+    const last = out[out.length - 1];
+    if (last && last.label === i.scopeLabel) last.items.push(i);
+    else out.push({ label: i.scopeLabel, items: [i] });
+  }
+  return out;
+}
+
+export interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Where an arrow key moves among cards laid out in a wrapping grid. Left/Right step by one;
+ * Up/Down go to the card in the next row whose centre is nearest across. With no layout (all
+ * boxes empty) Up/Down step by one so the list still walks in reading order. Returns `from`
+ * when there is nowhere to go.
+ */
+export function gridMove(boxes: Box[], from: number, key: "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown"): number {
+  const last = boxes.length - 1;
+  if (from < 0 || from > last) return from;
+  if (key === "ArrowLeft") return Math.max(0, from - 1);
+  if (key === "ArrowRight") return Math.min(last, from + 1);
+  const down = key === "ArrowDown";
+  if (boxes.every((b) => b.width === 0)) return Math.max(0, Math.min(last, from + (down ? 1 : -1)));
+  const me = boxes[from]!;
+  const cx = me.left + me.width / 2;
+  let rowTop: number | null = null;
+  for (const b of boxes) {
+    const beyond = down ? b.top > me.top + 4 : b.top < me.top - 4;
+    if (!beyond) continue;
+    if (rowTop === null || (down ? b.top < rowTop : b.top > rowTop)) rowTop = b.top;
+  }
+  if (rowTop === null) return from;
+  let best = from;
+  let bestDist = Infinity;
+  boxes.forEach((b, i) => {
+    if (Math.abs(b.top - rowTop!) > 4) return;
+    const d = Math.abs(b.left + b.width / 2 - cx);
+    if (d < bestDist) {
+      best = i;
+      bestDist = d;
+    }
+  });
+  return best;
+}
+
 /** Permissions split by what the rule does. */
 export function permissionBuckets(items: SetupItem[]): { id: "deny" | "ask" | "allow" | "other"; items: SetupItem[] }[] {
   const out = { deny: [] as SetupItem[], ask: [] as SetupItem[], allow: [] as SetupItem[], other: [] as SetupItem[] };

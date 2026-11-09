@@ -3,7 +3,20 @@
 
 import type { Backend, SettingsPatch } from "./ipc";
 import type { AppInfo, ConfigView, Platform, Settings } from "./types";
-import type { CostReport, CreateKind, DeleteOutcome, Draft, Problem, RawEdit, SaveReply, SetupSnapshot, SourceView, UndoOutcome } from "./setup-types";
+import type {
+  CostReport,
+  CreateKind,
+  DeleteOutcome,
+  Draft,
+  DuplicateOutcome,
+  Problem,
+  RawEdit,
+  SaveReply,
+  SetupSnapshot,
+  SkillFile,
+  SourceView,
+  UndoOutcome,
+} from "./setup-types";
 import { MockSetupWorld, mockSetupReveal, mockSetupSource } from "./setup-mock";
 import { mockCostReport } from "./setup-cost-mock";
 import { MockUsage } from "./mockUsage";
@@ -36,6 +49,7 @@ function loadSettings(): Settings {
     sandbox: false,
     launchAnimation: true,
     closeToTray: false,
+    notifyOnFinish: false,
     historyKeepVersions: 50,
   };
   try {
@@ -209,6 +223,7 @@ export class MockBackend {
   readonly now = new MockNow();
   nowSnapshot: Backend["nowSnapshot"] = () => this.now.nowSnapshot();
   onNowUpdate: Backend["onNowUpdate"] = (cb) => this.now.onNowUpdate(cb);
+  onNowFinished: Backend["onNowFinished"] = (cb) => this.now.onNowFinished(cb);
 
   async onInfo(cb: (i: AppInfo) => void): Promise<() => void> {
     this.listeners.add(cb);
@@ -240,16 +255,30 @@ export class MockBackend {
     return this.world.onChange(() => cb(++v));
   }
 
-  async setupItemRaw(id: string, reveal = false): Promise<RawEdit> {
-    return this.world.raw(id, reveal);
+  async setupItemRaw(id: string, reveal = false, file?: string): Promise<RawEdit> {
+    return this.world.raw(id, reveal, file);
   }
 
-  async setupValidate(id: string, text: string): Promise<Problem[]> {
-    return this.world.validate(id, text);
+  async setupValidate(id: string, text: string, file?: string): Promise<Problem[]> {
+    return this.world.validate(id, text, file);
   }
 
-  async setupSave(id: string, text: string, stamp: string, force = false): Promise<SaveReply> {
-    return this.world.save(id, text, stamp, force);
+  async setupSave(id: string, text: string, stamp: string, force = false, file?: string): Promise<SaveReply> {
+    return this.world.save(id, text, stamp, force, file);
+  }
+
+  async setupSkillFiles(id: string): Promise<SkillFile[]> {
+    return this.world.skillFiles(id);
+  }
+
+  /** What the page asked the shell to show or open (tests read it). */
+  readonly opened: { id: string; file: string | undefined; open: boolean }[] = [];
+  async setupOpenFile(id: string, file: string | undefined, open: boolean): Promise<void> {
+    this.opened.push({ id, file, open });
+  }
+
+  async setupDuplicate(id: string, name: string): Promise<DuplicateOutcome> {
+    return this.world.duplicate(id, name);
   }
 
   async setupDelete(id: string): Promise<DeleteOutcome> {

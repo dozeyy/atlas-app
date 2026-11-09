@@ -1,10 +1,13 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, Copy, Eye, EyeSlash, Lock, PencilSimple, Trash, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowSquareOut, Check, Copy, CopySimple, Eye, EyeSlash, FolderOpen, Lock, PencilSimple, Trash, WarningCircle, X } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { Dialog } from "../Dialog";
+import { DuplicateDialog } from "./DuplicateDialog";
 import { ItemEditor } from "./ItemEditor";
+import { errorText } from "../../lib/setup-actions";
+import { pushToast } from "../../state/toastStore";
 import { Preview } from "./Preview";
 import { getBackend } from "../../lib/ipc";
 import { splitFrontmatter } from "../../lib/markdown";
@@ -338,19 +341,41 @@ export function DetailSheet({
   const panel = useRef<HTMLDivElement>(null);
   const meta = KIND_BY_ID[item.kind];
   const [editing, setEditing] = useState(false);
+  const [editFile, setEditFile] = useState<string | undefined>(undefined);
   const [dirty, setDirty] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [discard, setDiscard] = useState<"close" | "stop" | null>(null);
 
   // A different item always opens on its details, never inside the last one's editor.
   useEffect(() => {
     setEditing(false);
+    setEditFile(undefined);
     setDirty(false);
+    setDuplicating(false);
   }, [item.id]);
 
   const leaveEdit = () => {
     setEditing(false);
+    setEditFile(undefined);
     setDirty(false);
   };
+  const startEdit = (file?: string) => {
+    setEditFile(file);
+    setEditing(true);
+  };
+  const reachFile = async (open: boolean) => {
+    try {
+      await getBackend().setupOpenFile(item.id, undefined, open);
+    } catch (e) {
+      pushToast({ message: errorText(e, open ? "Atlas could not open that file." : "Atlas could not show that file."), tone: "error" });
+    }
+  };
+  const canDuplicate = item.kind === "skill" && item.scope === "user" && item.path !== null;
+  const taken = useMemo(
+    () => new Set(Array.from(all.values()).filter((i) => i.kind === "skill" && i.scope === "user").map((i) => i.name)),
+    [all],
+  );
+  const hasFile = item.path !== null && item.scope !== "connector";
   const tryClose = () => (editing && dirty ? setDiscard("close") : onClose());
   const tryStop = () => (dirty ? setDiscard("stop") : leaveEdit());
 
@@ -433,12 +458,30 @@ export function DetailSheet({
           </button>
         </header>
 
-        {(item.editable || item.deletable || item.locked) && (
+        {(item.editable || item.deletable || item.locked || hasFile) && (
           <div className="flex flex-wrap items-center gap-2 px-6 pt-4">
             {item.editable && !editing && (
-              <Button variant="primary" onClick={() => setEditing(true)}>
+              <Button variant="primary" onClick={() => startEdit()}>
                 <PencilSimple size={14} weight="bold" aria-hidden="true" />
                 Edit
+              </Button>
+            )}
+            {hasFile && (
+              <Button onClick={() => void reachFile(false)} title="Show this in your file manager">
+                <FolderOpen size={14} aria-hidden="true" />
+                Show in folder
+              </Button>
+            )}
+            {hasFile && !editing && (
+              <Button onClick={() => void reachFile(true)} title="Open this file in the program your computer uses for it">
+                <ArrowSquareOut size={14} aria-hidden="true" />
+                Open in editor
+              </Button>
+            )}
+            {canDuplicate && !editing && (
+              <Button onClick={() => setDuplicating(true)}>
+                <CopySimple size={14} aria-hidden="true" />
+                Duplicate
               </Button>
             )}
             {item.deletable && !editing && (
@@ -458,7 +501,7 @@ export function DetailSheet({
         )}
 
         {editing ? (
-          <ItemEditor item={item} onCancel={tryStop} onSaved={leaveEdit} onDirtyChange={setDirty} />
+          <ItemEditor key={item.id} item={item} initialFile={editFile} onCancel={tryStop} onDirtyChange={setDirty} />
         ) : (
           <>
         {item.description && <p className="selectable px-6 py-4 text-lead text-ink">{item.description}</p>}
@@ -550,8 +593,19 @@ export function DetailSheet({
           <Section title="Files that come with it">
             <ul className="space-y-1">
               {item.attachments.map((a) => (
-                <li key={a} className="mono selectable break-all text-ink">
-                  {a}
+                <li key={a} className="mono flex items-center gap-2 text-ink">
+                  <span className="selectable min-w-0 flex-1 break-all">{a}</span>
+                  {item.kind === "skill" && item.editable && (
+                    <button
+                      type="button"
+                      aria-label={`Edit ${a}`}
+                      onClick={() => startEdit(a)}
+                      className="press inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-control px-2 text-body text-ink-2 hover:bg-raised hover:text-ink"
+                    >
+                      <PencilSimple size={14} aria-hidden="true" />
+                      Edit
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -563,6 +617,7 @@ export function DetailSheet({
         )}
         <div className="h-6 shrink-0" />
       </div>
+      {duplicating && <DuplicateDialog item={item} taken={taken} onClose={() => setDuplicating(false)} />}
       {discard && (
         <Dialog
           alert

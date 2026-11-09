@@ -3,13 +3,14 @@
 // All data here is invented.
 
 import { EMPTY_NOW } from "./nowTypes";
-import type { NowSnapshot } from "./nowTypes";
+import type { NowFinished, NowSnapshot } from "./nowTypes";
 
 type Unlisten = () => void;
 
 export class MockNow {
   private snap: NowSnapshot = EMPTY_NOW;
   private listeners = new Set<(s: NowSnapshot) => void>();
+  private finishedListeners = new Set<(f: NowFinished) => void>();
 
   constructor() {
     // Dev server only: lets a person (or a screenshot script) drive the page by hand.
@@ -24,12 +25,24 @@ export class MockNow {
     for (const l of this.listeners) l(next);
   }
 
+  /** Test and demo hook: a chat just stopped. */
+  finish(f: NowFinished): void {
+    for (const l of this.finishedListeners) l(f);
+  }
+
   nowSnapshot = async (): Promise<NowSnapshot> => this.snap;
 
   onNowUpdate = async (cb: (s: NowSnapshot) => void): Promise<Unlisten> => {
     this.listeners.add(cb);
     return () => {
       this.listeners.delete(cb);
+    };
+  };
+
+  onNowFinished = async (cb: (f: NowFinished) => void): Promise<Unlisten> => {
+    this.finishedListeners.add(cb);
+    return () => {
+      this.finishedListeners.delete(cb);
     };
   };
 }

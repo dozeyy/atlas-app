@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import type { KeyboardEvent, RefObject } from "react";
 import { MagnifyingGlass, X } from "@phosphor-icons/react";
 import { SegmentedControl, Toggle } from "../controls";
 import { OptionField, OptionsMenu } from "../OptionsMenu";
@@ -25,6 +25,7 @@ export function Toolbar({
   projects,
   hidden,
   searchRef,
+  onSearchKeyDown,
   shortcut,
   shown,
   total,
@@ -35,6 +36,8 @@ export function Toolbar({
   projects: SetupProject[];
   hidden: HiddenCounts;
   searchRef: RefObject<HTMLInputElement | null>;
+  /** Extra key handling on the search box (Down into the list). */
+  onSearchKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
   shortcut: string;
   shown: number;
   total: number;
@@ -58,6 +61,7 @@ export function Toolbar({
             value={filters.query}
             onChange={(e) => onChange({ query: e.target.value })}
             onKeyDown={(e) => {
+              onSearchKeyDown?.(e);
               if (e.key === "Escape" && filters.query) {
                 e.preventDefault();
                 onChange({ query: "" });

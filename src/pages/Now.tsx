@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import {
   Binoculars,
+  CheckCircle,
   Coffee,
   DotsThree,
   FilePlus,
@@ -19,16 +20,15 @@ import {
 import { PageTitle } from "../components/controls";
 import { Topo } from "../components/Topo";
 import { prefersReducedMotion } from "../lib/motion";
-import { ago, clock } from "../lib/nowFormat";
+import { ago, clock, groupChats } from "../lib/nowFormat";
 import type { NowChat, NowHelper, NowLast, NowStep } from "../lib/nowTypes";
 import { useClimb, useClock, useNowSnapshot } from "../lib/useNow";
 import { compact, formatDuration, modelLabel, plural, tokenHint } from "../lib/usage";
 import type { Cost } from "../lib/usageTypes";
 import "../styles/now.css";
 
-/** More chats than this and the cards turn into a compact grid. */
+/** More running chats than this and the cards turn into a compact grid that scrolls. */
 const STACK_MAX = 3;
-const GRID_MAX = 5;
 const HELPERS_SHOWN = 3;
 const FILES_SHOWN = 3;
 /** A step stays marked as new this long, so a second one landing does not cut its entrance short. */
@@ -58,29 +58,43 @@ function KindIcon({ kind, size }: { kind: string; size: number }) {
 
 export function Now() {
   const snap = useNowSnapshot();
+  const groups = useMemo(() => (snap ? groupChats(snap) : null), [snap]);
+  // One clock for every "x min ago" on the page; it only ticks when something shows one.
+  const idle = !!groups && (groups.waiting.length > 0 || groups.finished.length > 0);
+  const now = useClock(idle, 30_000);
+
   return (
     <>
       <PageTitle title="Now" />
       <div className="now-root">
-        {snap === null ? null : !snap.watching ? (
+        {snap === null || groups === null ? null : !snap.watching ? (
           <Quiet title="No Claude folder found" />
-        ) : snap.chats.length === 0 ? (
-          <Quiet title={snap.last ? (snap.last.title ?? snap.last.project) : "No chats yet"} last={snap.last} />
-        ) : snap.chats.length <= STACK_MAX ? (
-          <div className="now-stack" style={{ ["--n" as string]: snap.chats.length }}>
-            {snap.chats.map((c) => (
-              <ChatCard key={c.sessionId} chat={c} />
-            ))}
-          </div>
         ) : (
-          <div className="now-grid">
-            {snap.chats.slice(0, GRID_MAX).map((c) => (
-              <ChatCard key={c.sessionId} chat={c} />
-            ))}
-            {snap.chats.length > GRID_MAX && (
-              <p className="now-more chip">{`+${snap.chats.length - GRID_MAX} more`}</p>
+          <>
+            {groups.running.length > 0 ? (
+              <Running chats={groups.running} />
+            ) : groups.waiting.length === 0 ? (
+              <Quiet title={groups.finished.length > 0 ? "Nothing running" : "No chats yet"} last={groups.finished[0] ?? null} now={now} />
+            ) : null}
+            {(groups.waiting.length > 0 || groups.finished.length > 0) && (
+              <div className="now-band" data-fill={groups.running.length === 0 && groups.waiting.length > 0 ? "" : undefined} data-cols={(groups.waiting.length > 0 ? 1 : 0) + (groups.finished.length > 0 ? 1 : 0)}>
+                {groups.waiting.length > 0 && (
+                  <List title="Waiting for you" count={groups.waiting.length}>
+                    {groups.waiting.map((c) => (
+                      <WaitRow key={c.sessionId} chat={c} now={now} />
+                    ))}
+                  </List>
+                )}
+                {groups.finished.length > 0 && (
+                  <List title="Finished recently" count={groups.finished.length}>
+                    {groups.finished.map((l) => (
+                      <DoneRow key={l.sessionId} last={l} now={now} />
+                    ))}
+                  </List>
+                )}
+              </div>
             )}
-          </div>
+          </>
         )}
       </div>
     </>
@@ -89,29 +103,117 @@ export function Now() {
 
 // ---- nothing running -----------------------------------------------------------------
 
-function Quiet({ title, last }: { title: string; last?: NowLast | null }) {
-  const now = useClock(!!last, 30_000);
+function Quiet({ title, last, now }: { title: string; last?: NowLast | null; now?: number }) {
   return (
-    <section className="now-quiet card">
+    <section className="now-quiet card" aria-label={title}>
       <Topo seed={21} />
       <div className="now-quiet-tile">
         <Binoculars size={28} weight="duotone" aria-hidden="true" />
       </div>
       <h2 className="d d-title now-quiet-title">{title}</h2>
-      {last && (
-        <>
-          <div className="now-chips">
-            {last.title && <span className="chip">{last.project}</span>}
-            {last.model && <span className="chip">{modelLabel(last.model)}</span>}
-          </div>
-          <p className="now-quiet-when">{`Ended ${ago(last.endedMs, now)}`}</p>
-        </>
-      )}
+      {last && now !== undefined && <p className="now-quiet-when">{`Last chat ended ${ago(last.endedMs, now)}`}</p>}
     </section>
   );
 }
 
-// ---- a running chat ------------------------------------------------------------------
+// ---- lists: waiting for you, finished recently ----------------------------------------
+
+function List({ title, count, children }: { title: string; count: number; children: ReactNode }) {
+  return (
+    <section className="now-list" aria-label={title}>
+      <h2 className="now-list-head">
+        <span>{title}</span>
+        <span className="now-count">{count}</span>
+      </h2>
+      <ul className="now-rows">{children}</ul>
+    </section>
+  );
+}
+
+function Stat({ fig, cap, title, optional }: { fig: string; cap: string; title?: string; optional?: boolean }) {
+  return (
+    <div className="now-stat" title={title} data-opt={optional || undefined}>
+      <p className="d d-small now-stat-fig">{fig}</p>
+      <p className="nc-cap">{cap}</p>
+    </div>
+  );
+}
+
+function WaitRow({ chat, now }: { chat: NowChat; now: number }) {
+  const name = chat.title ?? chat.project;
+  const asking = chat.doing.kind === "ask";
+  const line = [chat.doing.verb, chat.doing.target].filter(Boolean).join(" ");
+  return (
+    <li className="now-row card" data-state={asking ? "ask" : "wait"}>
+      <div className="now-tile" aria-hidden="true">
+        <KindIcon kind={asking ? "ask" : "wait"} size={22} />
+      </div>
+      <div className="now-row-main">
+        <h3 className="now-row-title" title={name}>
+          {name}
+        </h3>
+        <p className="now-row-sub">
+          {chat.title && <span className="chip">{chat.project}</span>}
+          <span className="now-row-doing" title={line}>
+            {line}
+          </span>
+        </p>
+      </div>
+      {chat.workedMs !== null && <Stat fig={formatDuration(chat.workedMs)} cap="Last turn" optional />}
+      <Stat fig={compact(chat.tokens)} cap="Tokens" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))} />
+      <Stat fig={ago(chat.lastWriteMs, now).replace(/ ago$/, "")} cap="Stopped" />
+    </li>
+  );
+}
+
+function DoneRow({ last, now }: { last: NowLast; now: number }) {
+  const name = last.title ?? last.project;
+  return (
+    <li className="now-row card" data-state="done">
+      <div className="now-tile" aria-hidden="true">
+        <CheckCircle size={22} weight="duotone" />
+      </div>
+      <div className="now-row-main">
+        <h3 className="now-row-title" title={name}>
+          {name}
+        </h3>
+        <p className="now-row-sub">
+          {last.title && <span className="chip">{last.project}</span>}
+          {last.model && <span className="chip">{modelLabel(last.model)}</span>}
+        </p>
+      </div>
+      {last.tokens !== null && <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false))} />}
+      <Stat fig={ago(last.endedMs, now).replace(/ ago$/, "")} cap="Ended" />
+    </li>
+  );
+}
+
+// ---- running chats ---------------------------------------------------------------------
+
+function Running({ chats }: { chats: NowChat[] }) {
+  const stacked = chats.length <= STACK_MAX;
+  return (
+    <section className="now-run" aria-label="Running">
+      <h2 className="now-list-head">
+        <span>Running</span>
+        <span className="now-count">{chats.length}</span>
+      </h2>
+      {stacked ? (
+        <div className="now-stack" style={{ ["--n" as string]: chats.length }}>
+          {chats.map((c) => (
+            <ChatCard key={c.sessionId} chat={c} />
+          ))}
+        </div>
+      ) : (
+        <div className="now-grid">
+          {chats.map((c) => (
+            <ChatCard key={c.sessionId} chat={c} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
 /** The live snapshot carries a dollar estimate and a flag, not a full Cost: rebuild one for the hover. */
 function nowCost(usd: number | null, unpriced: boolean): Cost {
@@ -127,45 +229,45 @@ function ChatCard({ chat }: { chat: NowChat }) {
   return (
     <article className="now-card card" data-state={chat.state} aria-label={name}>
       <div className="nc-body">
-      <header className="nc-head">
-        <h2 className="d d-figure nc-title" title={name}>
-          {name}
-        </h2>
-        <div className="now-chips">
-          {chat.title && <span className="chip">{chat.project}</span>}
-          {chat.model && <span className="chip">{modelLabel(chat.model)}</span>}
-          {out > 0 && <span className="chip chip-clay nc-helpers-chip">{plural(out, "helper")}</span>}
-        </div>
-      </header>
-
-      <Elapsed chat={chat} />
-
-      <section className="nc-doing" aria-label="Doing now">
-        <div className="nc-doing-row">
-          <div className="nc-tile" data-kind={chat.doing.kind}>
-            <KindIcon kind={chat.doing.kind} size={28} />
+        <header className="nc-head">
+          <h3 className="d d-figure nc-title" title={name}>
+            {name}
+          </h3>
+          <div className="now-chips">
+            {chat.title && <span className="chip">{chat.project}</span>}
+            {chat.model && <span className="chip">{modelLabel(chat.model)}</span>}
+            {out > 0 && <span className="chip chip-clay nc-helpers-chip">{plural(out, "helper")}</span>}
           </div>
-          <div className="nc-doing-text" key={chat.doing.verb + "|" + (chat.doing.target ?? "")}>
-            <p className="d nc-verb">{chat.doing.verb}</p>
-            {chat.doing.target && (
-              <p className="nc-target" title={chat.doing.target}>
-                {chat.doing.target}
-              </p>
-            )}
+        </header>
+
+        <Elapsed chat={chat} />
+
+        <section className="nc-doing" aria-label="Doing now">
+          <div className="nc-doing-row">
+            <div className="nc-tile" data-kind={chat.doing.kind}>
+              <KindIcon kind={chat.doing.kind} size={28} />
+            </div>
+            <div className="nc-doing-text" key={chat.doing.verb + "|" + (chat.doing.target ?? "")}>
+              <p className="d nc-verb">{chat.doing.verb}</p>
+              {chat.doing.target && (
+                <p className="nc-target" title={chat.doing.target}>
+                  {chat.doing.target}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
-        <span className={`nc-sweep${working ? " is-on" : ""}`} aria-hidden="true" />
-      </section>
+          <span className={`nc-sweep${working ? " is-on" : ""}`} aria-hidden="true" />
+        </section>
 
-      <section className="nc-numbers" aria-label="Tokens used">
-        <div className="nc-spend" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))}>
-          <p className="d nc-spend-fig">{compact(Math.round(tokens))}</p>
-          <p className="nc-cap">Tokens</p>
-        </div>
-      </section>
+        <section className="nc-numbers" aria-label="Tokens used">
+          <div className="nc-spend" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))}>
+            <p className="d nc-spend-fig">{compact(Math.round(tokens))}</p>
+            <p className="nc-cap">Tokens</p>
+          </div>
+        </section>
 
-      <People chat={chat} />
-      <Trail steps={chat.steps} working={working} />
+        <People chat={chat} />
+        <Trail steps={chat.steps} working={working} />
       </div>
     </article>
   );
@@ -260,8 +362,8 @@ function Trail({ steps, working }: { steps: NowStep[]; working: boolean }) {
         const el = nodes.current.get(id);
         if (before !== undefined && Math.abs(before - left) > 1 && el && typeof el.animate === "function") {
           el.animate([{ transform: `translateX(${before - left}px)` }, { transform: "none" }], {
-            duration: 320,
-            easing: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+            duration: 260,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
           });
         }
       });
@@ -283,9 +385,10 @@ function Trail({ steps, working }: { steps: NowStep[]; working: boolean }) {
           className={`nc-step${fresh.includes(s.id) ? " is-new" : ""}`}
           data-done={s.done || undefined}
           data-helper={s.by ? "" : undefined}
+          data-now={working && s.id === newest ? "" : undefined}
           title={[s.verb, s.target, s.by ? `by ${s.by}` : ""].filter(Boolean).join(" ")}
         >
-          {working && s.id === newest ? <span className="spark nc-spark" aria-hidden="true" /> : <span className="nc-dot" aria-hidden="true" />}
+          <span className="nc-dot" aria-hidden="true" />
           <span className="nc-step-verb">{s.verb}</span>
           <span className="nc-step-target">{s.target ?? ""}</span>
         </li>
