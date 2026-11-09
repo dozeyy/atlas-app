@@ -87,6 +87,11 @@ async function waitForIndex(log: Driver["log"]): Promise<void> {
 
 type Stop = { name: string; settle: number; go: (d: Driver) => Promise<string | void> };
 
+/** The posters in the story (the cover, the data slides and the card). A shorter story just repeats its last shot. */
+const WRAPPED_SLIDES = 18;
+/** A poster's clock runs up to 3 s: wait for it to finish, so a shot shows the finished poster. */
+const WRAPPED_SETTLE = 3600;
+
 const go = (n: number) => async () => {
   press(String(n), true);
 };
@@ -140,10 +145,17 @@ const STOPS: Stop[] = [
       if (!clickText('[role="menuitem"]', "Keyboard shortcuts")) return "no Keyboard shortcuts entry";
     },
   },
-  { name: "wrapped-1", settle: 2400, go: async () => (press("Escape"), await sleep(300), press("7", true)) },
-  { name: "wrapped-2", settle: 2400, go: async () => press("ArrowRight") },
-  { name: "wrapped-3", settle: 2400, go: async () => press("ArrowRight") },
-  { name: "wrapped-4", settle: 2400, go: async () => press("ArrowRight") },
+  { name: "wrapped-1", settle: WRAPPED_SETTLE, go: async () => (press("Escape"), await sleep(300), press("7", true)) },
+  // Every other poster, by its own progress segment, so a pass that skips some still lands on the right one.
+  ...Array.from({ length: WRAPPED_SLIDES - 1 }, (_, i): Stop => ({
+    name: `wrapped-${i + 2}`,
+    settle: WRAPPED_SETTLE,
+    go: async () => {
+      const seg = await waitFor<HTMLElement>(`.pr-prog-hit[aria-label^="Slide ${i + 2} of"]`, 3000);
+      if (!seg) return `no slide ${i + 2}`;
+      seg.click();
+    },
+  })),
 ];
 
 async function runPass(d: Driver, pass: Pass): Promise<void> {
@@ -206,7 +218,7 @@ export async function startTour(): Promise<void> {
   await sleep(1200);
   await d.log(`tour: ${real ? "app" : "browser"}, platform ${document.documentElement.dataset.platform}`);
   await waitForIndex(d.log);
-  const small = ["dashboard", "sessions", "session-detail", "toolkit", "toolkit-skills", "skill-item", "settings", "wrapped-1"];
+  const small = ["dashboard", "sessions", "session-detail", "toolkit", "toolkit-skills", "skill-item", "settings", "wrapped-1", "wrapped-3", "wrapped-9", "wrapped-18"];
   const passes: Pass[] = real
     ? [
         { prefix: "light", theme: "light", size: [1280, 800] },

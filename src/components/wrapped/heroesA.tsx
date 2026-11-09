@@ -286,7 +286,7 @@ export function DaysHero({ chart, box }: P<"heat">) {
           {cells.map((c) => (
             <rect
               key={c.i}
-              className={c.run ? "f-fg ln" : `hb${c.band}`}
+              className={c.run ? `hb${c.band} hb-run` : `hb${c.band}`}
               x={c.x}
               y={c.y}
               width={lay.size}
@@ -319,9 +319,13 @@ export function BiggestHero({ chart, box }: P<"tower">) {
   const { els, ref } = useEls();
   const label = useEl();
   const bw = Math.min(250, box.w * 0.46);
-  const bh = Math.min(84, (box.floor - box.ceil - 150) / tw.blocks);
+  // The stack is as tall as the ratio: whole blocks plus the share of one more, and a gap's worth of room when it is capped.
+  const units = tw.whole + tw.part + (tw.capped ? 0.5 : 0);
+  const bh = Math.min(84, (box.floor - box.ceil - 150) / units);
   const tx = box.w * 0.64 - bw / 2;
-  const top = box.floor - tw.blocks * bh;
+  const top = box.floor - (tw.whole + tw.part) * bh;
+  const cutY = top + bh * 0.45;
+  const cut = useEl();
   useTick((t) => {
     for (let i = 0; i < tw.blocks + 1; i++) {
       const { p, landed } = at(t, i, tw.blocks + 1);
@@ -329,6 +333,7 @@ export function BiggestHero({ chart, box }: P<"tower">) {
     }
     const last = at(t, tw.blocks, tw.blocks + 1);
     fade(label.el.current, after(last.p, 0.8));
+    fade(cut.el.current, after(last.p, 0.8));
   });
   return (
     <HeroSvg box={box}>
@@ -345,23 +350,37 @@ export function BiggestHero({ chart, box }: P<"tower">) {
         >
           1x
         </text>
+        <text
+          className="pr-lab c-fg"
+          x={94}
+          y={box.floor - bh - 14}
+          textAnchor="middle"
+        >
+          AVERAGE
+        </text>
       </g>
-      <text
-        className="pr-lab c-fg"
-        x={94}
-        y={box.floor - bh - 14}
-        textAnchor="middle"
-      >
-        AVERAGE
-      </text>
-      {Array.from({ length: tw.blocks }, (_, i) => (
-        <path
-          key={i}
-          ref={ref(i + 1)}
-          className={`${i % 2 ? "f-alt" : "f-acc"} ln o-b`}
-          d={chamfer(tx, box.floor - (i + 1) * bh, bw, bh, 8)}
-        />
-      ))}
+      {Array.from({ length: tw.blocks }, (_, i) => {
+        // The last block of a tower with a remainder is only as tall as the remainder.
+        const h = i < tw.whole ? bh : bh * tw.part;
+        return (
+          <path
+            key={i}
+            ref={ref(i + 1)}
+            className={`${i % 2 ? "f-alt" : "f-acc"} ln o-b`}
+            d={chamfer(tx, box.floor - i * bh - h, bw, h, 8)}
+          />
+        );
+      })}
+      {tw.capped ? (
+        <g ref={cut.ref} aria-hidden="true">
+          <title>{`The tower is cut short: it is ${tw.label} the average chat.`}</title>
+          <path
+            className="f-bg ln"
+            strokeLinejoin="miter"
+            d={`M${tx - 16} ${cutY + 6}L${tx + bw + 16} ${cutY - 22}L${tx + bw + 16} ${cutY - 2}L${tx - 16} ${cutY + 26}Z`}
+          />
+        </g>
+      ) : null}
       <text
         ref={label.ref}
         className="pr-num c-fg"
@@ -370,7 +389,7 @@ export function BiggestHero({ chart, box }: P<"tower">) {
         textAnchor="middle"
         style={{ fontSize: 78 }}
       >
-        {`${tw.ratio < 10 ? tw.ratio.toFixed(1) : compact(Math.round(tw.ratio))}x`}
+        {tw.label}
       </text>
     </HeroSvg>
   );
@@ -481,8 +500,10 @@ export function ProjectHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
       {tiles.map((b, i) => {
         const r = shown[i];
         const sw = SWATCH[i % SWATCH.length];
-        const name = r.name ?? r.label;
         const big = i === 0;
+        // The biggest tile is the project the slide's title already names: it says what the tile weighs
+        // instead, so the name is on the poster once.
+        const name = big ? compact(r.value) : (r.name ?? r.label);
         const px = big ? 40 : 22;
         const fits = tileFits(b, Math.min(name.length, big ? 12 : 10), px);
         const chars = Math.max(
@@ -504,6 +525,15 @@ export function ProjectHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
                 style={big ? { fontSize: px * 1.4 } : undefined}
               >
                 {clipText(name, chars)}
+              </text>
+            ) : null}
+            {fits && big ? (
+              <text
+                className={`pr-lab f-${sw.ink}`}
+                x={b.x + 22}
+                y={b.y + 66 + 34}
+              >
+                TOKENS
               </text>
             ) : null}
           </g>

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BOXES, boxesOverlap, emWidth, fitFigure, fitMain, FIG_LINE, FIG_MIN, FRAME_H, FRAME_W, MIRROR, PAIR_IDS, PAIR_ROLES, plan, POSTERS, TIMELINES, turnedBox } from "./wrappedPoster";
+import { BOXES, boxesOverlap, emWidth, fitFigure, fitMain, FIG_LINE, glueUnits, FIG_MIN, FRAME_H, FRAME_W, MIRROR, PAIR_IDS, PAIR_ROLES, plan, POSTERS, TIMELINES, turnedBox } from "./wrappedPoster";
 import type { Layout, PairId } from "./wrappedPoster";
 
 const css = readFileSync(resolve(__dirname, "../styles/tokens.css"), "utf8").replace(/\r\n/g, "\n");
@@ -128,6 +128,14 @@ describe("fitFigure", () => {
   });
 });
 
+describe("glueUnits", () => {
+  it("keeps a number with its unit, so a line never ends on a lone number", () => {
+    expect(glueUnits("74 active days. 3 days in a row")).toBe("74 active days. 3 days in a row");
+    expect(glueUnits("About 1.2M words, 40% of it")).toBe("About 1.2M words, 40% of it");
+    expect(glueUnits("No numbers here")).toBe("No numbers here");
+  });
+});
+
 describe("the timelines", () => {
   it("are valid: every beat inside 0..1 and ordered, with the ids the poster reads", () => {
     for (const [mood, tl] of Object.entries(TIMELINES)) {
@@ -184,6 +192,19 @@ describe("the layouts", () => {
   });
   it("turn only the tilted layout, and by -4 degrees", () => {
     for (const l of layouts) expect(BOXES[l].tilt, l).toBe(l === "tilt" ? -4 : 0);
+  });
+  it("fit the novels count whole, at its longest: no digit or letter leaves the card", () => {
+    const novels = POSTERS.novels;
+    expect(novels.layout).toBe("tr");
+    const b = BOXES[novels.layout];
+    for (const text of ["6.5k", "999k", "1.2M", "999M", "1.2B", "12.5k"]) {
+      const f = fitMain(text, b.main);
+      expect(f.lines, text).toHaveLength(1);
+      expect(f.size * emWidth(text), text).toBeLessThanOrEqual(b.main.w);
+      // The right edge of the ink, in the frame, is inside the frame with room to spare.
+      const right = b.main.x + (b.align === "right" ? b.main.w : f.size * emWidth(text));
+      expect(right, text).toBeLessThanOrEqual(FRAME_W - 16);
+    }
   });
   it("fit a figure in the room the words leave it", () => {
     for (const l of layouts) {

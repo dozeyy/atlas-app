@@ -10,6 +10,8 @@ interface AtlasContext {
   info: AppInfo;
   view: View;
   setView: (v: View) => void;
+  /** Back to the page before this one (the dashboard when there is none). */
+  goBack: () => void;
   setTheme: (t: Theme) => void;
   setLaunchAnimation: (on: boolean) => void;
   setCloseToTray: (on: boolean) => void;
@@ -76,16 +78,23 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
   // menu) comes through here, so an editor with unsaved edits is asked about once, in one place.
   const viewNow = useRef(view);
   viewNow.current = view;
+  // The page you were on before this one, so Esc on a full-page story can take you back to it.
+  const cameFrom = useRef<View | null>(null);
   const setView = useCallback(
     (v: View) => {
       if (v === viewNow.current) return;
       guardLeave(() => {
+        cameFrom.current = viewNow.current;
         setViewState(v);
         void run(backend.updateSettings({ lastView: v }));
       });
     },
     [backend, run],
   );
+  const goBack = useCallback(() => {
+    const to = cameFrom.current;
+    setView(to && to !== viewNow.current ? to : "dashboard");
+  }, [setView]);
 
   const setTheme = useCallback(
     (t: Theme) => {
@@ -137,6 +146,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       info,
       view,
       setView,
+      goBack,
       setTheme,
       setLaunchAnimation,
       setCloseToTray,
@@ -148,7 +158,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       openConfigDir: () => backend.openConfigDir().catch(() => {}),
       openDataDir: () => backend.openDataDir().catch(() => {}),
     }),
-    [info, view, setView, setTheme, setLaunchAnimation, setCloseToTray, setNotifyOnFinish, setHistoryKeep, run, backend],
+    [info, view, setView, goBack, setTheme, setLaunchAnimation, setCloseToTray, setNotifyOnFinish, setHistoryKeep, run, backend],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

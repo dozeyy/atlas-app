@@ -2,8 +2,8 @@
 // wrappedLoad.ts. Nothing here invents data: a slide whose numbers are missing is not built.
 
 import { addDays, compact, exact, formatDuration, headline, plural } from "./usage";
-import { compare, compareTokens, WORDS_PER_TOKEN } from "./wrappedCompare";
-import type { Comparison } from "./wrappedCompare";
+import { compare as compareRung, compareTokens as compareTokensRung, WORDS_PER_TOKEN } from "./wrappedCompare";
+import type { CompareWords, Comparison, LadderId } from "./wrappedCompare";
 import type { ItemUse, SessionRow, TimelinePoint, WrappedHabits } from "./usageTypes";
 
 export { WORDS_PER_TOKEN };
@@ -95,12 +95,10 @@ export type SlideChart =
   /** The 24 hours of the day as a strip. */
   | { kind: "strip"; values: number[] }
   /** Models as a ring. */
-  | { kind: "donut"; rows: Row[] }
+  | { kind: "donut"; rows: Row[]; whole?: number }
+  /** The cover: a collage of shapes, no data. */
+  | { kind: "cover" }
   /** The coder type: an emblem and its gauge (`score` = value / bar, 1 is the bar). */
-  /** The cover: a collage of shapes, no data. */
-  | { kind: "cover" }
-  /** The cover: a collage of shapes, no data. */
-  | { kind: "cover" }
   | { kind: "badge"; id: string; name: string; score: number; traits: { name: string; score: number; note: string }[] };
 
 /** What the share card says. Only numbers, project, skill and model names: never a chat name. */
@@ -309,6 +307,11 @@ function chatShare(d: WrappedData, pick: (h: WrappedHabits) => number): number |
 
 const recently = (d: WrappedData) => (d.hoursDays < d.spanDays ? ` in the last ${exact(d.hoursDays)} days` : "");
 
+/** `lead` + " the last 120 days" + `tail` when the hour data covers less than the whole history, else nothing. */
+function hoursWindow(d: Pick<WrappedData, "hoursDays" | "spanDays">, lead: string, tail: string): string {
+  return d.hoursDays < d.spanDays ? `${lead} the last ${exact(d.hoursDays)} days${tail}` : "";
+}
+
 /**
  * The rules, in tie order (the first listed wins a tie). Each is a plain share or rate with a
  * stated bar; none is a guess. The bars are judgments about what "a lot" means, written down here
@@ -425,10 +428,11 @@ export function coderType(d: WrappedData): CoderType | null {
  */
 export function buildCard(d: WrappedData, type: CoderType | null): ShareCard {
   const tiles: { label: string; value: string }[] = [];
-  if (d.projects.length > 0) tiles.push({ label: "Top project", value: d.projects[0].name ?? d.projects[0].label });
-  if (d.skills.length > 0) tiles.push({ label: "Top skill", value: d.skills[0].id });
-  if (d.models.length > 0) tiles.push({ label: "Main model", value: d.models[0].label });
-  if (type) tiles.push({ label: "Coder type", value: type.name });
+  // One short word each: the card is shown small, so the labels are drawn big and have to fit a third.
+  if (d.projects.length > 0) tiles.push({ label: "Project", value: d.projects[0].name ?? d.projects[0].label });
+  if (d.skills.length > 0) tiles.push({ label: "Skill", value: plainNames(d.skills.map((i) => i.id))[0] });
+  if (d.models.length > 0) tiles.push({ label: "Model", value: d.models[0].label });
+  if (type) tiles.push({ label: "Type", value: type.name });
   return {
     title: "My Claude Code, so far",
     tokens: compact(d.tokens),
@@ -487,8 +491,19 @@ export function spikeChart(d: Pick<WrappedData, "from" | "to" | "dayTokens">, bu
 // ---- the slides ----------------------------------------------------------------------------
 
 /** The top rows of a list as ranked rows. */
+/**
+ * The name a poster shows for each skill or helper: a plugin's own prefix ("design:design-critique")
+ * is dropped, because it only makes the name longer than the graphic can print. Two names that would
+ * then read the same keep their prefix, so they stay apart.
+ */
+export function plainNames(ids: string[]): string[] {
+  const plain = ids.map((id) => id.slice(id.lastIndexOf(":") + 1) || id);
+  return ids.map((id, i) => (plain.filter((p) => p === plain[i]).length > 1 ? id : plain[i]));
+}
+
 function itemRows(items: ItemUse[], n = 5): Row[] {
-  return items.slice(0, n).map((i) => ({ label: i.id, value: i.uses, note: plural(i.uses, "use") }));
+  const names = plainNames(items.map((i) => i.id));
+  return items.slice(0, n).map((i, k) => ({ label: names[k], value: i.uses, note: plural(i.uses, "use") }));
 }
 
 function share(rows: { value: number }[], n: number): number {
@@ -502,7 +517,8 @@ function localDayOf(ms: number): string {
   return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}`;
 }
 
-const chatName = (r: SessionRow) => r.name ?? `A session in ${r.projectName}`;
+// A poster names a chat by its project, never by the chat's own name: that can be the first prompt
+// cut off mid-sentence, and no transcript text goes on a poster (or into a shared image).
 
 function ago(days: number): string {
   if (days <= 0) return "Today";
@@ -513,14 +529,18 @@ function ago(days: number): string {
 const MS_PER_HOUR = 3_600_000;
 
 /** The type slide's comparison: the real amount the winning habit counted, against its own ladder. */
-function typeCompare(d: WrappedData, id: string): Comparison | undefined {
+function typeCompare(d: WrappedData, id: string, used: Set<string>): Comparison | undefined {
   const h = d.habits;
+  const compare = (l: LadderId, n: number, w: CompareWords) => compareRung(l, n, w, used);
+  const compareTokens = (n: number, w: CompareWords) => compareTokensRung(n, w, used);
   const at = (hours: number[]) => hours.reduce((s, x) => s + (d.hours[x] ?? 0), 0);
+  // The hour data can cover fewer days than the whole history: the hover says how many.
+  const windowed = (c: Comparison | null): Comparison | undefined => (c ? { ...c, hint: `${c.hint}${hoursWindow(d, " Hour totals cover", ".")}` } : undefined);
   switch (id) {
     case "owl":
-      return compareTokens(at(NIGHT_HOURS), { lead: "Nights add up to about" }) ?? undefined;
+      return windowed(compareTokens(at(NIGHT_HOURS), { lead: "Nights add up to about" }));
     case "bird":
-      return compareTokens(at(EARLY_HOURS), { lead: "Mornings add up to about" }) ?? undefined;
+      return windowed(compareTokens(at(EARLY_HOURS), { lead: "Mornings add up to about" }));
     case "delegator":
       return h ? (compareTokens(h.helperTokens, { lead: "Helpers add up to about" }) ?? undefined) : undefined;
     case "marathoner":
@@ -553,6 +573,10 @@ export function buildSlides(d: WrappedData): Slide[] {
     return true;
   };
   const short = d.activeDays < SHORT_STORY_DAYS;
+  // Each comparison (a rung of a ladder) is used once in the whole story.
+  const used = new Set<string>();
+  const compare = (l: LadderId, n: number, w: CompareWords) => compareRung(l, n, w, used);
+  const compareTokens = (n: number, w: CompareWords) => compareTokensRung(n, w, used);
   const skillChart = (): SlideChart | undefined => (d.skills.length > 1 ? { kind: "podium", rows: itemRows(d.skills) } : undefined);
   const uses = (n: number, lead: string) => compare("count", n, { lead }) ?? undefined;
 
@@ -598,7 +622,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       layout: "center",
       kicker: "Oldest chat still here",
       figure: shortDay(day),
-      line: `${ago(since)}: ${chatName(d.first)}, in ${d.first.projectName}. Still standing.`,
+      line: `${ago(since)}: a session in ${d.first.projectName}. Still standing.`,
       compare: compare("days", since, { lead: "Since then, about" }) ?? undefined,
       chart: since > 0 ? { kind: "trail", from: day, to: d.to, days: since } : undefined,
     });
@@ -635,7 +659,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       kicker: "Your biggest chat",
       figure: compact(big),
       unit: "tokens",
-      line: `${chatName(d.biggest)}, in ${d.biggest.projectName}. One chat did all that.`,
+      line: `One chat in ${d.biggest.projectName} did all that.`,
       hint: `${exact(big)} tokens in one chat. The Longest sitting slide goes by time; this one goes by tokens.`,
       compare: compareTokens(big, { lead: "That one chat is about" }) ?? undefined,
       chart: avg > 0 ? { kind: "tower", value: big, avg } : undefined,
@@ -649,7 +673,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       layout: "split",
       kicker: "Longest sitting",
       figure: formatDuration(d.longest.durationMs),
-      line: `${chatName(d.longest)}, ${shortDay(localDayOf(d.longest.startedAt))}. Did you ever close it?`,
+      line: `A sitting in ${d.longest.projectName}, ${shortDay(localDayOf(d.longest.startedAt))}. Did you ever close it?`,
       compare: compare("hours", d.longest.durationMs / MS_PER_HOUR, { lead: "That sitting is about" }) ?? undefined,
       chart: { kind: "dial", hours: d.longest.durationMs / MS_PER_HOUR },
     });
@@ -685,7 +709,7 @@ export function buildSlides(d: WrappedData): Slide[] {
         tone: "slate",
         layout: id === "skill" ? "center" : id === "helper" ? "split" : "stack",
         kicker,
-        figure: top.id,
+        figure: plainNames(list.map((i) => i.id))[0],
         line: `Used ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}. You know what works.`,
         compare: uses(top.uses, "That is about"),
         chart,
@@ -705,7 +729,7 @@ export function buildSlides(d: WrappedData): Slide[] {
         tone: "slate",
         layout: "center",
         kicker: d.skills.length > 1 ? `Your top ${d.skills.length} skills, counted down` : "Favorite skill",
-        figure: top.id,
+        figure: plainNames(d.skills.map((i) => i.id))[0],
         line: `Number one: used ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}.`,
         compare: uses(top.uses, "That is about"),
         chart: skillChart(),
@@ -718,7 +742,7 @@ export function buildSlides(d: WrappedData): Slide[] {
         tone: "plain",
         layout: "split",
         kicker: "Your go-to helper",
-        figure: top.id,
+        figure: plainNames(d.agents.map((i) => i.id))[0],
         line: `Called on ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}. Reliable.`,
         compare: uses(top.uses, "That is about"),
         chart: d.agents.length > 1 ? { kind: "lollipop", rows: itemRows(d.agents) } : undefined,
@@ -733,7 +757,7 @@ export function buildSlides(d: WrappedData): Slide[] {
         kicker: "Most helpers in one chat",
         figure: exact(crowd.agentCount),
         unit: "helpers",
-        line: `${chatName(crowd)}, in ${crowd.projectName}. A whole crew.`,
+        line: `One chat in ${crowd.projectName}. A whole crew.`,
         compare: compare("crew", crowd.agentCount, { lead: "Enough helpers to fill", atLeast: true }) ?? undefined,
         chart: { kind: "burst", count: crowd.agentCount },
       });
@@ -770,7 +794,16 @@ export function buildSlides(d: WrappedData): Slide[] {
   const week = weekdayAverages(d.from, d.dayTokens);
   const weekTotal = week.reduce((a, b) => a + b, 0);
   if (!short && weekTotal > 0) {
-    const top = week.indexOf(Math.max(...week));
+    const best = Math.max(...week);
+    const top = week.indexOf(best);
+    // Days that share the top mark share the headline: a tie never says "beats every other day".
+    const tied = WEEKDAYS.filter((_, i) => week[i] === best);
+    const topLine =
+      tied.length === 1
+        ? `${WEEKDAYS[top]} beats every other day. Plan around it.`
+        : tied.length === 2
+          ? `${tied[0]} and ${tied[1]} tie for the top. Plan around both.`
+          : `${tied.length} days tie for the top: ${tied.join(", ")}.`;
     out.push({
       id: "weekday",
       tone: "plain",
@@ -778,7 +811,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       kicker: "Your busiest weekday",
       figure: `${share(week.map((v) => ({ value: v })), week[top])}%`,
       unit: "of your week",
-      line: `${WEEKDAYS[top]} beats every other day. Plan around it.`,
+      line: topLine,
       hint: `${compact(week[top])} tokens on an average ${WEEKDAYS[top]} since ${shortDay(d.from)}, counting every ${WEEKDAYS[top]} in that time.`,
       compare: compareTokens(week[top], { lead: `A ${WEEKDAYS[top]} is about` }) ?? undefined,
       chart: { kind: "spokes", values: week },
@@ -793,7 +826,8 @@ export function buildSlides(d: WrappedData): Slide[] {
       layout: "stack",
       kicker: "Your prime time",
       figure: hourLabel(peak),
-      line: `Most of your tokens land around then, ${partOfDay(peak)}. That is your hour.`,
+      line: `Your busiest hour${hoursWindow(d, " over", "")}. Prime time, ${partOfDay(peak)}.`,
+      hint: hoursWindow(d, "Hour totals cover", ".") || undefined,
       compare: compareTokens(d.hours[peak], { lead: `${hourLabel(peak)} adds up to about` }) ?? undefined,
       chart: { kind: "strip", values: d.hours },
     });
@@ -808,9 +842,10 @@ export function buildSlides(d: WrappedData): Slide[] {
       layout: "split",
       kicker: "Your main model",
       figure: top.label,
-      line: `${share(d.models, top.value)}% of your tokens. Your ride or die.`,
+      // Of all the tokens, not of the top few models the donut draws.
+      line: `${d.tokens > 0 ? Math.round((top.value / d.tokens) * 100) : share(d.models, top.value)}% of your tokens. Your ride or die.`,
       compare: compareTokens(top.value, { lead: "That model carried about" }) ?? undefined,
-      chart: d.models.length > 1 ? { kind: "donut", rows: d.models } : undefined,
+      chart: d.models.length > 1 ? { kind: "donut", rows: d.models, whole: d.tokens > 0 ? d.tokens : undefined } : undefined,
     });
   }
 
@@ -824,7 +859,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       figure: type.name,
       line: type.line,
       hint: type.why,
-      compare: typeCompare(d, type.id),
+      compare: typeCompare(d, type.id, used),
       chart: { kind: "badge", id: type.id, name: type.name, score: type.traits[0]?.score ?? 1, traits: type.traits.slice(0, 3) },
       celebrate: pop(true),
     });
@@ -838,7 +873,8 @@ export function buildSlides(d: WrappedData): Slide[] {
     kicker: "Your Wrapped, on one card",
     figure: card.tokens,
     unit: card.unit,
-    line: rangeLabel(d),
+    // The picture carries its own dated range, so the line does not say a second one.
+    line: "Saved as a picture on your computer. Nothing is sent.",
     hint: rangeHint(d),
     card,
   });

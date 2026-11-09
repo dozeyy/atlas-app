@@ -107,7 +107,10 @@ export function TipLayer() {
         return;
       }
       const text = textOf(el).trim();
-      if (!text) return;
+      if (!text) {
+        hide(); // the page emptied the title while its tip was up
+        return;
+      }
       const [first, ...others] = text.split("\n");
       head.textContent = first;
       rest.textContent = others.join("\n");
@@ -200,7 +203,12 @@ export function TipLayer() {
 
     document.addEventListener("pointerover", onOver, true);
     document.addEventListener("pointerout", onOut, true);
-    document.addEventListener("pointerdown", onAway, true);
+    // A press ends the tip for good (the browser's own tip does the same): the title goes back at
+    // once, so a click that changes or clears it (the Wrapped gift once you are on Wrapped) takes
+    // effect, and nothing is left parked over the page the click opened.
+    const onPress = () => release();
+
+    document.addEventListener("pointerdown", onPress, true);
     document.addEventListener("focusin", onFocusIn, true);
     document.addEventListener("focusout", onFocusOut, true);
     document.addEventListener("keydown", onKey, true);
@@ -211,7 +219,7 @@ export function TipLayer() {
     return () => {
       document.removeEventListener("pointerover", onOver, true);
       document.removeEventListener("pointerout", onOut, true);
-      document.removeEventListener("pointerdown", onAway, true);
+      document.removeEventListener("pointerdown", onPress, true);
       document.removeEventListener("focusin", onFocusIn, true);
       document.removeEventListener("focusout", onFocusOut, true);
       document.removeEventListener("keydown", onKey, true);

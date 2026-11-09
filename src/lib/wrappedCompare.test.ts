@@ -66,7 +66,7 @@ describe("pickRung", () => {
     const hit = pickRung(LADDERS.words, 1e15)!;
     expect(hit.rung.size).toBe(4_000_000_000);
     expect(hit.ratio).toBeCloseTo(1e15 / 4e9, 3);
-    expect(pickRung(LADDERS.count, Number.MAX_VALUE)?.rung.size).toBe(86_400);
+    expect(pickRung(LADDERS.count, Number.MAX_VALUE)?.rung.size).toBe(100_000);
   });
 
   it("takes each call's own minimum share: 1 reaches only whole rungs", () => {
@@ -175,8 +175,27 @@ describe("compare", () => {
   });
 
   it("has a rung for a small count, so a few uses still get a line", () => {
-    expect(compare("count", 9, { lead: "That is about" })?.text).toBe("That is about 1.3 weeks of a use a day.");
+    expect(compare("count", 12, { lead: "That is about" })?.text).toBe("That is about one dozen doughnuts.");
     expect(compare("count", 6, { lead: "That is about" })).toBeNull();
+  });
+
+  it("never says a use a day, or any unit that does not read as a sentence", () => {
+    for (const r of LADDERS.count.rungs) {
+      expect(r.one + r.many).not.toMatch(/a use a|use an hour|of a use/);
+    }
+    expect(compare("count", 24, { lead: "That is about" })?.text).toBe("That is about 2 dozen doughnuts.");
+  });
+
+  it("uses each comparison once per Wrapped: a rung already spoken for is skipped", () => {
+    const used = new Set<string>();
+    const first = compare("words", 1_000_000, { lead: "About" }, used);
+    expect(first).not.toBeNull();
+    expect(used.size).toBe(1);
+    const again = compare("words", 1_000_000, { lead: "About" }, used);
+    // The same amount falls to a different rung, or to nothing, but never the same line.
+    expect(again?.text).not.toBe(first?.text);
+    const spoken = [...used];
+    expect(new Set(spoken).size).toBe(spoken.length);
   });
 
   it("is null when there is nothing true to say", () => {

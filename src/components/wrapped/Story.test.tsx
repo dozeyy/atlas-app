@@ -126,6 +126,61 @@ describe("Story keys", () => {
     expect(position()).toBe("2 of 3");
   });
 
+  it("leaves Space and the arrows to a focused menu item, and to any open menu", () => {
+    render(
+      <>
+        <div role="menu">
+          <button type="button" role="menuitem">
+            Open file
+          </button>
+        </div>
+        <Story slides={slides} />
+      </>,
+    );
+    const item = screen.getByRole("menuitem", { name: "Open file" });
+    // Space on an item is the item's: not swallowed, and the story does not move.
+    expect(fireEvent.keyDown(item, { key: " " })).toBe(true);
+    expect(fireEvent.keyDown(item, { key: "ArrowRight" })).toBe(true);
+    expect(position()).toBe("1 of 3");
+    // With a menu open anywhere, the story keeps its hands off even keys aimed at the page.
+    expect(fireEvent.keyDown(document.body, { key: "ArrowRight" })).toBe(true);
+    expect(position()).toBe("1 of 3");
+  });
+
+  it("stays out of the way while a dialog is open", () => {
+    render(
+      <>
+        <div role="dialog" aria-label="Settings" />
+        <Story slides={slides} />
+      </>,
+    );
+    expect(fireEvent.keyDown(document.body, { key: " " })).toBe(true);
+    expect(position()).toBe("1 of 3");
+  });
+
+  it("leaves the story on Esc, unless a dialog or menu is open", () => {
+    const leave = vi.fn();
+    const { rerender } = render(<Story slides={slides} onLeave={leave} />);
+    expect(fireEvent.keyDown(document.body, { key: "Escape" })).toBe(false);
+    expect(leave).toHaveBeenCalledTimes(1);
+    rerender(
+      <>
+        <div role="menu" />
+        <Story slides={slides} onLeave={leave} />
+      </>,
+    );
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(leave).toHaveBeenCalledTimes(1);
+    rerender(
+      <>
+        <div role="dialog" aria-label="x" />
+        <Story slides={slides} onLeave={leave} />
+      </>,
+    );
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(leave).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores the keys while typing in a field", async () => {
     render(
       <>

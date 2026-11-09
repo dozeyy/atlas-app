@@ -173,6 +173,26 @@ describe("the bars, the burst, the podium and the skyline", () => {
     expect(bars.filter((b) => b.peak)).toHaveLength(1);
   });
 
+  it("draw the skyline on one scale: a zero is a zero, and a half is half", () => {
+    const bars = skyline([0, 5, 10, 0], BOX);
+    const room = BOX.floor - BOX.ceil;
+    expect(bars[0].h).toBe(0);
+    expect(bars[3].h).toBe(0);
+    expect(bars[2].h).toBeCloseTo(room, 6);
+    expect(bars[1].h).toBeCloseTo(room / 2, 6);
+    // A quiet day never borrows the height of a loud one.
+    expect(skyline([0, 0, 0], BOX).every((b) => b.h === 0)).toBe(true);
+  });
+
+  it("draw the spikes on the same honest scale, zero at the floor", () => {
+    const s = spikeLayout([0, 4, 8, 0], 2, BOX);
+    const room = BOX.floor - BOX.ceil;
+    expect(s[0].h).toBe(0);
+    expect(s[3].h).toBe(0);
+    expect(s[2].h / s[1].h).toBeCloseTo(2, 6);
+    expect(s[2].h).toBeLessThanOrEqual(room + 1e-9);
+  });
+
   it("keep the podium inside its box, tallest last", () => {
     const bars = podiumLayout([4, 9, 5, 7, 3], BOX);
     for (const b of bars) {
@@ -190,6 +210,20 @@ describe("the bars, the burst, the podium and the skyline", () => {
         expect(b.chars * 14.3).toBeLessThanOrEqual(b.h - 40);
       }
     }
+  });
+
+  it("set a long name smaller (never under 16) so the whole of it runs along its bar", () => {
+    const names = ["away-mode", "ui-ux-pro-max", "fewer-permission-prompts", "design-critique", "orchestrate"];
+    const bars = podiumLayout([25, 24, 21, 12, 3], BOX, names.map((n) => n.length));
+    for (const b of bars) {
+      const len = names[b.rank - 1].length;
+      expect(b.px, names[b.rank - 1]).toBeGreaterThanOrEqual(16);
+      expect(b.px).toBeLessThanOrEqual(22);
+      // If the name fits at all, it fits whole.
+      if (len * 16 * 0.65 <= b.h - 48) expect(b.chars, names[b.rank - 1]).toBeGreaterThanOrEqual(len);
+    }
+    // A short name keeps the full size.
+    expect(bars.find((b) => b.rank === 1)!.px).toBe(22);
   });
 
   it("keep the command bars stacked inside the box and inside the cap", () => {
@@ -251,6 +285,16 @@ describe("the bars, the burst, the podium and the skyline", () => {
     }
   });
 
+  it("share the ring out of every token when given the whole, so a ring and its line agree", () => {
+    // 40 + 8 named out of 100: the top model is 40%, and the 52 nobody named is the rest.
+    const s = donutSectors([40, 8], 4, 100);
+    expect(s.map((k) => Math.round(k.share * 100))).toEqual([40, 8, 52]);
+    expect(s[s.length - 1].to).toBeCloseTo(360, 6);
+    // A whole smaller than the named total is ignored, not negative.
+    const t = donutSectors([40, 8], 4, 10);
+    expect(t.map((k) => Math.round(k.share * 100))).toEqual([83, 17]);
+  });
+
   it("lay 24 hour cells inside the width", () => {
     const { cells, cw } = hourCells(Array.from({ length: 24 }, (_, i) => i * i), 760);
     expect(cells).toHaveLength(24);
@@ -260,9 +304,23 @@ describe("the bars, the burst, the podium and the skyline", () => {
   });
 
   it("stack the tower from the true ratio, capped", () => {
-    expect(towerBlocks(250, 100)).toMatchObject({ blocks: 3, capped: false });
-    expect(towerBlocks(100000, 100)).toMatchObject({ blocks: TOWER_MAX, capped: true });
-    expect(towerBlocks(100, 0).blocks).toBeGreaterThanOrEqual(2);
+    expect(towerBlocks(250, 100)).toMatchObject({ whole: 2, blocks: 3, capped: false, label: "2.5x" });
+    expect(towerBlocks(100000, 100)).toMatchObject({ whole: TOWER_MAX, blocks: TOWER_MAX, capped: true });
+  });
+
+  it("draws exactly what the label says: 1.0x is one block, never two", () => {
+    expect(towerBlocks(100, 100)).toMatchObject({ whole: 1, part: 0, blocks: 1, label: "1.0x" });
+    expect(towerBlocks(100, 0)).toMatchObject({ blocks: 1 });
+    // The label's number is the blocks' height: whole + part is the ratio to a tenth.
+    const t = towerBlocks(137, 100);
+    expect(t.label).toBe("1.4x");
+    expect(t.whole + t.part).toBeCloseTo(1.37, 5);
+  });
+
+  it("rounds one way: 9.96 is not printed as 10.0x", () => {
+    expect(towerBlocks(996, 100).label).toBe("10x");
+    expect(towerBlocks(994, 100).label).toBe("9.9x");
+    expect(towerBlocks(2500, 100).label).toBe("25x");
   });
 });
 

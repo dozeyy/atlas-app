@@ -14,6 +14,11 @@ const STRIP_H = 84;
 const STROKE = 8;
 const FIG_TOP = 128;
 const FIG_BASE = 452;
+/**
+ * The small print is drawn big on the 1200 x 675 canvas because the page shows the picture at about a
+ * third to a half of that: 30 px here is still 11 px or more on screen at the smallest window.
+ */
+const SMALL_PX = 30;
 
 interface Palette {
   bg: string;
@@ -174,13 +179,13 @@ export function drawShareCard(
   shape(ctx, star(px, Math.max(by + 34, py - 40), 38), p.acc, p.dark);
 
   // The unit, as a chip.
-  ctx.font = mono(700, 24);
+  ctx.font = mono(700, SMALL_PX);
   spaced(ctx, "2px");
   const unit = card.unit.toUpperCase();
   const uw = ctx.measureText(unit).width + 32;
-  shape(ctx, chamfer(PAD, 52, uw, 44, 8), p.acc);
+  shape(ctx, chamfer(PAD, 52, uw, 52, 8), p.acc);
   ctx.fillStyle = p.onAcc;
-  ctx.fillText(unit, PAD + 16, 83);
+  ctx.fillText(unit, PAD + 16, 89);
   spaced(ctx, "0px");
 
   // The one giant stat, sitting on a fixed baseline.
@@ -196,8 +201,8 @@ export function drawShareCard(
     const col = (bx - PAD - 20) / tiles.length;
     tiles.forEach((t, i) => {
       const x = PAD + i * col;
-      ctx.font = mono(700, 18);
-      spaced(ctx, "2px");
+      ctx.font = mono(700, SMALL_PX);
+      spaced(ctx, "1px");
       ctx.fillStyle = p.acc;
       ctx.fillText(
         clip(ctx, t.label.toUpperCase(), col - 18),
@@ -220,8 +225,8 @@ export function drawShareCard(
   ctx.fillStyle = p.stripBg;
   ctx.fillRect(0, CARD_H - STRIP_H, CARD_W, STRIP_H);
   ctx.fillStyle = p.stripFg;
-  const base = CARD_H - STRIP_H / 2 + 8;
-  ctx.font = mono(700, 24);
+  const base = CARD_H - STRIP_H / 2 + 10;
+  ctx.font = mono(700, SMALL_PX);
   spaced(ctx, "1px");
   const mark = "ATLAS WRAPPED";
   const mw = ctx.measureText(mark).width;

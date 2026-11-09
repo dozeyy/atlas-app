@@ -65,6 +65,10 @@ export function ClockProvider({
   pausedRef.current = paused;
   const frameRef = useRef(onFrame);
   frameRef.current = onFrame;
+  // The lead is read when the clock starts, never a reason to start it again: a poster's clock runs
+  // once per mount (a changing delay used to restart it, three times per slide change).
+  const delayRef = useRef(delay);
+  delayRef.current = delay;
 
   const ctx = useMemo<ClockCtx>(
     () => ({
@@ -107,7 +111,7 @@ export function ClockProvider({
     emit(0);
     run(true);
     let raf = 0;
-    let elapsed = -delay;
+    let elapsed = -delayRef.current;
     let last = performance.now();
     const tick = (now: number) => {
       const dt = now - last;
@@ -123,7 +127,7 @@ export function ClockProvider({
       cancelAnimationFrame(raf);
       run(false);
     };
-  }, [frozen, delay, tl, runRef]);
+  }, [frozen, tl, runRef]);
 
   return <Ctx.Provider value={ctx}>{children}</Ctx.Provider>;
 }

@@ -56,7 +56,7 @@ export function Hero({ slide, box }: { slide: Slide; box: HeroBox }) {
     case "strip":
       return <RhythmHero chart={c} box={box} />;
     case "donut":
-      return <ModelsHero rows={c.rows} box={box} />;
+      return <ModelsHero rows={c.rows} whole={c.whole} box={box} />;
     case "badge":
       return <TypeHero chart={c} box={box} />;
     case "cover":
