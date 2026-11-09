@@ -9,7 +9,7 @@ import { ItemRow } from "../components/setup/ItemViews";
 import { NoSetup, SetupError, SetupSkeleton } from "../components/setup/states";
 import { TopSlot } from "../components/setup/TopSlot";
 import { TypeTiles } from "../components/setup/TypeTiles";
-import { costByKind } from "../lib/setup-cost";
+import { CostProvider } from "../components/setup/CostContext";
 import { countByKind, itemsForTile, MORE_KINDS, type TileId } from "../lib/setup-model";
 import { useSetupCost } from "../lib/useSetupCost";
 import type { CreateKind, SetupItem, SetupProject, SetupSnapshot } from "../lib/setup-types";
@@ -102,7 +102,6 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
   const counts = useMemo(() => countByKind(counted), [counted]);
   const moreCount = useMemo(() => MORE_KINDS.reduce((n, k) => n + (counts.get(k) ?? 0), 0), [counts]);
   const cost = useSetupCost(loads);
-  const costKinds = useMemo(() => costByKind(cost), [cost]);
   const byId = useMemo(() => new Map(snap.items.map((i) => [i.id, i])), [snap.items]);
   const selected = selectedId ? (byId.get(selectedId) ?? null) : null;
   const tileItems = useMemo(() => (tile ? itemsForTile(live, tile) : []), [live, tile]);
@@ -126,6 +125,7 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
   const jsonNote = CLAUDE_JSON_NOTE[snap.root.claudeJsonState];
 
   return (
+    <CostProvider report={cost}>
     <div ref={top} className="flex flex-1 flex-col">
       {error && (
         <p role="alert" className="mb-4 flex items-start gap-2 rounded-card bg-warning-tint px-4 py-3 text-body text-warning">
@@ -157,7 +157,7 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
             </p>
           )}
           <TopSlot items={counted} loads={loads} cost={cost} onCreate={setCreating} onOpen={setSelectedId} />
-          <TypeTiles counts={counts} moreCount={moreCount} cost={costKinds} onOpen={openTile} />
+          <TypeTiles counts={counts} moreCount={moreCount} onOpen={openTile} />
           <div className="mt-4">
             <MissingProjects projects={missingProjects} items={gone} onOpen={setSelectedId} />
           </div>
@@ -186,6 +186,7 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
       )}
       {creating && <CreateFlow kind={creating} onClose={() => setCreating(null)} />}
     </div>
+    </CostProvider>
   );
 }
 

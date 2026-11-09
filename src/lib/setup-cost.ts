@@ -1,9 +1,11 @@
-// What the setup costs: the numbers come from Rust (`setup_cost`); this file only formats
-// them and groups them for the page. Every figure is an estimate and is shown as one.
+// What the setup costs: the numbers come from Rust (`setup_cost`); this file only words them and
+// ranks them for the page. The screen speaks tokens (most people are on a plan, not the API);
+// the API-price dollar estimate lives in hover text only. Every figure is an estimate.
 
+import { compact, exact } from "./usage";
 import type { CostReport, CostRow, ItemKind } from "./setup-types";
 
-/** Dollars for a figure on the page: `$0.04`, `$4.20`, `$21`, `$1.2k`. Never more than 3 digits. */
+/** Dollars for hover text: `$0.04`, `$4.20`, `$21`, `$1.2k`. Never more than 3 digits. */
 export function fmtUsd(v: number): string {
   if (!Number.isFinite(v) || v <= 0) return "$0";
   if (v < 0.01) return "<$0.01";
@@ -15,39 +17,63 @@ export function fmtUsd(v: number): string {
   return `$${k < 10 ? k.toFixed(1) : Math.round(k)}k`;
 }
 
-/** Tokens or turns: `430`, `8.8k`, `12k`, `1.3M`. */
-export function fmtCount(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "0";
-  if (n < 1000) return String(Math.round(n));
-  if (n < 10_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
-  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
-  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+/** Skills, agents and commands cost their body when they are called. */
+const PER_CALL = new Set<ItemKind>(["skill", "agent", "command"]);
+
+export function isPerCall(kind: string): boolean {
+  return PER_CALL.has(kind as ItemKind);
 }
 
-/** The estimate marker: a leading tilde, once per figure. */
-export function approx(v: number): string {
-  return `~${fmtUsd(v)}`;
+/** One figure in the honest unit for what the item is. */
+export interface CostWords {
+  /** Tokens. Show with `compact()`: at most three digits (7.3k, 27M). */
+  n: number;
+  /** "tokens per call", "tokens per message" or "tokens when used". */
+  unit: string;
 }
 
-/** What a row costs when it only has a size (no turns to price): tokens, not dollars. */
-export function hasDollars(r: CostRow): boolean {
-  return r.usdWeek > 0;
+/**
+ * The one figure an item shows in its list and sheet:
+ * skills, agents, commands: what loads each time they are called;
+ * CLAUDE.md, rules, memory, output styles, MCP tools: what loads with every message;
+ * a rule that only loads for matching files: its size, when it is used.
+ */
+export function costWords(r: CostRow): CostWords | null {
+  if (isPerCall(r.kind) && r.bodyTokens > 0) return { n: r.bodyTokens, unit: "tokens per call" };
+  if (r.tokens > 0) return { n: r.tokens, unit: "tokens per message" };
+  if (r.bodyTokens > 0) return { n: r.bodyTokens, unit: "tokens when used" };
+  return null;
 }
 
-/** Dollars per week by item kind, for the tile readouts. */
-export function costByKind(report: CostReport | null): Map<ItemKind, number> {
-  const m = new Map<ItemKind, number>();
-  if (!report) return m;
-  for (const r of report.rows) m.set(r.kind as ItemKind, (m.get(r.kind as ItemKind) ?? 0) + r.usdWeek);
-  return m;
+/** "About $21 a week at API prices." Empty when nothing could be priced. */
+export function usdHover(r: { usdWeek: number }, report: CostReport | null): string {
+  if (!report || !(r.usdWeek > 0)) return "";
+  return `Estimate: about ${fmtUsd(r.usdWeek)} a week at API prices, ${windowLabel(report)}.`;
 }
 
-/** The rows that make up the "what it costs" ranking: dollars first, or size when nothing is priced. */
+/** The hover on an item's figure: exact tokens, then the API-price estimate. */
+export function itemHover(r: CostRow, report: CostReport | null): string {
+  const w = costWords(r);
+  const head = w ? `${exact(w.n)} ${w.unit}.` : "";
+  return [head, usdHover(r, report)].filter(Boolean).join(" ");
+}
+
+/** Tokens a row adds over the window: per message x messages. Without chats yet, its per-message size. */
+export function weeklyTokens(r: CostRow): number {
+  return r.turns > 0 ? r.tokens * r.turns : r.tokens;
+}
+
+/**
+ * The rows that make up the "what it costs" ranking: what loads with every message, biggest
+ * over the window first. On-demand items (skills, agents) are priced per call inside their
+ * own list, so they are not mixed in here.
+ */
 export function topRows(report: CostReport | null, n: number): CostRow[] {
   if (!report) return [];
-  const priced = report.rows.filter(hasDollars);
-  if (priced.length > 0) return priced.slice(0, n);
-  return [...report.rows].sort((a, b) => b.tokens + b.bodyTokens - (a.tokens + a.bodyTokens)).slice(0, n);
+  return report.rows
+    .filter((r) => r.tokens > 0)
+    .sort((a, b) => weeklyTokens(b) - weeklyTokens(a))
+    .slice(0, n);
 }
 
 /** The cost row for one setup item, if it has one. */
@@ -55,12 +81,21 @@ export function rowFor(report: CostReport | null, id: string): CostRow | null {
   return report?.rows.find((r) => r.id === id) ?? null;
 }
 
-/** `Last 7 days` / `Last 24 hours`: how long the dollars cover. */
+/** `last 7 days` / `last day`: how long the figures cover. */
 export function windowLabel(report: CostReport): string {
   return report.windowDays === 1 ? "last day" : `last ${report.windowDays} days`;
 }
 
-/** "8.8k tokens x 12k turns" */
-export function loadLine(r: CostRow): string {
-  return `${fmtCount(r.tokens)} tokens x ${fmtCount(r.turns)} turns`;
+/**
+ * The name a ranking row shows. Something that only loads in one project's chats carries that
+ * project's name ("CLAUDE.md · heavens-casino"), so two files with the same name never look alike.
+ */
+export function rowTitle(r: CostRow): string {
+  const project = /^Chats in (.+)$/.exec(r.loadsIn)?.[1];
+  return project ? `${r.name} · ${project}` : r.name;
+}
+
+/** "8.8k per message" */
+export function perMessage(r: CostRow): string {
+  return `${compact(r.tokens)} per message`;
 }

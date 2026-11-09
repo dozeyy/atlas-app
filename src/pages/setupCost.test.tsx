@@ -56,35 +56,48 @@ afterEach(() => {
 });
 
 describe("Toolkit: what the setup costs", () => {
-  it("puts one weekly figure on each tile that has a cost, without changing the tile's name", async () => {
+  it("keeps cost off the category tiles: count and name only", async () => {
     await open(backend);
     const skills = await screen.findByRole("button", { name: /^Skills, \d+$/ });
-    await waitFor(() => expect(within(skills).getByText(/~\$/)).toBeInTheDocument());
-    expect(skills).toHaveAccessibleDescription(/a week/);
-    // A kind with nothing to price has no figure.
-    expect(document.querySelector('[data-cost="more"]')).toBeNull();
+    await screen.findByRole("region", { name: "What your setup costs" }); // the cost report has arrived
+    expect(skills.textContent).toMatch(/^\d[\d,]*Skills$/);
+    expect(document.querySelector("[data-tile] [data-cost]")).toBeNull();
+    expect(document.querySelector("[data-tile]")?.textContent).not.toMatch(/token|\$|week/);
   });
 
-  it("ranks the biggest costs above the tiles and opens an item with its own figures", async () => {
+  it("ranks the biggest costs in tokens above the tiles and opens an item with its own figures", async () => {
     await open(backend);
     const panel = await screen.findByRole("region", { name: "What your setup costs" });
+    expect(panel).toHaveTextContent(/tokens load with every message/);
+    expect(panel.textContent).not.toContain("$");
     expect(within(panel).getAllByRole("listitem").length).toBeGreaterThan(1);
     await userEvent.click(within(panel).getAllByRole("button")[0]!);
     const sheet = await screen.findByRole("dialog");
     expect(within(sheet).getByRole("heading", { name: "What it costs" })).toBeInTheDocument();
     expect(sheet).toHaveTextContent(/Estimate, last 7 days\./);
+    expect(sheet).toHaveTextContent(/Per message/);
   });
 
-  it("shows a cost section on an item's sheet and none on an item with no cost", async () => {
+  it("says tokens per call on each skill and in its sheet, with dollars only in the hover", async () => {
     await open(backend);
     await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
     await screen.findByRole("heading", { level: 2, name: "Skills" });
     const rowBtn = (await screen.findAllByRole("button", { name: /^skill / }))[0];
     expect(rowBtn).toBeDefined();
+    const figure = await waitFor(() => {
+      const el = rowBtn!.querySelector<HTMLElement>("[data-item-cost]");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(figure).toHaveTextContent(/^[\d.]+[kMBT]? tokens per call$/);
+    expect(figure.textContent).not.toContain("$");
+
     await userEvent.click(rowBtn!);
     const sheet = await screen.findByRole("dialog");
     const costHeading = within(sheet).getByRole("heading", { name: "What it costs" });
-    expect(sheet).toHaveTextContent(/tokens to every turn/);
+    expect(sheet).toHaveTextContent(/Per call/);
+    expect(sheet).toHaveTextContent(/tokens/);
+    expect(sheet.textContent).not.toContain("$");
     // The cost comes first, so it is on screen without scrolling the sheet.
     const about = within(sheet).getByRole("heading", { name: "About" });
     expect(costHeading.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -95,8 +108,8 @@ describe("Toolkit: what the setup costs", () => {
     await open(backend);
     await waitFor(() => expect(backend.calls).toBeGreaterThan(0));
     expect(screen.queryByRole("heading", { name: "What your setup costs" })).not.toBeInTheDocument();
-    expect(document.querySelector("[data-cost]")).toBeNull();
-    expect(document.body.textContent).not.toMatch(/~\$/);
+    expect(document.querySelector("[data-cost-headline], [data-item-cost]")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/\$/);
   });
 
   it("asks again when the setup is reloaded, not on every render", async () => {

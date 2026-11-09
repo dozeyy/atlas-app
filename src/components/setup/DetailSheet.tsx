@@ -9,7 +9,8 @@ import { Preview } from "./Preview";
 import { getBackend } from "../../lib/ipc";
 import { splitFrontmatter } from "../../lib/markdown";
 import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
-import { approx, hasDollars, rowFor, windowLabel } from "../../lib/setup-cost";
+import { isPerCall, rowFor, usdHover, windowLabel } from "../../lib/setup-cost";
+import { compact, exact } from "../../lib/usage";
 import type { CostReport, CostRow, MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
 import { Chip, ConflictChip, copyText, formatDate, formatSize, KindTile, ScopeChip, StateChip, TagChip } from "./parts";
 
@@ -64,34 +65,67 @@ function Facts({ rows }: { rows: { label: string; value: ReactNode; copy?: strin
   );
 }
 
-/** What this one thing costs: its size on every turn it loads in, and its price when it runs. */
+/** `7.3k tokens`, with the exact count (and the API-price estimate, when there is one) on hover. */
+function Tokens({ n, hover }: { n: number; hover?: string }) {
+  return (
+    <span title={[`${exact(n)} tokens.`, hover].filter(Boolean).join(" ")}>
+      <span className="font-medium">{compact(n)}</span> tokens
+    </span>
+  );
+}
+
+/**
+ * What this one thing costs, in tokens and the honest unit for what it is: skills, agents and
+ * commands load their text each time they are called (plus a short listing with every message);
+ * instructions, rules, memory, styles and tools load with every message.
+ */
 function CostSection({ row, report }: { row: CostRow; report: CostReport }) {
   const rows: { label: string; value: ReactNode }[] = [];
-  if (row.tokens > 0) {
-    rows.push({ label: "Adds", value: `${row.tokens.toLocaleString()} tokens to every turn` });
-    rows.push({ label: "Loads in", value: row.turns > 0 ? `${row.loadsIn} (${row.turns.toLocaleString()} turns)` : row.loadsIn });
-  }
-  if (row.bodyTokens > 0) {
+  const usd = usdHover(row, report);
+  const perCall = isPerCall(row.kind);
+  if (perCall && row.bodyTokens > 0) {
     const ran =
-      row.uses === null
-        ? row.kind === "rule"
-          ? "Loads when a file it covers is touched"
-          : "Loads when you use it"
-        : row.uses === 0
-          ? "Did not run"
-          : `Ran ${row.uses.toLocaleString()} ${row.uses === 1 ? "time" : "times"}`;
-    rows.push({ label: "When it runs", value: `${row.bodyTokens.toLocaleString()} tokens. ${ran}` });
+      row.uses === null ? "" : row.uses === 0 ? ", not run lately" : `, ran ${row.uses.toLocaleString()} ${row.uses === 1 ? "time" : "times"}`;
+    rows.push({
+      label: "Per call",
+      value: (
+        <>
+          <Tokens n={row.bodyTokens} hover={usd} />
+          {ran}
+        </>
+      ),
+    });
   }
-  if (hasDollars(row)) {
-    const parts =
-      row.usdLoaded > 0 && row.usdUsed > 0 ? ` (${approx(row.usdLoaded)} listed, ${approx(row.usdUsed)} when run)` : "";
-    rows.push({ label: "Costs", value: <span className="font-medium">{`${approx(row.usdWeek)} a week${parts}`}</span> });
+  if (row.tokens > 0) {
+    rows.push({
+      label: perCall ? "Listed" : "Per message",
+      value: (
+        <>
+          <Tokens n={row.tokens} hover={perCall ? "" : usd} />
+          {perCall ? " with every message, so Claude knows it exists" : ""}
+        </>
+      ),
+    });
+    rows.push({ label: "Loads in", value: row.turns > 0 ? `${row.loadsIn} (${row.turns.toLocaleString()} messages)` : row.loadsIn });
+  }
+  if (!perCall && row.tokens === 0 && row.bodyTokens > 0) {
+    rows.push({
+      label: "When used",
+      value: (
+        <>
+          <Tokens n={row.bodyTokens} hover={usd} />
+          {row.kind === "rule" ? ", when a file it covers is touched" : ""}
+        </>
+      ),
+    });
   }
   if (rows.length === 0) return null;
   return (
     <Section title="What it costs">
       <Facts rows={rows} />
-      <p className="mt-3 text-caption text-ink-2">Estimate, {windowLabel(report)}.</p>
+      <p className="mt-3 text-caption text-ink-2" title={usd || undefined}>
+        Estimate, {windowLabel(report)}.
+      </p>
     </Section>
   );
 }
