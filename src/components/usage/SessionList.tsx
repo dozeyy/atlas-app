@@ -80,19 +80,23 @@ export function SessionLine({
     <li className="row-in" style={{ ["--i" as string]: index }}>
       <button type="button" onClick={() => onOpen(row.sessionId)} className="row-btn flex-col justify-center px-5 py-3.5">
         <span className={`block w-full truncate text-lead font-bold ${row.name ? "text-ink" : "text-ink-2"}`}>{name}</span>
-        {/* One quiet line that never wraps: it is cut with an ellipsis instead. */}
-        <span className="mt-1 block w-full truncate text-caption text-ink-2">
-          <ProjectDot path={row.projectPath || row.projectName} />
-          {row.projectName}
-          {DOT}
-          <TokenText tokens={row.tokens.total} cost={row.cost} className="font-semibold text-ink" />
-          {barShare !== undefined && (
-            <span aria-hidden="true" className="tok-bar">
-              <i style={{ width: `${Math.round(barShare * 100)}%` }} />
-            </span>
-          )}
+        {/* One quiet line that never wraps. When it is tight the project name gives way (ellipsis); the tokens, helpers and date stay whole. */}
+        <span className="mt-1 flex w-full min-w-0 items-baseline truncate text-caption text-ink-2">
+          <span className="min-w-0 truncate">
+            <ProjectDot path={row.projectPath || row.projectName} />
+            {row.projectName}
+          </span>
+          <span className="shrink-0">{DOT}</span>
+          <span className="shrink-0">
+            <TokenText tokens={row.tokens.total} cost={row.cost} className="font-semibold text-ink" />
+            {barShare !== undefined && (
+              <span aria-hidden="true" className="tok-bar">
+                <i style={{ width: `${Math.round(barShare * 100)}%` }} />
+              </span>
+            )}
+          </span>
           {row.agentCount > 0 && (
-            <>
+            <span className="shrink-0">
               {DOT}
               <span
                 title={`${plural(row.agentCount, "helper")} ran inside this session. Their usage is counted here.`}
@@ -100,15 +104,17 @@ export function SessionLine({
               >
                 {plural(row.agentCount, "helper")}
               </span>
-            </>
+            </span>
           )}
-          {DOT}
-          {formatWhen(row.startedAt)}
+          <span className="shrink-0">
+            {DOT}
+            {formatWhen(row.startedAt)}
+          </span>
           {row.missing && (
-            <>
+            <span className="shrink-0">
               {DOT}
               <span title="The file for this session is no longer on disk. Its numbers are kept.">File removed</span>
-            </>
+            </span>
           )}
         </span>
         {snippet && snippet.length > 0 && (

@@ -95,7 +95,7 @@ export function App() {
         <main ref={main} tabIndex={-1} aria-label={NAV.find((n) => n.view === view)?.label} className="min-h-0 flex-1 overflow-y-auto outline-none">
           <div
             key={view}
-            className={`page-enter @container w-full px-[var(--gutter)] py-[var(--gutter-y)] ${view === "now" || view === "setup" ? "flex min-h-full flex-col" : view === "history" || view === "wrapped" || view === "settings" ? "flex h-full flex-col" : ""}`}
+            className={`page-enter @container w-full px-[var(--gutter)] py-[var(--gutter-y)] ${view === "now" ? "flex min-h-full flex-col" : view === "setup" || view === "history" || view === "wrapped" || view === "settings" ? "flex h-full flex-col" : ""}`}
           >
             {info.settingsSaveError && (
               <div
@@ -113,7 +113,7 @@ export function App() {
       <CommandPalette />
       <LeaveGuard />
       <ToastHost />
-      <TipLayer />
+      <TipLayer resetKey={view} />
     </div>
   );
 }

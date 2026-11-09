@@ -74,10 +74,10 @@ describe("CostPanel", () => {
     expect(document.querySelector('[data-cost-row="i1"]')?.getAttribute("title")).toMatch(/8,804 tokens with every message.*Estimate: about \$21 a week/);
   });
 
-  it("says estimate once and carries no explanation, pills or Live tag", () => {
+  it("carries no explanation sentence, pills or Live tag: the estimate is only in the hovers", () => {
     const { container } = render(<CostPanel report={report(rows)} items={items} />);
-    expect(container.textContent?.match(/Estimate/g)).toHaveLength(1);
-    expect(container.textContent).toContain("Estimate, last 7 days.");
+    expect(container.textContent).not.toMatch(/Estimate/);
+    expect(container.querySelectorAll("[title*='Estimate']").length).toBeGreaterThan(0);
     expect(container.textContent).not.toMatch(/\bLive\b/);
     expect(container.querySelector(".chip, [class*='rounded-full'][class*='px-']")).toBeNull();
   });

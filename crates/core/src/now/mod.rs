@@ -29,10 +29,14 @@ use crate::usage::reader::ReadStats;
 use crate::usage::scan::{self, Found};
 use crate::usage::time::now_ms;
 use facts::Facts;
-use track::{Session, mtime_ms, tail_last};
+use track::{Session, last_entry_ms, mtime_ms, tail_last};
 
 /// A chat is "running" while any of its files was written to this recently.
 pub const WINDOW_MS: i64 = 120_000;
+/// ...and its newest entry is no older than this. A restored or copied `~/.claude` (Time
+/// Machine, Migration Assistant, a sync) gives every old transcript a fresh write time; its
+/// entries keep their real times. Generous, so one long streamed reply never drops a live chat.
+pub const ENTRY_MAX_AGE_MS: i64 = 15 * 60_000;
 /// At most one update this often.
 const THROTTLE: Duration = Duration::from_millis(150);
 /// Wait this long after the first event so a burst of writes becomes one read.
@@ -227,6 +231,9 @@ pub(crate) struct State {
     /// Chats that are not running, newest first.
     recent: Vec<NowLast>,
     seq: u64,
+    /// Freshly written files whose newest entry is old (a restore), by (write time, size), so
+    /// the polling fallback does not read their ends again every second.
+    stale: HashMap<PathBuf, (i64, u64)>,
 }
 
 /// How many finished chats the page can list.
@@ -234,7 +241,33 @@ pub const RECENT_MAX: usize = 6;
 
 impl State {
     pub(crate) fn new(cfg: NowConfig) -> State {
-        State { cfg, facts: Facts::new(), stats: ReadStats::default(), sessions: Vec::new(), recent: Vec::new(), seq: 0 }
+        State {
+            cfg,
+            facts: Facts::new(),
+            stats: ReadStats::default(),
+            sessions: Vec::new(),
+            recent: Vec::new(),
+            seq: 0,
+            stale: HashMap::new(),
+        }
+    }
+
+    /// Is a chat whose newest file is `path` running? Written within the window, and its newest
+    /// entry recent too: a write time alone is not enough (see `ENTRY_MAX_AGE_MS`).
+    fn is_live(&mut self, path: &Path, mtime_ms: i64, size: u64, now: i64) -> bool {
+        if now - mtime_ms > self.cfg.window_ms {
+            return false;
+        }
+        if self.stale.get(path) == Some(&(mtime_ms, size)) {
+            return false;
+        }
+        match last_entry_ms(path) {
+            Some(ts) if now - ts > ENTRY_MAX_AGE_MS => {
+                self.stale.insert(path.to_path_buf(), (mtime_ms, size));
+                false
+            }
+            _ => true,
+        }
     }
 
     /// Put a chat that just stopped at the top of the finished list (once, newest first).
@@ -307,6 +340,7 @@ impl State {
         for (sid, (ms, f)) in &newest {
             if *ms >= cutoff
                 && !self.sessions.iter().any(|s| s.id == *sid)
+                && self.is_live(&f.path, *ms, f.size, now)
                 && let Some(pd) = State::proj_dir_of(&f.path, f.is_subagent)
             {
                 active.push((sid, pd));
@@ -336,7 +370,7 @@ impl State {
             let ended = (f.mtime_ns / 1_000_000).max(0);
             let hint = f.path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("");
             if let Some(mut l) = tail_last(&f.path, &f.folder_session, hint, &self.facts, &self.cfg.prices, &self.stats) {
-                l.ended_ms = ended;
+                l.ended_ms = l.ended_ms.min(ended);
                 self.remember(l);
             }
         }
@@ -352,7 +386,7 @@ impl State {
             let _ = s.read_file(fi, &self.facts, &self.cfg.prices, &self.stats);
             return;
         }
-        if now - (found.mtime_ns / 1_000_000) <= self.cfg.window_ms
+        if self.is_live(&found.path, found.mtime_ns / 1_000_000, found.size, now)
             && let Some(pd) = State::proj_dir_of(&found.path, found.is_subagent)
         {
             self.open_session(&sid, &pd);
@@ -369,6 +403,7 @@ impl State {
     /// retire chats that went quiet.
     pub(crate) fn tick(&mut self, now: i64) {
         let cutoff = now - self.cfg.window_ms;
+        self.stale.retain(|_, (m, _)| *m >= cutoff);
         for s in &mut self.sessions {
             for fi in 0..s.files.len() {
                 let f = &s.files[fi];

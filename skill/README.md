@@ -20,7 +20,7 @@ index lives in Atlas's own data folder (`%LOCALAPPDATA%\atlas\cli` on Windows,
 - `/atlas this week`, `last week`, `today`, `7d`, `30d`, `this month`, `all`, a date or
   `2026-11-02..2026-11-07` - headline, activity, models, projects, biggest sessions.
   Activity is a bar per day up to 14 days; from 15 days to 12 weeks it is the app's terrain
-  grid (a cell per day, 7 days a row, today bottom-right, `▲` on the busiest day); longer
+  grid (a cell per day, 7 days per row, today bottom-right, `▲` on the busiest day); longer
   ranges are a bar per week, then per month.
 - `/atlas this project` (or `project last week`) - the same, for the current folder's project.
 - `/atlas last week vs this week` - side by side with the change, by model and by project.

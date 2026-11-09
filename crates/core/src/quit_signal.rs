@@ -8,9 +8,14 @@
 
 use std::path::Path;
 
-/// The event's name for the Atlas program at `exe`: stable, case-insensitive, per file path.
+/// The event's name for the Atlas program at `exe`: stable, case-insensitive, per file. The path
+/// is first resolved to the file's real full path (short 8.3 names, links and junctions, `..`
+/// all collapse: `std::fs::canonicalize` asks Windows for the final path of the open file), so
+/// the running Atlas and a program that names it another way hash the same string. A file that
+/// is not there (a test, a copy being replaced) is hashed by the path as given.
 pub fn event_name(exe: &Path) -> String {
-    let mut p = exe.to_string_lossy().replace('/', "\\").to_lowercase();
+    let resolved = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
+    let mut p = resolved.to_string_lossy().replace('/', "\\").to_lowercase();
     if let Some(rest) = p.strip_prefix(r"\\?\") {
         p = rest.to_string();
     }
@@ -106,6 +111,26 @@ mod tests {
         assert_eq!(a, c);
         assert_ne!(a, event_name(&PathBuf::from(r"C:\dev\atlas.exe")), "another copy does not hear it");
         assert!(a.starts_with("Local\\AtlasQuit-") && a.len() == "Local\\AtlasQuit-".len() + 16);
+    }
+
+    /// The same file reached by another route (a junction here; the 8.3 short name and `..` take
+    /// the same path through Windows) must give the same event name.
+    #[cfg(windows)]
+    #[test]
+    fn another_route_to_the_same_file_gives_the_same_name() {
+        let t = tempfile::tempdir().unwrap();
+        let real = t.path().join("Atlas Real Folder");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("atlas.exe"), "x").unwrap();
+        let link = t.path().join("viajunction");
+        let made = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&real).output().unwrap();
+        assert!(made.status.success());
+        let dotted = real.join("..").join("Atlas Real Folder").join("atlas.exe");
+        let name = event_name(&real.join("atlas.exe"));
+        assert_eq!(name, event_name(&link.join("atlas.exe")), "through a junction");
+        assert_eq!(name, event_name(&dotted), "with a dot-dot");
+        assert_eq!(name, event_name(&real.join("ATLAS.EXE")), "in other letters");
+        let _ = std::fs::remove_dir(&link);
     }
 
     #[cfg(windows)]

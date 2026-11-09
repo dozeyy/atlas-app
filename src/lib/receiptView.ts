@@ -10,7 +10,7 @@ import { compact, formatUsd, modelLabel, plural } from "./usage";
 import type { Receipt, ReceiptFlag, ReceiptItem, ReceiptThread } from "./types";
 
 /** An estimate in dollars, marked as one, for hover text: "about $3.20". */
-export const guess = (usd: number | null): string => (usd === null ? "" : `about ${formatUsd(usd)}`);
+export const guess = (usd: number | null): string => (usd === null ? "" : `an estimate of about ${formatUsd(usd)}`);
 
 /** "12.4M tokens" */
 export const tokensText = (n: number): string => `${compact(n)} tokens`;

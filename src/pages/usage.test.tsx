@@ -49,7 +49,9 @@ describe("Dashboard", () => {
     // The note lives in the hover of one quiet "About these numbers" mark, not on the page.
     expect(screen.queryByText(/Dollar figures in hovers/)).toBeNull();
     expect(await screen.findByLabelText("About these numbers")).toHaveAttribute("title", expect.stringMatching(/Dollar figures in hovers are estimates from a price list/));
-    expect(screen.getAllByText(/cache reads/).length).toBeGreaterThan(0);
+    // No sentence on the page: cache reads are named in the hero's hover only.
+    expect(screen.queryByText(/listed apart/)).toBeNull();
+    expect(document.querySelector('[title*="cache reads"]')).not.toBeNull();
   });
 
   it("charts tokens only, with a table behind the chart options", async () => {

@@ -120,7 +120,6 @@ export function ItemEditor({
   const [conflict, setConflict] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [switchTo, setSwitchTo] = useState<{ rel: string | undefined } | null>(null);
 
   const load = useCallback(
@@ -139,7 +138,6 @@ export function ItemEditor({
 
   useEffect(() => {
     setRaw(null);
-    setSaved(false);
     void load(false);
   }, [load]);
 
@@ -158,7 +156,6 @@ export function ItemEditor({
 
   const changeDirty = (d: boolean) => {
     setDirty(d);
-    if (d) setSaved(false);
     onDirtyChange(d);
   };
 
@@ -182,8 +179,7 @@ export function ItemEditor({
     }
     // Stay here: what was saved is now the starting point, so the editor reads clean again.
     setRaw({ ...raw, text, stamp: reply.stamp ?? raw.stamp });
-    setSaved(true);
-    pushToast({ message: `Saved ${label}.${reply.backupId !== null ? " The old version is backed up." : ""}`, tone: "success" });
+    pushToast({ message: `Saved ${label}.`, tone: "success" });
     reloadSetup();
   };
 
@@ -263,15 +259,6 @@ export function ItemEditor({
         onCancel={onCancel}
         onDirtyChange={changeDirty}
         above={file === undefined && raw.language === "markdown" ? (api) => <HeaderFields item={item} {...api} /> : undefined}
-        hint={
-          saved && !dirty ? (
-            <span role="status" className="text-success">
-              Saved. The old version is backed up.
-            </span>
-          ) : (
-            "Atlas backs up the current file before saving."
-          )
-        }
       />
       {switchTo && (
         <Dialog

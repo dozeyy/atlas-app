@@ -119,7 +119,7 @@ export function HelperSlice({
           </ul>
           {t.tokenKinds.cacheRead > 0 && (
             <p className="mt-1 text-caption text-ink-2" title={`Cache reads: ${tokensText(t.tokenKinds.cacheRead)}, ${guess(t.kinds.cacheRead)}`}>
-              {`Plus ${compact(t.tokenKinds.cacheRead)} cache reads, listed apart`}
+              {`${compact(t.tokenKinds.cacheRead)} cache reads`}
             </p>
           )}
         </section>

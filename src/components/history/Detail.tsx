@@ -7,7 +7,7 @@ import { KindTile } from "../setup/parts";
 import { ErrorBlock, Skeleton } from "../usage/StateBlocks";
 import { DiffView, TextPreview, diffNote } from "./DiffView";
 import type { HistoryEvent, VersionRow } from "../../lib/historyTypes";
-import { agoText, scopeText, setupKind, shortDate, sourceNote, whatHappened } from "../../lib/historyModel";
+import { agoText, scopeText, setupKind, sourceNote, whatHappened } from "../../lib/historyModel";
 import { formatBytes } from "../../lib/labels";
 import { pushToast } from "../../state/toastStore";
 import { openSessionNext } from "../../lib/nav";
@@ -114,11 +114,7 @@ export function Detail({ event, onBack }: { event: HistoryEvent; onBack?: () => 
 
       {note && <p className="text-body text-ink-2">{note}.</p>}
 
-      {event.kind === "dated" ? (
-        <p className="text-body text-ink">
-          Last changed on {shortDate(event.at)}. Atlas had not started keeping copies yet, so there is nothing to compare.
-        </p>
-      ) : (
+      {event.kind === "dated" ? null : (
         <>
           {d && d.summary.length > 0 && (
             <ul className="m-0 list-none space-y-1 p-0 text-body text-ink">

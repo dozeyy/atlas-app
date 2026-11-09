@@ -32,8 +32,14 @@ function keyboardFocused(el: Element): boolean {
   }
 }
 
-export function TipLayer() {
+/** `resetKey` changes when the screen does (the route): an open tip is put away with it. */
+export function TipLayer({ resetKey }: { resetKey?: unknown }) {
   const box = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    closeRef.current();
+  }, [resetKey]);
 
   useEffect(() => {
     const found = box.current;
@@ -50,6 +56,12 @@ export function TipLayer() {
     let poll = 0;
     let lastClosed = -Infinity;
     let pointer = { x: 0, y: 0 };
+    // The target a press, a shortcut or a screen change put away: it stays quiet until the pointer
+    // leaves it, however the page re-renders or moves focus meanwhile.
+    let muted: Element | null = null;
+    // Where the pointer was when that happened. A screen change can replace the element under it, and
+    // the browser then reports the pointer "entering" the new one without moving: that is not a hover.
+    let stillAt: { x: number; y: number } | null = null;
 
     /** Move the native title out of the browser's reach. */
     const stash = (el: Element) => {
@@ -99,9 +111,19 @@ export function TipLayer() {
       watch.disconnect();
       if (target) restore(target);
       target = null;
+      muted = null;
     };
 
+    /** Put the tip away for good while the pointer stays on its target. */
+    const quiet = (at: { x: number; y: number } = pointer) => {
+      muted = target;
+      stillAt = { ...at };
+      hide();
+    };
+    closeRef.current = () => quiet();
+
     function show(el: Element) {
+      if (el === muted) return;
       if (!el.isConnected) {
         if (el === target) release(); // removed during the show delay: let it go now
         return;
@@ -157,6 +179,10 @@ export function TipLayer() {
       const t = e.target as Element | null;
       const el = t && t.closest ? t.closest(SELECTOR) : null;
       pointer = { x: e.clientX, y: e.clientY };
+      if (stillAt) {
+        if (Math.hypot(pointer.x - stillAt.x, pointer.y - stillAt.y) < 4) return;
+        stillAt = null;
+      }
       if (el === target) return;
       if (target) release();
       if (!el || !textOf(el)) return;
@@ -192,8 +218,17 @@ export function TipLayer() {
     };
 
     // Esc puts the tip away; the title stays parked until the pointer or focus leaves.
+    // A shortcut (Ctrl+7 and the like) is the person doing something else: the tip goes with it.
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && open) hide();
+      else if ((e.ctrlKey || e.metaKey || e.altKey) && !["Control", "Meta", "Alt"].includes(e.key) && (open || timer)) quiet();
+    };
+
+    // A press is a choice made: the tip does not come back for this target, even when focus lands on it.
+    const onPress = (e: Event) => {
+      if (!target) return;
+      const p = e as PointerEvent;
+      quiet(typeof p.clientX === "number" ? { x: p.clientX, y: p.clientY } : pointer);
     };
 
     // A press, a scroll or a resize means the person is doing something else.
@@ -203,12 +238,8 @@ export function TipLayer() {
 
     document.addEventListener("pointerover", onOver, true);
     document.addEventListener("pointerout", onOut, true);
-    // A press ends the tip for good (the browser's own tip does the same): the title goes back at
-    // once, so a click that changes or clears it (the Wrapped gift once you are on Wrapped) takes
-    // effect, and nothing is left parked over the page the click opened.
-    const onPress = () => release();
-
     document.addEventListener("pointerdown", onPress, true);
+    document.addEventListener("click", onPress, true);
     document.addEventListener("focusin", onFocusIn, true);
     document.addEventListener("focusout", onFocusOut, true);
     document.addEventListener("keydown", onKey, true);
@@ -220,6 +251,7 @@ export function TipLayer() {
       document.removeEventListener("pointerover", onOver, true);
       document.removeEventListener("pointerout", onOut, true);
       document.removeEventListener("pointerdown", onPress, true);
+      document.removeEventListener("click", onPress, true);
       document.removeEventListener("focusin", onFocusIn, true);
       document.removeEventListener("focusout", onFocusOut, true);
       document.removeEventListener("keydown", onKey, true);

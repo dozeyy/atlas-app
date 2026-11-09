@@ -4,7 +4,7 @@
 #
 #   powershell -NoProfile -File tools\shoot-hws.ps1 -Config <fixture .claude> -Data <scratch> -Out <dir>
 #       [-Theme light|silver|dark] [-Width 1280 -Height 800] [-Views history,wrapped,settings]
-#       [-Click "x,y;x,y"] [-EditFixture] [-Tag name]
+#       [-Click "x,y;k:text;x,y"] [-EditFixture] [-Tag name]   (k:text types into the focused field)
 #
 # One fresh launch per view (the view is pinned through the scratch settings.json, so no key
 # presses are needed). The window is moved to the primary screen, made topmost and captured from
@@ -98,6 +98,11 @@ foreach ($v in $Views) {
   $r = [W]::Visible($h)
   if ($Click) {
     foreach ($pt in $Click.Split(";")) {
+      if ($pt.StartsWith("k:")) {   # "k:text" types into whatever has focus (SendKeys syntax)
+        [System.Windows.Forms.SendKeys]::SendWait($pt.Substring(2))
+        Start-Sleep -Milliseconds 600
+        continue
+      }
       $xy = $pt.Split(",")
       [void][W]::SetCursorPos($r.L + [int]$xy[0], $r.T + [int]$xy[1])
       Start-Sleep -Milliseconds 150

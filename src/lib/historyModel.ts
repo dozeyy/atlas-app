@@ -55,8 +55,6 @@ export function sourceNote(e: Pick<HistoryEvent, "source">): string | null {
       return "Kept by Claude Code while it worked";
     case "claude_backup":
       return "From a Claude Code backup";
-    case "file_date":
-      return "Atlas had not started keeping copies yet";
     default:
       return null;
   }

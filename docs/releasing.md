@@ -12,9 +12,12 @@
 2. Optional: put the release notes in `docs/release-notes/X.Y.Z.md` (plain sentences; it becomes the tooltip text on the update icon). Each version has its own file, so an older release's notes never carry over; without a file for this version the notes read "Atlas X.Y.Z".
 3. `git tag vX.Y.Z` on a commit that is on `main`, and push the tag. `.github/workflows/release.yml` builds Windows, macOS and the command-line tool, then publishes the Release and pins the skill checksums on `main`.
 
+## Who gets the signing key, and what publishes
+The `gate` job in `release.yml` decides once whether a run is official: a push of a `v*` tag whose commit is in `main`'s history. Only then do the Windows and macOS jobs receive `TAURI_SIGNING_PRIVATE_KEY` (and its password), and only then does the Publish job run. A manual run (`workflow_dispatch`) on any branch, or a tag cut from a branch, still builds everything, with a throwaway update key made on the runner (so the `.sig` files exist but could never update an installed copy), and publishes nothing.
+
 ## When the checksums are not pinned
 The last step writes to `main`, so it checks first and, if a check fails, prints a warning and leaves `main` alone (the Release is already out and stays out):
-- the tagged commit is not in `main`'s history (a tag cut from a branch);
+- the tagged commit is not in `main`'s history (the gate already refuses to publish such a tag; this is a second check);
 - `main`'s `plugin.json` is not at this version any more;
 - a newer version than this one is already in `checksums.txt`.
 

@@ -74,14 +74,16 @@ describe("Toolkit: what the setup costs", () => {
     await userEvent.click(within(panel).getAllByRole("button")[0]!);
     const sheet = await screen.findByRole("dialog");
     expect(within(sheet).getByRole("heading", { name: "What it costs" })).toBeInTheDocument();
-    expect(sheet).toHaveTextContent(/Estimate, last 7 days\./);
+    // The dollar estimate is a hover, never a sentence on the sheet.
+    expect(sheet.textContent).not.toMatch(/Estimate/);
+    expect(sheet.querySelector("[title*='Estimate']")).not.toBeNull();
     expect(sheet).toHaveTextContent(/Per message/);
   });
 
   it("says tokens per call on each skill and in its sheet, with dollars only in the hover", async () => {
     await open(backend);
     await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
-    await screen.findByRole("heading", { level: 2, name: "Skills" });
+    await screen.findByPlaceholderText("Search skills");
     const rowBtn = (await screen.findAllByRole("button", { name: /^skill / }))[0];
     expect(rowBtn).toBeDefined();
     const figure = await waitFor(() => {
@@ -116,7 +118,7 @@ describe("Toolkit: what the setup costs", () => {
     await open(backend);
     await waitFor(() => expect(backend.calls).toBe(1));
     await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
-    await screen.findByRole("heading", { level: 2, name: "Skills" });
+    await screen.findByPlaceholderText("Search skills");
     expect(backend.calls).toBe(1);
   });
 });
