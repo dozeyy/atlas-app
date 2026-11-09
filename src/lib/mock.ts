@@ -147,6 +147,10 @@ export class MockBackend {
 
   async openConfigDir(): Promise<void> {}
   async openDataDir(): Promise<void> {}
+  async uninstallAvailable(): Promise<boolean> {
+    return false;
+  }
+  async uninstallAtlas(): Promise<void> {}
 
   async frontendReady(): Promise<void> {}
   async windowControl(_action: "minimize" | "toggle-maximize" | "close"): Promise<void> {}
