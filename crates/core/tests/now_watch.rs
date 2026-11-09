@@ -19,6 +19,10 @@ struct Rig {
 }
 
 fn start(setup: impl FnOnce(&Path)) -> Rig {
+    start_with(None, setup)
+}
+
+fn start_with(typical: Option<atlas_core::now::TypicalSource>, setup: impl FnOnce(&Path)) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let projects = dir.path().join("projects");
     fs::create_dir_all(projects.join("proj-a")).unwrap();
@@ -28,7 +32,11 @@ fn start(setup: impl FnOnce(&Path)) -> Rig {
     let sink = Arc::new(move |s: &NowSnapshot| {
         let _ = tx.lock().unwrap().send(s.clone());
     });
-    let engine = NowEngine::start(NowConfig::new(projects.clone(), PriceTable::seed()), sink);
+    let mut cfg = NowConfig::new(projects.clone(), PriceTable::seed());
+    if let Some(t) = typical {
+        cfg = cfg.with_typical(t);
+    }
+    let engine = NowEngine::start(cfg, sink);
     Rig { _dir: dir, projects, rx, engine }
 }
 
@@ -149,6 +157,75 @@ fn a_helper_appears_with_its_own_name_and_spend() {
     assert_eq!(c.helpers[0].tokens, 115);
     assert!(c.doing.verb.starts_with("Waiting on"), "{}", c.doing.verb);
     assert!(!serde_json::to_string(&snap).unwrap().contains("TOPSECRET"));
+    rig.engine.stop();
+}
+
+/// A fake usage cache: `runs` finished Explore runs of 20 tool calls, asked for how many times.
+fn fake_typical(runs: u32, asked: Arc<std::sync::atomic::AtomicU32>) -> atlas_core::now::TypicalSource {
+    Arc::new(move || {
+        asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Some(vec![atlas_core::usage::query::TypicalRun { agent_type: "Explore".into(), calls: 20, ms: 90_000, runs }])
+    })
+}
+
+fn helper_rig(typical: atlas_core::now::TypicalSource) -> Rig {
+    let rig = start_with(Some(typical), |p| {
+        let f = p.join("proj-a").join("sess-3.jsonl");
+        append(&f, &prompt());
+        append(&f, &tool("task", "Task", r#"{"subagent_type":"Explore","prompt":"x"}"#));
+    });
+    wait_for(&rig, Duration::from_secs(5), |s| !s.chats.is_empty()).expect("chat found");
+    let subs = rig.projects.join("proj-a").join("sess-3").join("subagents");
+    fs::create_dir_all(&subs).unwrap();
+    fs::write(subs.join("agent-bb22.meta.json"), r#"{"agentType":"Explore","description":"Find the callers"}"#).unwrap();
+    append(&subs.join("agent-bb22.jsonl"), &tool("h1", "Grep", r#"{"pattern":"zzz"}"#));
+    rig
+}
+
+#[test]
+fn a_helper_carries_its_kinds_typical_run_once_there_are_enough_past_runs() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let asked = Arc::new(AtomicU32::new(0));
+    let rig = helper_rig(fake_typical(7, asked.clone()));
+    let (snap, _) = wait_for(&rig, Duration::from_secs(5), |s| {
+        s.chats.first().is_some_and(|c| c.helpers.first().is_some_and(|h| h.typical.is_some()))
+    })
+    .expect("the typical run reaches the helper");
+    let h = &snap.chats[0].helpers[0];
+    assert_eq!((h.agent_type.as_deref(), h.tool_calls), (Some("Explore"), 1));
+    let t = h.typical.expect("typical");
+    assert_eq!((t.calls, t.runs), (20, 7));
+
+    // Many more updates later, the cache was still asked only once (it is never per update).
+    let subs = rig.projects.join("proj-a").join("sess-3").join("subagents");
+    for i in 0..15 {
+        append(&subs.join("agent-bb22.jsonl"), &tool(&format!("g{i}"), "Grep", r#"{"pattern":"zzz"}"#));
+        std::thread::sleep(Duration::from_millis(60));
+    }
+    wait_for(&rig, Duration::from_secs(5), |s| s.chats.first().is_some_and(|c| c.helpers.first().is_some_and(|h| h.tool_calls >= 16)))
+        .expect("the calls keep counting");
+    assert_eq!(asked.load(Ordering::SeqCst), 1);
+    rig.engine.stop();
+}
+
+#[test]
+fn too_few_past_runs_give_no_typical_run() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let asked = Arc::new(AtomicU32::new(0));
+    let rig = helper_rig(fake_typical(4, asked.clone()));
+    wait_for(&rig, Duration::from_secs(5), |s| s.chats.first().is_some_and(|c| !c.helpers.is_empty())).expect("helper");
+    // Wait until the (fake) cache has been asked, then let one more update through.
+    let t0 = Instant::now();
+    while asked.load(Ordering::SeqCst) == 0 && t0.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(asked.load(Ordering::SeqCst), 1);
+    std::thread::sleep(Duration::from_millis(100));
+    let subs = rig.projects.join("proj-a").join("sess-3").join("subagents");
+    append(&subs.join("agent-bb22.jsonl"), &tool("g1", "Grep", r#"{"pattern":"yyy"}"#));
+    let (snap, _) = wait_for(&rig, Duration::from_secs(5), |s| s.chats.first().is_some_and(|c| c.helpers.first().is_some_and(|h| h.tool_calls >= 2)))
+        .expect("a later update");
+    assert!(snap.chats[0].helpers[0].typical.is_none());
     rig.engine.stop();
 }
 

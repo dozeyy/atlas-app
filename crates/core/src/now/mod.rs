@@ -22,9 +22,10 @@ use std::time::{Duration, Instant};
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
-pub use model::{Doing, NowChat, NowFile, NowHelper, NowLast, NowSnapshot, NowStep};
+pub use model::{Doing, NowChat, NowFile, NowHelper, NowLast, NowSnapshot, NowStep, OpenCall, PlanCount, Typical};
 
 use crate::usage::pricing::PriceTable;
+use crate::usage::query::TypicalRun;
 use crate::usage::reader::ReadStats;
 use crate::usage::scan::{self, Found};
 use crate::usage::time::now_ms;
@@ -44,17 +45,45 @@ const COALESCE: Duration = Duration::from_millis(40);
 /// While something runs, stat its files this often.
 const SAFETY_TICK: Duration = Duration::from_secs(1);
 
+/// How far back the finished runs behind a "typical run" reach.
+pub const TYPICAL_DAYS: u32 = 90;
+/// A kind of helper needs this many finished runs before it is compared with its own past.
+pub const MIN_TYPICAL_RUNS: u32 = 5;
+/// The typical runs are asked for when Now starts and then this often, never per update.
+pub const TYPICAL_REFRESH: Duration = Duration::from_secs(30 * 60);
+/// A source that said "not ready yet" (the cache is still being built) is asked again after this.
+/// The question is only a status check until the cache is ready, so it can be short.
+pub const TYPICAL_RETRY: Duration = Duration::from_secs(5);
+
+/// Where the typical runs come from: the finished runs of each kind of helper (the usage
+/// cache). `None` means the source is not ready yet. Called on its own short-lived thread.
+pub type TypicalSource = Arc<dyn Fn() -> Option<Vec<TypicalRun>> + Send + Sync>;
+
 #[derive(Clone)]
 pub struct NowConfig {
     pub projects_dir: PathBuf,
     pub prices: PriceTable,
     pub window_ms: i64,
+    pub typical: Option<TypicalSource>,
 }
 
 impl NowConfig {
     pub fn new(projects_dir: PathBuf, prices: PriceTable) -> NowConfig {
-        NowConfig { projects_dir, prices, window_ms: WINDOW_MS }
+        NowConfig { projects_dir, prices, window_ms: WINDOW_MS, typical: None }
     }
+
+    pub fn with_typical(mut self, source: TypicalSource) -> NowConfig {
+        self.typical = Some(source);
+        self
+    }
+}
+
+/// The medians the source last gave, and when to ask again.
+#[derive(Default)]
+struct TypicalCell {
+    by_type: HashMap<String, TypicalRun>,
+    next_at: Option<Instant>,
+    in_flight: bool,
 }
 
 /// Where updates go. The app turns them into an event for the page.
@@ -147,6 +176,7 @@ impl Drop for NowEngine {
 fn run(cfg: NowConfig, rx: mpsc::Receiver<Msg>, sink: Arc<dyn NowSink>, shared: Arc<Mutex<NowSnapshot>>, polling: bool) {
     let mut st = State::new(cfg);
     st.load_initial(now_ms());
+    st.refresh_typical(Instant::now());
     let mut last_json = String::new();
     let mut last_emit: Option<Instant> = None;
     let mut dirty = true;
@@ -200,6 +230,7 @@ fn run(cfg: NowConfig, rx: mpsc::Receiver<Msg>, sink: Arc<dyn NowSink>, shared: 
             st.rescan(now);
         }
         st.tick(now);
+        st.refresh_typical(Instant::now());
 
         let snap = st.snapshot(now);
         let json = serde_json::to_string(&snap).unwrap_or_default();
@@ -234,6 +265,7 @@ pub(crate) struct State {
     /// Freshly written files whose newest entry is old (a restore), by (write time, size), so
     /// the polling fallback does not read their ends again every second.
     stale: HashMap<PathBuf, (i64, u64)>,
+    typical: Arc<Mutex<TypicalCell>>,
 }
 
 /// How many finished chats the page can list.
@@ -249,7 +281,47 @@ impl State {
             recent: Vec::new(),
             seq: 0,
             stale: HashMap::new(),
+            typical: Arc::new(Mutex::new(TypicalCell::default())),
         }
+    }
+
+    /// Ask the source for the typical runs when they are due (at start, then every
+    /// `TYPICAL_REFRESH`). The question runs on its own thread so a slow query never holds up
+    /// the page's updates, and at most one is out at a time. Cheap to call on every pass.
+    pub(crate) fn refresh_typical(&self, at: Instant) {
+        let Some(source) = self.cfg.typical.clone() else { return };
+        {
+            let mut cell = self.typical.lock().unwrap_or_else(|p| p.into_inner());
+            if cell.in_flight || cell.next_at.is_some_and(|t| at < t) {
+                return;
+            }
+            cell.in_flight = true;
+        }
+        let cell = Arc::clone(&self.typical);
+        let spawned = thread::Builder::new().name("atlas-now-typical".into()).spawn(move || {
+            let answer = source();
+            let mut c = cell.lock().unwrap_or_else(|p| p.into_inner());
+            c.in_flight = false;
+            match answer {
+                Some(runs) => {
+                    c.by_type = runs.into_iter().map(|r| (r.agent_type.clone(), r)).collect();
+                    c.next_at = Some(at + TYPICAL_REFRESH);
+                }
+                None => c.next_at = Some(at + TYPICAL_RETRY),
+            }
+        });
+        if spawned.is_err() {
+            self.typical.lock().unwrap_or_else(|p| p.into_inner()).in_flight = false;
+        }
+    }
+
+    /// Medians for kinds of helper with enough finished runs behind them.
+    fn typical_for(&self, agent_type: &str) -> Option<Typical> {
+        let cell = self.typical.lock().unwrap_or_else(|p| p.into_inner());
+        cell.by_type
+            .get(agent_type)
+            .filter(|r| r.runs >= MIN_TYPICAL_RUNS && r.calls > 0)
+            .map(|r| Typical { calls: r.calls, ms: r.ms, runs: r.runs })
     }
 
     /// Is a chat whose newest file is `path` running? Written within the window, and its newest
@@ -405,9 +477,12 @@ impl State {
         let cutoff = now - self.cfg.window_ms;
         self.stale.retain(|_, (m, _)| *m >= cutoff);
         for s in &mut self.sessions {
+            s.refresh_helper_meta(now);
             for fi in 0..s.files.len() {
                 let f = &s.files[fi];
-                if f.is_sub && f.mtime_ms < cutoff {
+                // A helper quiet for a while is still looked at while it is running (a long
+                // build writes nothing for minutes); only a finished or gone one is skipped.
+                if f.is_sub && f.mtime_ms < cutoff && !s.is_running_helper(fi, now) {
                     continue;
                 }
                 // `fs::metadata` (not a directory entry) so the size is current on Windows.
@@ -418,7 +493,9 @@ impl State {
             }
         }
         let (keep, gone): (Vec<_>, Vec<_>) =
-            std::mem::take(&mut self.sessions).into_iter().partition(|s| s.newest_write_ms() >= cutoff);
+            std::mem::take(&mut self.sessions)
+                .into_iter()
+                .partition(|s| s.newest_write_ms() >= cutoff || s.has_running_helper(now));
         self.sessions = keep;
         for s in &gone {
             self.remember(s.last());
@@ -428,8 +505,12 @@ impl State {
     pub(crate) fn snapshot(&self, now: i64) -> NowSnapshot {
         let mut order: Vec<&Session> = self.sessions.iter().collect();
         order.sort_by_key(|s| s.seq);
+        let mut chats: Vec<NowChat> = order.iter().map(|s| s.chat(now)).collect();
+        for h in chats.iter_mut().flat_map(|c| c.helpers.iter_mut()) {
+            h.typical = h.agent_type.as_deref().and_then(|t| self.typical_for(t));
+        }
         NowSnapshot {
-            chats: order.iter().map(|s| s.chat(now, self.cfg.window_ms)).collect(),
+            chats,
             last: self.recent.first().cloned(),
             recent: self.recent.clone(),
             watching: self.cfg.projects_dir.is_dir(),

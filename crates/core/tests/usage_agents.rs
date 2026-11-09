@@ -420,3 +420,18 @@ fn chrono_ms(iso: &str) -> i64 {
     let c: Vec<i64> = t.split(':').map(|x| x.parse().unwrap()).collect();
     ((days * 24 + c[0]) * 3600 + c[1] * 60 + c[2]) * 1000
 }
+
+#[test]
+fn typical_runs_are_medians_per_kind_of_helper_and_skip_runs_with_no_tool_call() {
+    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    // A reach far enough back that the fixture's fixed 2026 stamps never age out of the test.
+    let runs = fx.engine.typical_runs(36_500).expect("the cache is read");
+    let of = |t: &str| runs.iter().find(|r| r.agent_type == t).unwrap_or_else(|| panic!("no runs of {t}"));
+    // Explore: a1 made 3 calls, e5 made 1, f6 made 3; the median of the three is 3.
+    assert_eq!((of("Explore").runs, of("Explore").calls), (3, 3));
+    assert_eq!((of("general-purpose").runs, of("general-purpose").calls), (1, 4));
+    // c3, d4 made no tool call: not a run to compare against.
+    assert_eq!(runs.iter().map(|r| r.runs).sum::<u32>(), 4);
+    // Nothing in the last day: no finished runs that recent.
+    assert!(fx.engine.typical_runs(1).unwrap().is_empty());
+}

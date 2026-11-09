@@ -213,7 +213,7 @@ fn est_tokens(bytes: usize) -> u64 {
 }
 
 /// Every `<task-notification>` in a raw line: which helper, how it ended.
-fn notices_in(line: &[u8], out: &mut Vec<Notice>) {
+pub(crate) fn notices_in(line: &[u8], out: &mut Vec<Notice>) {
     let open = memmem::Finder::new(b"<task-notification>");
     let mut from = 0;
     while let Some(i) = open.find(&line[from..]) {

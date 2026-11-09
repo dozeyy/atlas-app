@@ -23,6 +23,29 @@ export interface NowStep {
   by: string | null;
 }
 
+/** A helper's own task list as counts only (never the step text). */
+export interface NowPlan {
+  done: number;
+  total: number;
+}
+
+/** What a typical run of this kind of helper looks like: the median of its finished runs. */
+export interface NowTypical {
+  /** Median tool calls. */
+  calls: number;
+  /** Median length, ms. */
+  ms: number;
+  /** How many finished runs the medians come from. */
+  runs: number;
+}
+
+/** The call a helper is waiting on: a kind and one safe word, never the command itself. */
+export interface NowOpenCall {
+  kind: string;
+  /** "cargo", or "a command", "a helper", "the web", "a tool". */
+  word: string;
+}
+
 export interface NowHelper {
   id: string;
   name: string;
@@ -30,7 +53,27 @@ export interface NowHelper {
   tokens: number;
   costUsd: number | null;
   startedMs: number | null;
+  /** It said its last word; the list keeps it a few seconds, then the engine drops it. */
   done: boolean;
+  /** "code-reviewer", "Explore": what kind of helper it is. */
+  agentType: string | null;
+  /** What it was sent to do: the dispatcher's short description (80 characters at most). */
+  goal: string | null;
+  /** Tool calls made so far. */
+  toolCalls: number;
+  /** Its task list, once it has 2 or more steps and one has moved. */
+  plan: NowPlan | null;
+  /** The typical run of this kind (5 or more finished runs behind it), else null. */
+  typical: NowTypical | null;
+  /** What its last few calls add up to: "Reading", "Testing", "Getting started". */
+  phase: string;
+  /** When its newest line was written, epoch ms. */
+  lastLineMs: number | null;
+  openCall: NowOpenCall | null;
+  /** The model id its newest lines name ("claude-opus-5-5"), else null. */
+  model: string | null;
+  /** The effort level its newest line says ("high"), else null. Never a default. */
+  effort: string | null;
 }
 
 export interface NowFile {

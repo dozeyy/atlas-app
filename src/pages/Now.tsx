@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import type { ComponentType, ReactNode } from "react";
 import {
   Binoculars,
@@ -20,23 +20,19 @@ import {
 import { PageTitle } from "../components/controls";
 import { Topo } from "../components/Topo";
 import { prefersReducedMotion } from "../lib/motion";
-import { ago, clock, groupChats } from "../lib/nowFormat";
-import type { NowChat, NowDoing, NowHelper, NowLast, NowStep } from "../lib/nowTypes";
+import { HelperTracker } from "../components/now/HelperTracker";
+import { ago, clock, groupChats, nowCost } from "../lib/nowFormat";
+import type { NowChat, NowLast, NowStep } from "../lib/nowTypes";
 import { useClimb, useClock, useNowSnapshot } from "../lib/useNow";
+import { CALM_MS, useSteadyDoing } from "../lib/useSteadyDoing";
 import { compact, formatDuration, modelLabel, plural, tokenHint } from "../lib/usage";
-import type { Cost } from "../lib/usageTypes";
 import "../styles/now.css";
 
 /** More running chats than this and the cards turn into a compact grid that scrolls. */
 const STACK_MAX = 3;
-const HELPERS_SHOWN = 3;
 const FILES_SHOWN = 3;
 /** A step stays marked as new this long, so a second one landing does not cut its entrance short. */
 const FRESH_MS = 700;
-/** A tool's line stays up this long after the call ends, so back-to-back calls never blink to "Thinking". */
-const HOLD_MS = 1200;
-/** At most one entrance or slide per this long per card: rapid calls just update the text in place. */
-const CALM_MS = 1000;
 
 const KIND_ICON: Record<string, ComponentType<IconProps>> = {
   read: FileText,
@@ -204,13 +200,13 @@ function DoneRow({ last, now }: { last: NowLast; now: number }) {
 function Running({ chats }: { chats: NowChat[] }) {
   const stacked = chats.length <= STACK_MAX;
   return (
-    <section className="now-run" aria-label="Running">
+    <section className="now-run" aria-label="Running" style={{ ["--n" as string]: chats.length }}>
       <h2 className="now-list-head">
         <span>Running</span>
         <span className="now-count">{chats.length}</span>
       </h2>
       {stacked ? (
-        <div className="now-stack" style={{ ["--n" as string]: chats.length }}>
+        <div className="now-stack">
           {chats.map((c) => (
             <ChatCard key={c.sessionId} chat={c} />
           ))}
@@ -222,13 +218,9 @@ function Running({ chats }: { chats: NowChat[] }) {
           ))}
         </div>
       )}
+      <HelperTracker chats={chats} />
     </section>
   );
-}
-
-/** The live snapshot carries a dollar estimate and a flag, not a full Cost: rebuild one for the hover. */
-function nowCost(usd: number | null, unpriced: boolean): Cost {
-  return { usd, complete: !unpriced, unpricedTokens: 0 };
 }
 
 function ChatCard({ chat }: { chat: NowChat }) {
@@ -295,40 +287,7 @@ function ChatCard({ chat }: { chat: NowChat }) {
   );
 }
 
-const doingId = (d: NowDoing) => `${d.kind}|${d.verb}|${d.target ?? ""}`;
-
-/**
- * What the "doing" line shows. The live feed flips tool -> "Thinking" -> the same tool on every
- * call, many times a second when a script polls; shown raw, the line re-mounted and faded in each
- * time and the card flashed. Here a tool's line is held for HOLD_MS before "Thinking" replaces it,
- * and the swap animates (a new `swapKey`) at most once per CALM_MS; a faster change only swaps
- * the text in place.
- */
-export function useSteadyDoing(live: NowDoing): { doing: NowDoing; swapKey: number } {
-  const [shown, setShown] = useState({ doing: live, key: 0 });
-  const lastSwap = useRef(0);
-  const liveRef = useRef(live);
-  liveRef.current = live;
-  const liveId = doingId(live);
-  const shownId = doingId(shown.doing);
-  const shownKind = shown.doing.kind;
-  useEffect(() => {
-    if (liveId === shownId) return;
-    const swap = () => {
-      const t = performance.now();
-      const animate = t - lastSwap.current >= CALM_MS;
-      if (animate) lastSwap.current = t;
-      setShown((prev) => ({ doing: liveRef.current, key: animate ? prev.key + 1 : prev.key }));
-    };
-    const fromTool = !["think", "wait", "ask"].includes(shownKind);
-    if (liveRef.current.kind === "think" && fromTool) {
-      const t = setTimeout(swap, HOLD_MS);
-      return () => clearTimeout(t);
-    }
-    swap();
-  }, [liveId, shownId, shownKind]);
-  return { doing: shown.doing, swapKey: shown.key };
-}
+export { useSteadyDoing };
 
 function Elapsed({ chat }: { chat: NowChat }) {
   const working = chat.state === "working";
@@ -345,51 +304,22 @@ function Elapsed({ chat }: { chat: NowChat }) {
   );
 }
 
-// ---- helpers and files ----------------------------------------------------------------
+// ---- files ----------------------------------------------------------------
 
 function People({ chat }: { chat: NowChat }) {
-  const shown = chat.helpers.slice(0, HELPERS_SHOWN);
-  const more = chat.helpers.length - shown.length;
   const files = chat.files.slice(0, FILES_SHOWN);
-  if (shown.length === 0 && files.length === 0) return null;
+  if (files.length === 0) return null;
   return (
-    <section className="nc-people" aria-label="Helpers and files">
-      {shown.map((h) => (
-        <Helper key={h.id} helper={h} />
-      ))}
-      {more > 0 && <span className="chip nc-more">{`+${more} more`}</span>}
-      {files.length > 0 && (
-        <ul className="nc-files">
-          {files.map((f) => (
-            <li key={f.path} className="nc-file" title={f.path} data-edited={f.edited || undefined}>
-              {f.edited ? <PencilSimple size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}
-              <span>{f.path}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <section className="nc-people" aria-label="Files">
+      <ul className="nc-files">
+        {files.map((f) => (
+          <li key={f.path} className="nc-file" title={f.path} data-edited={f.edited || undefined}>
+            {f.edited ? <PencilSimple size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}
+            <span>{f.path}</span>
+          </li>
+        ))}
+      </ul>
     </section>
-  );
-}
-
-function Helper({ helper }: { helper: NowHelper }) {
-  const tokens = useClimb(helper.tokens);
-  const line = helper.done ? "Done" : helper.doing ? [helper.doing.verb, helper.doing.target].filter(Boolean).join(" ") : "";
-  return (
-    <div className="nc-helper" data-done={helper.done || undefined}>
-      <KindIcon kind={helper.doing?.kind ?? "think"} size={18} />
-      <div className="nc-helper-text">
-        <p className="nc-helper-name" title={helper.name}>
-          {helper.name}
-        </p>
-        <p className="nc-helper-doing" title={line}>
-          {line}
-        </p>
-      </div>
-      <p className="d d-small nc-helper-spend" title={tokenHint(helper.tokens, nowCost(helper.costUsd, false))}>
-        {compact(Math.round(tokens))}
-      </p>
-    </div>
   );
 }
 

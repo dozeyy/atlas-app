@@ -830,6 +830,66 @@ pub fn first_day(conn: &Connection) -> rusqlite::Result<Option<String>> {
     conn.query_row("SELECT MIN(substr(hour_local,1,10)) FROM usage_hour", [], |r| r.get::<_, Option<String>>(0))
 }
 
+/// What a typical run of one kind of helper looks like: medians over its finished runs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypicalRun {
+    pub agent_type: String,
+    /// Median tool calls of a run.
+    pub calls: u32,
+    /// Median length of a run, ms (first to last recorded message).
+    pub ms: i64,
+    /// How many finished runs the medians come from.
+    pub runs: u32,
+}
+
+/// A helper with no message for this long is counted as over (the helper ledger will carry a
+/// recorded end status; until then this is the rule).
+const TYPICAL_ENDED_AFTER_MS: i64 = 10 * 60_000;
+
+fn median<T: Copy + Ord + Into<i64>>(v: &mut [T]) -> i64 {
+    v.sort_unstable();
+    let n = v.len();
+    if n == 0 {
+        return 0;
+    }
+    if n % 2 == 1 { v[n / 2].into() } else { (v[n / 2 - 1].into() + v[n / 2].into()) / 2 }
+}
+
+/// Per kind of helper: the median tool calls and length of its runs that ended in the last
+/// `days` days (no message for `TYPICAL_ENDED_AFTER_MS`), with the run count. Runs with no tool
+/// call are left out, so a median is never zero. The Now tracker compares a live helper with it.
+pub fn typical_runs(conn: &Connection, ctx: &QueryCtx, days: u32) -> rusqlite::Result<Vec<TypicalRun>> {
+    let since = ctx.now_ms - i64::from(days) * 86_400_000;
+    let over_by = ctx.now_ms - TYPICAL_ENDED_AFTER_MS;
+    let mut st = conn.prepare_cached(
+        "SELECT a.agent_type, f.tool_calls, MIN(m.ts_utc_ms), MAX(m.ts_utc_ms) \
+         FROM agents a \
+         JOIN files f ON f.file_id = a.file_id \
+         JOIN messages m ON m.file_id = a.file_id \
+         WHERE a.agent_type IS NOT NULL AND a.agent_type <> '' AND f.tool_calls > 0 AND f.missing = 0 \
+         GROUP BY a.session_id, a.agent_id \
+         HAVING MAX(m.ts_utc_ms) >= ?1 AND MAX(m.ts_utc_ms) <= ?2",
+    )?;
+    let mut by_type: BTreeMap<String, (Vec<i64>, Vec<i64>)> = BTreeMap::new();
+    for r in st.query_map([since, over_by], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?))
+    })? {
+        let (t, calls, first, last) = r?;
+        let e = by_type.entry(t).or_default();
+        e.0.push(calls);
+        e.1.push((last - first).max(0));
+    }
+    Ok(by_type
+        .into_iter()
+        .map(|(agent_type, (mut calls, mut ms))| TypicalRun {
+            agent_type,
+            runs: calls.len() as u32,
+            calls: median(&mut calls).clamp(0, i64::from(u32::MAX)) as u32,
+            ms: median(&mut ms),
+        })
+        .collect())
+}
+
 /// Chats with a message in `[from_day, to_day]`, per project key (the dashboard's rule).
 fn sessions_by_project(conn: &Connection, tz: Tz, from_day: &str, to_day: &str) -> rusqlite::Result<HashMap<String, u64>> {
     let lo = day_start_ms(tz, from_day);

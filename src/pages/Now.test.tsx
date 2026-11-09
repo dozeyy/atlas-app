@@ -6,7 +6,7 @@ import { resetToasts } from "../state/toastStore";
 import { setBackend } from "../lib/ipc";
 import { MockBackend } from "../lib/mock";
 import { ago, clock, groupChats } from "../lib/nowFormat";
-import type { NowChat, NowLast, NowSnapshot, NowStep } from "../lib/nowTypes";
+import type { NowChat, NowHelper, NowLast, NowSnapshot, NowStep } from "../lib/nowTypes";
 
 function step(id: string, verb: string, target: string | null, over: Partial<NowStep> = {}): NowStep {
   return { id, kind: "edit", verb, target, tsMs: Date.now(), done: true, count: 1, by: null, ...over };
@@ -45,6 +45,29 @@ function waiting(over: Partial<NowChat> = {}): NowChat {
     tokens: 48_200,
     ...over,
   });
+}
+
+function helper(over: Partial<NowHelper> = {}): NowHelper {
+  return {
+    id: "h1",
+    name: "Find the callers",
+    doing: { kind: "search", verb: "Searching", target: "run_loop" },
+    tokens: 115,
+    costUsd: 0.03,
+    startedMs: Date.now() - 5_000,
+    done: false,
+    agentType: "Explore",
+    goal: "Find the callers",
+    toolCalls: 3,
+    plan: null,
+    typical: null,
+    phase: "Reading",
+    lastLineMs: Date.now(),
+    openCall: null,
+    model: "claude-opus-5-5",
+    effort: "high",
+    ...over,
+  };
 }
 
 function done(over: Partial<NowLast> = {}): NowLast {
@@ -108,28 +131,23 @@ describe("Now", () => {
     expect(within(screen.getByRole("list", { name: "Recent steps" })).getAllByRole("listitem")).toHaveLength(3);
   });
 
-  it("shows a helper that is out, with its own tokens", async () => {
-    mount(
-      snap({
-        chats: [
-          chat({
-            helpers: [
-              {
-                id: "h1",
-                name: "Find the callers",
-                doing: { kind: "search", verb: "Searching", target: "run_loop" },
-                tokens: 115,
-                costUsd: 0.03,
-                startedMs: Date.now() - 5_000,
-                done: false,
-              },
-            ],
-          }),
-        ],
-      }),
-    );
-    expect(await screen.findByText("Find the callers")).toBeInTheDocument();
-    expect(screen.getByText("115", { selector: ".nc-helper-spend" })).toBeInTheDocument();
+  it("lists a helper that is out under the chat, not inside its card", async () => {
+    mount(snap({ chats: [chat({ helpers: [helper()] })] }));
+    const list = await screen.findByRole("region", { name: "Helpers at work" });
+    expect(within(list).getByText("Explore")).toBeInTheDocument();
+    expect(within(list).getByText("Find the callers")).toBeInTheDocument();
+    expect(within(list).getByText("115", { selector: ".ht-tokens" })).toBeInTheDocument();
+    expect(within(list).getByText("No past runs to compare")).toBeInTheDocument();
+    // The card keeps its chip and its files; the helper's row is not in it any more.
+    const card = screen.getByRole("article", { name: "Fix the build" });
+    expect(within(card).getByText("1 helper")).toBeInTheDocument();
+    expect(card.querySelector(".ht-row")).toBeNull();
+  });
+
+  it("draws no list at all while no helper is running", async () => {
+    mount(snap({ chats: [chat()] }));
+    await screen.findByRole("article", { name: "Fix the build" });
+    expect(screen.queryByRole("region", { name: "Helpers at work" })).toBeNull();
   });
 
   it("keeps running, waiting and finished chats in three separate groups", async () => {
