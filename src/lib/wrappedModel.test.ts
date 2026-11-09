@@ -55,6 +55,7 @@ const habits = (over: Partial<WrappedHabits> = {}): WrappedHabits => ({
   helperTokens: 4_000_000,
   mostHelpers: null,
   biggest: null,
+  chatTokens: 48_000_000,
   ...over,
 });
 
@@ -110,7 +111,7 @@ function plain(over: Partial<WrappedData> = {}): WrappedData {
     ],
     tokens: 100,
     skillUses: 3,
-    habits: habits({ chats: 100, shortChats: 20, longChats: 5, allTokens: 100, helperTokens: 5 }),
+    habits: habits({ chats: 100, shortChats: 20, longChats: 5, allTokens: 100, helperTokens: 5, chatTokens: 100 }),
     ...over,
   });
 }
@@ -142,9 +143,23 @@ describe("buildSlides", () => {
     );
     const kinds = s.map((x) => x.chart?.kind).filter(Boolean);
     expect(kinds.length).toBe(new Set(kinds).size);
-    expect(kinds).toEqual(["ridge", "spines", "trail", "heat", "tower", "dial", "tiles", "podium", "lollipop", "burst", "bubbles", "spike", "spokes", "strip", "donut", "badge"]);
+    expect(kinds).toEqual(["ridge", "spines", "trail", "heat", "tower", "dial", "tiles", "podium", "lollipop", "burst", "terminal", "spike", "spokes", "strip", "donut", "badge"]);
     // Layouts vary: not every slide is laid out the same way.
     expect(new Set(s.map((x) => x.layout)).size).toBeGreaterThanOrEqual(4);
+  });
+
+  it("averages the tower over the chats it counts, not the whole range total", () => {
+    // 100 chats on disk spent 40M between them; the range total is 48M because chats that are gone
+    // spent the other 8M. The average chat is 400k, not 480k.
+    const s = buildSlides(data({ tokens: 48_000_000, biggest: chat(), habits: habits({ chats: 100, chatTokens: 40_000_000 }) }));
+    const tower = s.find((x) => x.id === "biggest")?.chart;
+    expect(tower?.kind).toBe("tower");
+    expect(tower && tower.kind === "tower" ? tower.avg : 0).toBe(400_000);
+    // Without the chats' own total there is no honest average, so no tower.
+    const none = buildSlides(data({ biggest: chat(), habits: habits({ chats: 100, chatTokens: 0 }) }));
+    expect(none.find((x) => x.id === "biggest")?.chart).toBeUndefined();
+    const lone = buildSlides(data({ biggest: chat(), habits: habits({ chats: 1, chatTokens: 5_000 }) }));
+    expect(lone.find((x) => x.id === "biggest")?.chart).toBeUndefined();
   });
 
   it("puts one true comparison under the number, in tokens and ASCII, never in dollars", () => {
@@ -170,7 +185,7 @@ describe("buildSlides", () => {
     // The share card is the numbers-only picture: no comparison there.
     expect(s[s.length - 1].compare).toBeUndefined();
     // 7 helpers is past the 5 on a basketball court, short of 11 on a soccer pitch: the nearer rung wins.
-    expect(s.find((x) => x.id === "crowd")?.compare?.text).toBe("Enough helpers to fill 1.4 basketball teams on the court.");
+    expect(s.find((x) => x.id === "crowd")?.compare?.text).toBe("Enough helpers to fill 1.4 basketball teams.");
   });
 
   it("leaves the comparison out when the number is too small for the smallest rung", () => {
@@ -256,9 +271,10 @@ describe("buildSlides", () => {
     // 2026-10-09 is a Friday. Put the big days on Tuesdays.
     const days = Array.from({ length: 31 }, (_, i) => (new Date(2026, 9, 9 + i, 12).getDay() === 2 ? 5_000_000 : 1_000_000));
     const w = buildSlides(data({ dayTokens: days })).find((x) => x.id === "weekday")!;
-    expect(w.figure).toBe("Tuesday");
+    expect(w.figure).toMatch(/^\d+%$/);
+    expect(w.unit).toBe("of your week");
     expect(w.chart).toMatchObject({ kind: "spokes" });
-    expect(w.line).toMatch(/^\d+% of an average week's tokens land on a Tuesday\. Plan around it\.$/);
+    expect(w.line).toBe("Tuesday beats every other day. Plan around it.");
   });
 });
 
@@ -348,7 +364,7 @@ describe("novels", () => {
     expect(n.hint).toContain("An estimate");
     // 36.15M words at 238 words a minute is about 2,530 hours: 1.2 work years of 2,080 hours.
     expect(readingHours(48_200_000)).toBeCloseTo(2531.6, 0);
-    expect(n.compare?.text).toBe("Reading it all takes about 1.2 full-time work years.");
+    expect(n.compare?.text).toBe("Reading takes about 1.2 full-time work years.");
   });
 });
 describe("coderType", () => {

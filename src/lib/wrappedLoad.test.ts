@@ -32,4 +32,42 @@ describe("uniqueLabels", () => {
     expect(new Set(out.map((r) => r.label)).size).toBe(2);
     expect(out.every((r) => r.label.startsWith("Unknown project ("))).toBe(true);
   });
+
+  it("hints only with the words that differ, never a word every path shares", () => {
+    const out = uniqueLabels([
+      row("C--Users-Will-Documents-Games-Godot-Origin-Client", "Origin Client"),
+      row("C--Users-Will-Documents-Minecraft-Mods-Origin-Client", "Origin Client"),
+    ]);
+    expect(out.map((r) => r.hint)).toEqual(["Games Godot", "Minecraft Mods"]);
+    expect(out.map((r) => r.label)).toEqual(["Origin Client (Games Godot)", "Origin Client (Minecraft Mods)"]);
+    // A shared parent at the end of the path is not a difference either.
+    const shared = uniqueLabels([row("C--w-Alpha-Apps-tool", "tool"), row("C--w-Beta-Apps-tool", "tool")]);
+    expect(shared.map((r) => r.hint)).toEqual(["Alpha", "Beta"]);
+  });
+
+  it("counts them when one path is the other's parent, instead of repeating a shared word", () => {
+    const out = uniqueLabels([row("C--Users-Will-Documents-Origin-Client", "Origin Client"), row("C--Users-Will-Documents-Games-Origin-Client", "Origin Client")]);
+    expect(out.map((r) => r.label)).toEqual(["Origin Client (1)", "Origin Client (2)"]);
+  });
+
+  it("counts them when the hints would not be told apart, or the name is not ASCII", () => {
+    const same = uniqueLabels([row("C--w-A-B-x", "x"), row("C--w-A-b-x", "x")]);
+    expect(same.map((r) => r.label)).toEqual(["x (1)", "x (2)"]);
+    const jp = uniqueLabels([row("C--w-one---", "\u65e5\u672c\u8a9e"), row("C--w-two---", "\u65e5\u672c\u8a9e")]);
+    expect(jp.map((r) => r.label)).toEqual(["\u65e5\u672c\u8a9e (1)", "\u65e5\u672c\u8a9e (2)"]);
+    // A partly non-ASCII name still finds its ASCII words at the end of the key.
+    const cafe = uniqueLabels([row("C--w-one-Caf--Bot", "Caf\u00e9 Bot"), row("C--w-two-Caf--Bot", "Caf\u00e9 Bot")]);
+    expect(cafe.map((r) => r.hint)).toEqual(["one", "two"]);
+  });
+
+  it("keeps the bare name on a row that got a hint, and no hint on one that did not", () => {
+    const out = uniqueLabels([
+      { ...row("C--w-a-x", "x"), name: "x" },
+      { ...row("C--w-b-x", "x"), name: "x" },
+      { ...row("C--w-y", "y"), name: "y" },
+    ]);
+    expect(out.map((r) => r.name)).toEqual(["x", "x", "y"]);
+    expect(out[2].hint).toBeUndefined();
+    expect(out[0].hint).toBe("a");
+  });
 });

@@ -285,6 +285,75 @@
   --share-accent-ink: #fffaf3;
   --share-sand: #a8875f;
 
+  /* Wrapped "Poster Riot": each slide is a flat colour field, the same in every theme (the page
+     chrome follows the theme, the posters do not). Six pairs built from Atlas's own clay, sand and
+     slate. Roles: bg the field; fg and soft the text on it; acc and alt the hero fills; dark the
+     outline and the dark fills (8px slate); strip-bg / strip-fg the comparison strip.
+     tokens.test.ts-level guard: lib/wrappedPoster.test.ts checks every text pair at 4.5:1. */
+  --pr-clay-bg: #a64a28;
+  --pr-clay-fg: #fff3e2;
+  --pr-clay-soft: #ffe3c9;
+  --pr-clay-acc: #ffcf8f;
+  --pr-clay-alt: #f6b08a;
+  --pr-clay-on-acc: #1f2a33;
+  --pr-clay-on-alt: #1f2a33;
+  --pr-clay-dark: #1f2a33;
+  --pr-clay-strip-bg: #1f2a33;
+  --pr-clay-strip-fg: #fff3e2;
+  --pr-sand-bg: #f2e3cb;
+  --pr-sand-fg: #1f2a33;
+  --pr-sand-soft: #5d5546;
+  --pr-sand-acc: #a64a28;
+  --pr-sand-alt: #5b7083;
+  --pr-sand-on-acc: #fff3e2;
+  --pr-sand-on-alt: #fffaf2;
+  --pr-sand-dark: #1f2a33;
+  --pr-sand-strip-bg: #a64a28;
+  --pr-sand-strip-fg: #fff3e2;
+  --pr-night-bg: #1f2a33;
+  --pr-night-fg: #f2e3cb;
+  --pr-night-soft: #b9c6d2;
+  --pr-night-acc: #e8896a;
+  --pr-night-alt: #8fa3b5;
+  --pr-night-on-acc: #1f2a33;
+  --pr-night-on-alt: #1f2a33;
+  --pr-night-dark: #0f161c;
+  --pr-night-strip-bg: #e8896a;
+  --pr-night-strip-fg: #1f2a33;
+  --pr-peach-bg: #e8906a;
+  --pr-peach-fg: #1f2a33;
+  --pr-peach-soft: #4a2a1c;
+  --pr-peach-acc: #7a2f12;
+  --pr-peach-alt: #fff3e2;
+  --pr-peach-on-acc: #fff3e2;
+  --pr-peach-on-alt: #1f2a33;
+  --pr-peach-dark: #1f2a33;
+  --pr-peach-strip-bg: #1f2a33;
+  --pr-peach-strip-fg: #ffe3c9;
+  --pr-mist-bg: #cfdbe4;
+  --pr-mist-fg: #1f2a33;
+  --pr-mist-soft: #3d4f5e;
+  --pr-mist-acc: #a64a28;
+  --pr-mist-alt: #5b7083;
+  --pr-mist-on-acc: #fff3e2;
+  --pr-mist-on-alt: #fffaf2;
+  --pr-mist-dark: #1f2a33;
+  --pr-mist-strip-bg: #1f2a33;
+  --pr-mist-strip-fg: #cfdbe4;
+  --pr-ember-bg: #6e2c14;
+  --pr-ember-fg: #ffe9d2;
+  --pr-ember-soft: #f6c9a6;
+  --pr-ember-acc: #ffb980;
+  --pr-ember-alt: #e07a55;
+  --pr-ember-on-acc: #3a1608;
+  --pr-ember-on-alt: #1f2a33;
+  --pr-ember-dark: #1f2a33;
+  --pr-ember-strip-bg: #ffb980;
+  --pr-ember-strip-fg: #3a1608;
+
+  /* The poster edge: Anton, a heavy condensed grotesque (OFL, bundled in src/assets/fonts). */
+  --font-poster: "Anton", "Arial Narrow", Impact, var(--font-ui);
+
   /* Radii: controls 8, cards 14, sheets and popovers 18, pills round. */
   --r-control: 8px;
   --r-card: 14px;

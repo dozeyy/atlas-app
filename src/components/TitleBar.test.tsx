@@ -38,6 +38,20 @@ describe("title bar row", () => {
     expect(act.mock.calls.map((c) => c[0])).toEqual(["minimize", "toggle-maximize", "close"]);
   });
 
+  it("Windows: a mouse click does not leave a caption button holding keyboard focus", async () => {
+    const backend = mount("windows");
+    const act = vi.spyOn(backend, "windowControl");
+    const min = screen.getByRole("button", { name: "Minimize" });
+    await userEvent.click(min);
+    expect(act).toHaveBeenCalledWith("minimize");
+    expect(document.activeElement).not.toBe(min);
+    // Tab still reaches it, and the keyboard press still works.
+    min.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(act).toHaveBeenCalledTimes(2);
+    expect(document.activeElement).toBe(min);
+  });
+
   it("Windows: the middle button turns into Restore while the window is maximized", async () => {
     const backend = new MockBackend();
     vi.spyOn(backend, "boot").mockReturnValue(mockInfo({}, "windows"));

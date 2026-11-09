@@ -31,6 +31,9 @@ pub struct WrappedHabits {
     /// The chat with the most tokens in all (its whole length, like the Sessions list); `None`
     /// when the range has no chat.
     pub biggest: Option<SessionRow>,
+    /// Whole-chat tokens summed over exactly the `chats` above (same chats, same measure as
+    /// `biggest`), so `chat_tokens / chats` is a true average and never counts a chat that is gone.
+    pub chat_tokens: u64,
 }
 
 /// The biggest share card Atlas will write. The page draws 1200 x 675, about 100 KB.
@@ -132,13 +135,23 @@ pub fn wrapped_habits(conn: &Connection, ctx: &QueryCtx, from: &str, to: &str) -
         "SELECT s.session_id FROM sessions s \
          WHERE s.messages > 0 AND s.missing = 0 AND s.last_ts >= ?1 AND s.first_ts < ?2 \
          ORDER BY (SELECT COALESCE(SUM(m.input + m.output + m.cw5m + m.cw1h), 0) FROM session_model m WHERE m.session_id = s.session_id) DESC, \
-                  s.session_id DESC LIMIT 1",
+                  s.first_ts ASC, s.session_id ASC LIMIT 1",
         &[&lo, &hi],
     )?;
     let biggest = match big {
         Some(id) => session_rows_for(conn, ctx, &[id])?.pop(),
         None => None,
     };
+
+    // The same chats `chats` counted (present, with a message in the range), measured the way
+    // `biggest` is: the numerator of an average over `chats`.
+    let chat_tokens: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(m.input + m.output + m.cw5m + m.cw1h), 0) FROM session_model m \
+         JOIN sessions s ON s.session_id = m.session_id \
+         WHERE s.messages > 0 AND s.missing = 0 AND s.last_ts >= ?1 AND s.first_ts < ?2",
+        rusqlite::params![lo, hi],
+        |r| r.get(0),
+    )?;
 
     Ok(WrappedHabits {
         chats: u(chats),
@@ -148,6 +161,7 @@ pub fn wrapped_habits(conn: &Connection, ctx: &QueryCtx, from: &str, to: &str) -
         helper_tokens: u(helper_tokens),
         most_helpers,
         biggest,
+        chat_tokens: u(chat_tokens),
     })
 }
 
