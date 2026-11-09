@@ -1,47 +1,94 @@
-import { useEffect, useRef, useState } from "react";
-import type { MouseEvent, ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ArrowCounterClockwise } from "@phosphor-icons/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent, PointerEvent } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowCounterClockwise,
+} from "@phosphor-icons/react";
 import { Button } from "../controls";
+import { prefersReducedMotion } from "../../lib/motion";
 import type { Slide } from "../../lib/wrappedModel";
-import { SlideView } from "./Slide";
+import { plan, WIPE_LEAD, WIPE_MS } from "../../lib/wrappedPoster";
+import type { PosterSpec } from "../../lib/wrappedPoster";
+import { CardPoster } from "./CardSlide";
+import { Poster } from "./Poster";
 
-/** How a slide arrives. They take turns, so no two neighbors move the same way. */
-export const TRANSITIONS = ["rise", "slide", "zoom", "curtain"] as const;
-export type Transition = (typeof TRANSITIONS)[number];
+/** How long a press has to last before it is a hold (the story freezes) and not a tap. */
+const HOLD_MS = 180;
 
-/** The cover zooms in; the last slide always arrives behind the curtain; the rest take turns. */
-export function transitionFor(index: number, last: number): Transition {
-  if (index === 0) return "zoom";
-  if (index === last) return "curtain";
-  return TRANSITIONS[(index - 1) % 3];
+interface At {
+  i: number;
+  /** The poster going out, frozen, until the wipe has covered it. */
+  prev: number | null;
+  dir: "fwd" | "back";
+  /** Counts moves, so a late timer from an earlier move cannot clear a later one. */
+  n: number;
 }
 
-/** Entrances wait this long (ms) while the curtain covers the stage; keep in step with wr-sweep. */
-export const CURTAIN_LEAD = 300;
-
-/** How long the stage hides its overflow after a change, so nothing in flight can raise a scrollbar. */
-const MOVING_MS = 1300;
+function PosterOrCard({
+  slide,
+  spec,
+  frozen,
+  paused,
+  delay,
+  onFrame,
+}: {
+  slide: Slide;
+  spec: PosterSpec;
+  frozen?: boolean;
+  paused?: boolean;
+  delay?: number;
+  onFrame?: (t: number) => void;
+}) {
+  return slide.card ? (
+    <CardPoster
+      slide={slide}
+      spec={spec}
+      frozen={frozen}
+      paused={paused}
+      delay={delay}
+      onFrame={onFrame}
+    />
+  ) : (
+    <Poster
+      slide={slide}
+      spec={spec}
+      frozen={frozen}
+      paused={paused}
+      delay={delay}
+      onFrame={onFrame}
+    />
+  );
+}
 
 /**
- * The story, in the page: a cover and then one slide at a time, filling the space so nothing
- * scrolls. Right, Left and Space go on and back; a click on the slide goes on (the left third goes
- * back); the progress segments are buttons too. Each slide arrives by its own move, from the side
- * you are heading toward. With reduced motion every move is a fade.
+ * The story, in the page: one full-bleed poster at a time, filling the space so nothing scrolls.
+ * Right, Left and Space go on and back; a click on the poster goes on (the left third goes back);
+ * hold anywhere to freeze it; the progress segments are buttons too. A move is a colour wipe into the
+ * next poster's colour while the words cross over; with reduced motion it is a fade.
  */
-export function Story({ cover, slides }: { cover: ReactNode; slides: Slide[] }) {
-  const [at, setAt] = useState<{ i: number; dir: "fwd" | "back" }>({ i: 0, dir: "fwd" });
-  const [moving, setMoving] = useState(false);
-  const last = slides.length; // 0 is the cover, 1..n are the slides
-  const { i, dir } = at;
-  const slide = i > 0 ? slides[i - 1] : null;
-  const tx = transitionFor(i, last);
+export function Story({ slides }: { slides: Slide[] }) {
+  const [at, setAt] = useState<At>({ i: 0, prev: null, dir: "fwd", n: 0 });
+  const [wiping, setWiping] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const last = slides.length - 1;
+  const { i, prev, dir } = at;
+  const specs = useMemo(() => plan(slides.map((s) => s.id)), [slides]);
+  const reduced = prefersReducedMotion();
 
-  const go = (n: number) =>
+  const move = (to: number) =>
     setAt((cur) => {
-      const to = Math.min(last, Math.max(0, n));
-      return to === cur.i ? cur : { i: to, dir: to > cur.i ? "fwd" : "back" };
+      const t = Math.min(last, Math.max(0, to));
+      return t === cur.i
+        ? cur
+        : {
+            i: t,
+            prev: reduced ? null : cur.i,
+            dir: t > cur.i ? "fwd" : "back",
+            n: cur.n + 1,
+          };
     });
-  const step = (by: number) => go(at.i + by);
+  const go = (n: number) => move(n);
 
   useEffect(() => {
     let spaceDown = false;
@@ -55,20 +102,41 @@ export function Story({ cover, slides }: { cover: ReactNode; slides: Slide[] }) 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Tab") tabbed = true;
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== " ") return;
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== " ")
+        return;
       const t = e.target as HTMLElement | null;
-      if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
+      if (
+        t &&
+        (t.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))
+      )
+        return;
       // Space on a control you Tabbed to presses it. A control a mouse click left focused (a title-bar
       // or caption button) must not: Space belongs to the story, so it is swallowed there.
-      if (e.key === " " && t && t.closest('button, a, [role="button"]') && tabbed) return;
-      if (document.querySelector('[role="dialog"],[role="alertdialog"]')) return;
+      if (
+        e.key === " " &&
+        t &&
+        t.closest('button, a, [role="button"]') &&
+        tabbed
+      )
+        return;
+      if (document.querySelector('[role="dialog"],[role="alertdialog"]'))
+        return;
       e.preventDefault();
       // Holding a key repeats it; one press is one move, so the repeats are swallowed, not stepped.
       if (e.repeat) return;
       if (e.key === " ") spaceDown = true;
+      const by = e.key === "ArrowLeft" ? -1 : 1;
       setAt((cur) => {
-        const to = Math.min(last, Math.max(0, cur.i + (e.key === "ArrowLeft" ? -1 : 1)));
-        return to === cur.i ? cur : { i: to, dir: to > cur.i ? "fwd" : "back" };
+        const to = Math.min(last, Math.max(0, cur.i + by));
+        return to === cur.i
+          ? cur
+          : {
+              i: to,
+              prev: prefersReducedMotion() ? null : cur.i,
+              dir: to > cur.i ? "fwd" : "back",
+              n: cur.n + 1,
+            };
       });
     };
     // The click a button makes on Space comes on key-up in some engines: that one is swallowed too.
@@ -90,59 +158,153 @@ export function Story({ cover, slides }: { cover: ReactNode; slides: Slide[] }) 
       window.removeEventListener("keyup", onUp, true);
     };
   }, [last]);
+
+  // The wipe: the old poster leaves once the block covers it (half way); the block leaves at the end.
   const first = useRef(true);
+  const n = at.n;
   useEffect(() => {
     if (first.current) {
       first.current = false;
       return;
     }
-    setMoving(true);
-    const t = setTimeout(() => setMoving(false), MOVING_MS);
-    return () => clearTimeout(t);
-  }, [i]);
+    if (reduced) return;
+    setWiping(true);
+    const half = setTimeout(
+      () => setAt((c) => (c.n === n ? { ...c, prev: null } : c)),
+      WIPE_MS / 2,
+    );
+    const done = setTimeout(() => setWiping(false), WIPE_MS);
+    return () => {
+      clearTimeout(half);
+      clearTimeout(done);
+    };
+  }, [n, reduced]);
 
-  // A tap on the slide itself goes on, like a story; anything you can press or hover keeps its job.
+  // Hold to freeze: a press that lasts HOLD_MS pauses the clock; letting go resumes it and the click
+  // that follows is not a step.
+  const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const held = useRef(false);
+  const release = () => {
+    if (hold.current) clearTimeout(hold.current);
+    hold.current = null;
+    setPaused(false);
+  };
+  const onDown = (e: PointerEvent<HTMLDivElement>) => {
+    held.current = false;
+    if ((e.target as HTMLElement).closest("button, a, canvas, input")) return;
+    hold.current = setTimeout(() => {
+      held.current = true;
+      setPaused(true);
+    }, HOLD_MS);
+  };
+  useEffect(
+    () => () => {
+      if (hold.current) clearTimeout(hold.current);
+    },
+    [],
+  );
+
+  // A tap on the poster itself goes on, like a story; anything you can press keeps its job.
   const onStageClick = (e: MouseEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest('button, a, canvas, input, [tabindex]:not([tabindex="-1"]), [title]')) return;
+    if (held.current) {
+      held.current = false;
+      return;
+    }
+    if (
+      (e.target as HTMLElement).closest(
+        'button, a, canvas, input, [tabindex]:not([tabindex="-1"]), [title]',
+      )
+    )
+      return;
     if (window.getSelection()?.toString()) return;
     const box = e.currentTarget.getBoundingClientRect();
-    step(e.clientX - box.left < box.width / 3 ? -1 : 1);
+    move(i + (e.clientX - box.left < box.width / 3 ? -1 : 1));
   };
 
+  // The current progress segment fills with the poster's clock: one write per frame, no React state.
+  const fill = useRef<HTMLElement | null>(null);
+  const onFrame = (t: number) => {
+    if (fill.current) fill.current.style.transform = `scaleX(${t.toFixed(4)})`;
+  };
+
+  const slide = slides[i];
+  const outgoing = prev !== null && prev !== i ? slides[prev] : null;
+  const lead = wiping && !reduced ? WIPE_LEAD : 0;
+
   return (
-    <div className="wr-story">
-      <div className="wr-prog" role="group" aria-label="Slides">
-        {Array.from({ length: last + 1 }, (_, n) => (
+    <div className="pr-story">
+      <div className="pr-prog" role="group" aria-label="Slides">
+        {slides.map((s, k) => (
           <button
-            key={n}
+            key={s.id}
             type="button"
-            className="wr-prog-hit"
-            data-done={n <= i ? "" : undefined}
-            data-now={n === i ? "" : undefined}
-            aria-label={n === 0 ? `Cover, 1 of ${last + 1}` : `Slide ${n + 1} of ${last + 1}: ${slides[n - 1].kicker}`}
-            aria-current={n === i || undefined}
-            onClick={() => go(n)}
+            className="pr-prog-hit"
+            data-done={k < i ? "" : undefined}
+            data-now={k === i ? "" : undefined}
+            aria-label={`Slide ${k + 1} of ${slides.length}: ${s.kicker}`}
+            aria-current={k === i || undefined}
+            onClick={() => go(k)}
           >
-            <i key={n === i ? i : "x"} />
+            <i
+              key={k === i ? "now" : "off"}
+              ref={k === i ? (el) => void (fill.current = el) : undefined}
+            />
           </button>
         ))}
       </div>
 
       {/* The stage's click is the story-style tap; the keys and the buttons do the same for everyone else. */}
-      <div className="wr-story-stage intro" data-moving={moving ? "" : undefined} onClick={onStageClick}>
-        {tx === "curtain" && i > 0 && <i key={`c${i}`} className="wr-curtain" data-dir={dir} aria-hidden="true" />}
-        <div key={i} className="wr-story-slide" data-tx={tx} data-dir={dir} aria-live="polite">
-          {slide ? <SlideView slide={slide} index={i} lead={tx === "curtain" ? CURTAIN_LEAD : 0} /> : cover}
+      <div
+        className="pr-stage"
+        data-hold={paused ? "" : undefined}
+        data-dir={dir}
+        onClick={onStageClick}
+        onPointerDown={onDown}
+        onPointerUp={release}
+        onPointerCancel={release}
+        onPointerLeave={release}
+      >
+        <div
+          key={i}
+          className="pr-slot"
+          data-in={n > 0 ? (reduced ? "fade" : "wipe") : undefined}
+          aria-live="polite"
+        >
+          <PosterOrCard
+            slide={slide}
+            spec={specs[i]}
+            paused={paused}
+            delay={lead}
+            onFrame={onFrame}
+          />
         </div>
+        {outgoing && (
+          <div key={`out${prev}`} className="pr-slot pr-out" aria-hidden="true">
+            <PosterOrCard
+              slide={outgoing}
+              spec={specs[prev as number]}
+              frozen
+            />
+          </div>
+        )}
+        {wiping && !reduced && (
+          <i
+            key={`w${n}`}
+            className="pr-wipe"
+            data-pair={specs[i].pair}
+            data-dir={dir}
+            aria-hidden="true"
+          />
+        )}
       </div>
 
-      <div className="wr-story-foot">
+      <div className="pr-foot">
         <Button onClick={() => go(i - 1)} disabled={i === 0}>
           <ArrowLeft size={14} aria-hidden="true" />
           Back
         </Button>
         <span className="text-caption text-ink-2">
-          {i + 1} of {last + 1}
+          {i + 1} of {slides.length}
         </span>
         {i === last ? (
           <Button onClick={() => go(0)}>

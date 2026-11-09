@@ -1,55 +1,72 @@
-// Wrapped's share card, drawn to a canvas. The canvas on the page is the picture that gets saved,
-// so what Will sees is what leaves the app. It uses the --share-* tokens (one look in every
-// theme) and only the numbers and names a ShareCard carries; it never sees a chat name.
+// Wrapped's share card, drawn to a canvas. The canvas on the page is the picture that gets saved, so
+// what Will sees is what leaves the app. It is a Poster Riot card: flat terracotta, one giant stat,
+// one hero glyph, a slate strip with the small print. It uses the poster tokens (one look in every
+// theme) and only the numbers and names a ShareCard carries; it never sees a chat name or a prompt.
 
+import { chamfer, star } from "./posterMath";
 import type { ShareCard } from "./wrappedModel";
 
 export const CARD_W = 1200;
 export const CARD_H = 675;
 
-/** The left panel's width; the stats sit to the right of it. */
-const SPLIT = 640;
 const PAD = 56;
+const STRIP_H = 84;
+const STROKE = 8;
+const FIG_TOP = 128;
+const FIG_BASE = 452;
 
 interface Palette {
-  panel: string;
-  ink: string;
-  ink2: string;
-  line: string;
-  accent: string;
-  onAccent: string;
-  sand: string;
-  ui: string;
-  display: string;
+  bg: string;
+  fg: string;
+  soft: string;
+  acc: string;
+  onAcc: string;
+  dark: string;
+  stripBg: string;
+  stripFg: string;
+  mono: string;
+  poster: string;
 }
 
 function palette(): Palette {
   const css = getComputedStyle(document.documentElement);
-  const get = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+  const get = (name: string, fallback: string) =>
+    css.getPropertyValue(name).trim() || fallback;
   return {
-    panel: get("--share-panel", "Canvas"),
-    ink: get("--share-ink", "CanvasText"),
-    ink2: get("--share-ink-2", "GrayText"),
-    line: get("--share-line", "GrayText"),
-    accent: get("--share-accent", "Highlight"),
-    onAccent: get("--share-accent-ink", "HighlightText"),
-    sand: get("--share-sand", "GrayText"),
-    ui: get("--font-ui", "system-ui, sans-serif"),
-    display: get("--font-display", "system-ui, sans-serif"),
+    bg: get("--pr-clay-bg", "Canvas"),
+    fg: get("--pr-clay-fg", "CanvasText"),
+    soft: get("--pr-clay-soft", "Canvas"),
+    acc: get("--pr-clay-acc", "Highlight"),
+    onAcc: get("--pr-clay-on-acc", "HighlightText"),
+    dark: get("--pr-clay-dark", "CanvasText"),
+    stripBg: get("--pr-clay-strip-bg", "CanvasText"),
+    stripFg: get("--pr-clay-strip-fg", "Canvas"),
+    mono: get("--font-code", "monospace"),
+    poster: get("--font-poster", "Impact, sans-serif"),
   };
 }
 
 /** Load the display face for the digits and letters the card draws, so the first paint is right. */
 export async function loadCardFonts(): Promise<void> {
   try {
-    await document.fonts?.load('800 100px "Recursive Variable"', "0123456789MkBT. abcdefghijklmnopqrstuvwxyz");
+    await document.fonts?.load(
+      '400 100px "Anton"',
+      "0123456789MkBT. abcdefghijklmnopqrstuvwxyz",
+    );
   } catch {
     /* the system face is the fallback */
   }
 }
 
 /** Shrink the font until the text fits `max`, then cut it with "..." if it still does not. */
-function fit(ctx: CanvasRenderingContext2D, text: string, font: (px: number) => string, start: number, min: number, max: number): number {
+function fit(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  font: (px: number) => string,
+  start: number,
+  min: number,
+  max: number,
+): number {
   let px = start;
   ctx.font = font(px);
   while (px > min && ctx.measureText(text).width > max) {
@@ -59,159 +76,162 @@ function fit(ctx: CanvasRenderingContext2D, text: string, font: (px: number) => 
   return px;
 }
 
-function clip(ctx: CanvasRenderingContext2D, text: string, max: number): string {
+function clip(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  max: number,
+): string {
   if (ctx.measureText(text).width <= max) return text;
   let t = text;
-  while (t.length > 1 && ctx.measureText(`${t}...`).width > max) t = t.slice(0, -1);
+  while (t.length > 1 && ctx.measureText(`${t}...`).width > max)
+    t = t.slice(0, -1);
   return `${t.trimEnd()}...`;
 }
 
 function spaced(ctx: CanvasRenderingContext2D, px: string): void {
   // letterSpacing is newer than the rest of the 2D API: skip it where it is missing.
-  (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = px;
+  (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing =
+    px;
 }
 
-function star(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
-  ctx.beginPath();
-  for (let i = 0; i < 8; i++) {
-    const a = (Math.PI / 4) * i - Math.PI / 2;
-    const rad = i % 2 === 0 ? r : r * 0.32;
-    const x = cx + Math.cos(a) * rad;
-    const y = cy + Math.sin(a) * rad;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+/** Fill (and, with a stroke colour, outline) an SVG path string. The same chamfer() and star() the posters draw with. */
+function shape(
+  ctx: CanvasRenderingContext2D,
+  d: string,
+  fill: string,
+  stroke?: string,
+): void {
+  if (typeof Path2D === "undefined") return;
+  const path = new Path2D(d);
+  ctx.fillStyle = fill;
+  ctx.fill(path);
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = STROKE;
+    ctx.lineJoin = "miter";
+    ctx.stroke(path);
   }
-  ctx.closePath();
-  ctx.fill();
 }
 
-/** The history as a small ridge: heights are 0..1, the baseline is `base`, the tallest rise is `tall`. Never below the baseline. */
-function drawRidge(ctx: CanvasRenderingContext2D, ridge: number[], x0: number, x1: number, base: number, tall: number, ink: string): void {
-  if (ridge.length < 2) return;
-  const pts = ridge.map((v, i): [number, number] => [x0 + (i / (ridge.length - 1)) * (x1 - x0), base - Math.min(1, Math.max(0, v)) * tall]);
-  const trace = () => {
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) {
-      const mx = (pts[i - 1][0] + pts[i][0]) / 2;
-      ctx.bezierCurveTo(mx, pts[i - 1][1], mx, pts[i][1], pts[i][0], pts[i][1]);
-    }
-  };
-  ctx.save();
-  ctx.fillStyle = ink;
-  ctx.strokeStyle = ink;
-  ctx.globalAlpha = 0.22;
-  ctx.beginPath();
-  trace();
-  ctx.lineTo(x1, base);
-  ctx.lineTo(x0, base);
-  ctx.closePath();
-  ctx.fill();
-  ctx.globalAlpha = 0.9;
-  ctx.lineWidth = 3;
-  ctx.lineJoin = "round";
-  ctx.beginPath();
-  trace();
-  ctx.stroke();
-  ctx.lineWidth = 2;
-  ctx.globalAlpha = 0.5;
-  ctx.beginPath();
-  ctx.moveTo(x0, base);
-  ctx.lineTo(x1, base);
-  ctx.stroke();
-  let top = 0;
-  for (let i = 1; i < pts.length; i++) if (pts[i][1] < pts[top][1]) top = i;
-  ctx.globalAlpha = 1;
-  star(ctx, pts[top][0], Math.max(pts[top][1] - 14, base - tall - 8), 9);
-  ctx.restore();
+/** `n` heights taken evenly from the history ridge (0..1), the tallest at least a little tall. */
+export function ridgeBars(ridge: number[], n: number): number[] {
+  if (ridge.length === 0) return new Array<number>(n).fill(0.12);
+  return Array.from({ length: n }, (_, i) => {
+    const at = (i / Math.max(1, n - 1)) * (ridge.length - 1);
+    const a = Math.floor(at);
+    const b = Math.min(ridge.length - 1, a + 1);
+    const v = ridge[a] + (ridge[b] - ridge[a]) * (at - a);
+    return Math.max(0.1, Math.min(1, v));
+  });
 }
+
 /** Paint the card. Returns false when the canvas has no 2D context. */
-export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boolean {
+export function drawShareCard(
+  canvas: HTMLCanvasElement,
+  card: ShareCard,
+): boolean {
   canvas.width = CARD_W;
   canvas.height = CARD_H;
   const ctx = canvas.getContext("2d");
   if (!ctx) return false;
   const p = palette();
-  const ui = (w: number, px: number) => `${w} ${px}px ${p.ui}`;
-  const disp = (w: number) => (px: number) => `${w} ${px}px ${p.display}`;
+  const mono = (w: number, px: number) => `${w} ${px}px ${p.mono}`;
+  const poster = (px: number) => `400 ${px}px "Anton", ${p.poster}`;
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "left";
 
-  ctx.fillStyle = p.panel;
+  ctx.fillStyle = p.bg;
   ctx.fillRect(0, 0, CARD_W, CARD_H);
 
-  // Left panel: terracotta with contour rings, like the map the app is named for.
-  ctx.fillStyle = p.accent;
-  ctx.fillRect(0, 0, SPLIT, CARD_H);
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, SPLIT, CARD_H);
-  ctx.clip();
-  ctx.strokeStyle = p.onAccent;
-  ctx.lineWidth = 2;
-  for (let i = 0; i < 7; i++) {
-    ctx.globalAlpha = 0.18 - i * 0.02;
-    ctx.beginPath();
-    ctx.ellipse(SPLIT - 40, CARD_H - 30, 120 + i * 62, 90 + i * 50, -0.35, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  ctx.restore();
-  ctx.globalAlpha = 1;
+  // The hero glyph: the history as chunky bars in a chamfered block, with a spark on the peak.
+  const bx = 716;
+  const by = 52;
+  const bw = CARD_W - bx - 48;
+  const bh = CARD_H - STRIP_H - by - 36;
+  shape(ctx, chamfer(bx, by, bw, bh, 36), p.soft, p.dark);
+  const n = 11;
+  const gap = 12;
+  const inset = 40;
+  const barW = (bw - inset * 2 - gap * (n - 1)) / n;
+  const heights = ridgeBars(card.ridge, n);
+  const tall = bh - inset * 2 - 28;
+  let peak = 0;
+  heights.forEach((h, i) => {
+    if (h > heights[peak]) peak = i;
+  });
+  heights.forEach((h, i) => {
+    const hh = Math.max(24, h * tall);
+    const x = bx + inset + i * (barW + gap);
+    shape(
+      ctx,
+      chamfer(x, by + bh - inset - hh, barW, hh, 10),
+      i === peak ? p.bg : p.dark,
+    );
+  });
+  const px = bx + inset + peak * (barW + gap) + barW / 2;
+  const py = by + bh - inset - Math.max(24, heights[peak] * tall);
+  shape(ctx, star(px, Math.max(by + 34, py - 40), 38), p.acc, p.dark);
 
-  const inner = SPLIT - PAD * 2;
-  ctx.fillStyle = p.onAccent;
-  ctx.font = ui(700, 30);
-  ctx.fillText(clip(ctx, card.title, inner), PAD, 96);
-
-  const bigPx = fit(ctx, card.tokens, disp(800), 240, 120, inner);
-  ctx.font = disp(800)(bigPx);
-  ctx.fillText(card.tokens, PAD - 6, 96 + 40 + bigPx * 0.78);
-  const baseBig = 96 + 40 + bigPx * 0.78;
-  ctx.font = ui(700, 48);
-  ctx.fillText(card.unit, PAD, baseBig + 62);
-  ctx.font = ui(600, 30);
-  ctx.globalAlpha = 0.92;
-  ctx.fillText(clip(ctx, card.days, inner), PAD, baseBig + 116);
-  ctx.globalAlpha = 1;
-
-  drawRidge(ctx, card.ridge, PAD, SPLIT - PAD, CARD_H - 122, 78, p.onAccent);
-
-  ctx.font = ui(600, 26);
-  ctx.fillText(clip(ctx, card.range, inner), PAD, CARD_H - 84);
-  ctx.font = ui(800, 22);
-  spaced(ctx, "3px");
-  ctx.fillText("ATLAS WRAPPED", PAD, CARD_H - 48);
+  // The unit, as a chip.
+  ctx.font = mono(700, 24);
+  spaced(ctx, "2px");
+  const unit = card.unit.toUpperCase();
+  const uw = ctx.measureText(unit).width + 32;
+  shape(ctx, chamfer(PAD, 52, uw, 44, 8), p.acc);
+  ctx.fillStyle = p.onAcc;
+  ctx.fillText(unit, PAD + 16, 83);
   spaced(ctx, "0px");
 
-  // Right: the stats, one under another.
-  const n = card.tiles.length;
-  if (n > 0) {
-    const top = 64;
-    const room = CARD_H - top * 2;
-    const slot = Math.min(156, room / n);
-    const startY = top + (room - slot * n) / 2;
-    const x = SPLIT + PAD;
-    const w = CARD_W - SPLIT - PAD * 2;
-    card.tiles.forEach((t, i) => {
-      const y = startY + i * slot;
-      if (i > 0) {
-        ctx.fillStyle = p.line;
-        ctx.fillRect(x, y, w, 2);
-      }
-      ctx.fillStyle = p.ink2;
-      ctx.font = ui(700, 22);
-      spaced(ctx, "1px");
-      ctx.fillText(t.label.toUpperCase(), x, y + slot * 0.36);
+  // The one giant stat, sitting on a fixed baseline.
+  const maxW = bx - PAD - 36;
+  const size = fit(ctx, card.tokens, poster, 420, 140, maxW);
+  ctx.font = poster(size);
+  ctx.fillStyle = p.fg;
+  ctx.fillText(card.tokens, PAD - 4, Math.max(FIG_BASE, FIG_TOP + size * 0.7));
+
+  // Up to three small stats under it.
+  const tiles = card.tiles.slice(0, 3);
+  if (tiles.length > 0) {
+    const col = (bx - PAD - 20) / tiles.length;
+    tiles.forEach((t, i) => {
+      const x = PAD + i * col;
+      ctx.font = mono(700, 18);
+      spaced(ctx, "2px");
+      ctx.fillStyle = p.acc;
+      ctx.fillText(
+        clip(ctx, t.label.toUpperCase(), col - 18),
+        x,
+        FIG_BASE + 52,
+      );
       spaced(ctx, "0px");
-      ctx.fillStyle = p.ink;
-      const px = fit(ctx, t.value, disp(760), 58, 30, w);
-      ctx.font = disp(760)(px);
-      ctx.fillText(clip(ctx, t.value, w), x, y + slot * 0.36 + 16 + px * 0.86);
+      ctx.fillStyle = p.fg;
+      const f = fit(ctx, t.value, poster, 46, 26, col - 18);
+      ctx.font = poster(f);
+      ctx.fillText(
+        clip(ctx, t.value, col - 18),
+        x,
+        FIG_BASE + 52 + 8 + f * 0.9,
+      );
     });
   }
 
-  ctx.fillStyle = p.sand;
-  star(ctx, CARD_W - 70, 70, 26);
-  star(ctx, CARD_W - 118, 118, 12);
+  // The strip: the small print on slate, and the wordmark.
+  ctx.fillStyle = p.stripBg;
+  ctx.fillRect(0, CARD_H - STRIP_H, CARD_W, STRIP_H);
+  ctx.fillStyle = p.stripFg;
+  const base = CARD_H - STRIP_H / 2 + 8;
+  ctx.font = mono(700, 24);
+  spaced(ctx, "1px");
+  const mark = "ATLAS WRAPPED";
+  const mw = ctx.measureText(mark).width;
+  const room = CARD_W - PAD * 2 - mw - 40;
+  ctx.fillText(
+    clip(ctx, `${card.days}   ${card.range}`.toUpperCase(), room),
+    PAD,
+    base,
+  );
+  ctx.fillText(mark, CARD_W - PAD - mw, base);
+  spaced(ctx, "0px");
   return true;
 }
 

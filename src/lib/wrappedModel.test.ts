@@ -143,7 +143,7 @@ describe("buildSlides", () => {
     );
     const kinds = s.map((x) => x.chart?.kind).filter(Boolean);
     expect(kinds.length).toBe(new Set(kinds).size);
-    expect(kinds).toEqual(["ridge", "spines", "trail", "heat", "tower", "dial", "tiles", "podium", "lollipop", "burst", "bubbles", "spike", "spokes", "strip", "donut", "badge"]);
+    expect(kinds).toEqual(["ridge", "spines", "trail", "heat", "tower", "dial", "tiles", "podium", "lollipop", "burst", "terminal", "spike", "spokes", "strip", "donut", "badge"]);
     // Layouts vary: not every slide is laid out the same way.
     expect(new Set(s.map((x) => x.layout)).size).toBeGreaterThanOrEqual(4);
   });
@@ -271,9 +271,10 @@ describe("buildSlides", () => {
     // 2026-10-09 is a Friday. Put the big days on Tuesdays.
     const days = Array.from({ length: 31 }, (_, i) => (new Date(2026, 9, 9 + i, 12).getDay() === 2 ? 5_000_000 : 1_000_000));
     const w = buildSlides(data({ dayTokens: days })).find((x) => x.id === "weekday")!;
-    expect(w.figure).toBe("Tuesday");
+    expect(w.figure).toMatch(/^\d+%$/);
+    expect(w.unit).toBe("of your week");
     expect(w.chart).toMatchObject({ kind: "spokes" });
-    expect(w.line).toMatch(/^\d+% of an average week's tokens land on a Tuesday\. Plan around it\.$/);
+    expect(w.line).toBe("Tuesday beats every other day. Plan around it.");
   });
 });
 

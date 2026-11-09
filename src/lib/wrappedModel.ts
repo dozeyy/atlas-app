@@ -63,7 +63,7 @@ export interface Row {
 
 /**
  * One hero graphic per kind, and no two slides share a kind. The model hands each its real data;
- * src/components/wrapped/graphics.tsx draws it.
+ * src/components/wrapped/Hero.tsx draws it.
  */
 export type SlideChart =
   /** Every day of the history as a ridge; the busiest day is the summit. */
@@ -86,8 +86,8 @@ export type SlideChart =
   | { kind: "lollipop"; rows: Row[] }
   /** A chat with its helpers around it. */
   | { kind: "burst"; count: number }
-  /** Tools as bubbles. */
-  | { kind: "bubbles"; rows: Row[] }
+  /** Tools as a terminal: one command bar per tool, sized by its count. */
+  | { kind: "terminal"; rows: Row[] }
   /** The days around the busiest one; `peak` is its index. */
   | { kind: "spike"; values: number[]; peak: number; first: string; last: string }
   /** Seven spokes, Monday first. */
@@ -97,6 +97,10 @@ export type SlideChart =
   /** Models as a ring. */
   | { kind: "donut"; rows: Row[] }
   /** The coder type: an emblem and its gauge (`score` = value / bar, 1 is the bar). */
+  /** The cover: a collage of shapes, no data. */
+  | { kind: "cover" }
+  /** The cover: a collage of shapes, no data. */
+  | { kind: "cover" }
   | { kind: "badge"; id: string; name: string; score: number; traits: { name: string; score: number; note: string }[] };
 
 /** What the share card says. Only numbers, project, skill and model names: never a chat name. */
@@ -675,7 +679,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       if (list.length === 0) continue;
       const top = list[0];
       const chart: SlideChart | undefined =
-        id === "skill" ? skillChart() : list.length > 1 ? { kind: id === "helper" ? "lollipop" : "bubbles", rows: itemRows(list) } : undefined;
+        id === "skill" ? skillChart() : list.length > 1 ? { kind: id === "helper" ? "lollipop" : "terminal", rows: itemRows(list) } : undefined;
       return {
         id,
         tone: "slate",
@@ -744,7 +748,7 @@ export function buildSlides(d: WrappedData): Slide[] {
         figure: top.id,
         line: `Run ${plural(top.uses, "time")} in ${plural(top.sessions, "session")}. Old faithful.`,
         compare: uses(top.uses, "That is about"),
-        chart: d.tools.length > 1 ? { kind: "bubbles", rows: itemRows(d.tools) } : undefined,
+        chart: d.tools.length > 1 ? { kind: "terminal", rows: itemRows(d.tools) } : undefined,
       });
     }
   }
@@ -772,8 +776,9 @@ export function buildSlides(d: WrappedData): Slide[] {
       tone: "plain",
       layout: "splitR",
       kicker: "Your busiest weekday",
-      figure: WEEKDAYS[top],
-      line: `${share(week.map((v) => ({ value: v })), week[top])}% of an average week's tokens land on a ${WEEKDAYS[top]}. Plan around it.`,
+      figure: `${share(week.map((v) => ({ value: v })), week[top])}%`,
+      unit: "of your week",
+      line: `${WEEKDAYS[top]} beats every other day. Plan around it.`,
       hint: `${compact(week[top])} tokens on an average ${WEEKDAYS[top]} since ${shortDay(d.from)}, counting every ${WEEKDAYS[top]} in that time.`,
       compare: compareTokens(week[top], { lead: `A ${WEEKDAYS[top]} is about` }) ?? undefined,
       chart: { kind: "spokes", values: week },
@@ -852,4 +857,20 @@ export function rangeLabel(d: Pick<WrappedData, "from">): string {
 export function rangeHint(d: Pick<WrappedData, "from" | "keepDays" | "spanDays">): string {
   const first = `${shortDay(d.from)} is your first day with usage.`;
   return d.keepDays !== null && d.spanDays <= d.keepDays ? `${first} Claude Code keeps its logs for ${plural(d.keepDays, "day")}.` : first;
+}
+
+/** The first poster: the one number, then how far back it honestly goes. */
+export function coverSlide(d: WrappedData): Slide {
+  return {
+    id: "cover",
+    tone: "accent",
+    layout: "center",
+    kicker: "Your Claude Code so far",
+    figure: compact(d.tokens),
+    unit: "tokens so far",
+    line: `${plural(d.sessions, "session")}. ${plural(d.activeDays, "active day")}.${d.streak > 1 ? ` ${plural(d.streak, "day")} in a row right now.` : ""} Ready?`,
+    hint: rangeHint(d),
+    compare: { text: rangeLabel(d), hint: rangeHint(d) },
+    chart: { kind: "cover" },
+  };
 }

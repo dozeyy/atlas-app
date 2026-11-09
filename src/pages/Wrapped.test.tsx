@@ -57,7 +57,7 @@ describe("Wrapped", () => {
     mount();
     expect(await screen.findByText("tokens so far")).toBeInTheDocument();
     const range = screen.getByText(/^[A-Z][a-z]{2} \d+ to today$/);
-    expect(range.getAttribute("title")).toMatch(/is your first day with usage\./);
+    expect(range.closest("[title]")?.getAttribute("title")).toMatch(/is your first day with usage\./);
     // No explanation sentence on the cover, and never a retention claim the data disproves.
     expect(screen.queryByText(/clears its logs/)).not.toBeInTheDocument();
     expect(position()).toMatch(/^1 of \d+$/);
@@ -84,10 +84,10 @@ describe("Wrapped", () => {
     document.body.focus();
     await userEvent.keyboard(" ");
     expect(position()).toMatch(/^2 of \d+$/);
-    const stage = document.querySelector(".wr-story-stage") as HTMLElement;
+    const stage = document.querySelector(".pr-stage") as HTMLElement;
     stage.getBoundingClientRect = () => ({ left: 0, width: 900, top: 0, height: 500, right: 900, bottom: 500, x: 0, y: 0, toJSON: () => "" });
     // The slide is a new element after every move (it is keyed), so look it up each time.
-    const slide = () => stage.querySelector(".wr-slide") as HTMLElement;
+    const slide = () => stage.querySelector(".pr") as HTMLElement;
     fireEvent.click(slide(), { clientX: 600, clientY: 100 });
     expect(position()).toMatch(/^3 of \d+$/);
     fireEvent.click(slide(), { clientX: 100, clientY: 100 });
@@ -98,25 +98,27 @@ describe("Wrapped", () => {
     mount();
     await screen.findByText("tokens so far");
     await userEvent.click(screen.getByRole("button", { name: "Start" }));
-    const compare = document.querySelector(".wr-compare") as HTMLElement;
+    const compare = document.querySelector(".pr-strip-text") as HTMLElement;
     expect(compare.textContent).toMatch(/^About .+\.$/);
     const before = position();
     await userEvent.click(compare);
     expect(position()).toBe(before);
   });
 
-  it("gives each slide its own way in, from the side you are heading", async () => {
+  it("lays each slide out differently from the one before, and wipes from the side you are heading", async () => {
     mount();
     await screen.findByText("tokens so far");
-    const slide = () => document.querySelector(".wr-story-slide") as HTMLElement;
-    expect(slide().dataset.tx).toBe("zoom");
-    await userEvent.keyboard("{ArrowRight}");
-    const a = slide().dataset.tx;
-    expect(slide().dataset.dir).toBe("fwd");
-    await userEvent.keyboard("{ArrowRight}");
-    expect(slide().dataset.tx).not.toBe(a);
+    const stage = () => document.querySelector(".pr-stage") as HTMLElement;
+    const layout = () => (document.querySelector(".pr") as HTMLElement).dataset.layout;
+    const seen: (string | undefined)[] = [layout()];
+    for (let n = 0; n < 6; n++) {
+      await userEvent.keyboard("{ArrowRight}");
+      expect(stage().dataset.dir).toBe("fwd");
+      seen.push(layout());
+    }
+    for (let n = 1; n < seen.length; n++) expect(seen[n]).not.toBe(seen[n - 1]);
     await userEvent.keyboard("{ArrowLeft}");
-    expect(slide().dataset.dir).toBe("back");
+    expect(stage().dataset.dir).toBe("back");
   });
 
   it("counts the top skills down, 5 to 1, on one slide", async () => {
@@ -132,7 +134,7 @@ describe("Wrapped", () => {
     mount();
     await screen.findByText("tokens so far");
     await userEvent.click(screen.getByRole("button", { name: /Your coder type/ }));
-    const fig = document.querySelector(".wr-fig") as HTMLElement;
+    const fig = document.querySelector(".pr-fig") as HTMLElement;
     expect(fig.getAttribute("title") ?? fig.getAttribute("data-tip")).toMatch(/\d+%|\d+ (of|skill)/);
     expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
@@ -141,10 +143,10 @@ describe("Wrapped", () => {
     mount();
     await screen.findByText("tokens so far");
     await userEvent.click(screen.getByRole("button", { name: /In book terms/ }));
-    const fig = document.querySelector(".wr-fig") as HTMLElement;
+    const fig = document.querySelector(".pr-fig") as HTMLElement;
     expect(fig.getAttribute("title") ?? "").toMatch(/0\.75 words per token[\s\S]*An estimate/);
     expect(fig.getAttribute("aria-label")).toMatch(/An estimate/);
-    expect(document.querySelector(".wr-compare")?.textContent).toMatch(/^Reading takes about /);
+    expect(document.querySelector(".pr-strip-text")?.textContent).toMatch(/^Reading takes about /);
   });
 
   it("puts one comparison on every slide but the card, each with its source in the hover", async () => {
@@ -154,16 +156,16 @@ describe("Wrapped", () => {
     await userEvent.click(screen.getByRole("button", { name: "Start" }));
     let withLine = 0;
     for (let i = 2; i < total; i++) {
-      const c = document.querySelector(".wr-compare");
+      const c = document.querySelector(".pr-strip-text");
       if (c) {
         withLine++;
         expect(c.textContent).toMatch(/^[\x20-\x7e]+\.$/);
-        expect(c.getAttribute("title")).toMatch(/\d/);
+        expect(c.closest("[title]")?.getAttribute("title")).toMatch(/\d/);
       }
       await userEvent.keyboard("{ArrowRight}");
     }
     expect(withLine).toBeGreaterThanOrEqual(5);
-    expect(document.querySelector(".wr-compare")).toBeNull();
+    expect(document.querySelector(".pr-strip-text")).toBeNull();
   });
 
   it("ends on the share card, saves the picture it shows, and draws no chat name", async () => {
@@ -183,7 +185,7 @@ describe("Wrapped", () => {
     const names = chats.rows.map((r) => r.name).filter((n): n is string => !!n);
     expect(names.length).toBeGreaterThan(0);
     for (const n of names) expect(drawn.join("|")).not.toContain(n);
-    expect(drawn.join("|")).toContain("tokens");
+    expect(drawn.join("|")).toContain("TOKENS");
   });
 
   it("says where the card was saved, and shows a failure plainly", async () => {
