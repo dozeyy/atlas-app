@@ -47,7 +47,8 @@ describe("sidebar folding", () => {
     expect(side()).toHaveClass("side-collapsed");
     expect(shell()).toHaveAttribute("data-side", "collapsed");
     const sessions = screen.getByRole("button", { name: "Sessions" });
-    expect(sessions).toHaveAttribute("title", expect.stringContaining("Sessions"));
+    // The name only: the keys join it when Settings > Show shortcuts is on.
+    expect(sessions).toHaveAttribute("title", "Sessions");
   });
 
   it("the title bar toggle remembers the user's choice, which beats the window width", async () => {

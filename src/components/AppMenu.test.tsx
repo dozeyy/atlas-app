@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
@@ -83,7 +83,21 @@ describe("app menu", () => {
     expect(within(dlg).getByText("Ctrl+K")).toBeInTheDocument();
   });
 
-  it("Quick jump opens the palette and shows its shortcut", async () => {
+  it("Quick jump shows no shortcut until Show shortcuts is on", async () => {
+    await userEvent.click(menuButton());
+    expect(screen.getByRole("menuitem", { name: /Quick jump/ })).not.toHaveTextContent("Ctrl+K");
+    expect(menuButton()).toHaveAttribute("title", "Menu");
+  });
+
+  it("Quick jump opens the palette and shows its shortcut (Show shortcuts on)", async () => {
+    cleanup();
+    localStorage.setItem("atlas.mock.settings", JSON.stringify({ showShortcuts: true }));
+    setBackend(new MockBackend());
+    render(
+      <AtlasProvider>
+        <App />
+      </AtlasProvider>,
+    );
     await userEvent.click(menuButton());
     const item = screen.getByRole("menuitem", { name: /Quick jump/ });
     expect(item).toHaveTextContent("Ctrl+K");

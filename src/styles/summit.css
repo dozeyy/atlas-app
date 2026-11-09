@@ -239,6 +239,12 @@
   text-align: center;
 }
 
+/* A graphic keeps its own headroom for the spark (SPARK_HEAD in graphics.tsx); a pop that overshoots its
+   box is still drawn rather than cut. */
+.sm-art {
+  overflow: visible;
+}
+
 .sm-frame > .sm-art {
   position: absolute;
   right: 48px;

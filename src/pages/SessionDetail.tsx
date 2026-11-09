@@ -31,6 +31,7 @@ import { getBackend } from "../lib/ipc";
 import { copyResume, openFolder } from "../lib/sessionActions";
 import { resumeCommand } from "../lib/sessionBrowse";
 import { useAtlas } from "../state/AtlasProvider";
+import { useKeyHints } from "../lib/keyHints";
 import { helperTree, type HelperNode } from "../lib/helperTree";
 import { MAIN_ID } from "../lib/helperMap";
 import { useIntro } from "../lib/motion";
@@ -410,6 +411,7 @@ export function SessionDetailView({
 }) {
   const backend = getBackend();
   const { info } = useAtlas();
+  const { tip } = useKeyHints();
   const at = siblings ? siblings.indexOf(id) : -1;
   const prevId = siblings && at > 0 ? siblings[at - 1] : null;
   const nextId = siblings && at >= 0 && at < siblings.length - 1 ? siblings[at + 1] : null;
@@ -621,13 +623,13 @@ export function SessionDetailView({
             <>
               <IconButton
                 aria-label="Previous session"
-                title="Previous session (Alt+Up)"
+                title={tip("Previous session", "Alt+Up")}
                 disabled={!prevId}
                 onClick={() => prevId && onJump(prevId)}
               >
                 <CaretUp size={16} aria-hidden="true" />
               </IconButton>
-              <IconButton aria-label="Next session" title="Next session (Alt+Down)" disabled={!nextId} onClick={() => nextId && onJump(nextId)}>
+              <IconButton aria-label="Next session" title={tip("Next session", "Alt+Down")} disabled={!nextId} onClick={() => nextId && onJump(nextId)}>
                 <CaretDown size={16} aria-hidden="true" />
               </IconButton>
             </>

@@ -175,6 +175,7 @@ pub struct SettingsPatch {
     pub launch_animation: Option<bool>,
     pub close_to_tray: Option<bool>,
     pub notify_on_finish: Option<bool>,
+    pub show_shortcuts: Option<bool>,
     pub history_keep_versions: Option<u32>,
 }
 
@@ -431,6 +432,10 @@ impl AppState {
             if let Some(n) = patch.notify_on_finish {
                 changed |= inner.settings.notify_on_finish != n;
                 inner.settings.notify_on_finish = n;
+            }
+            if let Some(s) = patch.show_shortcuts {
+                changed |= inner.settings.show_shortcuts != s;
+                inner.settings.show_shortcuts = s;
             }
             if let Some(k) = patch.history_keep_versions.map(settings::clamp_keep_versions) {
                 changed |= inner.settings.history_keep_versions != k;

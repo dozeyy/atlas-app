@@ -14,7 +14,7 @@ import { UpdateButton } from "./UpdateButton";
 import { TodayStat } from "./TodayStat";
 import type { Motion } from "./IconMotion";
 import { useAtlas } from "../state/AtlasProvider";
-import { modName } from "../lib/appMenu";
+import { useKeyHints } from "../lib/keyHints";
 import { useSidebar } from "../lib/useSidebar";
 import type { View } from "../lib/types";
 
@@ -35,7 +35,7 @@ const PITCH = 38;
 
 export function Sidebar() {
   const { info, view, setView } = useAtlas();
-  const mod = modName(info.platform);
+  const { show, tip, mod } = useKeyHints();
   const { collapsed } = useSidebar();
   const sb = info.sandbox;
   // Settings sits at the foot of the sidebar and Wrapped in the title bar; the sliding pill lives with the others.
@@ -45,13 +45,17 @@ export function Sidebar() {
   const item = (n: (typeof NAV)[number], solo = false) => {
     const { view: v, label, icon: Icon, motion } = n;
     const index = NAV.indexOf(n);
+    // A hover only where it tells something new: the name where nothing on screen says it (the gear,
+    // and every item while the sidebar is folded to icons), and the keys when Settings > Show
+    // shortcuts is on. A labelled item with the keys off has none: its label already says what it is.
+    const named = !solo && !collapsed;
     return (
       <button
         key={v}
         type="button"
         onClick={() => setView(v)}
         aria-current={v === view ? "page" : undefined}
-        title={`${label} (${mod}+${index + 1})`}
+        title={named && !show ? undefined : tip(label, `${mod}+${index + 1}`)}
         aria-label={label}
         className={`nav-item hover-host${solo ? " nav-solo" : ""}`}
       >

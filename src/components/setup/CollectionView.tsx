@@ -19,6 +19,7 @@ import {
 } from "../../lib/setup-model";
 import type { CreateKind, ItemKind, SetupItem, SetupSnapshot } from "../../lib/setup-types";
 import { setIncludeWorktrees } from "../../state/setupStore";
+import { useKeyHints } from "../../lib/keyHints";
 
 const CREATABLE: ItemKind[] = ["skill", "agent", "command", "rule", "outputStyle", "hook", "mcpServer", "instructions"];
 
@@ -47,6 +48,7 @@ export function CollectionView({
   onDelete: (item: SetupItem) => void;
   onCreate: (kind: CreateKind) => void;
 }) {
+  const { show: showKeys } = useKeyHints();
   const [folded, setFolded] = useState<Set<ItemKind>>(() => new Set());
   const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS, showWorktrees: includeWorktrees });
   const search = useRef<HTMLInputElement>(null);
@@ -161,7 +163,7 @@ export function CollectionView({
         hidden={snap.hidden}
         searchRef={search}
         onSearchKeyDown={onSearchDown}
-        shortcut={mac ? "Cmd F" : "Ctrl F"}
+        shortcut={showKeys ? (mac ? "Cmd F" : "Ctrl F") : undefined}
         shown={visible.length}
         total={items.length}
         placeholder={`Search ${tileTitle(tile).toLowerCase()}`}
