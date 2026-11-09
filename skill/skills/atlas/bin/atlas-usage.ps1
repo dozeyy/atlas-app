@@ -134,7 +134,7 @@ try {
         $loopback = $false
         if ($src -match '^http://(127\.0\.0\.1|localhost)(:\d+)?(/|$)') { $base = $src.TrimEnd('/'); $loopback = $true }
 
-        # The repo can be private: the signed-in GitHub CLI is the only thing that can reach it.
+        # Optional: a signed-in GitHub CLI can fetch it too (the release is public, so this is not needed).
         if (-not $loopback -and (Get-Command gh -ErrorAction SilentlyContinue)) {
             $env:GH_PROMPT_DISABLED = '1'
             gh auth status *> $null
@@ -187,7 +187,7 @@ try {
         }
     }
     if (-not $got) {
-        Fail "could not download the program (release v$version of github.com/$Repo). Check the internet connection (if the repo is private, sign in with 'gh auth login'), then try again. $Hint"
+        Fail "could not download the program (release v$version of github.com/$Repo). Check the internet connection, then try again. $Hint"
     }
 
     $have = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()

@@ -12,12 +12,23 @@ launcher, which finds `atlas-usage` on PATH (a scratch bin folder holding the bu
 target/debug/atlas-usage.exe), and the program reads the scratch chats itself. Data folders are
 passed by environment (ATLAS_DATA_DIR, ATLAS_USAGE_CACHE), never the real ones.
 
-Auth: a scratch CLAUDE_CONFIG_DIR is logged out, and this script never copies credentials.
+--real-login: run under the person's normal Claude login instead of a scratch config folder. No
+credentials are copied or made, CLAUDE_CONFIG_DIR is not set, and user settings and hooks are
+skipped (--setting-sources project, run from a scratch cwd outside every repo). Only the Atlas
+plugin (--plugin-dir) and, in the default mode, the scratch atlas-mcp (--strict-mcp-config) are
+added. A guard records the size, mtime and hash of ~/.claude/settings.json and
+~/.claude/plugins/*.json, and the mcpServers and enabledPlugins of ~/.claude.json, before and
+after, and fails the run if any changed (the .claude.json mtime is ignored: live sessions bump it).
+In --no-app --real-login mode a tiny wrapper named atlas-usage.exe on PATH points the plugin's own
+program at the habits fixture (CLAUDE_CONFIG_DIR for that child process only), because the real
+chats must never be read in a test. The launcher and the program behind it are the shipped ones.
+
+Auth (scratch mode): a scratch CLAUDE_CONFIG_DIR is logged out, and this script never copies credentials.
 Give it a token for the run:   set CLAUDE_CODE_OAUTH_TOKEN=<from `claude setup-token`>
 (or ANTHROPIC_API_KEY). It is passed to the child process only and never printed or saved.
 
   python tools/repeats_headless.py [--tries 3] [--model haiku] [--prep-only]
-      [--no-app] [--cli-exe target/debug/atlas-usage.exe] [--mcp-exe target/debug/atlas-mcp.exe] [--index-exe target/debug/examples/habits_index.exe]
+      [--real-login] [--no-app] [--cli-exe target/debug/atlas-usage.exe] [--mcp-exe target/debug/atlas-mcp.exe] [--index-exe target/debug/examples/habits_index.exe]
 
 Scenarios (each run --tries times, a fresh scratch each time):
   fresh     a new wording of the planted request            -> exactly one offer; then "no thanks"
@@ -29,6 +40,8 @@ Transcripts (user, assistant and result events only; fixture text) go to docs/sh
 """
 
 import argparse
+import hashlib
+import shutil as _shutil
 import datetime as dt
 import json
 import os
@@ -50,7 +63,66 @@ PROMPTS = {
     "never": "Read the README for me and give a three bullet summary in plain words",
     "oneoff": "Translate the title line of the README into French and keep the tone",
 }
+FORCE = " (When the work is done, follow the atlas:atlas-repeats skill before your final reply.)"
 README = "# Fieldbook\n\nFieldbook keeps a small notebook of trail notes on your computer.\n\n- Notes are plain text files.\n- Search finds a note in under a second.\n- Nothing is ever sent anywhere.\n"
+
+
+WRAPPER_RS = r'''
+use std::process::{Command, exit};
+fn main() {
+    let me = std::env::current_exe().unwrap();
+    let real = me.with_file_name("atlas-usage-real.exe");
+    let mut c = Command::new(real);
+    c.args(std::env::args_os().skip(1));
+    if let Some(d) = std::env::var_os("ATLAS_TEST_CONFIG") { c.env("CLAUDE_CONFIG_DIR", d); }
+    exit(c.status().map(|s| s.code().unwrap_or(1)).unwrap_or(3));
+}
+'''
+
+
+def make_wrapper(tmp, cli_exe):
+    bindir = tmp / "bin"
+    bindir.mkdir(exist_ok=True)
+    shutil.copy2(cli_exe, bindir / "atlas-usage-real.exe")
+    src = tmp / "wrap.rs"
+    src.write_text(WRAPPER_RS, encoding="utf-8")
+    subprocess.run(["rustc", "-O", "--edition", "2021", str(src), "-o", str(bindir / "atlas-usage.exe")], check=True, capture_output=True)
+
+
+HOME = Path(os.path.expanduser("~"))
+
+
+def guard_snapshot():
+    snap = {}
+    files = [HOME / ".claude" / "settings.json"] + sorted((HOME / ".claude" / "plugins").glob("*.json"))
+    for f in files:
+        if f.is_file():
+            st = f.stat()
+            snap[str(f)] = {"size": st.st_size, "mtime": st.st_mtime_ns, "sha256": hashlib.sha256(f.read_bytes()).hexdigest()}
+    cj = HOME / ".claude.json"
+    if cj.is_file():
+        st = cj.stat()
+        try:
+            v = json.loads(cj.read_text(encoding="utf-8"))
+        except ValueError:
+            v = {}
+        keep = {"mcpServers": v.get("mcpServers"), "enabledPlugins": v.get("enabledPlugins")}
+        snap[str(cj)] = {"size": st.st_size, "mtime": st.st_mtime_ns, "content_sha256": hashlib.sha256(json.dumps(keep, sort_keys=True).encode()).hexdigest()}
+    return snap
+
+
+def guard_compare(before, after):
+    bad = []
+    for k in sorted(set(before) | set(after)):
+        b, a = before.get(k), after.get(k)
+        if b is None or a is None:
+            bad.append(f"{k}: appeared or disappeared")
+        elif k.endswith(".claude.json"):
+            if b["content_sha256"] != a["content_sha256"]:
+                bad.append(f"{k}: mcpServers/enabledPlugins changed")
+        elif (b["size"], b["mtime"], b["sha256"]) != (a["size"], a["mtime"], a["sha256"]):
+            bad.append(f"{k}: size/mtime/content changed")
+    return bad
 
 
 def civil(days):
@@ -126,8 +198,11 @@ def scratch(args, tmp):
     data.mkdir()
     if args.no_app:
         # Only the plugin: no MCP config, no pre-built index. The program is found on PATH.
-        (tmp / "bin").mkdir()
-        shutil.copy2(args.cli_exe, tmp / "bin" / args.cli_exe.name)
+        if args.real_login:
+            make_wrapper(tmp, args.cli_exe)
+        else:
+            (tmp / "bin").mkdir()
+            shutil.copy2(args.cli_exe, tmp / "bin" / args.cli_exe.name)
         return claude, data, work
     subprocess.run([str(args.index_exe), "--projects", str(claude / "projects"), "--config", str(claude), "--data", str(data)], check=True, stdout=subprocess.DEVNULL)
     cfg = {"mcpServers": {"atlas": {"command": str(args.mcp_exe), "args": ["--config-dir", str(claude), "--data-dir", str(data)]}}}
@@ -166,22 +241,38 @@ def habits(data):
 
 
 def run_claude(args, tmp, claude, work, prompt, resume=None):
-    cmd = ["claude", "-p", prompt, "--plugin-dir", str(ROOT / "skill")]
+    cmd = [_shutil.which("claude") or "claude", "-p", prompt, "--plugin-dir", str(ROOT / "skill")]
+    skills = ["Skill(atlas-repeats)", "Skill(atlas:atlas-repeats)"]
+    if args.real_login:
+        cmd += ["--setting-sources", "project", "--max-budget-usd", str(args.budget)]
     if args.no_app:
-        cmd += ["--allowedTools", "Skill(atlas-repeats)", "Read"]  # the launcher commands come from the skill's own allowed-tools
+        if args.real_login:
+            (tmp / "empty-mcp.json").write_text('{"mcpServers":{}}', encoding="utf-8")
+            cmd += ["--mcp-config", str(tmp / "empty-mcp.json"), "--strict-mcp-config"]
+        extra = []
+        if resume:
+            # A resumed headless turn no longer has the skill's allowed-tools, so a real user would see one
+            # permission prompt for the answer note. Pre-approve exactly that command, like clicking Allow.
+            sk = (ROOT / "skill" / "skills" / "atlas-repeats").as_posix()
+            extra = [f'Bash(sh "{sk}/../atlas/bin/atlas-usage.sh" offer-note *)']
+        cmd += ["--allowedTools", *skills, "Read", *extra]  # first turn: launcher commands come from the skill's own allowed-tools
     else:
         cmd += ["--mcp-config", str(tmp / "mcp.json"), "--strict-mcp-config",
-                "--allowedTools", "Skill(atlas-repeats)", "mcp__atlas__find_repeated_requests", "mcp__atlas__note_skill_offer", "mcp__atlas__list_items", "Read"]
+                "--allowedTools", *skills, "mcp__atlas__find_repeated_requests", "mcp__atlas__note_skill_offer", "mcp__atlas__list_items", "Read"]
     cmd += ["--output-format", "stream-json", "--verbose", "--max-turns", "12"]
     if args.model:
         cmd += ["--model", args.model]
     if resume:
         cmd += ["--resume", resume]
-    env = dict(os.environ, CLAUDE_CONFIG_DIR=str(claude))
+    env = dict(os.environ)
+    if not args.real_login:
+        env["CLAUDE_CONFIG_DIR"] = str(claude)
+    else:
+        env.pop("CLAUDE_CONFIG_DIR", None)
+        env["ATLAS_TEST_CONFIG"] = str(claude)
     if args.no_app:
         env.update(ATLAS_DATA_DIR=str(tmp / "data"), ATLAS_USAGE_CACHE=str(tmp / "cache"), PATH=str(tmp / "bin") + os.pathsep + env.get("PATH", ""))
-    env.pop("ANTHROPIC_API_KEY", None) if not os.environ.get("ANTHROPIC_API_KEY") else None
-    r = subprocess.run(cmd, cwd=work, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600, shell=(os.name == "nt"))
+    r = subprocess.run(cmd, cwd=work, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", timeout=600, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     events = []
     for line in r.stdout.splitlines():
         try:
@@ -230,16 +321,20 @@ def main():
     ap.add_argument("--prep-only", action="store_true")
     ap.add_argument("--mcp-exe", type=Path, default=ROOT / "target" / "debug" / "atlas-mcp.exe")
     ap.add_argument("--index-exe", type=Path, default=ROOT / "target" / "debug" / "examples" / "habits_index.exe")
+    ap.add_argument("--real-login", action="store_true", help="use the normal Claude login; no scratch config dir, nothing copied or made")
+    ap.add_argument("--budget", type=float, default=0.5, help="--max-budget-usd per run (real login)")
+    ap.add_argument("--force-skill", action="store_true", help="append an instruction to run the atlas-repeats skill (tests the skill itself, not whether the model picks it by itself)")
     ap.add_argument("--no-app", action="store_true", help="plugin only: no atlas MCP server, the skill uses the launcher and the CLI")
     ap.add_argument("--cli-exe", type=Path, default=ROOT / "target" / "debug" / "atlas-usage.exe")
     ap.add_argument("--scenarios", default="fresh,declined,never,oneoff")
     args = ap.parse_args()
     have_auth = bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"))
-    if not args.prep_only and not have_auth:
+    if not args.prep_only and not have_auth and not args.real_login:
         print("No CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in the environment: a scratch Claude folder is logged out.\nSet one for this run (this script never copies credentials), or use --prep-only.", file=sys.stderr)
         return 2
     OUT.mkdir(parents=True, exist_ok=True)
-    prefix = "noapp-" if args.no_app else ""
+    guard_before = guard_snapshot() if args.real_login and not args.prep_only else None
+    prefix = ("forced-" if args.force_skill else "") + ("noapp-" if args.no_app else "")
     rows = []
     for scenario in args.scenarios.split(","):
         fired = 0
@@ -260,7 +355,7 @@ def main():
                         m.close()
                     print(f"{scenario} try {i}: prepared; likeMatch={'yes' if g['likeMatch'] else 'no'} offersOff={g['offersOff']} offer={g['groups'][0]['offer'] if g['groups'] else None}")
                     continue
-                code, events, err = run_claude(args, tmp, claude, work, PROMPTS[scenario])
+                code, events, err = run_claude(args, tmp, claude, work, PROMPTS[scenario] + (FORCE if args.force_skill else ""))
                 text, sid = final_text(events)
                 offers = len(OFFER.findall(text))
                 used = tools_used(events)
@@ -286,8 +381,12 @@ def main():
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
         rows.append((scenario, args.tries, fired))
+    if guard_before is not None:
+        bad = guard_compare(guard_before, guard_snapshot())
+        print("config guard: " + ("UNCHANGED (settings.json, plugins/*.json, .claude.json mcpServers+enabledPlugins)" if not bad else "CHANGED: " + "; ".join(bad)))
+        rows.append(("config guard", 1, 0 if bad else 1))
     if not args.prep_only:
-        lines = ["# Repeats headless run" + (" (plugin only, no app)" if args.no_app else ""), "", f"model: {args.model or 'default'}; date: {dt.date.today().isoformat()}", "", "| scenario | tries | as expected |", "|---|---|---|"]
+        lines = ["# Repeats headless run" + (" (plugin only, no app)" if args.no_app else ""), "", f"model: {args.model or 'default'}{'; real login, user settings skipped' if args.real_login else ''}; date: {dt.date.today().isoformat()}", "", "| scenario | tries | as expected |", "|---|---|---|"]
         lines += [f"| {s} | {n} | {m} |" for s, n, m in rows]
         (OUT / f"{prefix}summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
         print("\n".join(lines))

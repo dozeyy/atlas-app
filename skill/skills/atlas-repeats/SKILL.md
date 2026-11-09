@@ -1,14 +1,16 @@
 ---
 name: atlas-repeats
 description: Notices when the user keeps asking for the same kind of thing, in this chat or across their past chats, and after the task is done offers once to turn it into a reusable skill. Nothing is saved until they say yes. Works with only this plugin; the Atlas app is not needed.
-when_to_use: After finishing a task, when the request is one the user has clearly made before - the same kind of ask 3 or more times in this chat, or words like "again", "like last time", "as usual", "same as before" - or when the user says "make this a skill". Not in the middle of a task, not for one-off questions, not when the user already said no to it.
-allowed-tools: mcp__atlas__find_repeated_requests, mcp__atlas__note_skill_offer, mcp__atlas__list_items, Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" repeats *), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" offer-note *), PowerShell(powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.ps1" repeats *), PowerShell(powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.ps1" offer-note *)
+when_to_use: Invoke this skill at the end of every task that was a request the user may make again (summarize or review a file, convert or reformat something, a routine report, a build, release or deploy step, a standard cleanup), after the work is done and before the final reply. It looks quietly for earlier asks of the same kind and says nothing unless the user has asked this several times. Also invoke it when the user says "again", "like last time", "as usual", "same as before" or "make this a skill". Skip one-off questions, and skip it in the middle of a task.
+allowed-tools: mcp__atlas__find_repeated_requests, mcp__atlas__note_skill_offer, mcp__atlas__list_items, Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" repeats *), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" offer-note *)
 ---
 
 # Offer a skill for a request they keep making
 
-Do the user's task first and give the result. Everything below happens after that, never
-before it and never instead of it. Say nothing about this skill unless you make the offer.
+Do the user's task first. When the work is done, and before you write the final reply, run
+the checks below. The offer, if there is one, is the last sentence of that reply, after the
+result. Never before the task, never instead of it. Say nothing about this skill unless you
+make the offer.
 
 ## Two ways to look across past chats
 
@@ -18,17 +20,17 @@ alone and say nothing about the failure.
 - **Atlas tools** (`mcp__atlas__find_repeated_requests`, `mcp__atlas__note_skill_offer`).
 - **The plugin's program**, which needs no app and no setup. `<words>` is the request with
   every character except letters, digits and spaces removed, at most 300 characters.
-  Windows (PowerShell):
-  `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.ps1" repeats --like "<words>" --json`
-  macOS / Linux (also Git Bash):
+  Run it with the Bash tool, on every system (on Windows that is Git Bash), exactly in this
+  form and not through PowerShell:
   `sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" repeats --like "<words>" --json`
   It prints JSON shaped like the tool's. Use a long timeout (600000 ms): the first run
   reads the chats once and can take a minute. If it prints an error or nothing, treat it as
   no data.
 
-To record an answer, the tool's `note_skill_offer` or the same program with
-`offer-note <id> offered|declined|made` (`--skill <name>` with `made`; `-` for the id and
-`--like "<words>"` when there is no id) or `offer-note off` for "stop asking".
+To record an answer, use the tool's `note_skill_offer`, or the same Bash command with
+`offer-note <id> offered|declined|made` in place of `repeats ...` (`--skill <name>` with
+`made`; `-` for the id and `--like "<words>"` when there is no id), or `offer-note off` for
+"stop asking".
 
 ## 1. Decide quietly
 

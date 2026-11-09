@@ -373,7 +373,7 @@ fn every_plugin_skill_is_ascii_and_its_frontmatter_will_parse() {
             assert!(tools.contains("mcp__atlas__find_repeated_requests") && tools.contains("mcp__atlas__note_skill_offer"));
             assert!(!tools.contains("create_item"), "the save must ask the user first");
             // The no-app path: the plugin's own launcher, with exactly the two subcommands.
-            for want in ["atlas-usage.sh\" repeats *", "atlas-usage.sh\" offer-note *", "atlas-usage.ps1\" repeats *", "atlas-usage.ps1\" offer-note *"] {
+            for want in ["atlas-usage.sh\" repeats *", "atlas-usage.sh\" offer-note *"] {
                 assert!(tools.contains(want), "allowed-tools lacks {want}");
             }
             assert!(dir.join("atlas").join("bin").join("atlas-usage.sh").is_file() && dir.join("atlas").join("bin").join("atlas-usage.ps1").is_file());

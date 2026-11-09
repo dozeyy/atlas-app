@@ -100,11 +100,11 @@ case $os in
   Linux)
     case $arch in
       x86_64 | amd64) asset=atlas-usage-linux-x64 ;;
-      *) fail "there is no ready-made build for $arch yet. Build it from the Atlas repo with: cargo install --path crates/cli" ;;
+      *) fail "there is no ready-made build for $arch yet. Download a build from github.com/$REPO/releases or install the Atlas app." ;;
     esac
     ;;
   MINGW* | MSYS* | CYGWIN*) asset=atlas-usage-windows-x64.exe ;;
-  *) fail "there is no ready-made build for $os. Build it from the Atlas repo with: cargo install --path crates/cli" ;;
+  *) fail "there is no ready-made build for $os. Download a build from github.com/$REPO/releases or install the Atlas app." ;;
 esac
 
 [ -n "$version" ] || fail "this copy of the skill has no version, so it cannot fetch the program. Put atlas-usage on PATH, or install the plugin: /plugin marketplace add $REPO"
@@ -186,7 +186,7 @@ if [ -n "$src" ] && [ -d "$src" ]; then
 elif [ -n "$src" ] && loopback_ok "$src"; then
   fetch "${src%/}/$asset" "$work/$asset" 0 && got=1
 else
-  # The repo can be private: the signed-in GitHub CLI is the only thing that can reach it.
+  # Optional: a signed-in GitHub CLI can fetch it too (the release is public, so this is not needed).
   if command -v gh >/dev/null 2>&1; then
     export GH_PROMPT_DISABLED=1
     if gh auth status >/dev/null 2>&1; then
@@ -200,7 +200,7 @@ else
     fetch "https://github.com/$REPO/releases/download/v$version/$asset" "$work/$asset" 1 && got=1
   fi
 fi
-[ "$got" = 1 ] || fail "could not download the program (release v$version of github.com/$REPO). Check the internet connection (if the repo is private, sign in with 'gh auth login'), then try again. $hint"
+[ "$got" = 1 ] || fail "could not download the program (release v$version of github.com/$REPO). Check the internet connection, then try again. $hint"
 
 have=$(sha256_of "$work/$asset") || fail "no tool to check the download (need sha256sum, shasum or openssl)."
 if [ "$want" != "$have" ]; then
