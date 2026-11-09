@@ -334,3 +334,8 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Not seen in the app: the same-chat skip, year-boundary ranges, short stories under 7 days, the skill/helper/tool slides, Silver, 150% DPI. Unit tests only.
 - No first-launch Christmas intro into Wrapped exists yet (Phase 7). The only route in is the title-bar gift button.
 - Will kept the slide 2 novels hover (the conversion explanation), 2026-11-09.
+
+## 2026-11-09 - Skill Library + Habits spec (spec-writer)
+- Spec: docs/specs/skill-library.md (Unit 0 shell, Unit A Library, Unit B Habits; 31 criteria, 5 open questions).
+- Proven in a scratch CLAUDE_CONFIG_DIR on Claude Code 2.1.296 (real ~/.claude/plugins unchanged): `claude plugin list --available --json` lists a built-in `anthropic-plugin-directory` (3,602 entries, all github.com + pinned sha, 2.15 MB, 2-3 s); install/uninstall/marketplace add have `--json`; even `list` writes cache files into the config dir; a bare skills repo or plugin.json-only repo fails `manifest_missing`, a wrapped local marketplace installs. codeload tar.gz carries the commit sha in its pax header.
+- Habits source: the search index has user text but no typed-vs-machine flag; real lines carry `origin.kind` (human / task-notification / peer), `promptSource`, `entrypoint: sdk-cli`. Spec adds `msgs.origin` (search schema 2).
