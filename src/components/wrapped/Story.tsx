@@ -16,6 +16,13 @@ import { Poster } from "./Poster";
 /** How long a press has to last before it is a hold (the story freezes) and not a tap. */
 const HOLD_MS = 180;
 
+/** What a key press on these belongs to the menu or list, not the story. */
+const MENU_PARTS =
+  '[role="menu"],[role="menuitem"],[role="menuitemcheckbox"],[role="menuitemradio"],[role="listbox"],[role="option"]';
+/** A dialog or an open menu: the story keeps its hands off every key while one is up. */
+const OPEN_LAYERS =
+  '[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]';
+
 interface At {
   i: number;
   /** The poster going out, frozen, until the wipe has covered it. */
@@ -67,7 +74,16 @@ function PosterOrCard({
  * hold anywhere to freeze it; the progress segments are buttons too. A move is a colour wipe into the
  * next poster's colour while the words cross over; with reduced motion it is a fade.
  */
-export function Story({ slides }: { slides: Slide[] }) {
+export function Story({
+  slides,
+  onLeave,
+}: {
+  slides: Slide[];
+  /** Esc: leave the story (back to the page before it). */
+  onLeave?: () => void;
+}) {
+  const leave = useRef(onLeave);
+  leave.current = onLeave;
   const [at, setAt] = useState<At>({ i: 0, prev: null, dir: "fwd", n: 0 });
   const [wiping, setWiping] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -102,7 +118,12 @@ export function Story({ slides }: { slides: Slide[] }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Tab") tabbed = true;
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== " ")
+      if (
+        e.key !== "ArrowRight" &&
+        e.key !== "ArrowLeft" &&
+        e.key !== " " &&
+        e.key !== "Escape"
+      )
         return;
       const t = e.target as HTMLElement | null;
       if (
@@ -111,6 +132,17 @@ export function Story({ slides }: { slides: Slide[] }) {
           ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))
       )
         return;
+      // A menu (or a list you pick from) owns these keys, and so does a dialog: the story never pages
+      // behind one, and Space on a focused menu item is that item's.
+      if (t && t.closest(MENU_PARTS)) return;
+      if (document.querySelector(OPEN_LAYERS)) return;
+      // Esc leaves the story for the page you came from.
+      if (e.key === "Escape") {
+        if (!leave.current) return;
+        e.preventDefault();
+        leave.current();
+        return;
+      }
       // Space on a control you Tabbed to presses it. A control a mouse click left focused (a title-bar
       // or caption button) must not: Space belongs to the story, so it is swallowed there.
       if (
@@ -119,8 +151,6 @@ export function Story({ slides }: { slides: Slide[] }) {
         t.closest('button, a, [role="button"]') &&
         tabbed
       )
-        return;
-      if (document.querySelector('[role="dialog"],[role="alertdialog"]'))
         return;
       e.preventDefault();
       // Paging the story is not a walk round the controls, so it must not leave a keyboard ring on a
@@ -236,7 +266,8 @@ export function Story({ slides }: { slides: Slide[] }) {
 
   const slide = slides[i];
   const outgoing = prev !== null && prev !== i ? slides[prev] : null;
-  const lead = wiping && !reduced ? WIPE_LEAD : 0;
+  // Fixed for the life of the poster (it is keyed by the slide), so the clock starts once.
+  const lead = n > 0 && !reduced ? WIPE_LEAD : 0;
 
   return (
     <div className="pr-story">

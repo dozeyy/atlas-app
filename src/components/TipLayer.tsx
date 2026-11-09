@@ -129,7 +129,10 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
         return;
       }
       const text = textOf(el).trim();
-      if (!text) return;
+      if (!text) {
+        hide(); // the page emptied the title while its tip was up
+        return;
+      }
       const [first, ...others] = text.split("\n");
       head.textContent = first;
       rest.textContent = others.join("\n");

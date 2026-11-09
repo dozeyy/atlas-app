@@ -101,6 +101,9 @@ describe("Wrapped's gift", () => {
     await userEvent.click(gift);
     expect(screen.getByRole("heading", { level: 1, name: "Wrapped" })).toBeInTheDocument();
     expect(gift).toHaveAttribute("aria-current", "page");
+    // Already there: no hover tip left to hang over the page the click opened.
+    expect(gift.getAttribute("title") ?? "").toBe("");
+    expect(gift.getAttribute("data-tip") ?? "").toBe("");
   });
 });
 

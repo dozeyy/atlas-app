@@ -463,6 +463,14 @@ html[data-input="keyboard"] .pr-strip-text:focus-visible {
   fill: var(--p-acc);
 }
 
+/* the best run in the calendar: the cell keeps its own heat colour and gets a slate outline, so a
+   long run reads as a ring of cells, never as a solid block laid over the grid */
+.hb-run {
+  stroke: var(--p-dark);
+  stroke-width: 4px;
+  stroke-linejoin: miter;
+}
+
 /* transform origins for pieces moved with CSS transforms (the SVG-attribute ones need none) */
 .pr-svg .o-b,
 .pr-svg .o-c,
@@ -687,6 +695,42 @@ html[data-input="keyboard"] .pr-strip-text:focus-visible {
   align-items: center;
   gap: 12px;
   min-width: 0;
+}
+
+/* the save button: a flat slab on the poster's own colours, a hard slate edge, no radius and no shadow */
+.pr-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px;
+  border: 4px solid var(--p-dark);
+  border-radius: 0;
+  background: var(--p-acc);
+  color: var(--p-on-acc);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: none;
+  transition: none;
+}
+.pr-save:hover:not(:disabled) {
+  background: var(--p-fg);
+  color: var(--p-bg);
+}
+.pr-save:active:not(:disabled) {
+  transform: translateY(2px);
+}
+.pr-save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+html[data-input="keyboard"] .pr-save:focus-visible {
+  outline: 3px solid var(--p-fg);
+  outline-offset: 3px;
 }
 
 .pr-card-status {

@@ -368,6 +368,44 @@ fn short_and_long_chats_follow_the_range_not_the_whole_chat() {
     assert_eq!((on_the_5th.chats, on_the_5th.short_chats, on_the_5th.long_chats), (1, 0, 0));
 }
 
+/// The average's numerator covers exactly the chats the count does: a chat that spans the range
+/// but has no message inside it is in neither.
+#[test]
+fn chat_tokens_cover_the_same_chats_as_the_count_for_a_chat_that_only_spans_the_range() {
+    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let sid = "ffff0007-0000-4000-8000-000000000007";
+    let ms = |s: &str| chrono_ms(s);
+    {
+        let c = rw(&fx);
+        // Messages on the 3rd and the 9th, nothing between: it spans the 5th, and says nothing on it.
+        let stamps = ["2026-11-03T10:00:00Z", "2026-11-09T10:00:00Z"];
+        c.execute(
+            "INSERT INTO sessions (session_id, project_key, project_path, first_ts, last_ts, messages) VALUES (?1, 'fx', '/fx', ?2, ?3, 2)",
+            rusqlite::params![sid, ms(stamps[0]), ms(stamps[1])],
+        )
+        .unwrap();
+        for (i, s) in stamps.iter().enumerate() {
+            c.execute(
+                "INSERT INTO messages (msg_key, session_id, file_id, agent_id, is_sidechain, model, ts_utc_ms, hour_local, input, output, cw5m, cw1h, cr) \
+                 VALUES (?1, ?2, 998, NULL, 0, 'claude-opus-5-5', ?3, ?4, 1, 1, 0, 0, 0)",
+                rusqlite::params![format!("span|{i}"), sid, ms(s), format!("{}T{}", &s[..10], &s[11..13])],
+            )
+            .unwrap();
+        }
+        c.execute(
+            "INSERT INTO session_model (session_id, model, speed, geo, service_tier, price_tier, input, output, cw5m, cw1h, cr, web_search, web_fetch, messages) \
+             VALUES (?1, 'claude-opus-5-5', '', '', '', 0, 777000, 0, 0, 0, 0, 0, 0, 2)",
+            rusqlite::params![sid],
+        )
+        .unwrap();
+    }
+    let on_the_5th = fx.engine.wrapped_habits("2026-11-05", "2026-11-05").unwrap();
+    assert_eq!(on_the_5th.chats, 0, "no message on the 5th, so it is not a chat of the 5th");
+    assert_eq!(on_the_5th.chat_tokens, 0, "and its tokens are not in the average's numerator");
+    let whole = fx.engine.wrapped_habits("2026-11-03", "2026-11-09").unwrap();
+    assert!(whole.chat_tokens >= 777_000, "over the whole stretch it counts");
+}
+
 fn chrono_ms(iso: &str) -> i64 {
     // Whole-second UTC stamps only: days since the epoch, then the clock.
     let (d, t) = iso.trim_end_matches('Z').split_once('T').unwrap();

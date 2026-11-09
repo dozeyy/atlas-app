@@ -86,21 +86,18 @@ export const LADDERS: Record<LadderId, Ladder> = {
       { size: 8766, one: "one year nonstop", many: "years nonstop", fact: "A year is 8,766 hours." },
     ],
   },
-  // How many times something happened, set against a steady pace over a stretch of time: "a use a
-  // minute for a day" is 1,440 uses, so the comparison is about pace and relates to uses.
+  // How many times something happened, against things that come in a known number.
   count: {
     unit: "uses",
     rungs: [
-      { size: 7, one: "one week of a use a day", many: "weeks of a use a day", fact: "A week has 7 days, so a use a day for a week is 7 uses." },
-      { size: 12, one: "one year of a use a month", many: "years of a use a month", fact: "A year has 12 months, so a use a month for a year is 12 uses." },
-      { size: 24, one: "one day of a use an hour", many: "days of a use an hour", fact: "A day has 24 hours, so a use an hour for a day is 24 uses." },
-      { size: 168, one: "one week of a use an hour", many: "weeks of a use an hour", fact: "A week has 168 hours, so a use an hour for a week is 168 uses." },
-      { size: 365, one: "one year of a use a day", many: "years of a use a day", fact: "A year has about 365 days, so a use a day for a year is about 365 uses." },
-      { size: 1440, one: "one day of a use a minute", many: "days of a use a minute", fact: "A day has 1,440 minutes, so a use a minute for a day is 1,440 uses." },
-      { size: 8766, one: "one year of a use an hour", many: "years of a use an hour", fact: "A year has about 8,766 hours, so a use an hour for a year is about 8,766 uses." },
-      { size: 86_400, one: "one day of a use a second", many: "days of a use a second", fact: "A day has 86,400 seconds, so a use a second for a day is 86,400 uses." },
+      { size: 12, one: "one dozen doughnuts", many: "dozen doughnuts", fact: "A dozen is 12." },
+      { size: 52, one: "one deck of cards", many: "decks of cards", fact: "A standard deck has 52 cards." },
+      { size: 88, one: "one piano keyboard", many: "piano keyboards", fact: "A standard piano has 88 keys." },
+      { size: 10_000, one: "one day of 10,000 steps", many: "days of 10,000 steps", fact: "The popular daily goal is 10,000 steps." },
+      { size: 100_000, one: "one head of hair", many: "heads of hair", fact: "A human head has about 100,000 hairs." },
     ],
-  },  // A crowd of helpers, against teams and bodies of a known size.
+  },
+  // A crowd of helpers, against teams and bodies of a known size.
   crew: {
     unit: "helpers",
     rungs: [
@@ -179,8 +176,10 @@ export interface CompareWords {
 }
 
 /** Build the comparison for an amount in the ladder's own unit; null when none fits. */
-export function compare(id: LadderId, amount: number, words: CompareWords): Comparison | null {
-  const ladder = LADDERS[id];
+export function compare(id: LadderId, amount: number, words: CompareWords, used?: Set<string>): Comparison | null {
+  // A thing is compared once per Wrapped: the rungs already spoken for are out of the running.
+  const full = LADDERS[id];
+  const ladder = used ? { ...full, rungs: full.rungs.filter((r) => !used.has(r.one)) } : full;
   const hit = pickRung(ladder, amount, words.atLeast ? 1 : MIN_SHARE);
   if (!hit) return null;
   const { rung, ratio } = hit;
@@ -191,11 +190,12 @@ export function compare(id: LadderId, amount: number, words: CompareWords): Comp
   let text = say(words.lead, words.tail ?? "");
   if (text.length > MAX_LINE) text = say(words.atLeast ? "At least" : "About", words.tail ?? "");
   if (text.length > MAX_LINE) return null;
+  used?.add(rung.one);
   const math = `${compact(amount)} ${ladder.unit} / ${compact(rung.size)} = ${words.atLeast ? "at least " : ratio < ONE_BELOW ? "about " : ""}${ratio < ONE_BELOW ? "1" : n}.`;
   return { text, hint: [rung.fact, math, ladder.note].filter(Boolean).join(" ") };
 }
 
 /** Tokens against the book ladder (tokens become words at the stated estimate). */
-export function compareTokens(tokens: number, words: CompareWords): Comparison | null {
-  return compare("words", tokens * WORDS_PER_TOKEN, words);
+export function compareTokens(tokens: number, words: CompareWords, used?: Set<string>): Comparison | null {
+  return compare("words", tokens * WORDS_PER_TOKEN, words, used);
 }

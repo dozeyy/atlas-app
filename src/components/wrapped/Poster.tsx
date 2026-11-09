@@ -8,6 +8,7 @@ import {
   FRAME_H,
   FRAME_W,
   fitMain,
+  glueUnits,
   HEAD_ROW,
   HEAD_TALL,
 } from "../../lib/wrappedPoster";
@@ -96,13 +97,11 @@ function Figure({
   main,
   size,
   lines,
-  bleed,
 }: {
   slide: Slide;
   main: Box;
   size: number;
   lines: string[];
-  bleed: number;
 }) {
   const ctx = useClockCtx();
   const { els, ref } = useEls();
@@ -166,9 +165,6 @@ function Figure({
       style={{
         fontSize: size,
         width: main.w,
-        transform: bleed
-          ? `translateX(calc(${bleed.toFixed(1)}px + ${bleed > 0 ? "" : "-1 * "}var(--ex, 0) * 1px))`
-          : undefined,
       }}
     >
       <div ref={group.ref} className="pr-fig-in" aria-hidden="true">
@@ -210,7 +206,7 @@ function Line({ text, box, align }: { text: string; box: Box; align: Align }) {
       className="pr-line"
       style={{ ...px(box), textAlign: align }}
     >
-      {text}
+      {glueUnits(text)}
     </p>
   );
 }
@@ -346,10 +342,6 @@ export function Poster({
     () => fitMain(slide.figure, b.main, headH),
     [slide.figure, b, headH],
   );
-  const bleed = spec.bleed
-    ? (b.align === "right" ? 1 : -1) *
-      (FRAME_W - (b.main.x + b.main.w) + fit.size * 0.02)
-    : 0;
   const mainStyle: CSSProperties = {
     ...px(b.main),
     justifyContent: b.anchor === "end" ? "flex-end" : "flex-start",
@@ -406,7 +398,6 @@ export function Poster({
               main={b.main}
               size={fit.size}
               lines={fit.lines}
-              bleed={bleed}
             />
           </div>
           <Line text={slide.line} box={b.line} align={b.align} />

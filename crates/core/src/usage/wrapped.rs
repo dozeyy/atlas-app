@@ -143,12 +143,15 @@ pub fn wrapped_habits(conn: &Connection, ctx: &QueryCtx, from: &str, to: &str) -
         None => None,
     };
 
-    // The same chats `chats` counted (present, with a message in the range), measured the way
+    // The same chats `chats` counted (present, and with a message in the range: wholly inside it, or
+    // a straddler with at least one message inside, the `f IS NOT NULL` above), measured the way
     // `biggest` is: the numerator of an average over `chats`.
     let chat_tokens: i64 = conn.query_row(
         "SELECT COALESCE(SUM(m.input + m.output + m.cw5m + m.cw1h), 0) FROM session_model m \
          JOIN sessions s ON s.session_id = m.session_id \
-         WHERE s.messages > 0 AND s.missing = 0 AND s.last_ts >= ?1 AND s.first_ts < ?2",
+         WHERE s.messages > 0 AND s.missing = 0 AND s.last_ts >= ?1 AND s.first_ts < ?2 \
+           AND ((s.first_ts >= ?1 AND s.last_ts < ?2) \
+                OR EXISTS (SELECT 1 FROM messages x WHERE x.session_id = s.session_id AND x.ts_utc_ms >= ?1 AND x.ts_utc_ms < ?2))",
         rusqlite::params![lo, hi],
         |r| r.get(0),
     )?;

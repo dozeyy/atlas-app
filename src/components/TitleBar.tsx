@@ -58,7 +58,9 @@ function WrappedButton() {
     <IconButton
       aria-label="Wrapped"
       aria-current={here ? "page" : undefined}
-      title={`Wrapped (${modName(info.platform)}+${at + 1})`}
+      // No tip once you are on it: an empty title (not a missing one, which the tip layer cannot
+      // see change while it holds the old text) so nothing hangs over the page the click opened.
+      title={here ? "" : `Wrapped (${modName(info.platform)}+${at + 1})`}
       className="titlebar-gift hover-host"
       onClick={() => setView("wrapped")}
     >

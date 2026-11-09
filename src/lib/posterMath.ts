@@ -2,6 +2,7 @@
 // (design units), so the layouts can be tested: nothing overlaps, nothing leaves its box, labels
 // stay clear of the shapes they name. The drawing is in components/wrapped/heroes.
 
+import { compact } from "./usage";
 import { FRAME_H, FRAME_W } from "./wrappedPoster";
 import type { Box, PosterBoxes } from "./wrappedPoster";
 
@@ -111,7 +112,8 @@ export function skyline(values: number[], b: HeroBox, n = 16): Bar[] {
   const max = Math.max(...bins, 1);
   const top = bins.indexOf(Math.max(...bins));
   return bins.map((v, i) => {
-    const h = Math.max(18, (v / max) * (b.floor - b.ceil));
+    // One scale for every bar: height is the share of the biggest, and a zero is a zero.
+    const h = (v / max) * (b.floor - b.ceil);
     return { x: pad + i * (w + gap), y: b.floor - h, w, h, peak: i === top };
   });
 }
@@ -258,16 +260,39 @@ export function heatLayout(
 
 export const TOWER_MAX = 14;
 
-/** The biggest chat as a stack of "average chats": how many blocks, and whether it was capped. */
-export function towerBlocks(
-  value: number,
-  avg: number,
-): { blocks: number; ratio: number; capped: boolean } {
-  const ratio = avg > 0 ? value / avg : 1;
+export interface Tower {
+  /** Whole blocks drawn: floor of the ratio, never more than TOWER_MAX. */
+  whole: number;
+  /** The share of one more block (0 when it is under a twentieth or the tower is capped). */
+  part: number;
+  /** Blocks drawn, the partial one included. */
+  blocks: number;
+  ratio: number;
+  /** Over TOWER_MAX: the stack stops there and the poster draws a break mark. */
+  capped: boolean;
+  /** The figure on top: one decimal under 10, whole above, rounded the same way the blocks are. */
+  label: string;
+}
+
+/**
+ * The biggest chat as a stack of "average chats". The height is the ratio itself: 2.5x is two
+ * blocks and half of a third, 1.0x is one block. Past TOWER_MAX the stack is cut short and the
+ * label keeps the true number.
+ */
+export function towerBlocks(value: number, avg: number): Tower {
+  const ratio = avg > 0 ? Math.max(1, value / avg) : 1;
+  const capped = ratio > TOWER_MAX;
+  const whole = capped ? TOWER_MAX : Math.max(1, Math.floor(ratio));
+  const frac = capped ? 0 : ratio - Math.floor(ratio);
+  const part = frac < 0.05 ? 0 : frac;
+  const tenth = Math.round(ratio * 10) / 10;
   return {
-    blocks: Math.max(2, Math.min(TOWER_MAX, Math.round(ratio))),
+    whole,
+    part,
+    blocks: whole + (part > 0 ? 1 : 0),
     ratio,
-    capped: ratio > TOWER_MAX,
+    capped,
+    label: `${tenth < 10 ? tenth.toFixed(1) : compact(Math.round(ratio))}x`,
   };
 }
 
@@ -364,12 +389,23 @@ export interface PodiumBar {
   y: number;
   w: number;
   h: number;
-  /** How many characters of the name fit along the bar. */
+  /** How many characters of the name fit along the bar, at `px`. */
   chars: number;
+  /** The label's font size: full size, or smaller (never under PODIUM_MIN_PX) so a long name fits whole. */
+  px: number;
 }
 
-/** Ranks counted down left to right (five first, one last, tallest). Heights follow the counts. */
-export function podiumLayout(values: number[], b: HeroBox): PodiumBar[] {
+export const PODIUM_PX = 22;
+export const PODIUM_MIN_PX = 16;
+/** A mono character plus its tracking, as a share of the font size. */
+const MONO_ADVANCE = 0.65;
+
+/**
+ * Ranks counted down left to right (five first, one last, tallest). Heights follow the counts.
+ * `lens` are the label lengths in the same order as `values`: each label is set as large as it can be
+ * (down to PODIUM_MIN_PX) so the whole name runs along its bar.
+ */
+export function podiumLayout(values: number[], b: HeroBox, lens: number[] = []): PodiumBar[] {
   const n = values.length;
   const pad = 18;
   const gap = 12;
@@ -379,12 +415,17 @@ export function podiumLayout(values: number[], b: HeroBox): PodiumBar[] {
   return values
     .map((v, i) => {
       const h = Math.max(room * 0.3, (v / max) * room);
+      // The bar's own padding comes off both ends; then the name is set as large as fits, down to the floor.
+      const run = h - 48;
+      const px = lens[i]
+        ? Math.max(PODIUM_MIN_PX, Math.min(PODIUM_PX, Math.floor(run / (lens[i] * MONO_ADVANCE))))
+        : PODIUM_PX;
       return {
         rank: i + 1,
         w,
         h,
-        // The label is 22 px mono with 0.05em tracking: 14.3 design units a character, with the bar's own padding off both ends.
-        chars: Math.max(0, Math.floor((h - 48) / 14.6)),
+        px,
+        chars: Math.max(0, Math.floor(run / (px * MONO_ADVANCE))),
       };
     })
     .reverse()
@@ -506,7 +547,7 @@ export interface Spike {
   peak: boolean;
 }
 
-/** One pointed spike per day, the peak day towering over the rest. */
+/** One pointed spike per day on one shared scale: the peak is the tallest, the rest are their true share of it. */
 export function spikeLayout(
   values: number[],
   peak: number,
@@ -520,7 +561,7 @@ export function spikeLayout(
   return values.map((v, i) => ({
     x: pad + i * w,
     w,
-    h: i === peak ? room : Math.max(18, (v / max) * room * 0.6),
+    h: (Math.max(0, v) / max) * room,
     peak: i === peak,
   }));
 }
@@ -618,10 +659,16 @@ export interface Sector {
   share: number;
 }
 
-/** Sectors in degrees clockwise from twelve. The rest past `max` models is one sector. */
-export function donutSectors(values: number[], max = 5): Sector[] {
+/**
+ * Sectors in degrees clockwise from twelve. The rest past `max` models is one sector. With a
+ * `whole` (every token, not only the ones a model is named for) the shares are shares of that
+ * whole and whatever the named models do not cover joins the rest, so a ring, its legend and a
+ * line that says "49% of your tokens" all agree.
+ */
+export function donutSectors(values: number[], max = 5, whole?: number): Sector[] {
   const top = values.slice(0, max);
-  const rest = values.slice(max).reduce((a, b) => a + b, 0);
+  const named = values.reduce((a, b) => a + b, 0);
+  const rest = whole !== undefined && whole >= named ? whole - top.reduce((a, b) => a + b, 0) : values.slice(max).reduce((a, b) => a + b, 0);
   const all = rest > 0 ? [...top, rest] : top;
   const total = all.reduce((a, b) => a + b, 0) || 1;
   let at = 0;

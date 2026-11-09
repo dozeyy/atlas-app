@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { DownloadSimple } from "@phosphor-icons/react";
-import { Button } from "../controls";
 import { getBackend } from "../../lib/ipc";
 import { cardBytes, drawShareCard, loadCardFonts } from "../../lib/shareCard";
 import type { ShareCard, Slide } from "../../lib/wrappedModel";
@@ -175,14 +174,15 @@ export function CardPoster({
                       ? "The picture could not be drawn."
                       : ""}
               </span>
-              <Button
-                variant="primary"
+              <button
+                type="button"
+                className="pr-save"
                 onClick={() => void save()}
                 disabled={status.kind === "busy" || !drawn}
               >
-                <DownloadSimple size={14} aria-hidden="true" />
+                <DownloadSimple size={16} weight="bold" aria-hidden="true" />
                 Save image
-              </Button>
+              </button>
             </div>
           </Rise>
         </div>

@@ -57,6 +57,7 @@ export function SkillHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
       podiumLayout(
         shown.map((r) => r.value),
         box,
+        shown.map((r) => r.label.length),
       ),
     [rows, box],
   ); // eslint-disable-line react-hooks/exhaustive-deps
@@ -96,7 +97,8 @@ export function SkillHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
               </text>
               <text
                 className={`pr-lab f-${sw.ink}`}
-                transform={`translate(${b.x + b.w / 2 + 8} ${b.y + b.h - 20}) rotate(-90)`}
+                transform={`translate(${b.x + b.w / 2 + b.px * 0.36} ${b.y + b.h - 20}) rotate(-90)`}
+                style={{ fontSize: b.px }}
               >
                 {clipText(r.label, b.chars)}
               </text>
@@ -275,7 +277,10 @@ export function ToolHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
   ); // eslint-disable-line react-hooks/exhaustive-deps
   const { els, ref } = useEls();
   const glyph = useEl();
-  const gx = box.side === "l" ? -150 : box.w - 190;
+  // The ghost prompt sits wholly inside the hero box (nothing on the card is cut off).
+  const gsize = Math.round(Math.min(460, box.h * 0.8));
+  const gx = box.side === "l" ? 8 : box.w - gsize * 0.62 - 8;
+  const gy = box.floor - gsize * 0.14;
   useTick((t) => {
     bars.forEach((_, i) => {
       const { p, landed } = at(t, i, bars.length);
@@ -292,8 +297,8 @@ export function ToolHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
         data-deco=""
         aria-hidden="true"
         x={gx}
-        y={box.floor + 90}
-        style={{ fontSize: 720 }}
+        y={gy}
+        style={{ fontSize: gsize }}
       >
         $
       </text>
@@ -582,7 +587,7 @@ export function RhythmHero({
 
 // ---- models: a ring ------------------------------------------------------------------------------------------------------------------------
 
-export function ModelsHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
+export function ModelsHero({ rows, whole, box }: { rows: Row[]; whole?: number; box: HeroBox }) {
   const ctx = useClockCtx();
   const at = useMemo(() => pieces(ctx), [ctx]);
   const secs = useMemo(
@@ -590,8 +595,9 @@ export function ModelsHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
       donutSectors(
         rows.map((r) => r.value),
         4,
+        whole,
       ),
-    [rows],
+    [rows, whole],
   );
   const R = Math.min(box.w / 2 - 26, 200);
   const cx = box.w / 2;
@@ -609,7 +615,7 @@ export function ModelsHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
     <HeroSvg box={box}>
       {secs.map((s, i) => {
         const row = rows[i];
-        const rest = i >= 4;
+        const rest = i >= Math.min(4, rows.length);
         const sw = rest ? SWATCH[4] : SWATCH[i];
         return (
           <path
@@ -624,7 +630,7 @@ export function ModelsHero({ rows, box }: { rows: Row[]; box: HeroBox }) {
         );
       })}
       {secs.map((s, i) => {
-        const rest = i >= 4;
+        const rest = i >= Math.min(4, rows.length);
         const sw = rest ? SWATCH[4] : SWATCH[i];
         const y = legendY + i * 36;
         if (y > box.floor) return null;
@@ -677,9 +683,14 @@ export function TypeHero({
       });
     });
   });
+  // The badge is as big as its room allows (stroke and mitred tip included), never past the card.
+  const hr = Math.max(
+    40,
+    Math.min(92, (box.floor - box.ceil) / 2 - OUT * 0.75),
+  );
   const hex = Array.from({ length: 6 }, (_, k) => {
     const a = (Math.PI / 3) * k - Math.PI / 6;
-    return `${(150 + Math.cos(a) * 92).toFixed(1)} ${(cy + Math.sin(a) * 92).toFixed(1)}`;
+    return `${(150 + Math.cos(a) * hr).toFixed(1)} ${(cy + Math.sin(a) * hr).toFixed(1)}`;
   }).join("L");
   return (
     <HeroSvg box={box}>
@@ -688,9 +699,9 @@ export function TypeHero({
         <text
           className="pr-num f-on-acc"
           x={150}
-          y={cy + 30}
+          y={cy + hr * 0.326}
           textAnchor="middle"
-          style={{ fontSize: 88 }}
+          style={{ fontSize: Math.round(hr * 0.957) }}
         >
           {initials(chart.name)}
         </text>

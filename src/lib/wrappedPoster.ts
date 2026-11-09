@@ -60,21 +60,13 @@ export interface PosterSpec {
   mood: Mood;
   /** A thin topo-line pattern over the field. */
   topo: boolean;
-  /** The figure runs off the card edge on purpose (the last digit is cropped). */
-  bleed?: boolean;
 }
 
 /** What each slide asks for. `plan` bends a layout or a pair only when a neighbour would repeat it. */
 export const POSTERS: Record<string, PosterSpec> = {
   cover: { pair: "clay", layout: "mid", mood: "snappy", topo: true },
   tokens: { pair: "sand", layout: "bl", mood: "snappy", topo: false },
-  novels: {
-    pair: "night",
-    layout: "tr",
-    mood: "heavy",
-    topo: false,
-    bleed: true,
-  },
+  novels: { pair: "night", layout: "tr", mood: "heavy", topo: false },
   first: { pair: "peach", layout: "tl", mood: "tick", topo: true },
   days: { pair: "mist", layout: "br", mood: "pulse", topo: false },
   biggest: { pair: "ember", layout: "mr", mood: "heavy", topo: false },
@@ -248,9 +240,13 @@ export const TIMELINES: Record<Mood, MoodTimeline> = {
   ]),
 };
 
-/** ms the wipe between two cards takes, and how long a new card waits before its clock starts. */
+/**
+ * ms the wipe between two cards takes, and how long a new card waits before its clock starts. The
+ * clock starts with the wipe (under the block, which covers the card for the first half), so the
+ * words are already arriving when the block uncovers them: no empty card in between.
+ */
 export const WIPE_MS = 560;
-export const WIPE_LEAD = 240;
+export const WIPE_LEAD = 0;
 
 // ---- the frame and where everything sits -------------------------------------------------------
 
@@ -396,6 +392,14 @@ export const HEAD_TALL = 96;
 
 /** How tall a line of the figure is, as a share of its font size (Anton set tight). */
 export const FIG_LINE = 0.9;
+
+/**
+ * Keep a number with its unit: "3 days" is one word to the line breaker, so a sentence never ends a
+ * line on a lone "3". (A no-break space; written as an escape because the source stays ASCII.)
+ */
+export function glueUnits(text: string): string {
+  return text.replace(/(\d[\d.,]*[kMBx%]?) (?=[A-Za-z(])/g, "$1\u00A0");
+}
 
 /**
  * Fit the figure into the room `main` leaves it: width first (fitFigure), then the height it has

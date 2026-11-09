@@ -123,9 +123,11 @@ describe("buildSlides", () => {
     expect(ids).toEqual(["tokens", "novels", "days", "project", "skill", "helper", "tool", "busiest", "weekday", "rhythm", "models", "type", "card"]);
     expect(s[0].figure).toBe("48M");
     expect(s.find((x) => x.id === "skill")?.figure).toBe("frontend-design");
-    // The last slide says only the range; the log-retention sentence is a hover and only when it is true.
+    // The card slide says its one dated range inside the picture, never a second one in the line;
+    // the log-retention sentence is a hover and only when it is true.
     const end = s[s.length - 1];
-    expect(end.line).toBe("Oct 9 to today");
+    expect(end.line).not.toMatch(/ to /);
+    expect(end.card?.range).toMatch(/^Oct 9 to /);
     expect(end.hint).toBe("Oct 9 is your first day with usage.");
   });
 
@@ -208,17 +210,17 @@ describe("buildSlides", () => {
     expect(s.map((x) => x.id)).toEqual(["tokens", "novels", "first", "days", "biggest", "long", "project", "skill", "helper", "crowd", "tool", "busiest", "weekday", "rhythm", "models", "type", "card"]);
     const biggest = s.find((x) => x.id === "biggest")!;
     expect(biggest.figure).toBe("6.5M");
-    expect(biggest.line).toBe("Biggest chat name, in heavens-casino. One chat did all that.");
+    expect(biggest.line).toBe("One chat in heavens-casino did all that.");
     const first = s.find((x) => x.id === "first")!;
     expect(first.figure).toBe("Oct 9");
     expect(first.kicker).toBe("Oldest chat still here");
-    expect(first.line).toBe("30 days ago: First chat name, in atlas. Still standing.");
+    expect(first.line).toBe("30 days ago: a session in atlas. Still standing.");
     // 30 days is past a lunar month (29.5) and short of the next rung, 88.
     expect(first.compare?.text).toBe("Since then, about one lunar month.");
     const crowdSlide = s.find((x) => x.id === "crowd")!;
     expect(crowdSlide.figure).toBe("7");
     expect(crowdSlide.unit).toBe("helpers");
-    expect(crowdSlide.line).toBe("Crowd chat, in atlas. A whole crew.");
+    expect(crowdSlide.line).toBe("One chat in atlas. A whole crew.");
   });
 
   it("makes the skill slide a five to one countdown instead of a second skill slide", () => {
@@ -248,12 +250,69 @@ describe("buildSlides", () => {
 
   it("counts tokens, never dollars", () => {
     const s = buildSlides(
-      data({ habits: habits({ mostHelpers: chat({ agentCount: 4 }) }), biggest: chat(), first: chat() }),
+      data({
+        habits: habits({ mostHelpers: chat({ agentCount: 4 }) }),
+        biggest: chat(),
+        first: chat(),
+        models: [
+          { label: "Opus 5.5", value: 40_000_000 },
+          { label: "Sonnet 5.5", value: 8_000_000 },
+        ],
+      }),
     );
     const models = s.find((x) => x.id === "models");
     expect(models?.figure).toBe("Opus 5.5");
     expect(models?.line).toBe("83% of your tokens. Your ride or die.");
     expect(JSON.stringify(s)).not.toContain("$");
+  });
+
+  it("gives the top model its share of ALL tokens, not of the few models listed", () => {
+    // Four listed models hold 40M of 100M: the top one is 20%, not 50%.
+    const s = buildSlides(
+      data({
+        tokens: 100_000_000,
+        models: [
+          { label: "Opus 5.5", value: 20_000_000 },
+          { label: "Sonnet 5.5", value: 10_000_000 },
+          { label: "Haiku 5.5", value: 6_000_000 },
+          { label: "Older", value: 4_000_000 },
+        ],
+      }),
+    );
+    expect(s.find((x) => x.id === "models")?.line).toBe("20% of your tokens. Your ride or die.");
+  });
+
+  it("never says a comparison twice in one Wrapped", () => {
+    const s = buildSlides(data({ tokens: 48_200_000, habits: habits({ chats: 100, chatTokens: 40_000_000 }), biggest: chat() }));
+    const said = s.flatMap((x) => (x.compare ? [x.compare.text.replace(/^.*?(\d[\d.,]*\s|one\s|about\s)/i, "")] : []));
+    expect(new Set(said).size).toBe(said.length);
+    expect(s.filter((x) => /Encyclopaedia/.test(x.compare?.text ?? "")).length).toBeLessThanOrEqual(1);
+  });
+
+  it("never shows a chat name or prompt text on a poster line", () => {
+    const s = buildSlides(
+      data({
+        biggest: chat({ name: "make online play seamless in mario party 2", projectName: "mario", tokens: tok(6_500_000) }),
+        first: chat({ name: "make online play seamless in mario party 2", startedAt: new Date(2026, 9, 9, 10).getTime() }),
+        longest: chat({ name: "make online play seamless in mario party 2", durationMs: 7_200_000 }),
+        habits: habits({ mostHelpers: chat({ name: "make online play seamless in mario party 2", agentCount: 7 }) }),
+      }),
+    );
+    for (const x of s) {
+      expect(x.line, x.id).not.toMatch(/seamless/);
+      expect(x.hint ?? "", x.id).not.toMatch(/seamless/);
+    }
+  });
+
+  it("names a weekday tie as a tie, never 'beats every other day'", () => {
+    // 2026-10-09 is a Friday: 28 days hold four of each weekday.
+    const run = (big: number[]) => Array.from({ length: 28 }, (_, i) => (big.includes(new Date(2026, 9, 9 + i, 12).getDay()) ? 5_000_000 : 1_000_000));
+    const tied = buildSlides(data({ dayTokens: run([2, 3]) }));
+    const line = tied.find((x) => x.id === "weekday")?.line ?? "";
+    expect(line).not.toMatch(/beats every other day/);
+    expect(line).toBe("Tuesday and Wednesday tie for the top. Plan around both.");
+    const clear = buildSlides(data({ dayTokens: run([2]) }));
+    expect(clear.find((x) => x.id === "weekday")?.line).toBe("Tuesday beats every other day. Plan around it.");
   });
 
   it("celebrates at most three moments", () => {
@@ -487,10 +546,10 @@ describe("share card", () => {
     const card = s[s.length - 1].card!;
     expect(card.tokens).toBe("48M");
     expect(card.days).toBe("22 active days of 31");
-    expect(card.tiles.map((t) => t.label)).toEqual(["Top project", "Top skill", "Main model", "Coder type"]);
-    expect(card.tiles.find((t) => t.label === "Top project")?.value).toBe("atlas");
-    expect(card.tiles.find((t) => t.label === "Top skill")?.value).toBe("frontend-design");
-    expect(card.tiles.find((t) => t.label === "Main model")?.value).toBe("Opus 5.5");
+    expect(card.tiles.map((t) => t.label)).toEqual(["Project", "Skill", "Model", "Type"]);
+    expect(card.tiles.find((t) => t.label === "Project")?.value).toBe("atlas");
+    expect(card.tiles.find((t) => t.label === "Skill")?.value).toBe("frontend-design");
+    expect(card.tiles.find((t) => t.label === "Model")?.value).toBe("Opus 5.5");
     expect(card.range).toBe("Oct 9 to Nov 8");
     expect(card.day).toBe("2026-11-08");
     expect(JSON.stringify(card)).not.toContain(secret);
@@ -499,7 +558,7 @@ describe("share card", () => {
 
   it("leaves out a tile whose number is missing", () => {
     const card = buildCard(data({ skills: [], models: [] }), null);
-    expect(card.tiles.map((t) => t.label)).toEqual(["Top project"]);
+    expect(card.tiles.map((t) => t.label)).toEqual(["Project"]);
   });
 });
 

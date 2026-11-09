@@ -15,7 +15,7 @@ import { Story } from "../components/wrapped/Story";
 
 export function Wrapped() {
   const backend = getBackend();
-  const { info } = useAtlas();
+  const { info, goBack } = useAtlas();
   const { status, progress } = useUsageStatus();
   const daily = useDaily(info.config?.dir ?? null);
   const wrapped = useFetched(() => (daily ? loadWrapped(daily, modelLabel) : Promise.resolve(null)), [backend, daily]);
@@ -63,7 +63,7 @@ export function Wrapped() {
   return (
     <div className="@container flex min-h-0 flex-1 flex-col">
       <PageTitle title="Wrapped" />
-      <Story slides={slides} />
+      <Story slides={slides} onLeave={goBack} />
     </div>
   );
 }
