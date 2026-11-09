@@ -224,6 +224,115 @@ def edge():
     put(e, ".claude.json", '{\n    "mcpServers": {},\n    "projects": {}\n}\n', newline="\r\n")
 
 
+def habits():
+    """fixtures/claude-habits: real-looking typed requests for repeated-request grouping.
+
+    The one fixture whose message text is NOT a "[fixture ...]" placeholder: grouping needs
+    wording that reads like a person typed it. Every user and assistant text line carries
+    `"fixtureText": true` so nothing here can be mistaken for a real chat. The one secret is
+    an obvious placeholder. Dates are fixed (tests pass their own clock or shift them).
+    """
+    h = os.path.join(ROOT, "claude-habits")
+    put(h, "settings.json", "{}\n")
+    notes_cwd, site_cwd = "C:\\fx\\notes", "C:\\fx\\site"
+    files = {}  # relative path -> [(ts, line dict)]
+
+    def ts(day, hh, mm):
+        return f"2026-10-{day:02d}T{hh:02d}:{mm:02d}:00.000Z"
+
+    def line(path, sid, cwd, when, text, kind="user", **extra):
+        n = len(files.setdefault(path, [])) + 1
+        o = {"type": kind, "uuid": f"{sid}-{os.path.basename(path)[:6]}-{n}", "sessionId": sid, "timestamp": when,
+             "cwd": cwd, "isSidechain": False, "version": "2.1.296", "fixtureText": True}
+        if kind == "user":
+            o["message"] = {"role": "user", "content": text}
+        else:
+            o["message"] = {"role": "assistant", "content": [{"type": "text", "text": text}]}
+        o.update(extra)
+        files[path].append((when, o))
+
+    sessions = {"habit-s1": "notes", "habit-s2": "site", "habit-s3": "notes", "habit-s4": "site", "habit-s5": "notes"}
+    day_of = {"habit-s1": 26, "habit-s2": 28, "habit-s3": 28, "habit-s4": 30, "habit-s5": 30}
+
+    def user_at(sid, when, text, **extra):
+        project = sessions[sid]
+        line(f"projects/-fx-{project}/{sid}.jsonl", sid, notes_cwd if project == "notes" else site_cwd, when, text, **extra)
+
+    # The planted request: 7 wordings, 4 chats, 3 days.
+    human = {"origin": {"kind": "human"}}
+    planted = [
+        ("habit-s1", 26, 12, 0, "Read the README and give me a three bullet summary in plain words", human),
+        ("habit-s1", 26, 12, 20, "can you read the readme and give me a 3 bullet summary in plain words please", human),
+        ("habit-s2", 28, 12, 5, "Read the README and give me a three bullet summary in plain words, no jargon", human),
+        ("habit-s3", 28, 13, 0, "Read the README again and give me a three bullet summary in plain words", {}),
+        ("habit-s3", 28, 13, 10, "read the README and give me a 3 bullet summary in plain words", {}),
+        ("habit-s4", 30, 12, 30, "Please read the README.md and give me a three bullet summary in plain words", {}),
+        ("habit-s4", 30, 12, 45, "hey claude, read the readme and give me a three bullet summary in plain words like last time", {}),
+    ]
+    for sid, day, hh, mm, text, extra in planted:
+        user_at(sid, ts(day, hh, mm), text, **extra)
+        user_at(sid, ts(day, hh, mm + 1), "assistant-only zebra: here are the three bullets.", kind="assistant")
+
+    # Not a group: the same request 20 times in ONE chat.
+    for i in range(20):
+        user_at("habit-s5", ts(30, 14, i), "run the linter and fix everything it complains about", **human)
+
+    # Not a group: a helper's prompt 20 times (a helper file in each of 4 chats, 3 days).
+    for sid in ("habit-s1", "habit-s2", "habit-s3", "habit-s4"):
+        project = sessions[sid]
+        cwd = notes_cwd if project == "notes" else site_cwd
+        path = f"projects/-fx-{project}/{sid}/subagents/agent-a{sid[-1]}.jsonl"
+        for i in range(5):
+            line(path, sid, cwd, ts(day_of[sid], 15, i), "Search every file for the deprecated fetchLegacy helper and list each file and line",
+                 agentId=f"a{sid[-1]}", isSidechain=True)
+
+    spread = ["habit-s1", "habit-s2", "habit-s3", "habit-s4"]
+
+    def spread_over(n, text, hh, **extra):
+        for i in range(n):
+            sid = spread[i % 4]
+            user_at(sid, ts(day_of[sid], hh, i // 4 + 2), text, **extra)
+
+    # Not a group: task notifications 30 times (plain text; only the origin marker says machine).
+    spread_over(30, "Background task finished: the nightly export completed with exit code 0", 16, origin={"kind": "task-notification"})
+    # Not a group: a slash command 10 times.
+    spread_over(10, "/review-changes please check the diff for the login page", 17, **human)
+    # Not a group: a pasted log 6 times (3 chats, 3 days).
+    log = "\n".join(["Traceback (most recent call last):", '  File "export.py", line 88, in run', "    rows = load(path)",
+                     '  File "export.py", line 31, in load', "    return json.loads(text)", "ValueError: Expecting value: line 1 column 1"])
+    for i, sid in enumerate(["habit-s1", "habit-s2", "habit-s4"] * 2):
+        user_at(sid, ts(day_of[sid], 18, i), log, **human)
+    # Not a group: a 2-word prompt 15 times.
+    spread_over(15, "continue please", 19, **human)
+    # Not a group: a prompt with a (placeholder) secret 6 times.
+    spread_over(6, "deploy to staging with the key xoxb-1234567890-FIXTUREFIXTUREFIXTURE please", 20, **human)
+    # Machine prompts that would be a group if they counted: headless runs, scheduled prompts.
+    spread_over(10, "generate the weekly report from the usage cache and save it", 21, entrypoint="sdk-cli")
+    spread_over(6, "Check the build status and report anything that is failing", 22, promptSource="system")
+    spread_over(3, "Peer asks: please share the latest design notes for the sidebar", 23, origin={"kind": "peer"})
+    spread_over(2, "This session is being continued from a previous conversation that ran out of context", 23, isCompactSummary=True)
+
+    # One-offs: nothing here repeats.
+    once = [
+        ("habit-s1", 26, "why does the sidebar flicker when I resize the window"),
+        ("habit-s1", 26, "add a dark mode toggle to the settings page"),
+        ("habit-s2", 28, "rename the export button to Save as image everywhere"),
+        ("habit-s2", 28, "what is the difference between the cache and the index in this project"),
+        ("habit-s3", 28, "write a changelog entry for the new tour screens"),
+        ("habit-s3", 28, "the tooltip on the heat grid is cut off at the right edge, can you fix that"),
+        ("habit-s4", 30, "check why the build is slower today than yesterday"),
+        ("habit-s4", 30, "make the empty state on the history page friendlier"),
+        ("habit-s5", 30, "list the TODO comments in the usage module"),
+        ("habit-s5", 30, "explain how the settings file is saved without losing data"),
+    ]
+    for i, (sid, day, text) in enumerate(once):
+        user_at(sid, ts(day, 23, 10 + i), text, **(human if i % 2 else {}))
+
+    for rel, items in files.items():
+        items.sort(key=lambda x: x[0])
+        put(h, rel, jl(*[o for _, o in items]))
+
+
 def usage_fx():
     """fixtures/claude-usage: the pricing, dedup and attribution edge cases (Phase 2)."""
     u = os.path.join(ROOT, "claude-usage")
@@ -552,6 +661,7 @@ def main():
     basic()
     edge()
     usage_fx()
+    habits()
     setup()
     n = sum(len(f) for _, _, f in os.walk(ROOT))
     print(f"wrote {n} fixture files under {os.path.normpath(ROOT)}")

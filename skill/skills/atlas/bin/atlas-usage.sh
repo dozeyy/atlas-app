@@ -10,7 +10,8 @@
 # The download is trusted ONLY if its SHA-256 equals the line "<version> <asset> <sha256>" in
 # checksums.txt next to this script (pinned when the plugin was released). Nothing the release
 # itself says is trusted. No pinned line = no download.
-# Exit code 3 = the launcher itself failed (one plain line on stderr).
+# Exit code 3 = the launcher itself failed (one plain line on stderr); 4 = the program found is too old
+# for repeats / offer-note.
 # Test aid: ATLAS_USAGE_TEST_SOURCE = a local folder, or an http://127.0.0.1 / localhost
 # address, that stands in for the release (the pinned hash still applies).
 # ATLAS_USAGE_LAUNCHER_VERBOSE=1 names the copy used.
@@ -48,6 +49,23 @@ loopback_ok() {
   esac
 }
 
+# Run the program. The repeated-request commands need a program that knows them: an older copy
+# (found on PATH, in the cache or in the app) would read "repeats" as something else and answer
+# with nothing useful, so it is refused here with one plain line. Exit code 4.
+run_bin() {
+  rb=$1
+  shift
+  case $1 in
+    repeats | offer-note)
+      if ! "$rb" repeats --help 2>/dev/null | grep -q 'offer-note'; then
+        printf 'atlas-usage: this copy of atlas-usage is too old for repeated requests. Update the Atlas plugin or the Atlas app.\n' >&2
+        exit 4
+      fi
+      ;;
+  esac
+  exec "$rb" "$@"
+}
+
 scriptdir=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || fail "cannot find the skill folder."
 bindir=$CLAUDE_PLUGIN_DATA
 [ -n "$bindir" ] || bindir=$scriptdir
@@ -62,7 +80,7 @@ esac
 onpath=$(command -v atlas-usage 2>/dev/null)
 if [ -n "$onpath" ] && [ -f "$onpath" ]; then
   say "PATH:" "$onpath"
-  exec "$onpath" "$@"
+  run_bin "$onpath" "$@"
 fi
 
 # The plugin version (= the release tag without its v), read from the plugin's own manifest.
@@ -83,13 +101,13 @@ cached=$verdir/$exe
 # (b) cached copy, keyed by the plugin version
 if [ -n "$version" ] && [ -f "$cached" ]; then
   say "cache:" "$cached"
-  exec "$cached" "$@"
+  run_bin "$cached" "$@"
 fi
 
 # (c) the Atlas app's install folder (Windows; the installer's per-user default)
 if [ "$exe" = "atlas-usage.exe" ] && [ -n "$LOCALAPPDATA" ] && [ -f "$LOCALAPPDATA/Atlas/$exe" ]; then
   say "Atlas app:" "$LOCALAPPDATA/Atlas/$exe"
-  exec "$LOCALAPPDATA/Atlas/$exe" "$@"
+  run_bin "$LOCALAPPDATA/Atlas/$exe" "$@"
 fi
 
 # (d) download, verify against the pinned hash, cache
@@ -100,11 +118,11 @@ case $os in
   Linux)
     case $arch in
       x86_64 | amd64) asset=atlas-usage-linux-x64 ;;
-      *) fail "there is no ready-made build for $arch yet. Build it from the Atlas repo with: cargo install --path crates/cli" ;;
+      *) fail "there is no ready-made build for $arch yet. Download a build from github.com/$REPO/releases or install the Atlas app." ;;
     esac
     ;;
   MINGW* | MSYS* | CYGWIN*) asset=atlas-usage-windows-x64.exe ;;
-  *) fail "there is no ready-made build for $os. Build it from the Atlas repo with: cargo install --path crates/cli" ;;
+  *) fail "there is no ready-made build for $os. Download a build from github.com/$REPO/releases or install the Atlas app." ;;
 esac
 
 [ -n "$version" ] || fail "this copy of the skill has no version, so it cannot fetch the program. Put atlas-usage on PATH, or install the plugin: /plugin marketplace add $REPO"
@@ -186,7 +204,7 @@ if [ -n "$src" ] && [ -d "$src" ]; then
 elif [ -n "$src" ] && loopback_ok "$src"; then
   fetch "${src%/}/$asset" "$work/$asset" 0 && got=1
 else
-  # The repo can be private: the signed-in GitHub CLI is the only thing that can reach it.
+  # Optional: a signed-in GitHub CLI can fetch it too (the release is public, so this is not needed).
   if command -v gh >/dev/null 2>&1; then
     export GH_PROMPT_DISABLED=1
     if gh auth status >/dev/null 2>&1; then
@@ -200,7 +218,7 @@ else
     fetch "https://github.com/$REPO/releases/download/v$version/$asset" "$work/$asset" 1 && got=1
   fi
 fi
-[ "$got" = 1 ] || fail "could not download the program (release v$version of github.com/$REPO). Check the internet connection (if the repo is private, sign in with 'gh auth login'), then try again. $hint"
+[ "$got" = 1 ] || fail "could not download the program (release v$version of github.com/$REPO). Check the internet connection, then try again. $hint"
 
 have=$(sha256_of "$work/$asset") || fail "no tool to check the download (need sha256sum, shasum or openssl)."
 if [ "$want" != "$have" ]; then
@@ -223,4 +241,4 @@ rm -rf "$work"
 trap - EXIT HUP INT TERM
 
 say "downloaded:" "$cached"
-exec "$cached" "$@"
+run_bin "$cached" "$@"

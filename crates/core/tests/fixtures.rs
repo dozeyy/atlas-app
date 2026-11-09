@@ -152,7 +152,7 @@ fn fixtures_hold_no_real_text_and_no_real_secrets() {
                 if let Some(parts) = v["message"]["content"].as_array() {
                     for p in parts {
                         if let Some(t) = p["text"].as_str() {
-                            assert!(t.starts_with("[fixture"), "{rel}: text is not a placeholder");
+                            assert!(t.starts_with("[fixture") || v["fixtureText"] == true, "{rel}: text is not a placeholder");
                         }
                     }
                 }

@@ -6,7 +6,7 @@
     {
       "name": "atlas",
       "source": "./skill",
-      "description": "Claude Code token usage in chat with the same numbers as the Atlas app."
+      "description": "Claude Code token usage in chat with the same numbers as the Atlas app, and a quiet offer to turn a request you keep making into a skill."
     }
   ]
 }

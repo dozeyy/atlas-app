@@ -51,6 +51,15 @@ function Test-VersionOlder([string]$a, [string]$b) {
 function Use-Program([string]$path, [string]$why) {
     if ($env:ATLAS_USAGE_LAUNCHER_VERBOSE) { [Console]::Error.WriteLine("atlas-usage launcher: $why $path") }
     try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }  # bars are UTF-8
+    # The repeated-request commands need a program that knows them (an older copy would answer with
+    # nothing useful): refuse it with one plain line. Exit code 4.
+    if ($rest.Count -gt 0 -and ($rest[0] -eq 'repeats' -or $rest[0] -eq 'offer-note')) {
+        $probe = (& $path repeats --help 2>$null | Out-String)
+        if ($probe -notmatch 'offer-note') {
+            [Console]::Error.WriteLine('atlas-usage: this copy of atlas-usage is too old for repeated requests. Update the Atlas plugin or the Atlas app.')
+            exit 4
+        }
+    }
     & $path @rest
     exit $LASTEXITCODE
 }
@@ -134,7 +143,7 @@ try {
         $loopback = $false
         if ($src -match '^http://(127\.0\.0\.1|localhost)(:\d+)?(/|$)') { $base = $src.TrimEnd('/'); $loopback = $true }
 
-        # The repo can be private: the signed-in GitHub CLI is the only thing that can reach it.
+        # Optional: a signed-in GitHub CLI can fetch it too (the release is public, so this is not needed).
         if (-not $loopback -and (Get-Command gh -ErrorAction SilentlyContinue)) {
             $env:GH_PROMPT_DISABLED = '1'
             gh auth status *> $null
@@ -187,7 +196,7 @@ try {
         }
     }
     if (-not $got) {
-        Fail "could not download the program (release v$version of github.com/$Repo). Check the internet connection (if the repo is private, sign in with 'gh auth login'), then try again. $Hint"
+        Fail "could not download the program (release v$version of github.com/$Repo). Check the internet connection, then try again. $Hint"
     }
 
     $have = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
