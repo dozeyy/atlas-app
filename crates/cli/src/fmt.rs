@@ -159,7 +159,7 @@ pub fn model(m: &str) -> String {
 }
 
 fn model_label(m: &str) -> String {
-    let family = |s: &str| matches!(s, "opus" | "sonnet" | "haiku");
+    let family = |s: &str| matches!(s, "opus" | "sonnet" | "haiku" | "fable");
     let digits = |s: &str, max: usize| !s.is_empty() && s.len() <= max && s.bytes().all(|b| b.is_ascii_digit());
     let cap = |s: &str| {
         let mut c = s.chars();
@@ -268,8 +268,9 @@ mod tests {
         assert_eq!(model("claude-sonnet-4-5-20250929"), "Sonnet 4.5");
         assert_eq!(model("claude-3-5-sonnet-20241022"), "Sonnet 3.5");
         assert_eq!(model("claude-3-haiku-20240307"), "Haiku 3");
+        assert_eq!(model("claude-fable-5-1"), "Fable 5.1");
         // Not a family the app names: shown as it is.
-        assert_eq!(model("claude-fable-5-1"), "claude-fable-5-1");
+        assert_eq!(model("claude-mystery-5-1"), "claude-mystery-5-1");
         assert_eq!(model("<synthetic>"), "<synthetic>");
     }
 

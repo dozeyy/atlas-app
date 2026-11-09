@@ -131,6 +131,7 @@ describe("models", () => {
     expect(modelLabel("claude-opus-5")).toBe("Opus 5");
     expect(modelLabel("claude-3-5-sonnet-20241022")).toBe("Sonnet 3.5");
     expect(modelLabel("claude-haiku-4-5-20251001")).toBe("Haiku 4.5");
+    expect(modelLabel("claude-fable-5-1")).toBe("Fable 5.1");
     expect(modelLabel("some-other-model")).toBe("some-other-model");
   });
 });
