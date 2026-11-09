@@ -333,3 +333,4 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Gotcha: in a native save dialog the file-name edit is control id 1001 (WM_SETTEXT, then BM_CLICK on Save).
 - Not seen in the app: the same-chat skip, year-boundary ranges, short stories under 7 days, the skill/helper/tool slides, Silver, 150% DPI. Unit tests only.
 - No first-launch Christmas intro into Wrapped exists yet (Phase 7). The only route in is the title-bar gift button.
+- Will kept the slide 2 novels hover (the conversion explanation), 2026-11-09.
