@@ -593,7 +593,15 @@ code-reviewer in parallel with a verifier -> design-reviewer on `docs/shots/team
 `docs/shots/now-tracker/` -> Will (20, 29, 38). Coordinate `textgroup.rs` with Skill Library
 Unit B (whoever lands first owns it).
 
-## Open questions (for Will)
+## Will's answers (2026-11-09) - these override D20 and criterion 7
+- Team placement: **a tab inside Toolkit** (next to Your setup and Library), not a sidebar page.
+  Its two views (Scorecard, Caught in review) become a segmented switch inside that tab. No new
+  sidebar item, no Ctrl+5 change; criterion 7 becomes "Team is a Toolkit tab, reachable by keyboard".
+- Clients: left out of v1 (group by project folder only).
+- Dollars: hover only. History: show "History covers the last N days", no setting change.
+- Tracker text: counts only. Trigger: the skill only (no Stop hook). (spec-writer picks, unchanged)
+
+## Open questions (answered above)
 1. Clients: (a) leave out in v1 (pick), (b) map project folders to clients in Settings,
    (c) treat a parent folder as the client.
 2. Plan step text in the tracker: (a) counts only, "Step 3 of 6" (pick), (b) also the active
