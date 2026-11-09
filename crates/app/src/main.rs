@@ -257,6 +257,10 @@ fn main() {
             // Edge drags keep the content still, as a native window does (winframe.rs).
             #[cfg(windows)]
             winframe::install(&window);
+            // The window-state plugin can restore the window maximized inside `.build()`, before
+            // this handler exists: start from what the window is now, or the first restore would
+            // look like no change and the caption button would stay on Restore.
+            WAS_MAXIMIZED.store(window.is_maximized().unwrap_or(false), std::sync::atomic::Ordering::Relaxed);
             let w = window.clone();
             window.on_window_event(move |e| {
                 if matches!(e, WindowEvent::Resized(_)) {
