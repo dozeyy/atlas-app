@@ -62,6 +62,15 @@ describe("Dashboard", () => {
     expect(screen.getAllByRole("row").length).toBeGreaterThan(20);
   });
 
+  it("keeps what tokens count in the Activity total's hover, not in a sentence", async () => {
+    mount();
+    await screen.findByRole("group", { name: /Tokens, last 30 days/ });
+    const readout = screen.getByTestId("chart-readout");
+    expect(readout.getAttribute("title")).toMatch(/cache writes\.\nCache reads are listed apart\./);
+    const card = screen.getByRole("region", { name: "Activity" });
+    expect(within(card).queryByText(/Tokens count what you sent/)).not.toBeInTheDocument();
+  });
+
   it("moves the chart readout with the arrow keys", async () => {
     mount();
     const chart = await screen.findByRole("group", { name: /Tokens, last 30 days/ });

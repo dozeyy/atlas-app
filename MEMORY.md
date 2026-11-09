@@ -162,3 +162,28 @@ pm ci is needed in a fresh worktree before tsc.
 - Will's rule: no tab needs scrolling at 1280x800 if it can be avoided. Toolkit now fits: usage panel is a glance (4 used, 5 never used, 3 new on one line), cost ranking is 4 rows in a 24rem column beside it (the usage panel takes the rest, so its two lists stay side by side), tile rows 84px, tighter gaps. At 900x600 the panels stack and the page scrolls, nothing clipped (checked).
 - Detail sheet: "What it costs" now sits above "About", visible without scrolling the sheet.
 - Verified with real screen captures (docs/shots/setup-cost): no scrollbar at 1280x800 dark and light, ~70 px spare under the Projects row; the checklist card (only while steps are open) would push it past that.
+
+## 2026-11-08 - tokens over dollars, tidier lists, one styled tooltip (branch tokens-ui)
+- Decision (Will): most people are on a plan, not the API, so costs are counted in tokens everywhere.
+  The token figure is on screen; the API-price dollar estimate lives only in the hover, still
+  labelled an estimate. Counts stay within three digits before the unit (27M, 7.3k); `compact()` in
+  usage.ts guarantees it (999.6k rolls to 1M). Toolkit and the chat detail page were left to
+  their own branches.
+- Done: Sessions rows (project, tokens, helpers, when; "Highest cost" sort removed), Dashboard
+  (hero now compact, week/today/activity/tables in tokens, Activity cost toggle and Est. cost
+  column removed), Now tab (tokens are the big figure, helper tokens), Wrapped (cost slide became
+  a main-model slide), tray readout (Rust: menu line is tokens, tooltip has the estimate).
+  Shared pieces: `tokenHint()` and `TokenText`.
+- Search-height miss, root cause: the toolbar rule `.toolbar-tall input` sat in
+  `@layer components`, and the field's own `h-8` utility lives in the utilities layer, which wins
+  whatever the specificity; `h-8` is also only 28px at the 14px root. Fix: one `--field-tall`
+  token (40px) used by the Filter/Sort buttons and, through a `tall` prop on SearchField, by the
+  input's own class. Lesson: size a control from its own classes, never from a descendant selector.
+- Spacing: Sessions and Dashboard rows share one 72px rhythm (title over meta, centered); the
+  invisible edge-click ring on `.row-btn` and `.card-hit` is untouched (hitbox.test).
+- Tooltips: `TipLayer` (mounted once in App) replaces every native `title` popup: it parks the
+  title in `data-tip` on hover or keyboard focus, shows a token-colored plate after 380ms, flips
+  and slides at window edges (pure `tipPlace`), Esc hides, reduced motion drops the travel.
+  Titles other branches add are covered automatically.
+- Dashboard fits 1280x800 without scrolling: two columns (hero, Activity, Models and Projects |
+  Today, On a roll, 3 recent sessions). The Activity explanation sentence moved into the total's hover.

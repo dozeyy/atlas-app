@@ -22,6 +22,8 @@ import type { Timeline } from "../../lib/types";
 import { ErrorBlock, Skeleton } from "./StateBlocks";
 
 const RANGE_NAME: Record<RangeKind, string> = { today: "Today", "30d": "Last 30 days", "12w": "Last 12 weeks" };
+/** What the total counts: it lives in the total's hover, not in a sentence on the card. */
+const TOKEN_MEANING = "Tokens count what you sent and what Claude wrote, plus cache writes.\nCache reads are listed apart.";
 
 /**
  * Tokens over time as activity bars, with a table twin for anyone who prefers numbers. Tokens only
@@ -59,7 +61,7 @@ export function ActivityCard({ today }: { today: string }) {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="d d-figure text-ink">Activity</h2>
-          <p className="mt-0.5 text-caption text-ink-2" data-testid="chart-readout">
+          <p className="mt-0.5 text-caption text-ink-2" data-testid="chart-readout" title={TOKEN_MEANING}>
             {RANGE_NAME[range]}: {compact(total)} tokens
           </p>
         </div>
@@ -84,7 +86,7 @@ export function ActivityCard({ today }: { today: string }) {
 
       {tl.loading && !tl.data ? (
         <div role="status" aria-label="Loading activity">
-          <Skeleton className="h-[184px] w-full" />
+          <Skeleton className="h-[158px] w-full" />
         </div>
       ) : tl.error ? (
         <ErrorBlock title="Could not load activity" message={tl.error} onRetry={() => tl.reload(false)} />
@@ -120,11 +122,9 @@ export function ActivityCard({ today }: { today: string }) {
           data={data}
           label={`Tokens, ${RANGE_NAME[range].toLowerCase()}`}
           formatTick={compact}
+          height={158}
         />
       )}
-      <p className="mt-3 text-caption text-ink-2">
-        Tokens count what you sent and what Claude wrote, plus cache writes. Cache reads are listed apart.
-      </p>
     </Card>
   );
 }
