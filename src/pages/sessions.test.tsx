@@ -61,9 +61,10 @@ describe("Sessions toolbar", () => {
     await screen.findAllByRole("button", { name: /tokens/ });
     await userEvent.click(screen.getByRole("button", { name: "Sort, Newest first" }));
     expect(screen.getByRole("radio", { name: "Newest first" })).toBeChecked();
-    await userEvent.click(screen.getByRole("radio", { name: "Highest cost" }));
+    expect(screen.queryByRole("radio", { name: "Highest cost" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "Most tokens" }));
     expect(screen.queryByRole("dialog", { name: "Sort" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sort, Highest cost" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sort, Most tokens" })).toBeInTheDocument();
   });
 
   it("says how many chats there are, and 'N of M' when narrowed", async () => {

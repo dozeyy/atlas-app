@@ -12,7 +12,7 @@ import { Sparkline } from "../components/charts/Sparkline";
 import { StackBar } from "../components/charts/StackBar";
 import type { StackItem } from "../components/charts/StackBar";
 import { ActivityCard } from "../components/usage/ActivityCard";
-import { CostText } from "../components/usage/CostText";
+
 import { SessionGrid, SessionLine } from "../components/usage/SessionList";
 import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
 import { useAtlas } from "../state/AtlasProvider";
@@ -31,7 +31,7 @@ import {
   weekdayInitial,
 } from "../lib/dashboardModel";
 import { usualDay } from "../lib/chartPaths";
-import { addDays, compact, exact, formatUsd, headline, localDay, modelLabel, plural } from "../lib/usage";
+import { addDays, compact, exact, formatUsd, headline, localDay, modelLabel, plural, tokenHint } from "../lib/usage";
 import type { BarDatum } from "../components/charts/Bars";
 import type { Dashboard as DashboardData, Timeline, UsageStatus } from "../lib/types";
 
@@ -60,7 +60,7 @@ function Notes({ data, status }: { data: DashboardData; status: UsageStatus | nu
   const notes: string[] = [];
   if (data.warnings.unknownModels.length > 0) {
     notes.push(
-      `No price for ${data.warnings.unknownModels.map(modelLabel).join(", ")}. Their tokens are counted, but their cost is left out, so a cost with a plus sign is higher in real life.`,
+      `No price for ${data.warnings.unknownModels.map(modelLabel).join(", ")}. Their tokens are counted, but they get no dollar estimate, so an estimate with a plus sign is higher in real life.`,
     );
   }
   if (status && status.cwAssumedRows > 0) {
@@ -97,7 +97,7 @@ function PriceFootnote() {
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-ink-2">
       <span>
-        Costs are estimates from a price list{info ? ` (updated ${info.table.updated})` : ""}, not a bill.
+        Dollar figures in hovers are estimates from a price list{info ? ` (updated ${info.table.updated})` : ""}, not a bill.
       </span>
       {info?.error && (
         <span role="status" className="text-warning">
@@ -143,18 +143,25 @@ function modelItems(data: DashboardData): StackItem[] {
   const top = models.slice(0, 3);
   const rest = models.slice(3);
   const restValue = rest.reduce((s, m) => s + m.value, 0);
-  const all = restValue > 0 ? [...top, { key: "other", label: "Other", value: restValue, title: rest.map((r) => r.label).join(", ") }] : top;
+  // "Other" only earns a row when it is at least 1% of the whole: a row reading 0% only costs height.
+  const topValue = top.reduce((s, m) => s + m.value, 0);
+  const all = restValue > 0.01 * (topValue + restValue) ? [...top, { key: "other", label: "Other", value: restValue, title: rest.map((r) => r.label).join(", ") }] : top;
   const total = all.reduce((s, m) => s + m.value, 0) || 1;
   return all.map((m, i) => ({
     key: m.key,
     label: m.label,
     value: m.value,
     tone: i + 1,
-    right: `${compact(m.value)} tokens`,
+    right: compact(m.value),
     share: `${Math.round((m.value / total) * 100)}%`,
     title: m.title,
   }));
 }
+
+/** The Dashboard fits a 1280x800 window without scrolling; the Sessions tab has the full list. */
+const RECENT_SHOWN = 3;
+/** The Projects card lists this many, whatever the engine sends (the rest are on the Sessions tab). */
+const PROJECTS_SHOWN = 4;
 
 export function Dashboard() {
   const { info, setView } = useAtlas();
@@ -220,7 +227,7 @@ export function Dashboard() {
     const series = projectSeries.data?.series ?? null;
     if (!data) return { rows: [], count: null as number | null };
     const byKey = new Map((series ?? []).map((s) => [s.key, s]));
-    const rows = data.topProjects.map((p) => {
+    const rows = data.topProjects.slice(0, PROJECTS_SHOWN).map((p) => {
       const s = byKey.get(p.projectKey);
       return { p, spark: s ? bin(s.points.map((pt) => headline(pt.tokens)), 10) : null };
     });
@@ -256,24 +263,21 @@ export function Dashboard() {
           body="Atlas reads the conversations Claude Code saves in your Claude folder. Use Claude Code once and the numbers show up here on their own."
         />
       ) : (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 @[740px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-4 @[900px]:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] @[900px]:items-start">
+          <div className="min-w-0 space-y-4">
             <section aria-label="Last 7 days" className="rise @container" style={{ ["--i" as string]: 1 }}>
-              <Card className="flex h-full flex-col gap-4 px-6 pb-4 pt-5 @[660px]:flex-row @[660px]:justify-between">
+              <Card className="flex h-full flex-col gap-3 px-6 pb-4 pt-4 @[520px]:flex-row @[520px]:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="d d-figure text-ink">Last 7 days</h2>
                     {week?.delta != null && <Delta pct={week.delta} />}
                   </div>
-                  <div className="my-3.5 flex items-baseline gap-2.5">
-                    <CountUp value={weekTokens} format={exact} id="dash:hero" className="d d-hero text-ink" />
+                  <div className="my-2 flex items-baseline gap-2.5" title={tokenHint(weekTokens, data.week.cost)}>
+                    <CountUp value={weekTokens} format={compact} id="dash:hero" className="d d-hero text-ink" />
                     <span className="text-lead font-semibold text-ink-2">tokens</span>
                   </div>
                   <div className="text-body text-ink-2">
-                    <b className="d d-small text-ink">
-                      <CostText cost={data.week.cost} />
-                    </b>{" "}
-                    estimated · {plural(data.week.sessions, "session")}
+                    {plural(data.week.sessions, "session")}
                     {projects.count ? ` · ${plural(projects.count, "project")}` : ""}
                   </div>
                   {data.week.tokens.cacheRead > 0 && (
@@ -284,104 +288,18 @@ export function Dashboard() {
                   {updated && <div className="mt-1 text-caption text-ink-2">{updated}</div>}
                 </div>
                 {week && (
-                  <div className="w-full self-end @[660px]:w-[clamp(220px,32%,600px)] @[660px]:shrink-0">
-                    <Ridge id="dash:ridge" data={week.readouts} label="Tokens per day, last 7 days" height={132} />
+                  <div className="w-full self-end @[520px]:w-[clamp(200px,40%,600px)] @[520px]:shrink-0">
+                    <Ridge id="dash:ridge" data={week.readouts} label="Tokens per day, last 7 days" height={112} />
                   </div>
                 )}
               </Card>
             </section>
 
-            <section aria-label="Today" className="rise" style={{ ["--i" as string]: 2 }}>
-              <Card className="h-full px-5 py-4">
-                <div className="flex items-baseline justify-between">
-                  <h2 className="d d-figure text-ink">Today</h2>
-                  <span className="text-caption text-ink-2">so far</span>
-                </div>
-                <div className="mt-3.5 flex items-center gap-[18px]">
-                  <Ring
-                    id="dash:ring"
-                    size={104}
-                    stroke={11}
-                    frac={week && week.usual > 0 ? week.todayTokens / week.usual : 0}
-                    label={
-                      week && week.usual > 0
-                        ? `${Math.round((week.todayTokens / week.usual) * 100)} percent of a usual day`
-                        : "No usual day yet"
-                    }
-                  >
-                    <div>
-                      <div className="d d-figure text-ink" title={`${exact(headline(data.today.tokens))} tokens`}>
-                        {compact(headline(data.today.tokens))}
-                      </div>
-                      <div className="text-caption text-ink-2">tokens</div>
-                    </div>
-                  </Ring>
-                  <div className="flex min-w-0 flex-col gap-2.5">
-                    <div>
-                      <b className="d d-figure block text-ink">
-                        {week && week.usual > 0 ? `${Math.round((week.todayTokens / week.usual) * 100)}%` : "None yet"}
-                      </b>
-                      <span className="text-caption text-ink-2">{week && week.usual > 0 ? "of a usual day" : "no usual day to compare"}</span>
-                    </div>
-                    <div>
-                      <b className="d d-small block text-ink">{plural(data.today.sessions, "session")}</b>
-                      <span className="text-caption text-ink-2">
-                        <CostText cost={data.today.cost} /> estimated
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </section>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 @[740px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
             <section aria-label="Activity" className="rise" style={{ ["--i" as string]: 3 }}>
               <ActivityCard today={today} />
             </section>
 
-            <section aria-label="On a roll" className="rise" style={{ ["--i" as string]: 4 }}>
-              <Card className="h-full px-5 py-4">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="d d-figure text-ink">On a roll</h2>
-                  {daily && daily.streak >= 2 && daily.streak === daily.longest && (
-                    <span className="chip chip-clay">
-                      <span className="spark" style={{ width: 12, height: 12, background: "currentColor" }} aria-hidden="true" />
-                      Longest yet
-                    </span>
-                  )}
-                </div>
-                <div className="my-2.5 flex items-baseline gap-2">
-                  <span className="d d-stat text-ink">{daily ? daily.streak : 0}</span>
-                  <span className="font-semibold text-ink-2">{daily && daily.streak === 1 ? "day in a row" : "days in a row"}</span>
-                </div>
-                {heat ? (
-                  <HeatGrid
-                    id="dash:heat"
-                    values={heat.values}
-                    readouts={heat.readouts}
-                    label="Daily activity"
-                    footer={(weeks) => (
-                      <div className="mt-3 flex items-center justify-between">
-                        <span className="text-caption text-ink-2">{`Last ${weeks} weeks`}</span>
-                        <span aria-hidden="true" className="flex items-center gap-1 text-caption text-ink-2">
-                          Less
-                          {[0, 1, 2, 3, 4, 5].map((b) => (
-                            <i key={b} className="inline-block size-2.5 rounded-[3px]" style={{ background: `var(--heat-${b})` }} />
-                          ))}
-                          More
-                        </span>
-                      </div>
-                    )}
-                  />
-                ) : (
-                  <Skeleton className="h-[120px] w-full" />
-                )}
-              </Card>
-            </section>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 @[740px]:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 @[740px]:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
             <section aria-label="Models" className="rise" style={{ ["--i" as string]: 5 }}>
               <Card className="h-full px-5 py-4">
                 <div className="flex items-baseline justify-between">
@@ -412,7 +330,7 @@ export function Dashboard() {
                       <li
                         key={p.projectKey}
                         title={p.path}
-                        className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-3 rounded-control px-2 py-2 transition-colors duration-[var(--dur-fast)] hover:bg-raised"
+                        className="grid grid-cols-[minmax(0,1fr)_56px_52px] items-center gap-3 rounded-control px-2 py-1.5 transition-colors duration-[var(--dur-fast)] hover:bg-raised"
                       >
                         <span className="flex min-w-0 items-center gap-2 font-semibold text-ink">
                           <FolderSimple size={16} aria-hidden="true" className="shrink-0 text-ink-2" />
@@ -429,9 +347,93 @@ export function Dashboard() {
                 )}
               </Card>
             </section>
+            </div>
           </div>
+          <div className="min-w-0 space-y-4">
+            <section aria-label="Today" className="rise" style={{ ["--i" as string]: 2 }}>
+              <Card className="h-full px-5 py-3.5">
+                <div className="flex items-baseline justify-between">
+                  <h2 className="d d-figure text-ink">Today</h2>
+                  <span className="text-caption text-ink-2">so far</span>
+                </div>
+                <div className="mt-2.5 flex items-center gap-[18px]">
+                  <Ring
+                    id="dash:ring"
+                    size={88}
+                    stroke={10}
+                    frac={week && week.usual > 0 ? week.todayTokens / week.usual : 0}
+                    label={
+                      week && week.usual > 0
+                        ? `${Math.round((week.todayTokens / week.usual) * 100)} percent of a usual day`
+                        : "No usual day yet"
+                    }
+                  >
+                    <div>
+                      <div className="d d-figure text-ink" title={tokenHint(headline(data.today.tokens), data.today.cost)}>
+                        {compact(headline(data.today.tokens))}
+                      </div>
+                      <div className="text-caption text-ink-2">tokens</div>
+                    </div>
+                  </Ring>
+                  <div className="flex min-w-0 flex-col gap-2.5">
+                    <div>
+                      <b className="d d-figure block text-ink">
+                        {week && week.usual > 0 ? `${Math.round((week.todayTokens / week.usual) * 100)}%` : "None yet"}
+                      </b>
+                      <span className="text-caption text-ink-2">{week && week.usual > 0 ? "of a usual day" : "no usual day to compare"}</span>
+                    </div>
+                    <div>
+                      <b className="d d-small block text-ink">{plural(data.today.sessions, "session")}</b>
+                      <span className="text-caption text-ink-2">started today</span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </section>
 
-          <section aria-label="Recent sessions" className="rise pt-4" style={{ ["--i" as string]: 7 }}>
+            <section aria-label="On a roll" className="rise" style={{ ["--i" as string]: 4 }}>
+              <Card className="h-full px-5 py-3.5">
+                <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <div className="flex items-center gap-2">
+                    <h2 className="d d-figure text-ink">On a roll</h2>
+                    {daily && daily.streak >= 2 && daily.streak === daily.longest && (
+                      <span className="chip chip-clay">
+                        <span className="spark" style={{ width: 12, height: 12, background: "currentColor" }} aria-hidden="true" />
+                        Longest yet
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="d d-stat text-ink">{daily ? daily.streak : 0}</span>
+                    <span className="font-semibold text-ink-2">{daily && daily.streak === 1 ? "day in a row" : "days in a row"}</span>
+                  </div>
+                </div>
+                {heat ? (
+                  <HeatGrid
+                    id="dash:heat"
+                    values={heat.values}
+                    readouts={heat.readouts}
+                    label="Daily activity"
+                    footer={(weeks) => (
+                      <div className="mt-3 flex items-center justify-between">
+                        <span className="text-caption text-ink-2">{`Last ${weeks} weeks`}</span>
+                        <span aria-hidden="true" className="flex items-center gap-1 text-caption text-ink-2">
+                          Less
+                          {[0, 1, 2, 3, 4, 5].map((b) => (
+                            <i key={b} className="inline-block size-2.5 rounded-[3px]" style={{ background: `var(--heat-${b})` }} />
+                          ))}
+                          More
+                        </span>
+                      </div>
+                    )}
+                  />
+                ) : (
+                  <Skeleton className="h-[120px] w-full" />
+                )}
+              </Card>
+            </section>
+
+          <section aria-label="Recent sessions" className="rise" style={{ ["--i" as string]: 7 }}>
             <SectionTitle
               aside={
                 <Button onClick={() => setView("sessions")}>
@@ -446,12 +448,13 @@ export function Dashboard() {
             </SectionTitle>
             <Card>
               <SessionGrid>
-                {data.recent.map((r) => (
+                {data.recent.slice(0, RECENT_SHOWN).map((r) => (
                   <SessionLine key={r.sessionId} row={r} onOpen={open} />
                 ))}
               </SessionGrid>
             </Card>
           </section>
+          </div>
         </div>
       )}
 

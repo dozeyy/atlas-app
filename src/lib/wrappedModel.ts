@@ -1,7 +1,7 @@
 // Wrapped: the story told from real numbers. Pure functions only; the queries live in
 // useWrapped.ts. Nothing here invents data: a slide whose numbers are missing is not built.
 
-import { compact, exact, formatDuration, formatUsd, headline, plural } from "./usage";
+import { compact, exact, formatDuration, headline, plural } from "./usage";
 import type { ItemUse, SessionRow, TimelinePoint } from "./usageTypes";
 
 export interface WrappedData {
@@ -12,9 +12,6 @@ export interface WrappedData {
   spanDays: number;
   activeDays: number;
   tokens: number;
-  /** null when nothing could be priced. */
-  usd: number | null;
-  costComplete: boolean;
   sessions: number;
   busiest: { day: string; tokens: number; sessions: number } | null;
   streak: number;
@@ -238,13 +235,15 @@ export function buildSlides(d: WrappedData): Slide[] {
     });
   }
 
-  if (!short && d.usd !== null && d.usd > 0) {
+  // Tokens, not dollars (Will, 2026-11-08): the model slide says which model carried the tokens.
+  if (!short && d.models.length > 0) {
+    const top = d.models[0];
     out.push({
-      id: "cost",
+      id: "models",
       tone: "plain",
-      kicker: "Estimated cost",
-      figure: `${formatUsd(d.usd)}${d.costComplete ? "" : "+"}`,
-      line: "Worked out from a price list, so treat it as a close guess.",
+      kicker: "Your main model",
+      figure: top.label,
+      line: `${share(d.models, top.value)}% of your tokens.`,
       chart: d.models.length > 1 ? { kind: "split", rows: d.models } : undefined,
     });
   }

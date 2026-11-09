@@ -16,6 +16,7 @@ import {
   percent,
   plural,
   rangeFor,
+  tokenHint,
 } from "./usage";
 import type { Tokens } from "./types";
 
@@ -31,6 +32,26 @@ describe("numbers", () => {
     expect(compact(9_960)).toBe("10k");
     expect(compact(3_400_000)).toBe("3.4M");
     expect(compact(2_100_000_000)).toBe("2.1B");
+  });
+
+  it("never shows more than three digits before the unit", () => {
+    expect(compact(999.6)).toBe("1k"); // not "1000"
+    expect(compact(7300)).toBe("7.3k");
+    expect(compact(27_000_000)).toBe("27M");
+    expect(compact(289_400_000)).toBe("289M");
+    expect(compact(999_600)).toBe("1M");
+    expect(compact(999_600_000_000_000)).toBe("1P");
+    for (const n of [1, 12, 999, 1_000, 9_999, 99_999, 123_456, 999_499, 5_550_000, 98_765_432_100, 7.3e14]) {
+      expect(compact(n), String(n)).toMatch(/^\d{1,3}(\.\d)?[kMBTP]?$/);
+    }
+  });
+
+  it("puts the estimate in the hover, labelled as one", () => {
+    const cost = (usd: number | null, complete = true) => ({ usd, complete, unpricedTokens: 0 });
+    expect(tokenHint(1_234_567, cost(14.783))).toBe("1,234,567 tokens\nAbout $14.78 at API prices. An estimate, not a bill.");
+    expect(tokenHint(900, cost(12.4, false))).toContain("$12.40+");
+    expect(tokenHint(900, cost(null))).toContain("no estimate");
+    expect(tokenHint(0, cost(null))).toBe("0 tokens");
   });
 
   it("keeps exact figures for tooltips", () => {

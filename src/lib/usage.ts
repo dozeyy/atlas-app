@@ -4,15 +4,20 @@ import type { Bucket, Cost, Tokens } from "./types";
 
 const EN = "en-US";
 
-/** 1234 -> "1.2k", 12_345 -> "12k", 3_400_000 -> "3.4M". Whole numbers under 1000. */
+/**
+ * 1234 -> "1.2k", 12_345 -> "12k", 289_400_000 -> "289M". Three digits or fewer before the unit
+ * (Will, 2026-11-08): one decimal below 10, none above, and a roll-up to the next unit before a
+ * fourth digit shows ("999.6" -> "1k", "999.9k" -> "1M"). Whole numbers under 1000.
+ */
 export function compact(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "0";
-  if (n < 1000) return String(Math.round(n));
+  if (n < 999.5) return String(Math.round(n));
   const units: [number, string][] = [
     [1e3, "k"],
     [1e6, "M"],
     [1e9, "B"],
     [1e12, "T"],
+    [1e15, "P"],
   ];
   let i = 0;
   while (i < units.length - 1 && n >= units[i + 1][0]) i++;
@@ -52,6 +57,19 @@ export function costView(c: Cost): CostView {
   if (c.usd === null) return { text: "No price", partial: false, none: true };
   const base = formatUsd(c.usd);
   return { text: c.complete ? base : `${base}+`, partial: !c.complete, none: false };
+}
+
+/**
+ * The hover for a token figure (Will, 2026-11-08: tokens are what shows, the API-price dollar
+ * estimate lives here). Two lines: the exact count, then the estimate, always called one.
+ */
+export function tokenHint(tokens: number, c: Cost): string {
+  const lead = `${exact(tokens)} tokens`;
+  if (c.usd === null) return tokens > 0 ? `${lead}\nNo API price for these models, so no estimate.` : lead;
+  const v = costView(c);
+  return c.complete
+    ? `${lead}\nAbout ${v.text} at API prices. An estimate, not a bill.`
+    : `${lead}\nAbout ${v.text} at API prices. Some usage has no price, so the real figure is higher.`;
 }
 
 export function formatDuration(ms: number): string {

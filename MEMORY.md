@@ -179,3 +179,27 @@ pm ci is needed in a fresh worktree before tsc.
 - New `crates/cli` (bin `atlas-usage`) on the app's engine: chat (session id from `--session`, `$CLAUDE_CODE_SESSION_ID`, else newest chat in the cwd project, labelled), today/week/last-week/7d/30d/month/all/date ranges, `project`, `--vs`; markdown with block bars (default) or `--json`. Own cache in `<local data>/atlas/cli` (or `--cache-dir` / `ATLAS_USAGE_CACHE`), copies the app's pricing.json; transcripts read-only. New core `scope_report` (range + optional project, same rows as timeline) + `first_day`; `week_starts_sunday` moved to core so app and CLI agree (this machine's locale starts weeks on Sunday, so "this week" on Sun Nov 8 is just Nov 8).
 - Real data, Nov 2-7: 56.1M / 41.2M / 9.11M / 0 / 0 / 1.82M, equal to the app's chart. First index of the real corpus 62 s, later runs 0.3 s.
 - Skill at `skill/skills/atlas/SKILL.md` (plugin root `skill/`, marketplace `.claude-plugin/marketplace.json`). Headless `claude -p` with haiku: `/atlas`, `/atlas what was my usage last week` and a plain question all print the CLI output. Model-invoked skills hit `permission_denied` in `-p` default mode until `Skill(atlas)` is allowed; Haiku paraphrased the output until SKILL.md said "character for character".
+## 2026-11-08 - tokens over dollars, tidier lists, one styled tooltip (branch tokens-ui)
+- Decision (Will): most people are on a plan, not the API, so costs are counted in tokens everywhere.
+  The token figure is on screen; the API-price dollar estimate lives only in the hover, still
+  labelled an estimate. Counts stay within three digits before the unit (27M, 7.3k); `compact()` in
+  usage.ts guarantees it (999.6k rolls to 1M). Toolkit and the chat detail page were left to
+  their own branches.
+- Done: Sessions rows (project, tokens, helpers, when; "Highest cost" sort removed), Dashboard
+  (hero now compact, week/today/activity/tables in tokens, Activity cost toggle and Est. cost
+  column removed), Now tab (tokens are the big figure, helper tokens), Wrapped (cost slide became
+  a main-model slide), tray readout (Rust: menu line is tokens, tooltip has the estimate).
+  Shared pieces: `tokenHint()` and `TokenText`.
+- Search-height miss, root cause: the toolbar rule `.toolbar-tall input` sat in
+  `@layer components`, and the field's own `h-8` utility lives in the utilities layer, which wins
+  whatever the specificity; `h-8` is also only 28px at the 14px root. Fix: one `--field-tall`
+  token (40px) used by the Filter/Sort buttons and, through a `tall` prop on SearchField, by the
+  input's own class. Lesson: size a control from its own classes, never from a descendant selector.
+- Spacing: Sessions and Dashboard rows share one 72px rhythm (title over meta, centered); the
+  invisible edge-click ring on `.row-btn` and `.card-hit` is untouched (hitbox.test).
+- Tooltips: `TipLayer` (mounted once in App) replaces every native `title` popup: it parks the
+  title in `data-tip` on hover or keyboard focus, shows a token-colored plate after 380ms, flips
+  and slides at window edges (pure `tipPlace`), Esc hides, reduced motion drops the travel.
+  Titles other branches add are covered automatically.
+- Dashboard fits 1280x800 without scrolling: two columns (hero, Activity, Models and Projects |
+  Today, On a roll, 3 recent sessions). The Activity explanation sentence moved into the total's hover.

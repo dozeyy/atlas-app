@@ -3,6 +3,7 @@ import { WarningCircle } from "@phosphor-icons/react";
 import { useSidebar } from "./lib/useSidebar";
 import { NAV, Sidebar } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
+import { TipLayer } from "./components/TipLayer";
 import { ToastHost } from "./components/Toasts";
 import { useAtlas } from "./state/AtlasProvider";
 import { Dashboard } from "./pages/Dashboard";
@@ -85,6 +86,7 @@ export function App() {
         </main>
       </div>
       <ToastHost />
+      <TipLayer />
     </div>
   );
 }

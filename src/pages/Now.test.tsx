@@ -57,7 +57,8 @@ describe("Now", () => {
     expect(await screen.findByText("Editing", { selector: ".nc-verb" })).toBeInTheDocument();
     expect(screen.getByText("src/App.tsx", { selector: ".nc-target" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Fix the build" })).toBeInTheDocument();
-    expect(screen.getByText("$0.42")).toBeInTheDocument();
+    expect(screen.getByText("1.2k", { selector: ".nc-spend-fig" })).toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).toBeNull();
     const trail = screen.getByRole("list", { name: "Recent steps" });
     expect(within(trail).getAllByRole("listitem")).toHaveLength(2);
   });
@@ -102,7 +103,7 @@ describe("Now", () => {
       watching: true,
     });
     expect(await screen.findByText("Find the callers")).toBeInTheDocument();
-    expect(screen.getByText("$0.03")).toBeInTheDocument();
+    expect(screen.getByText("115", { selector: ".nc-helper-spend" })).toBeInTheDocument();
   });
 
   it("rests on the last finished chat when nothing is running, with no explanation", async () => {

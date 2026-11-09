@@ -15,21 +15,23 @@ import {
   headline,
   plural,
   rangeFor,
+  tokenHint,
 } from "../../lib/usage";
 import type { RangeKind } from "../../lib/usage";
 import type { Timeline } from "../../lib/types";
-import { CostText } from "./CostText";
 import { ErrorBlock, Skeleton } from "./StateBlocks";
 
-type Metric = "tokens" | "cost";
-
 const RANGE_NAME: Record<RangeKind, string> = { today: "Today", "30d": "Last 30 days", "12w": "Last 12 weeks" };
+/** What the total counts: it lives in the total's hover, not in a sentence on the card. */
+const TOKEN_MEANING = "Tokens count what you sent and what Claude wrote, plus cache writes.\nCache reads are listed apart.";
 
-/** Tokens or estimated cost over time as activity bars, with a table twin for anyone who prefers numbers. */
+/**
+ * Tokens over time as activity bars, with a table twin for anyone who prefers numbers. Tokens only
+ * (Will, 2026-11-08); the API-price estimate for a bar or a row is in its hover.
+ */
 export function ActivityCard({ today }: { today: string }) {
   const backend = getBackend();
   const [range, setRange] = useState<RangeKind>("30d");
-  const [metric, setMetric] = useState<Metric>("tokens");
   const [asTable, setAsTable] = useState(false);
   const span = useMemo(() => rangeFor(range, today), [range, today]);
   const tl = useFetched<Timeline>(() => backend.usageTimeline(span), [span.from, span.to, span.bucket]);
@@ -40,64 +42,33 @@ export function ActivityCard({ today }: { today: string }) {
     () =>
       points.map((p) => {
         const tokens = headline(p.tokens);
-        const usd = p.cost.usd ?? 0;
         return {
           key: p.start,
-          value: metric === "tokens" ? tokens : usd,
+          value: tokens,
           axis: axisLabel(p.start, span.bucket),
           title: bucketTitle(p.start, span.bucket),
-          valueText: metric === "tokens" ? compact(tokens) : formatUsd(usd),
-          detail:
-            metric === "tokens"
-              ? `tokens, ${p.cost.usd === null ? "no price" : `${formatUsd(usd)} estimated`}, ${plural(p.sessions, "session")} started`
-              : `estimated, ${compact(tokens)} tokens, ${plural(p.sessions, "session")} started`,
+          valueText: compact(tokens),
+          detail: `tokens, ${p.cost.usd === null ? "no price" : `${formatUsd(p.cost.usd)} estimated`}, ${plural(p.sessions, "session")} started`,
         };
       }),
-    [points, metric, span.bucket],
+    [points, span.bucket],
   );
 
-  const totals = useMemo(() => {
-    let tokens = 0;
-    let usd = 0;
-    for (const p of points) {
-      tokens += headline(p.tokens);
-      usd += p.cost.usd ?? 0;
-    }
-    return { tokens, usd };
-  }, [points]);
+  const total = useMemo(() => points.reduce((s, p) => s + headline(p.tokens), 0), [points]);
 
   return (
     <Card className="px-5 py-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="d d-figure text-ink">Activity</h2>
-          <p className="mt-0.5 text-caption text-ink-2" data-testid="chart-readout">
-            {RANGE_NAME[range]}: {metric === "tokens" ? `${compact(totals.tokens)} tokens` : `${formatUsd(totals.usd)} estimated`}
+          <p className="mt-0.5 text-caption text-ink-2" data-testid="chart-readout" title={TOKEN_MEANING}>
+            {RANGE_NAME[range]}: {compact(total)} tokens
           </p>
         </div>
         <div className="flex items-center gap-2">
           {/* The range is this card's main control and stays out in the open; the rest hides in one button. */}
           <SegmentedControl label="Time range" value={range} options={RANGES} onChange={setRange} />
-          <OptionsMenu
-            label="Chart options"
-            count={(metric !== "tokens" ? 1 : 0) + (asTable ? 1 : 0)}
-            onReset={() => {
-              setMetric("tokens");
-              setAsTable(false);
-            }}
-            width={260}
-          >
-            <OptionField label="Show">
-              <SegmentedControl
-                label="Measure"
-                value={metric}
-                options={[
-                  { value: "tokens", label: "Tokens" },
-                  { value: "cost", label: "Cost" },
-                ]}
-                onChange={setMetric}
-              />
-            </OptionField>
+          <OptionsMenu label="Chart options" count={asTable ? 1 : 0} onReset={() => setAsTable(false)} width={260}>
             <OptionField label="As">
               <SegmentedControl
                 label="Chart or table"
@@ -115,7 +86,7 @@ export function ActivityCard({ today }: { today: string }) {
 
       {tl.loading && !tl.data ? (
         <div role="status" aria-label="Loading activity">
-          <Skeleton className="h-[184px] w-full" />
+          <Skeleton className="h-[158px] w-full" />
         </div>
       ) : tl.error ? (
         <ErrorBlock title="Could not load activity" message={tl.error} onRetry={() => tl.reload(false)} />
@@ -129,7 +100,6 @@ export function ActivityCard({ today }: { today: string }) {
                   {span.bucket === "hour" ? "Hour" : span.bucket === "week" ? "Week of" : "Day"}
                 </th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Tokens</th>
-                <th scope="col" className="px-3 py-2 text-right font-medium">Est. cost</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Sessions started</th>
               </tr>
             </thead>
@@ -139,8 +109,7 @@ export function ActivityCard({ today }: { today: string }) {
                   <th scope="row" className="px-3 py-1.5 text-left font-normal text-ink">
                     {bucketTitle(p.start, span.bucket)}
                   </th>
-                  <td className="px-3 py-1.5 text-right" title={exact(headline(p.tokens))}>{compact(headline(p.tokens))}</td>
-                  <td className="px-3 py-1.5 text-right"><CostText cost={p.cost} /></td>
+                  <td className="px-3 py-1.5 text-right" title={tokenHint(headline(p.tokens), p.cost)}>{compact(headline(p.tokens))}</td>
                   <td className="px-3 py-1.5 text-right">{exact(p.sessions)}</td>
                 </tr>
               ))}
@@ -149,15 +118,13 @@ export function ActivityCard({ today }: { today: string }) {
         </div>
       ) : (
         <Bars
-          id={`activity:${range}:${metric}`}
+          id={`activity:${range}`}
           data={data}
-          label={`${metric === "tokens" ? "Tokens" : "Estimated cost"}, ${RANGE_NAME[range].toLowerCase()}`}
-          formatTick={(v) => (metric === "tokens" ? compact(v) : formatUsd(v).replace(/\.00$/, ""))}
+          label={`Tokens, ${RANGE_NAME[range].toLowerCase()}`}
+          formatTick={compact}
+          height={158}
         />
       )}
-      <p className="mt-3 text-caption text-ink-2">
-        Tokens count what you sent and what Claude wrote, plus cache writes. Cache reads are listed apart.
-      </p>
     </Card>
   );
 }

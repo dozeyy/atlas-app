@@ -398,19 +398,12 @@
   width: 36px;
   height: 32px;
 }
-/* Sessions: the search and its two buttons sit one step taller (Will, 2026-11-08). */
-.toolbar-tall input[type="search"] {
-  height: 40px;
-  padding-left: 36px;
-}
-.toolbar-tall label > svg {
-  left: 14px;
-  width: 16px;
-  height: 16px;
-}
+/* Sessions: the search and its two buttons sit one step taller (Will, 2026-11-08). The buttons take
+   it here; the search box takes the same --field-tall from its `tall` prop (fields.tsx), because
+   a rule in this layer loses to the field's own h-8 utility. That was the miss: the search stayed 28. */
 .toolbar-tall .options-trigger {
   width: 44px;
-  height: 40px;
+  height: var(--field-tall);
 }
 .options-trigger .btn-face {
   position: relative;
@@ -906,6 +899,88 @@ html[data-platform="macos"] .side {
   font-weight: 720;
   font-size: 17px;
   line-height: 22px;
+}
+
+/* ---- Hover tip for every title (components/TipLayer.tsx) ----------------------------------
+   One fixed element, moved by transform. Colors come only from the theme tokens, so Light,
+   Silver and Dark each get their own inverse plate with no per-theme rules here. */
+.tt {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 100; /* above dialogs (60) and toasts (70) */
+  max-width: min(300px, calc(100vw - 16px));
+  pointer-events: none;
+  padding: 7px 11px 8px;
+  border-radius: var(--r-control);
+  background: var(--tip-bg);
+  color: var(--tip-ink);
+  box-shadow: var(--shadow-pop);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  opacity: 0;
+  visibility: hidden;
+  translate: 0 -3px;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    translate var(--dur-fast) var(--ease-out),
+    visibility 0s linear var(--dur-fast);
+}
+.tt[data-side="above"] {
+  translate: 0 3px;
+}
+.tt[data-open] {
+  opacity: 1;
+  visibility: visible;
+  translate: 0 0;
+  transition-delay: 0s;
+}
+.tt-head {
+  display: block;
+  font-weight: 600;
+}
+.tt-rest {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  opacity: 0.74;
+}
+.tt-rest[hidden] {
+  display: none;
+}
+/* The arrow points at the target's center (--caret is set from the placement). */
+.tt::after {
+  content: "";
+  position: absolute;
+  left: var(--caret, 16px);
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  background: var(--tip-bg);
+  border-radius: 1px;
+  rotate: 45deg;
+}
+.tt[data-side="below"]::after {
+  top: -3px;
+}
+.tt[data-side="above"]::after {
+  bottom: -3px;
+}
+.tt[data-side="point"]::after {
+  display: none;
+}
+html.reduced .tt,
+html.reduced .tt[data-side="above"] {
+  translate: 0 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tt,
+  .tt[data-side="above"] {
+    translate: 0 0;
+  }
 }
 
 /* ---- Charts ------------------------------------------------------------------------------- */

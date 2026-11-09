@@ -25,7 +25,6 @@ const TITLE_DEBOUNCE_MS = 60;
 const SORTS = {
   newest: { sort: "started", dir: "desc", label: "Newest first" },
   oldest: { sort: "started", dir: "asc", label: "Oldest first" },
-  cost: { sort: "cost", dir: "desc", label: "Highest cost" },
   tokens: { sort: "tokens", dir: "desc", label: "Most tokens" },
   longest: { sort: "duration", dir: "desc", label: "Longest" },
 } as const;
@@ -153,7 +152,7 @@ export function Sessions() {
 
       <div hidden={selected !== null}>
         <div className="toolbar-tall mb-4 flex items-center gap-2">
-          <SearchField value={text} onChange={setText} label="Search chats" placeholder="Search titles, projects and messages" />
+          <SearchField tall value={text} onChange={setText} label="Search chats" placeholder="Search titles, projects and messages" />
           <span aria-live="polite" className="min-w-[4.5rem] shrink-0 whitespace-nowrap px-1 text-caption tabular-nums text-ink-2">
             {count}
           </span>
@@ -233,7 +232,7 @@ export function Sessions() {
             seed={11}
             className="min-h-[max(320px,calc(100vh-14.5rem))]"
             title="No sessions yet"
-            body="Each Claude Code conversation shows up here with what it cost, how long it ran and which project it belonged to."
+            body="Each Claude Code conversation shows up here with the tokens it used, when it ran and which project it belonged to."
           />
         ) : (
           <Card>

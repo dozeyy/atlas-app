@@ -270,9 +270,6 @@ html.reduced .nc-sweep.is-on::after {
   white-space: nowrap;
 }
 
-.now-card .nc-tokens-fig {
-  margin: 0;
-}
 
 /* Helpers and files */
 .nc-people {
@@ -498,18 +495,6 @@ html.reduced .nc-sweep.is-on::after {
   .nc-numbers {
     gap: 6px;
   }
-  .nc-tokens {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-  }
-  .nc-tokens .nc-cap {
-    margin: 0;
-  }
-  .now-card .nc-tokens-fig {
-    font-size: 16px;
-    line-height: 20px;
-  }
   .nc-sweep {
     height: 2px;
   }
@@ -545,7 +530,6 @@ html.reduced .nc-sweep.is-on::after {
   .now-card .nc-spend-fig {
     font-size: 26px;
   }
-  .nc-tokens,
   .nc-doing .nc-sweep {
     display: none;
   }

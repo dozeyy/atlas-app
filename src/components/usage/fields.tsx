@@ -41,26 +41,31 @@ export function SearchField({
   onChange,
   label,
   placeholder,
+  tall = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   label: string;
   placeholder: string;
+  /** The taller toolbar height (--field-tall), the same as the buttons beside it. */
+  tall?: boolean;
 }) {
   return (
     <label className="relative inline-flex min-w-[200px] flex-1">
       <span className="sr-only">{label}</span>
       <MagnifyingGlass
-        size={14}
+        size={tall ? 16 : 14}
         aria-hidden="true"
-        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-2"
+        className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-2 ${tall ? "left-3.5" : "left-3"}`}
       />
       <input
         type="search"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="selectable h-8 w-full rounded-control border border-line-strong bg-surface pl-8 pr-3 text-body text-ink placeholder:text-ink-2 hover:bg-raised focus:bg-surface"
+        className={`selectable w-full rounded-control border border-line-strong bg-surface pr-3 text-body text-ink placeholder:text-ink-2 hover:bg-raised focus:bg-surface ${
+          tall ? "h-[var(--field-tall)] pl-9" : "h-8 pl-8"
+        }`}
       />
     </label>
   );

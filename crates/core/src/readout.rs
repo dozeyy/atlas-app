@@ -1,21 +1,24 @@
 //! The one-line "today" readout used by the tray tooltip and menu.
 //!
 //! Tokens are the headline number (input + output + cache writes; cache reads are not
-//! counted, same as everywhere else in Atlas). Money is always an estimate: it carries
-//! "~" and "est.", and a "+" when some tokens could not be priced.
+//! counted, same as everywhere else in Atlas) and the only figure the tray menu shows
+//! (Will, 2026-11-08: tokens everywhere, money only on hover). The tooltip is the hover,
+//! so it alone adds the money, and money is always an estimate: it carries "~" and "est.",
+//! and a "+" when some tokens could not be priced.
 
 use crate::usage::query::Period;
 
-/// "840", "12.3K", "1.2M", "3.4B".
+/// "840", "12.3k", "123k", "1.2M", "3.4B": never more than three digits before the unit
+/// (the same shape as `compact()` in the front end).
 pub fn compact_tokens(n: u64) -> String {
     fn one(v: f64, unit: &str) -> String {
-        // One decimal below 100 of the unit, none above; never "1.0K".
-        let s = if v < 100.0 { format!("{v:.1}") } else { format!("{v:.0}") };
+        // One decimal below 10 of the unit, none above; never "1.0k".
+        let s = if v < 10.0 { format!("{v:.1}") } else { format!("{v:.0}") };
         format!("{}{unit}", s.strip_suffix(".0").unwrap_or(&s))
     }
     match n {
         0..=999 => n.to_string(),
-        1_000..=999_499 => one(n as f64 / 1e3, "K"),
+        1_000..=999_499 => one(n as f64 / 1e3, "k"),
         999_500..=999_499_999 => one(n as f64 / 1e6, "M"),
         _ => one(n as f64 / 1e9, "B"),
     }
@@ -38,8 +41,13 @@ pub fn dollars(usd: f64) -> String {
     format!("${out}")
 }
 
-/// "Today: 1.2M tokens \u{b7} ~$3.40 est."
+/// "Today: 1.2M tokens": the tray menu line. No money here.
 pub fn today_line(p: &Period) -> String {
+    format!("Today: {} tokens", compact_tokens(p.tokens.total))
+}
+
+/// "Today: 1.2M tokens \u{b7} ~$3.40 est.": the tray tooltip, the hover, where the estimate lives.
+pub fn today_hover(p: &Period) -> String {
     let tokens = compact_tokens(p.tokens.total);
     match p.cost.usd {
         Some(usd) => {
@@ -68,14 +76,16 @@ mod tests {
     fn tokens_are_compact_and_never_say_one_point_zero() {
         assert_eq!(compact_tokens(0), "0");
         assert_eq!(compact_tokens(999), "999");
-        assert_eq!(compact_tokens(1_000), "1K");
-        assert_eq!(compact_tokens(1_234), "1.2K");
-        assert_eq!(compact_tokens(98_765), "98.8K");
-        assert_eq!(compact_tokens(123_456), "123K");
-        assert_eq!(compact_tokens(999_499), "999K");
+        assert_eq!(compact_tokens(1_000), "1k");
+        assert_eq!(compact_tokens(1_234), "1.2k");
+        assert_eq!(compact_tokens(7_300), "7.3k");
+        assert_eq!(compact_tokens(98_765), "99k");
+        assert_eq!(compact_tokens(123_456), "123k");
+        assert_eq!(compact_tokens(999_499), "999k");
         assert_eq!(compact_tokens(999_500), "1M");
         assert_eq!(compact_tokens(1_234_567), "1.2M");
-        assert_eq!(compact_tokens(45_600_000), "45.6M");
+        assert_eq!(compact_tokens(27_000_000), "27M");
+        assert_eq!(compact_tokens(289_400_000), "289M");
         assert_eq!(compact_tokens(2_500_000_000), "2.5B");
     }
 
@@ -91,13 +101,21 @@ mod tests {
     }
 
     #[test]
-    fn the_line_is_always_an_estimate() {
-        assert_eq!(today_line(&period(1_234_567, Some(3.4), true)), "Today: 1.2M tokens \u{b7} ~$3.40 est.");
-        assert_eq!(today_line(&period(500, Some(0.0), true)), "Today: 500 tokens \u{b7} ~$0.00 est.");
-        assert_eq!(today_line(&period(1_234_567, Some(3.4), false)), "Today: 1.2M tokens \u{b7} ~$3.40+ est.");
+    fn the_menu_line_is_tokens_only() {
+        assert_eq!(today_line(&period(1_234_567, Some(3.4), true)), "Today: 1.2M tokens");
+        assert_eq!(today_line(&period(900, None, false)), "Today: 900 tokens");
         assert_eq!(today_line(&period(0, None, true)), "Today: 0 tokens");
-        assert_eq!(today_line(&period(900, None, false)), "Today: 900 tokens \u{b7} cost unknown");
+        assert!(!today_line(&period(1_234_567, Some(3.4), false)).contains('$'));
+    }
+
+    #[test]
+    fn the_hover_money_is_always_an_estimate() {
+        assert_eq!(today_hover(&period(1_234_567, Some(3.4), true)), "Today: 1.2M tokens \u{b7} ~$3.40 est.");
+        assert_eq!(today_hover(&period(500, Some(0.0), true)), "Today: 500 tokens \u{b7} ~$0.00 est.");
+        assert_eq!(today_hover(&period(1_234_567, Some(3.4), false)), "Today: 1.2M tokens \u{b7} ~$3.40+ est.");
+        assert_eq!(today_hover(&period(0, None, true)), "Today: 0 tokens");
+        assert_eq!(today_hover(&period(900, None, false)), "Today: 900 tokens \u{b7} cost unknown");
         // The Windows tooltip holds 127 characters.
-        assert!(today_line(&period(u64::MAX, Some(1e12), false)).chars().count() < 100);
+        assert!(today_hover(&period(u64::MAX, Some(1e12), false)).chars().count() < 100);
     }
 }

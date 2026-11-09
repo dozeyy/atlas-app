@@ -34,9 +34,6 @@ export async function loadWrapped(daily: Daily, modelName: (id: string) => strin
   const points = daily.points.slice(firstIdx);
 
   let tokens = 0;
-  let usd = 0;
-  let priced = false;
-  let costComplete = true;
   let activeDays = 0;
   let busy = -1;
   for (let i = 0; i < dayTokens.length; i++) {
@@ -44,12 +41,6 @@ export async function loadWrapped(daily: Daily, modelName: (id: string) => strin
     if (v <= 0) continue;
     activeDays++;
     tokens += v;
-    const c = points[i].cost;
-    if (c.usd !== null) {
-      usd += c.usd;
-      priced = true;
-    }
-    if (!c.complete) costComplete = false;
     if (busy < 0 || v > dayTokens[busy]) busy = i;
   }
 
@@ -75,8 +66,6 @@ export async function loadWrapped(daily: Daily, modelName: (id: string) => strin
     spanDays,
     activeDays,
     tokens,
-    usd: priced ? usd : null,
-    costComplete,
     sessions: longest?.total ?? points.reduce((n, p) => n + p.sessions, 0),
     busiest: busy >= 0 ? { day: daily.days[firstIdx + busy], tokens: dayTokens[busy], sessions: points[busy].sessions } : null,
     streak: daily.streak,

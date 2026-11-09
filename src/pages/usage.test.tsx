@@ -6,7 +6,7 @@ import { AtlasProvider } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
 import { openSessionNext } from "../lib/nav";
 import { MockBackend } from "../lib/mock";
-import { addDays, exact, headline, localDay } from "../lib/usage";
+import { addDays, compact, headline, localDay } from "../lib/usage";
 import type { Scenario } from "../lib/mockUsage";
 
 function mount(scenario: Scenario = "data", view: "dashboard" | "sessions" = "dashboard") {
@@ -34,7 +34,7 @@ describe("Dashboard", () => {
     const dash = await backend.usageDashboard();
     await screen.findByText("Last 7 days");
     const week = screen.getByRole("region", { name: "Last 7 days" });
-    expect(within(week).getByText(exact(headline(dash.week.tokens)))).toBeInTheDocument();
+    expect(within(week).getByText(compact(headline(dash.week.tokens)))).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Today" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Activity" })).toBeInTheDocument();
     expect(screen.getAllByText(/estimated/).length).toBeGreaterThanOrEqual(2);
@@ -46,21 +46,29 @@ describe("Dashboard", () => {
   it("labels costs as estimates and keeps cache reads apart", async () => {
     mount();
     await screen.findByText("Last 7 days");
-    expect(screen.getByText(/Costs are estimates from a price list/)).toBeInTheDocument();
+    expect(screen.getByText(/Dollar figures in hovers are estimates from a price list/)).toBeInTheDocument();
     expect(screen.getAllByText(/cache reads/).length).toBeGreaterThan(0);
   });
 
-  it("switches the chart between tokens and cost and to a table", async () => {
+  it("charts tokens only, with a table behind the chart options", async () => {
     mount();
     await screen.findByRole("group", { name: /Tokens, last 30 days/ });
-    // Time range stays in the open; the measure and the table live behind the chart options button.
+    // Time range stays in the open; the table lives behind the chart options button.
     expect(screen.getByRole("radio", { name: "30 days" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Chart options" }));
-    await userEvent.click(screen.getByRole("radio", { name: "Cost" }));
-    expect(screen.getByRole("group", { name: /Estimated cost, last 30 days/ })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Cost" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "Table" }));
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getAllByRole("row").length).toBeGreaterThan(20);
+  });
+
+  it("keeps what tokens count in the Activity total's hover, not in a sentence", async () => {
+    mount();
+    await screen.findByRole("group", { name: /Tokens, last 30 days/ });
+    const readout = screen.getByTestId("chart-readout");
+    expect(readout.getAttribute("title")).toMatch(/cache writes\.\nCache reads are listed apart\./);
+    const card = screen.getByRole("region", { name: "Activity" });
+    expect(within(card).queryByText(/Tokens count what you sent/)).not.toBeInTheDocument();
   });
 
   it("moves the chart readout with the arrow keys", async () => {
