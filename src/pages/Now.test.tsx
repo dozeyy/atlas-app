@@ -154,9 +154,19 @@ describe("Now", () => {
     const rows = within(fin).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]!).getByText("9.9k")).toBeInTheDocument();
-    // A chat Atlas only read the tail of has no token figure rather than a wrong one.
-    expect(within(rows[1]!).queryByText("Tokens")).toBeNull();
+    // A chat Atlas only read the tail of has no token total rather than a wrong one: a quiet dash holds
+    // the slot so the rows line up, and the hover says why.
+    const dash = within(rows[1]!).getByText("-");
+    expect(dash.closest(".now-stat")).toHaveAttribute("title", expect.stringMatching(/not watching/));
+    expect(dash.closest(".now-stat")).toHaveAttribute("data-dim");
     expect(within(rows[1]!).getByText("2 h")).toBeInTheDocument();
+  });
+
+  it("keeps the files being edited with the doing block, not alone at the far edge", async () => {
+    mount(snap({ chats: [chat({ files: [{ path: "src/totals.ts", edited: true }] })] }));
+    const card = await screen.findByRole("article", { name: "Fix the build" });
+    const doing = within(card).getByRole("region", { name: "Doing now" });
+    expect(within(doing).getByText("src/totals.ts")).toBeInTheDocument();
   });
 
   it("with only waiting chats, the waiting list is the page", async () => {

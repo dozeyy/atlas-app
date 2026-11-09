@@ -101,13 +101,8 @@ function CostSection({ row, report }: { row: CostRow; report: CostReport }) {
   }
   if (row.tokens > 0) {
     rows.push({
-      label: perCall ? "Listed" : "Per message",
-      value: (
-        <>
-          <Tokens n={row.tokens} hover={perCall ? "" : usd} />
-          {perCall ? " with every message, so Claude knows it exists" : ""}
-        </>
-      ),
+      label: "Per message",
+      value: <Tokens n={row.tokens} hover={perCall ? "" : usd} />,
     });
     rows.push({ label: "Loads in", value: row.turns > 0 ? `${row.loadsIn} (${row.turns.toLocaleString()} messages)` : row.loadsIn });
   }
@@ -230,6 +225,9 @@ function CodeView({ src }: { src: SourceView }) {
   return <div ref={host} className="h-[min(420px,50vh)] overflow-hidden rounded-card border border-line bg-surface" />;
 }
 
+/** A frontmatter key as the scan reports it (lowercase); every other detail label starts with a capital. */
+const RAW_KEY = /^[a-z][a-z0-9_-]*$/;
+
 const FIELD_LABEL: Record<string, string> = {
   name: "Name",
   description: "Description",
@@ -241,7 +239,10 @@ const FIELD_LABEL: Record<string, string> = {
 
 /** The header fields (model and tools for agents) and the text as it reads. */
 function MarkdownSections({ text }: { text: string }) {
-  const { fields, body } = useMemo(() => splitFrontmatter(text), [text]);
+  const parsed = useMemo(() => splitFrontmatter(text), [text]);
+  const body = parsed.body;
+  // The name is the sheet's title and the description its lead line: never a third time here.
+  const fields = useMemo(() => parsed.fields.filter((f) => f.key !== "name" && f.key !== "description"), [parsed]);
   return (
     <>
       {fields.length > 0 && (
@@ -385,6 +386,15 @@ export function DetailSheet({
     return () => before?.focus?.({ preventScroll: true });
   }, []);
 
+  // Toasts centre inside the sheet while it is open (the panel is min(680px, 100vw) wide).
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--toast-inset", "calc(100vw - min(680px, 100vw))");
+    return () => {
+      root.style.removeProperty("--toast-inset");
+    };
+  }, []);
+
   // Escape must not depend on where focus is: a question that closes can leave it on the page.
   // Keys from inside the panel (or a dialog over it) are handled there and never reach the window.
   const closeRef = useRef(tryClose);
@@ -433,7 +443,8 @@ export function DetailSheet({
     ...(item.size !== null ? [{ label: "Size", value: formatSize(item.size) }] : []),
     ...(item.modifiedMs ? [{ label: "Changed", value: `${formatDate(item.modifiedMs)} (${relativeTime(item.modifiedMs)})` }] : []),
     ...(item.usedBy !== null ? [{ label: "Used by", value: item.usedBy === 0 ? "No hook uses this script" : `${item.usedBy} ${item.usedBy === 1 ? "hook" : "hooks"}` }] : []),
-    ...item.detail.map((d) => ({ label: d.label, value: d.value })),
+    // Raw header keys (lowercase: name, model, ...) are shown once, under "Settings in the file's header".
+    ...item.detail.filter((d) => !RAW_KEY.test(d.label)).map((d) => ({ label: d.label, value: d.value })),
   ];
 
   return createPortal(

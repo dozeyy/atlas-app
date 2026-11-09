@@ -96,6 +96,8 @@
 }
 .now-band[data-cols="2"] {
   --cols: 2;
+  /* Finished titles run longer than the waiting ones, so that list gets the extra room. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
 }
 /* Nothing is running and chats are waiting: the band is the page. */
 .now-band[data-fill] {
@@ -207,6 +209,10 @@
 .now-stat .nc-cap {
   margin: 0;
 }
+.now-stat[data-dim] .now-stat-fig {
+  color: var(--ink-2);
+  font-weight: 500;
+}
 /* A list too narrow for every number gives the title the room: the last-turn time goes first,
    then the token count; how long ago always stays. */
 @container nowlist (max-width: 520px) {
@@ -226,6 +232,16 @@
   }
   .now-stat {
     min-width: 44px;
+  }
+}
+/* A half-width list (a narrow window with both lists) drops the status tile, so a title such as
+   "Add dark mode to the garden map" keeps its words instead of ending in an ellipsis. */
+@container nowlist (max-width: 420px) {
+  .now-row > .now-tile {
+    display: none;
+  }
+  .now-row {
+    padding-left: 16px;
   }
 }
 
@@ -291,13 +307,23 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
     "head clock"
     "doing numbers"
-    "people people"
     "trail trail";
   gap: 16px 32px;
+}
+
+/* A roomy card keeps its parts together and centres the group: spare height becomes padding
+   above and below, never a gap between the title and the trail. */
+@container nowcard (min-height: 300px) {
+  .nc-body {
+    grid-template-rows: auto auto auto;
+    align-content: center;
+    align-content: safe center;
+    gap: 28px 32px;
+  }
 }
 
 .nc-head {
@@ -313,9 +339,6 @@
 }
 .nc-numbers {
   grid-area: numbers;
-}
-.nc-people {
-  grid-area: people;
 }
 .nc-trail {
   grid-area: trail;
@@ -369,7 +392,7 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: clamp(48px, 10cqmin, 96px);
+  width: clamp(48px, 15cqmin, 96px);
   aspect-ratio: 1;
   border-radius: var(--r-card);
   background: var(--accent-tint);
@@ -392,7 +415,7 @@
 
 .now-card .nc-verb {
   margin: 0;
-  font-size: clamp(22px, 5.4cqmin, 54px);
+  font-size: clamp(22px, 7cqmin, 54px);
   line-height: 1.1;
   font-weight: 720;
   overflow: hidden;
@@ -406,7 +429,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-code);
-  font-size: clamp(13px, 2.2cqmin, 20px);
+  font-size: clamp(13px, 3cqmin, 20px);
   color: var(--ink-2);
 }
 
@@ -448,7 +471,7 @@ html.reduced .nc-sweep.is-on::after {
 
 .now-card .nc-spend-fig {
   margin: 0;
-  font-size: clamp(34px, 10cqmin, 112px);
+  font-size: clamp(34px, 14cqmin, 112px);
   line-height: 1;
   font-weight: 760;
   letter-spacing: -0.02em;
@@ -509,7 +532,7 @@ html.reduced .nc-sweep.is-on::after {
   display: flex;
   gap: 8px;
   min-width: 0;
-  margin: 0 0 0 auto;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -674,6 +697,10 @@ html.reduced .nc-sweep.is-on::after {
   .now-card .nc-title {
     font-size: 18px;
   }
+  /* Head sits level with the doing block, so title and chips are not stranded at the top. */
+  .nc-head {
+    align-self: center;
+  }
   .nc-numbers {
     gap: 6px;
   }
@@ -736,19 +763,15 @@ html.reduced .nc-sweep.is-on::after {
   }
 }
 
-/* One line of chips, never a second one that runs into the trail. */
+/* One line of chips, never a second one that runs into the trail. A chip that does not fit whole
+   wraps to a line that is not shown, so each is either all there or gone, never cut. */
 @container nowcard (max-height: 235px) {
   .nc-head .now-chips {
-    flex-wrap: nowrap;
+    height: 24px;
     overflow: hidden;
   }
   .nc-head .now-chips .chip {
     flex: none;
-  }
-}
-@container nowcard (max-height: 235px) and (max-width: 860px) {
-  .nc-head .now-chips .chip:nth-child(2) {
-    display: none;
   }
 }
 
@@ -778,12 +801,11 @@ html.reduced .nc-sweep.is-on::after {
 @container nowcard (min-height: 236px) and (max-width: 620px) {
   .nc-body {
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
     grid-template-areas:
       "head clock"
       "doing doing"
       "numbers numbers"
-      "people people"
       "trail trail";
     align-content: start;
   }

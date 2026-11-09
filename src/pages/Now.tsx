@@ -131,9 +131,9 @@ function List({ title, count, children }: { title: string; count: number; childr
 }
 
 /** `optional` ranks what a narrow row drops: 1 goes first, then 2; the unranked figure always stays. */
-function Stat({ fig, cap, title, optional }: { fig: string; cap: string; title?: string; optional?: 1 | 2 }) {
+function Stat({ fig, cap, title, optional, dim }: { fig: string; cap: string; title?: string; optional?: 1 | 2; dim?: boolean }) {
   return (
-    <div className="now-stat" title={title} data-opt={optional}>
+    <div className="now-stat" title={title} data-opt={optional} data-dim={dim || undefined}>
       <p className="d d-small now-stat-fig">{fig}</p>
       <p className="nc-cap">{cap}</p>
     </div>
@@ -183,7 +183,13 @@ function DoneRow({ last, now }: { last: NowLast; now: number }) {
           {last.model && <span className="chip">{modelLabel(last.model)}</span>}
         </p>
       </div>
-      {last.tokens !== null && <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false))} optional={2} />}
+      {last.tokens !== null ? (
+        <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false))} optional={2} />
+      ) : (
+        // A chat that was already over when Atlas started: only the end of its transcript is read, so a
+        // total would be a fraction of the real one. The slot stays, so the rows line up.
+        <Stat fig="-" cap="Tokens" title="Atlas was not watching this chat, so it has no total" optional={2} dim />
+      )}
       <Stat fig={ago(last.endedMs, now).replace(/ ago$/, "")} cap="Ended" />
     </li>
   );
@@ -268,6 +274,7 @@ function ChatCard({ chat }: { chat: NowChat }) {
             </div>
           </div>
           <span className={`nc-sweep${working ? " is-on" : ""}`} aria-hidden="true" />
+          <People chat={chat} />
         </section>
 
         <section className="nc-numbers" aria-label="Tokens used">
@@ -277,7 +284,6 @@ function ChatCard({ chat }: { chat: NowChat }) {
           </div>
         </section>
 
-        <People chat={chat} />
         <Trail steps={chat.steps} working={working} />
       </div>
     </article>
@@ -305,7 +311,7 @@ function People({ chat }: { chat: NowChat }) {
   const shown = chat.helpers.slice(0, HELPERS_SHOWN);
   const more = chat.helpers.length - shown.length;
   const files = chat.files.slice(0, FILES_SHOWN);
-  if (shown.length === 0 && files.length === 0) return <div className="nc-people" />;
+  if (shown.length === 0 && files.length === 0) return null;
   return (
     <section className="nc-people" aria-label="Helpers and files">
       {shown.map((h) => (
