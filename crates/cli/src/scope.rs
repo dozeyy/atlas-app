@@ -105,9 +105,14 @@ pub fn parse(word: &str, today: NaiveDate, sunday: bool, first: Option<NaiveDate
     })
 }
 
-/// Bucket for a range: days up to a month, then weeks, then months.
+/// Up to this many days a range is drawn as one bar per day; up to `GRID_DAYS` as the
+/// terrain grid (one cell per day, 7 days a row, like the app's "On a roll").
+pub const BARS_DAYS: i64 = 14;
+pub const GRID_DAYS: i64 = 84;
+
+/// Bucket for a range: days up to 12 weeks, then weeks, then months.
 pub fn bucket_for(days: i64) -> &'static str {
-    if days <= 31 {
+    if days <= GRID_DAYS {
         "day"
     } else if days <= 26 * 7 {
         "week"
@@ -156,6 +161,7 @@ mod tests {
     fn buckets() {
         assert_eq!(bucket_for(7), "day");
         assert_eq!(bucket_for(31), "day");
+        assert_eq!(bucket_for(84), "day");
         assert_eq!(bucket_for(90), "week");
         assert_eq!(bucket_for(400), "month");
     }

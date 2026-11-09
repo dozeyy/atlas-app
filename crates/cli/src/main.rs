@@ -38,13 +38,15 @@ OPTIONS
   --cwd DIR           folder that decides \"this project\" (default: $CLAUDE_PROJECT_DIR, else .)
   --top N             rows in the top chats / projects / helpers lists (default 5)
   --json              JSON instead of markdown
+  --ascii             plain ASCII bars (# and .) for a terminal that draws boxes for blocks
+                      (also: ATLAS_ASCII=1)
   --week-start mon|sun  default: the operating system's setting, like the app
   --config-dir DIR    Claude config folder (default: $CLAUDE_CONFIG_DIR, else ~/.claude)
   --cache-dir DIR     where the index lives (default: $ATLAS_USAGE_CACHE, else
                       <local app data>/atlas/cli)
 
-Tokens = input + output + cache writes; cache reads are shown apart. Dollar figures are
-API-price estimates, not a bill. Transcripts are only read, never written.";
+Tokens = input + output + cache writes; cache reads are shown apart. The one dollar figure
+is an API-price estimate, not a bill. Transcripts are only read, never written.";
 
 struct Quiet;
 impl EventSink for Quiet {
@@ -61,6 +63,7 @@ struct Opts {
     vs: Option<String>,
     session: Option<String>,
     json: bool,
+    ascii: bool,
     top: usize,
     cwd: Option<PathBuf>,
     week_start: Option<bool>,
@@ -123,6 +126,7 @@ fn parse_args(args: Vec<String>) -> Result<Opts, String> {
         match a.as_str() {
             "-h" | "--help" => return Err(String::new()),
             "--json" => o.json = true,
+            "--ascii" => o.ascii = true,
             "--vs" => o.vs = Some(need(&mut it, "--vs")?),
             "--session" => o.session = Some(need(&mut it, "--session")?),
             "--project" => o.project = true,
@@ -190,6 +194,7 @@ fn main() {
             std::process::exit(2);
         }
     };
+    fmt::set_ascii(opts.ascii || env_path("ATLAS_ASCII").is_some_and(|v| v != Path::new("0")));
     match run(&opts) {
         Ok(out) => println!("{out}"),
         Err(e) => {
@@ -417,6 +422,14 @@ mod tests {
         let o = opts(&["today and yesterday"]);
         assert_eq!(o.span.as_deref(), Some("today"));
         assert_eq!(o.vs.as_deref(), Some("yesterday"));
+    }
+
+    #[test]
+    fn ascii_is_a_flag_not_a_scope() {
+        let o = opts(&["30d", "--ascii"]);
+        assert!(o.ascii);
+        assert_eq!(o.span.as_deref(), Some("30d"));
+        assert!(!opts(&["30d"]).ascii);
     }
 
     #[test]
