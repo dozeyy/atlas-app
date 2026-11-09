@@ -237,6 +237,110 @@ export interface SessionDetail {
   claudeCodeCostUsd: number | null;
 }
 
+// ---- where it went (one chat's receipt) ---------------------------------------
+
+/** Dollars by what was bought. `input` is fresh, uncached input. */
+export interface ReceiptKinds {
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+  input: number;
+  web: number;
+}
+
+/** Tokens by what they were. The first three add up to the headline; cache reads sit apart. */
+export interface ReceiptTokenKinds {
+  output: number;
+  cacheWrite: number;
+  input: number;
+  cacheRead: number;
+}
+
+export interface ReceiptModel {
+  model: string;
+  usd: number;
+  /** Input, output and cache writes (the figure the pages headline). */
+  tokens: number;
+}
+
+/** A big thing that went into the conversation. `usd` is an estimate. */
+export interface ReceiptItem {
+  /** One file read however often, one big result, or many small results of one tool. */
+  kind: "read" | "output" | "outputs";
+  tool: string;
+  path: string | null;
+  count: number;
+  tokens: number;
+  usd: number | null;
+  /** The thread's name when exactly one thread produced it. */
+  thread: string | null;
+}
+
+export type ReceiptFlagKind = "repeat_read" | "huge_output" | "heavy_helper" | "cache_miss";
+
+export interface ReceiptFlag {
+  kind: ReceiptFlagKind;
+  /** The file, the tool, or the helper's name. */
+  label: string;
+  agentId: string | null;
+  count: number;
+  tokens: number;
+  usd: number | null;
+  /** cache_miss: the longest pause. */
+  minutes: number | null;
+  model: string | null;
+  /** heavy_helper: what it did, most used first. */
+  tools: string[];
+}
+
+/** How a helper ended, only where the transcript says. */
+export type Outcome = "finished" | "errored" | "stopped";
+
+/** The main chat (`agentId` null) or one helper: its spend and its slice of the receipt. */
+export interface ReceiptThread {
+  agentId: string | null;
+  name: string;
+  parentAgentId: string | null;
+  spawnDepth: number;
+  model: string;
+  usd: number;
+  tokens: number;
+  cacheReadTokens: number;
+  messages: number;
+  durationMs: number;
+  toolCalls: number;
+  kinds: ReceiptKinds;
+  tokenKinds: ReceiptTokenKinds;
+  models: ReceiptModel[];
+  outcome: Outcome | null;
+  items: ReceiptItem[];
+  itemsOtherUsd: number;
+  flags: ReceiptFlag[];
+  unpricedTokens: number;
+}
+
+/** Every view lists its lines plus an "everything else" remainder, so lines + remainder == totalUsd. */
+export interface Receipt {
+  sessionId: string;
+  totalUsd: number | null;
+  complete: boolean;
+  /** The transcripts could be read, so big items and most flags are present. */
+  scanned: boolean;
+  /** Main chat first, then the helpers in the order they started. */
+  threads: ReceiptThread[];
+  threadsOtherUsd: number;
+  models: ReceiptModel[];
+  modelsOtherUsd: number;
+  kinds: ReceiptKinds;
+  kindsOtherUsd: number;
+  /** The chat's headline tokens (input + output + cache writes), and its tokens by kind. */
+  totalTokens: number;
+  tokenKinds: ReceiptTokenKinds;
+  items: ReceiptItem[];
+  itemsOtherUsd: number;
+  flags: ReceiptFlag[];
+}
+
 export interface TranscriptItem {
   ts: number | null;
   role: string;

@@ -1,0 +1,232 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { Warning } from "@phosphor-icons/react";
+import { Button } from "../controls";
+import { Skeleton } from "./StateBlocks";
+import { modelTone } from "./helperKit";
+import { useIntro } from "../../lib/motion";
+import { barWidth, byModel, cacheReads, fitColumn, flagText, guess, itemDetail, itemTitleFull, itemTitle, lineTitle, tokensText, whatItUsed, whoUsed, type SpendLine } from "../../lib/receiptView";
+import { compact, percent, plural, share } from "../../lib/usage";
+import type { Receipt } from "../../lib/types";
+
+const FLAGS_SHOWN = 3;
+const WIDE_PX = 896; // where the receipt goes to three columns (Tailwind @4xl)
+const FOOTER_PX = 36; // the estimates line and its gap
+
+/** The pane's size, kept current. Starts at 0 (unknown) until the element is measured. */
+function useBox(): [{ w: number; h: number }, (el: HTMLDivElement | null) => void] {
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const ro = useRef<ResizeObserver | null>(null);
+  useEffect(() => () => ro.current?.disconnect(), []);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    ro.current?.disconnect();
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const read = () => setBox((b) => (b.w === el.clientWidth && b.h === el.clientHeight ? b : { w: el.clientWidth, h: el.clientHeight }));
+    read();
+    ro.current = new ResizeObserver(read);
+    ro.current.observe(el);
+  }, []);
+  return [box, ref];
+}
+
+/** The bar colour for a line: the same dots the model chips wear, one hue per kind. */
+function tint(line: SpendLine): string {
+  if (line.kind === "model") return `var(--chart-${modelTone(line.model ?? "")})`;
+  if (line.kind === "main") return "var(--accent)";
+  if (line.kind === "helper") return "var(--chart-2)";
+  if (line.kind === "kind") {
+    const slot: Record<string, number> = { cacheWrite: 1, cacheRead: 2, output: 3, input: 4, web: 4 };
+    return `var(--chart-${slot[line.key] ?? 4})`;
+  }
+  return "var(--line-strong)";
+}
+
+function Line({ line, total, index, onOpen }: { line: SpendLine; total: number; index: number; onOpen?: (agentId: string | null) => void }) {
+  const frac = share(line.tokens, total);
+  const body = (
+    <>
+      <span className="flex items-baseline justify-between gap-3" title={lineTitle(line)}>
+        <span className={`min-w-0 truncate text-body ${line.kind === "other" || line.kind === "more" ? "text-ink-2" : "text-ink"}`}>{line.label}</span>
+        <span className="flex shrink-0 items-baseline gap-2 tabular-nums">
+          <span className="text-body text-ink">{compact(line.tokens)}</span>
+          <span className="w-9 text-right text-caption text-ink-2">{percent(frac)}</span>
+        </span>
+      </span>
+      <span className="share-bar rcpt-bar mt-1 block" role="img" aria-label={`${percent(frac)} of the chat`}>
+        <i style={{ width: `${barWidth(line.tokens, total)}%`, ["--bar" as string]: tint(line), ["--i" as string]: Math.min(index, 12) }} />
+      </span>
+    </>
+  );
+  const open = onOpen && (line.kind === "helper" || line.kind === "main");
+  return (
+    <li>
+      {open ? (
+        <button type="button" className="rcpt-line rcpt-line-btn" onClick={() => onOpen(line.agentId)} aria-label={`${line.label}, ${tokensText(line.tokens)}. Show in the helper map`} title={lineTitle(line)}>
+          {body}
+        </button>
+      ) : (
+        <div className="rcpt-line">{body}</div>
+      )}
+    </li>
+  );
+}
+
+function Lines({ lines, total, label, onOpen, children }: { lines: SpendLine[]; total: number; label: string; onOpen?: (agentId: string | null) => void; children?: ReactNode }) {
+  return (
+    <section aria-label={label} className="min-w-0">
+      <h3 className="rcpt-head">{label}</h3>
+      <ul>
+        {lines.map((l, i) => (
+          <Line key={l.key} line={l} total={total} index={i} onOpen={onOpen} />
+        ))}
+      </ul>
+      <div className="rcpt-total">
+        <span>Total</span>
+        <span className="tabular-nums text-ink">{tokensText(total)}</span>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function ReceiptSkeleton() {
+  return (
+    <div role="status" aria-label="Adding up the chat" className="grid gap-x-8 gap-y-6 @xl:grid-cols-2 @4xl:grid-cols-3">
+      {[0, 1, 2].map((c) => (
+        <div key={c} className="space-y-3">
+          <Skeleton className="h-4 w-28" />
+          {[0, 1, 2, 3, 4].map((r) => (
+            <Skeleton key={r} className="h-8" />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export interface ReceiptState {
+  data: Receipt | null;
+  error: string | null;
+  loading: boolean;
+  reload: (silent?: boolean) => void;
+}
+
+/**
+ * Where the chat's tokens went: who used them, what they were, which line items were biggest,
+ * and anything worth a look. Every list adds up to the chat's tokens; what no line explains is
+ * "Everything else". Dollars are only estimates and show up in the hover text. The items and
+ * flags are estimates read from the transcript, marked "about" or "~".
+ */
+export function ReceiptPane({ state, sessionId, onOpenHelper }: { state: ReceiptState; sessionId: string; onOpenHelper: (agentId: string | null) => void }) {
+  const intro = useIntro(`receipt:${sessionId}`);
+  const [box, boxRef] = useBox();
+  const r = state.data;
+
+  if (state.error && !r) {
+    return (
+      <div role="alert" className="flex items-center gap-3 text-body text-ink-2">
+        <span className="text-danger">{state.error}</span>
+        <Button onClick={() => state.reload(false)}>Try again</Button>
+      </div>
+    );
+  }
+  if (!r) {
+    if (state.loading) return <ReceiptSkeleton />;
+    return <p className="text-body text-ink-2">This chat is not in the usage cache any more.</p>;
+  }
+
+  const total = r.totalTokens;
+  const reads = cacheReads(r);
+  // Three columns side by side: size the third to the room it has so nothing needs a scrollbar.
+  // Narrower, it sits under the others and the pane scrolls if it must.
+  const wide = box.w >= WIDE_PX && box.h > 0;
+  const fit = wide ? fitColumn(box.h - FOOTER_PX, r.flags.length, Math.min(8, r.items.length)) : null;
+  const flags = r.flags.slice(0, fit ? fit.flags : FLAGS_SHOWN);
+  const itemLimit = fit ? fit.items : flags.length > 0 ? 6 : 8;
+  // The figure is tokens, so the biggest in tokens comes first.
+  const items = [...r.items].sort((a, b) => b.tokens - a.tokens).slice(0, itemLimit);
+  const itemsOther = Math.max(0, total - items.reduce((s, i) => s + i.tokens, 0));
+  const itemRest = r.items.length - items.length;
+
+  return (
+    <div ref={boxRef} className={`flex h-full min-h-0 flex-col ${intro ? "intro" : ""}`}>
+      <div className="rcpt-scroll grid min-h-0 flex-1 content-start gap-x-8 gap-y-6 @xl:grid-cols-2 @4xl:grid-cols-3">
+        <Lines label="Who used it" lines={whoUsed(r)} total={total} onOpen={r.threads.length > 1 ? onOpenHelper : undefined} />
+
+        <div className="min-w-0 space-y-6">
+          <Lines label="What it used" lines={whatItUsed(r)} total={total}>
+            {reads.tokens > 0 && (
+              <p className="mt-1 text-caption text-ink-2" title={`Cache reads: ${tokensText(reads.tokens)}, ${guess(reads.usd)}`}>
+                {`Plus ${compact(reads.tokens)} cache reads, listed apart`}
+              </p>
+            )}
+          </Lines>
+          {r.models.length > 1 && <Lines label="By model" lines={byModel(r)} total={total} />}
+        </div>
+
+        <section aria-label="Biggest line items" className="min-w-0 @xl:col-span-2 @4xl:col-span-1">
+          {flags.length > 0 && (
+            <div className="mb-5">
+              <h3 className="rcpt-head">Worth a look</h3>
+              <ul className="space-y-2">
+                {flags.map((f, i) => {
+                  const t = flagText(f);
+                  return (
+                    <li key={`${f.kind}:${f.label}:${i}`} className="rcpt-flag">
+                      <Warning size={14} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
+                      <div className="min-w-0">
+                        <div className="text-caption text-warning">{t.kicker}</div>
+                        <div className="truncate text-body text-ink" title={t.title}>
+                          {t.name}
+                        </div>
+                        <div className="truncate text-caption text-ink-2" title={t.title}>
+                          {t.detail}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              {r.flags.length > flags.length && <p className="mt-1 text-caption text-ink-2">{`${plural(r.flags.length - flags.length, "more flag")}`}</p>}
+            </div>
+          )}
+
+          <h3 className="rcpt-head">Biggest line items</h3>
+          {!r.scanned ? (
+            <p className="text-body text-ink-2">The chat file is gone, so line items cannot be read.</p>
+          ) : items.length === 0 ? (
+            <p className="text-body text-ink-2">Nothing here stood out.</p>
+          ) : (
+            <>
+            <ul>
+              {items.map((i, n) => (
+                <li key={`${i.kind}:${i.tool}:${i.path ?? ""}:${i.thread ?? ""}:${n}`} className="rcpt-item" title={itemTitleFull(i)}>
+                  <div className="min-w-0">
+                    <div className="truncate text-body text-ink" title={itemTitle(i)}>
+                      {itemTitle(i)}
+                    </div>
+                    <div className="truncate text-caption text-ink-2">{[itemDetail(i), i.thread].filter(Boolean).join(", ")}</div>
+                  </div>
+                  <span className="shrink-0 text-body tabular-nums text-ink">{`~${compact(i.tokens)}`}</span>
+                </li>
+              ))}
+              {(itemsOther >= 1 || itemRest > 0) && (
+                <li className="rcpt-item">
+                  <span className="text-body text-ink-2">Everything else</span>
+                  <span className="shrink-0 text-body tabular-nums text-ink-2">{compact(itemsOther)}</span>
+                </li>
+              )}
+            </ul>
+            <div className="rcpt-total">
+              <span>Total</span>
+              <span className="tabular-nums text-ink">{tokensText(total)}</span>
+            </div>
+            </>
+          )}
+        </section>
+      </div>
+
+      <p className="mt-4 shrink-0 text-caption text-ink-2">All figures are estimates.</p>
+    </div>
+  );
+}

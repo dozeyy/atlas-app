@@ -1480,4 +1480,347 @@ html.reduced .seg-item:active .seg-face,
 html.reduced .nav-item:active .nav-face {
   transform: none;
 }
+
+/* ---- Session detail: one screen, tabs instead of a long page ------------------------------- */
+/* The page fills the window under the title bar; a pane scrolls only when it truly cannot fit. */
+.session-fit {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--titlebar-h) - 2 * var(--gutter-y));
+  min-height: 30rem;
+}
+.session-pane {
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 16px -8px 0;
+  padding: 0 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* The receipt: plain lines, a hairline and a total, nothing boxed. */
+.rcpt-head {
+  margin-bottom: 6px;
+  font-size: var(--text-caption);
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+/* When the lists cannot fit, they scroll in their own pane and the estimates line stays below them. */
+.rcpt-scroll {
+  margin: 0 -8px;
+  padding: 0 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.rcpt-line {
+  display: block;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 5px 8px 6px;
+  border-radius: var(--radius-control);
+  text-align: left;
+}
+.rcpt-line-btn {
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.rcpt-line-btn:hover {
+  background: var(--raised);
+}
+.rcpt-line-btn:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: -2px;
+}
+.rcpt-bar > i {
+  background: var(--bar, var(--accent));
+}
+.rcpt-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-body);
+  line-height: 20px;
+  color: var(--ink-2);
+}
+.rcpt-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-control);
+}
+.rcpt-flag {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  background: var(--warning-tint);
+}
+
+/* The helper map and the slice of whatever is selected. */
+.map-grid {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(14rem, 1fr) auto;
+  gap: 16px;
+}
+@container (min-width: 36rem) {
+  .map-grid {
+    grid-template-columns: minmax(0, 1fr) clamp(15rem, 28%, 17rem);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 24px;
+  }
+}
+.slice {
+  min-height: 0;
+  max-height: 14rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+@container (min-width: 36rem) {
+  .slice {
+    max-height: none;
+    padding: 0 0 0 20px;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+}
+.slice-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  margin-top: 7px;
+  border-radius: 50%;
+}
+.slice-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 10px;
+}
+.details-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@container (min-width: 48rem) {
+  .details-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* The helper map: a pane that scrolls inside itself when the tree is bigger than the room. */
+.map-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+.map-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.map-scroll > .chart-wrap.map {
+  flex: none;
+}
+.map > svg.chart {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.map-link {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  transition:
+    stroke var(--dur-fast) var(--ease-out),
+    stroke-width var(--dur-fast) var(--ease-out);
+}
+.map-link.on {
+  stroke: var(--accent-text);
+  stroke-width: 2.25;
+}
+.map-node {
+  cursor: pointer;
+  outline: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.map.has-focus .map-node:not(.on) {
+  opacity: 0.4;
+}
+.map-hit {
+  fill: transparent;
+}
+/* A bubble wears the colour of how the helper ended; its icon is its model. */
+.map-body {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: scale 180ms var(--ease-spring);
+}
+.map-node:hover .map-body,
+.map-node:focus-visible .map-body {
+  scale: 1.1;
+}
+.map-dot {
+  fill: color-mix(in srgb, var(--c) 20%, var(--surface));
+  stroke: var(--c);
+  stroke-width: 2;
+  transition: fill var(--dur-fast) var(--ease-out);
+}
+.map-node:hover .map-dot,
+.map-node:focus-visible .map-dot,
+.map-node.sel .map-dot {
+  fill: color-mix(in srgb, var(--c) 34%, var(--surface));
+}
+.map-glyph {
+  fill: none;
+  stroke: var(--c, var(--ink-2));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.map-glyph-fill {
+  fill: var(--c, var(--ink-2));
+  stroke: none;
+}
+.map-node.root .map-dot {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.map-node.root .map-glyph {
+  stroke: var(--on-accent);
+}
+.map-node.more .map-dot {
+  stroke-dasharray: 3 3;
+  fill: var(--raised);
+}
+.map-plus {
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--ink-2);
+  pointer-events: none;
+}
+.map-ring {
+  fill: none;
+  stroke: var(--accent-text);
+  stroke-width: 2;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.map-node.sel .map-ring,
+.map-node:focus-visible .map-ring {
+  opacity: 1;
+}
+.map-name {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.map-node.sel .map-name {
+  fill: var(--ink);
+}
+/* The name plate: shown for the bubble pointed at or focused, placed clear of every other one. */
+.map-plate {
+  pointer-events: none;
+  filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.18));
+  animation: map-plate-in 120ms var(--ease-out) backwards;
+}
+.map-plate rect {
+  fill: var(--surface);
+  stroke: var(--line-strong);
+}
+.map-plate-name {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--ink);
+}
+.map-plate-detail {
+  font-size: 11px;
+  fill: var(--ink-2);
+}
+@keyframes map-plate-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.map-legend {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding-top: 10px;
+  font-size: var(--text-caption);
+  line-height: 16px;
+  color: var(--ink-2);
+}
+.map-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.map-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.map-legend-glyph .map-glyph {
+  stroke: var(--ink-2);
+}
+/* Enter: the lines draw out from the middle, then the dots pop in ring by ring. */
+.intro .map-link {
+  stroke-dasharray: 1;
+  animation: map-draw 520ms var(--ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 30) * 18ms + 60ms);
+}
+@keyframes map-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+.intro .map-node {
+  transform-origin: 0 0;
+  animation: map-pop 380ms var(--ease-spring) backwards;
+  animation-delay: calc(min(var(--i, 0), 30) * 18ms + 120ms);
+}
+@keyframes map-pop {
+  from { opacity: 0; scale: 0.3; }
+  to { opacity: 1; scale: 1; }
+}
+html.reduced .intro .map-link,
+html.reduced .intro .map-node {
+  animation-name: t-fade !important;
+  stroke-dasharray: none;
+}
+html.reduced .map-plate {
+  animation: none;
+}
+html.reduced .map-node:hover .map-body,
+html.reduced .map-node:focus-visible .map-body {
+  scale: 1;
+}
+}
+
+/* A bubble on the helper map shows focus with its own ring, not the page-wide box (that rule is outside the layer). */
+.map-node:focus-visible {
+  outline: none;
 }

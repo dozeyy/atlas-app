@@ -49,13 +49,13 @@ pub struct Cost {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-struct Group {
-    t: Tokens,
-    cost: Option<f64>,
+pub(crate) struct Group {
+    pub(crate) t: Tokens,
+    pub(crate) cost: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-struct Acc {
+pub(crate) struct Acc {
     t: Tokens,
     usd: f64,
     priced: bool,
@@ -63,7 +63,7 @@ struct Acc {
 }
 
 impl Acc {
-    fn add(&mut self, g: &Group) {
+    pub(crate) fn add(&mut self, g: &Group) {
         self.t.input += g.t.input;
         self.t.output += g.t.output;
         self.t.cache_write5m += g.t.cache_write5m;
@@ -80,7 +80,7 @@ impl Acc {
             None => self.unpriced += g.t.total,
         }
     }
-    fn cost(&self) -> Cost {
+    pub(crate) fn cost(&self) -> Cost {
         let none_priced = !self.priced && self.unpriced > 0;
         Cost { usd: if none_priced { None } else { Some(self.usd) }, complete: self.unpriced == 0, unpriced_tokens: self.unpriced }
     }
@@ -394,11 +394,11 @@ pub struct FilterOptions {
 
 // ---------------------------------------------------------------- helpers
 
-fn u(v: i64) -> u64 {
+pub(crate) fn u(v: i64) -> u64 {
     v.max(0) as u64
 }
 
-fn group_from(row: &rusqlite::Row, at: usize) -> rusqlite::Result<Group> {
+pub(crate) fn group_from(row: &rusqlite::Row, at: usize) -> rusqlite::Result<Group> {
     let g = |i: usize| row.get::<_, i64>(at + i).map(u);
     let (input, output, w5, w1, cr, ws, wf) = (g(0)?, g(1)?, g(2)?, g(3)?, g(4)?, g(5)?, g(6)?);
     Ok(Group {
@@ -416,7 +416,7 @@ fn group_from(row: &rusqlite::Row, at: usize) -> rusqlite::Result<Group> {
     })
 }
 
-const SUMS: &str = "SUM(input), SUM(output), SUM(cw5m), SUM(cw1h), SUM(cr), SUM(web_search), SUM(web_fetch), \
+pub(crate) const SUMS: &str = "SUM(input), SUM(output), SUM(cw5m), SUM(cw1h), SUM(cr), SUM(web_search), SUM(web_fetch), \
      cost_usd(model, speed, geo, service_tier, price_tier, SUM(input), SUM(output), SUM(cw5m), SUM(cw1h), SUM(cr), SUM(web_search))";
 
 struct GroupRow {
@@ -940,7 +940,7 @@ fn row_ids_clause(ids: &[String]) -> (String, Vec<Value>) {
 }
 
 /// Build `SessionRow`s for exactly these ids, in this order.
-fn session_rows_for(conn: &Connection, ctx: &QueryCtx, ids: &[String]) -> rusqlite::Result<Vec<SessionRow>> {
+pub(crate) fn session_rows_for(conn: &Connection, ctx: &QueryCtx, ids: &[String]) -> rusqlite::Result<Vec<SessionRow>> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -1163,7 +1163,7 @@ pub fn sessions_list(conn: &Connection, ctx: &QueryCtx, q: &SessionQuery) -> rus
 /// Every subagent of a session with its spend, in start order. Agents with a registry row but
 /// no priced messages are listed with zeros; messages from an agent with no row (a transcript
 /// without a sidecar read through some other path) get a synthesized one.
-fn agent_summaries(conn: &Connection, id: &str) -> rusqlite::Result<Vec<AgentSummary>> {
+pub(crate) fn agent_summaries(conn: &Connection, id: &str) -> rusqlite::Result<Vec<AgentSummary>> {
     struct Reg {
         agent_type: Option<String>,
         description: Option<String>,

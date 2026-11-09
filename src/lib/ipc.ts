@@ -15,6 +15,7 @@ import type {
   AgentDetail,
   ItemQuery,
   ItemUse,
+  Receipt,
   SearchPage,
   SearchStatus,
   SessionPage,
@@ -104,6 +105,8 @@ export interface Backend {
   sessionsList(query: SessionQuery): Promise<SessionPage>;
   sessionDetail(sessionId: string): Promise<SessionDetail | null>;
   agentDetail(sessionId: string, agentId: string): Promise<AgentDetail | null>;
+  /** Where one chat's money went, and the helper tree's numbers. Read from the files once, then kept. */
+  sessionReceipt(sessionId: string): Promise<Receipt | null>;
   usageByItem(query: ItemQuery): Promise<ItemUse[]>;
   sessionTranscript(sessionId: string, cursor?: string | null, limit?: number): Promise<TranscriptPage>;
   usageFilterOptions(): Promise<FilterOptions>;
@@ -190,6 +193,7 @@ const tauriBackend: Backend = {
   sessionsList: (query) => invoke<SessionPage>("sessions_list", { query }),
   sessionDetail: (sessionId) => invoke<SessionDetail | null>("session_detail", { sessionId }),
   agentDetail: (sessionId, agentId) => invoke<AgentDetail | null>("usage_agent_detail", { sessionId, agentId }),
+  sessionReceipt: (sessionId) => invoke<Receipt | null>("session_receipt", { sessionId }),
   usageByItem: (query) => invoke<ItemUse[]>("usage_by_item", { query }),
   sessionTranscript: (sessionId, cursor = null, limit = 50) =>
     invoke<TranscriptPage>("session_transcript", { sessionId, cursor, limit }),

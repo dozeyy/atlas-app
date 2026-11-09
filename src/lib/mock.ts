@@ -161,6 +161,7 @@ export class MockBackend {
   sessionsList: Backend["sessionsList"] = (q) => this.usage.sessionsList(q);
   sessionDetail: Backend["sessionDetail"] = (id) => this.usage.sessionDetail(id);
   agentDetail: Backend["agentDetail"] = (s, a) => this.usage.agentDetail(s, a);
+  sessionReceipt: Backend["sessionReceipt"] = (id) => this.usage.sessionReceipt(id);
   usageByItem: Backend["usageByItem"] = (q) => this.usage.usageByItem(q);
   sessionTranscript: Backend["sessionTranscript"] = (id, c, l) => this.usage.sessionTranscript(id, c, l);
   usageFilterOptions = () => this.usage.usageFilterOptions();

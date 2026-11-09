@@ -290,6 +290,12 @@ pub async fn session_detail(state: Shared<'_>, session_id: String) -> Result<Opt
     blocking(state.usage.engine(), move |e| e.session_detail(&session_id)).await
 }
 
+/// Where one chat's money went, and the helper tree's numbers (read once, then kept in the cache).
+#[tauri::command]
+pub async fn session_receipt(state: Shared<'_>, session_id: String) -> Result<Option<atlas_core::usage::receipt::Receipt>, String> {
+    blocking(state.usage.engine(), move |e| e.receipt(&session_id)).await
+}
+
 #[tauri::command]
 pub async fn usage_by_item(state: Shared<'_>, query: ItemQuery) -> Result<Vec<ItemUse>, String> {
     blocking(state.usage.engine(), move |e| e.usage_by_item(&query)).await

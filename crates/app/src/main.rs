@@ -88,6 +88,7 @@ fn main() {
             usage::sessions_list,
             usage::session_detail,
             usage::usage_agent_detail,
+            usage::session_receipt,
             usage::usage_by_item,
             usage::session_transcript,
             usage::usage_filter_options,
