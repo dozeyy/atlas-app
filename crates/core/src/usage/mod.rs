@@ -44,7 +44,7 @@ use time::{now_ms, Tz};
 /// Bump to make every install re-read its transcripts once (D30).
 /// "4": effort per reply, and a replayed reply line with zeroed counts no longer wins its key.
 /// "5": the helper ledger (agent runs, verdicts, findings).
-pub const PARSER_VERSION: &str = "5";
+pub const PARSER_VERSION: &str = "6";
 
 // ---------------------------------------------------------------- config
 

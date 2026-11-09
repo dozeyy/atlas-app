@@ -97,8 +97,11 @@ pub struct VerdictCounts {
     pub pass: u32,
     /// The reports that asked for changes (FIX-REQUIRED, FAIL, BLOCKED, ...).
     pub findings: u32,
+    /// The reports that said `STATUS: partial` (they did not get all the way).
+    pub partial: u32,
     /// Any other verdict word.
     pub other: u32,
+    /// No verdict stated (a bare `STATUS: done` is none: it says the helper finished, not how it went).
     pub none: u32,
 }
 
@@ -292,6 +295,8 @@ struct RunRec {
     end_source: Option<String>,
     verdict: Option<Verdict>,
     verdict_word: Option<String>,
+    /// The verdict came from the `STATUS:` line (stored as `STATUS:<WORD>`), not a Verdict line.
+    verdict_from_status: bool,
     worktree_branch: Option<String>,
     tool_use_id: Option<String>,
     project_key: String,
@@ -338,6 +343,8 @@ fn load_ledger(conn: &Connection) -> rusqlite::Result<Ledger> {
     )?;
     let runs: Vec<RunRec> = st
         .query_map([], |r| {
+            let word: Option<String> = r.get(9)?;
+            let from_status = word.as_deref().is_some_and(|w| w.starts_with(reviews::STATUS_PREFIX));
             Ok(RunRec {
                 session_id: r.get(0)?,
                 agent_id: r.get(1)?,
@@ -348,7 +355,8 @@ fn load_ledger(conn: &Connection) -> rusqlite::Result<Ledger> {
                 end_status: r.get(6)?,
                 end_source: r.get(7)?,
                 verdict: r.get::<_, Option<String>>(8)?.as_deref().and_then(Verdict::parse),
-                verdict_word: r.get(9)?,
+                verdict_word: word.map(|w| w.strip_prefix(reviews::STATUS_PREFIX).map_or(w.clone(), str::to_string)),
+                verdict_from_status: from_status,
                 worktree_branch: r.get(10)?,
                 tool_use_id: r.get(11)?,
                 project_key: r.get(12)?,
@@ -363,7 +371,8 @@ fn load_ledger(conn: &Connection) -> rusqlite::Result<Ledger> {
     for r in &runs {
         let e = stats.entry(r.agent_type.as_str()).or_default();
         e.0 += 1;
-        if r.verdict.is_some() {
+        // Only a Verdict line makes a type a reviewer; a worker's `STATUS: partial` does not.
+        if r.verdict.is_some() && !r.verdict_from_status {
             e.1 += 1;
         }
     }
@@ -639,6 +648,7 @@ pub fn agent_scorecard(conn: &Connection, ctx: &QueryCtx, a: &ScorecardArgs) -> 
                 match r.verdict {
                     Some(Verdict::Pass) => verdicts.pass += 1,
                     Some(Verdict::Findings) => verdicts.findings += 1,
+                    Some(Verdict::Partial) => verdicts.partial += 1,
                     Some(Verdict::Other) => verdicts.other += 1,
                     None => verdicts.none += 1,
                 }
@@ -1002,7 +1012,8 @@ pub fn run_debrief(conn: &Connection, ctx: &QueryCtx, a: &DebriefArgs) -> rusqli
         match t.verdict {
             Some(Verdict::Pass) => rv.passed += 1,
             Some(Verdict::Findings) => rv.findings += 1,
-            Some(Verdict::Other) => rv.other += 1,
+            // A report that only got part of the way is not a pass; the debrief counts it with "other".
+            Some(Verdict::Partial | Verdict::Other) => rv.other += 1,
             None => rv.no_verdict += 1,
         }
         rv.sent_back += t.sent_back.len() as u32;

@@ -409,7 +409,8 @@ fn worker(
                             batch.run.setting = Some(name.clone());
                         }
                         if let LineEvent::Message(m) = &ev
-                            && (task.is_subagent || rs.setting_seen)                            && rs.msg_seen.insert(m.key.clone())
+                            && (task.is_subagent || rs.setting_seen)
+                            && rs.msg_seen.insert(m.key.clone())
                         {
                             let effort = super::line::effort_of(l).unwrap_or_default();
                             *batch.run.models.entry((m.model.clone(), effort)).or_default() += 1;
@@ -1082,7 +1083,7 @@ fn apply_ledger(tx: &rusqlite::Transaction, task: &FileTask, b: &Batch, file_age
                 params![
                     sid,
                     aid,
-                    rep.verdict.as_ref().map(|v| v.word.as_str()),
+                    rep.verdict.as_ref().map(|v| if v.status { format!("{}{}", reviews::STATUS_PREFIX, v.word) } else { v.word.clone() }),
                     rep.verdict.as_ref().map(|v| v.class.as_str()),
                     rep.findings.len() as i64
                 ],
