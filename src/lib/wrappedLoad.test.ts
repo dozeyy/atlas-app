@@ -5,17 +5,17 @@ const row = (key: string, label: string) => ({ key, label });
 
 describe("uniqueLabels", () => {
   it("leaves distinct names alone, in order", () => {
-    const rows = [row("C--Users-Will-Documents-atlas", "atlas"), row("C--Users-Will-Documents-site", "site")];
+    const rows = [row("C--Users-you-Documents-atlas", "atlas"), row("C--Users-you-Documents-site", "site")];
     expect(uniqueLabels(rows)).toEqual(rows);
   });
 
   it("tells two folders of the same name apart by their parent", () => {
     const out = uniqueLabels([
-      row("C--Users-Will-Documents-Minecraft-Mods-Origin-Client", "Origin Client"),
-      row("C--Users-Will-Documents-Desktop-Apps-Origin-Client", "Origin Client"),
-      row("C--Users-Will-Documents-atlas", "atlas"),
+      row("C--Users-you-Documents-Side-Projects-Trail-Guide", "Trail Guide"),
+      row("C--Users-you-Documents-Work-Apps-Trail-Guide", "Trail Guide"),
+      row("C--Users-you-Documents-atlas", "atlas"),
     ]);
-    expect(out.map((r) => r.label)).toEqual(["Origin Client (Minecraft Mods)", "Origin Client (Desktop Apps)", "atlas"]);
+    expect(out.map((r) => r.label)).toEqual(["Trail Guide (Side Projects)", "Trail Guide (Work Apps)", "atlas"]);
     expect(new Set(out.map((r) => r.label)).size).toBe(3);
   });
 
@@ -35,19 +35,19 @@ describe("uniqueLabels", () => {
 
   it("hints only with the words that differ, never a word every path shares", () => {
     const out = uniqueLabels([
-      row("C--Users-Will-Documents-Games-Godot-Origin-Client", "Origin Client"),
-      row("C--Users-Will-Documents-Minecraft-Mods-Origin-Client", "Origin Client"),
+      row("C--Users-you-Documents-Games-Demos-Trail-Guide", "Trail Guide"),
+      row("C--Users-you-Documents-Side-Projects-Trail-Guide", "Trail Guide"),
     ]);
-    expect(out.map((r) => r.hint)).toEqual(["Games Godot", "Minecraft Mods"]);
-    expect(out.map((r) => r.label)).toEqual(["Origin Client (Games Godot)", "Origin Client (Minecraft Mods)"]);
+    expect(out.map((r) => r.hint)).toEqual(["Games Demos", "Side Projects"]);
+    expect(out.map((r) => r.label)).toEqual(["Trail Guide (Games Demos)", "Trail Guide (Side Projects)"]);
     // A shared parent at the end of the path is not a difference either.
     const shared = uniqueLabels([row("C--w-Alpha-Apps-tool", "tool"), row("C--w-Beta-Apps-tool", "tool")]);
     expect(shared.map((r) => r.hint)).toEqual(["Alpha", "Beta"]);
   });
 
   it("counts them when one path is the other's parent, instead of repeating a shared word", () => {
-    const out = uniqueLabels([row("C--Users-Will-Documents-Origin-Client", "Origin Client"), row("C--Users-Will-Documents-Games-Origin-Client", "Origin Client")]);
-    expect(out.map((r) => r.label)).toEqual(["Origin Client (1)", "Origin Client (2)"]);
+    const out = uniqueLabels([row("C--Users-you-Documents-Trail-Guide", "Trail Guide"), row("C--Users-you-Documents-Games-Trail-Guide", "Trail Guide")]);
+    expect(out.map((r) => r.label)).toEqual(["Trail Guide (1)", "Trail Guide (2)"]);
   });
 
   it("counts them when the hints would not be told apart, or the name is not ASCII", () => {

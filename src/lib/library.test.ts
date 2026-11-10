@@ -8,14 +8,19 @@ import {
   DIRECTORY,
   INSTALLED,
   NO_CLI,
+  INSTALLED_HEAD,
+  buildList,
   buildRows,
   indexEntries,
   insideWords,
   installBlock,
   installSummary,
   isStale,
+  changedCount,
+  entryTopic,
   mpId,
   parseGithub,
+  rowName,
   searchEntries,
   sourceOptions,
   toolkitIdFor,
@@ -130,10 +135,106 @@ describe("Library rows and sources", () => {
     expect(buildRows({ idx, installed: [plugin, item], source: INSTALLED, query: "tid" }).map((r) => r.key)).toEqual(["item:b2"]);
   });
 
+  it("with nothing typed, keeps the catalog's own order, the directory before added marketplaces", () => {
+    // The captured file lists a local marketplace entry first, then the directory in its own (ranked) order.
+    const captured = fixture();
+    expect(captured[0]!.marketplace).not.toBe(DIRECTORY);
+    const rows = buildRows({ idx: indexEntries(captured), installed: [], source: ALL, query: "" });
+    expect(rows.slice(0, 3).map((r) => rowName(r))).toEqual(["superpowers", "frontend-design", "design"]);
+    expect(rows.at(-1)!.key).toBe(captured[0]!.pluginId);
+    expect(rows).toHaveLength(captured.length);
+    // One marketplace on its own keeps its order too, and typed words still rank by match.
+    const z = entry("zulu", "Last letter, listed first");
+    const own = indexEntries([z, a, b]);
+    expect(buildRows({ idx: own, installed: [], source: mpId(DIRECTORY), query: "" }).map((r) => rowName(r))).toEqual(["zulu", "alpha"]);
+    expect(buildRows({ idx: own, installed: [], source: ALL, query: "alp" }).map((r) => rowName(r))).toEqual(["alpha"]);
+  });
+
+  it("the Installed filter puts what changed since it was checked first", () => {
+    const z = entry("zulu", "Last");
+    const changed: InstalledRow = { ...plugin, id: z.pluginId, name: "zulu", backupId: "b3", changed: true };
+    const rows = buildRows({ idx: indexEntries([a, b, z]), installed: [plugin, item, changed], source: INSTALLED, query: "" });
+    expect(rows.map((r) => r.key)).toEqual([z.pluginId, a.pluginId, "item:b2"]);
+  });
+
+  it("the Installed source says how many changed, counting only plugins the list can show as changed", () => {
+    const z = entry("zulu", "Last");
+    const changed: InstalledRow = { ...plugin, id: z.pluginId, name: "zulu", backupId: "b3", changed: true };
+    const gone: InstalledRow = { ...plugin, id: "left@nowhere", name: "left", backupId: "b4", changed: true }; // no longer in the catalog: no chip on its row
+    const n = changedCount(indexEntries([a, b, z]), [plugin, item, changed, gone]);
+    expect(n).toBe(1);
+    const flag = (count: number) => sourceOptions(3, {}, [], 4, count).find((o) => o.id === INSTALLED)?.flag;
+    expect(flag(1)).toEqual({ short: "1 changed", full: "1 changed since you checked it" });
+    expect(flag(2)?.full).toBe("2 changed since you checked them");
+    expect(flag(0)).toBeUndefined();
+    expect(sourceOptions(3, {}, [], 4, 2).filter((o) => o.flag)).toHaveLength(1);
+  });
+
+  it("under All with nothing typed: what you have first, then each marketplace under its own heading", () => {
+    const z = entry("zulu", "Last");
+    const c = entry("gamma", "Third", "community");
+    const all = indexEntries([c, a, z, b]);
+    const changed: InstalledRow = { ...plugin, id: b.pluginId, name: "beta", backupId: "b3", changed: true };
+    const have: InstalledRow = { ...plugin, id: z.pluginId, name: "zulu", backupId: "b4" };
+    const list = buildList({ idx: all, installed: [have, changed], source: ALL, query: "" });
+    // Changed first among the installed, then the directory in its own order, then the others.
+    expect(list.rows.map((r) => rowName(r))).toEqual(["beta", "zulu", "alpha", "gamma"]);
+    expect(list.heads).toEqual([
+      { at: 0, label: INSTALLED_HEAD },
+      { at: 2, label: "Claude plugin directory" },
+      { at: 3, label: "community" },
+    ]);
+    // The heading says where a row is from, so the row does not.
+    expect(list.showSource).toBe(false);
+  });
+
+  it("no headings when they would say nothing, and the source back on the row when plugins from several places mix", () => {
+    const one = buildList({ idx: indexEntries([a, entry("zulu")]), installed: [], source: ALL, query: "" });
+    expect(one.heads).toEqual([]); // one group: a heading over the whole list is noise
+    const typed = buildList({ idx, installed: [plugin], source: ALL, query: "alp" });
+    expect(typed.heads).toEqual([]); // typed words rank by match, across sources
+    expect(typed.showSource).toBe(true);
+    const single = buildList({ idx, installed: [plugin], source: mpId("community"), query: "" });
+    expect(single.heads).toEqual([]);
+    expect(single.showSource).toBe(false); // the rail already says which one
+    expect(buildList({ idx, installed: [plugin, item], source: INSTALLED, query: "" }).showSource).toBe(true);
+  });
+
   it("says why a plugin cannot be installed", () => {
     expect(installBlock({ ...a, byCommand: true }, true)).toBe(COMMAND_SOURCE);
     expect(installBlock(a, false)).toBe(NO_CLI);
     expect(installBlock(a, true)).toBeNull();
+  });
+});
+
+describe("What a row is about", () => {
+  const t = (name: string, description = "") => entryTopic({ name, description });
+
+  it("reads the name first, so a word in passing in the description never wins", () => {
+    // "review" is in terraform's description, but its name already says what it is.
+    expect(t("terraform", "Plan and review infrastructure changes.")).toBe("cloud");
+    expect(t("code-review", "Review a pull request for bugs, regressions and style.")).toBe("review");
+    expect(t("commit-commands", "Commit, push and open a pull request in one step.")).toBe("commands");
+  });
+
+  it("names what a plugin adds to Claude Code before what it is for", () => {
+    expect(t("explanatory-output-style", "Adds short notes on why Claude chose a pattern.")).toBe("style");
+    expect(t("typescript-lsp", "Language server for TypeScript.")).toBe("language");
+    expect(t("hookify", "Turn a repeated correction into a rule.")).toBe("hooks");
+    expect(t("agent-sdk-dev", "Start and check a new Agent SDK app.")).toBe("agents");
+  });
+
+  it("falls back to the description, and to a plain plugin when the words say nothing", () => {
+    expect(t("playwright", "Drive a browser to check a page works.")).toBe("web");
+    expect(t("helper", "Write and explain database queries.")).toBe("data");
+    expect(t("superpowers", "A little of everything.")).toBe("plugin");
+    expect(entryTopic({ name: "zeta" })).toBe("plugin");
+  });
+
+  it("matches whole words, not letters inside one", () => {
+    // "ui" is not in "build", "git" is not in "digital", "pr" is not a rule at all.
+    expect(t("quick-guide", "A digital guide.")).toBe("plugin");
+    expect(t("fruit", "Suits everyone.")).toBe("plugin");
   });
 });
 

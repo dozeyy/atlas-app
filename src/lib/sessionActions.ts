@@ -2,6 +2,7 @@
 // Each says what happened in a toast, so a press never feels silent.
 
 import { getBackend } from "./ipc";
+import { engineLineWords } from "./sessionWords";
 import { pushToast } from "../state/toastStore";
 
 /** Puts a "resume this chat" command (from `resumeCommand`) on the clipboard. */
@@ -19,6 +20,7 @@ export async function openFolder(sessionId: string): Promise<void> {
   try {
     await getBackend().sessionOpenFolder(sessionId);
   } catch (e) {
-    pushToast({ message: e instanceof Error ? e.message : String(e), tone: "error" });
+    // The engine's own sentence still says "chat" ("This chat has no project folder.").
+    pushToast({ message: engineLineWords(e instanceof Error ? e.message : String(e)), tone: "error" });
   }
 }

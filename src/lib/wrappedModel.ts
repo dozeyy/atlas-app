@@ -4,7 +4,8 @@
 // slide, one hero figure or graphic, one short line, and no fact on two slides (the end card
 // recaps them on purpose: it is the picture you save).
 
-import { addDays, compact, exact, formatDuration, headline, plural } from "./usage";
+import { typeName } from "./helperProgress";
+import { addDays, compact, exact, formatDuration, headline, hourName, plural } from "./usage";
 import type { ItemUse, SessionRow, TimelinePoint, WrappedHabits } from "./usageTypes";
 
 /** Stated conversion for the novels line: an estimate, never a measurement. */
@@ -141,10 +142,9 @@ export function hourTotals(points: TimelinePoint[]): number[] {
   return out;
 }
 
-export function hourLabel(h: number): string {
-  const suffix = h < 12 ? "AM" : "PM";
-  const twelve = h % 12 === 0 ? 12 : h % 12;
-  return `${twelve} ${suffix}`;
+/** An hour as the rest of the app writes it: "10 PM", or "22:00" on a 24 hour computer. */
+export function hourLabel(h: number, locale?: string): string {
+  return hourName(h, locale);
 }
 
 export function peakHour(hours: number[]): number | null {
@@ -212,8 +212,9 @@ export function novelsHint(tokens: number): string {
   );
 }
 
-/** 0..1 heights for the small ridge on the share card: the days in `n` even bins, then normalised. */
-export function cardRidge(dayTokens: number[], n = 40): number[] {
+/** 0..1 heights for the small ridge on the share card: the days in `n` even bins (shareCard.RIDGE_POINTS,
+ * so the card's curve goes through these bins exactly, not a second bucketing), then normalised. */
+export function cardRidge(dayTokens: number[], n = 32): number[] {
   if (dayTokens.length === 0) return [];
   const bins = Math.min(n, dayTokens.length);
   const out = new Array<number>(bins).fill(0);
@@ -304,10 +305,10 @@ export const CODER_RULES: Rule[] = [
   {
     id: "marathoner",
     name: "Marathoner",
-    line: "You stay in one chat for hours.",
+    line: "You stay in one session for hours.",
     bar: 0.2,
     value: (d) => chatShare(d, (h) => h.longChats),
-    why: (d, v) => `${exact(d.habits?.longChats ?? 0)} of ${exact(d.habits?.chats ?? 0)} chats (${pct(v)}) ran two hours or more. Marathoner starts at 20%.`,
+    why: (d, v) => `${exact(d.habits?.longChats ?? 0)} of ${exact(d.habits?.chats ?? 0)} sessions (${pct(v)}) ran two hours or more. Marathoner starts at 20%.`,
   },
   {
     id: "sprinter",
@@ -315,15 +316,15 @@ export const CODER_RULES: Rule[] = [
     line: "You get in, get it done, get out.",
     bar: 0.5,
     value: (d) => chatShare(d, (h) => h.shortChats),
-    why: (d, v) => `${exact(d.habits?.shortChats ?? 0)} of ${exact(d.habits?.chats ?? 0)} chats (${pct(v)}) were over in under ten minutes. Sprinter starts at 50%.`,
+    why: (d, v) => `${exact(d.habits?.shortChats ?? 0)} of ${exact(d.habits?.chats ?? 0)} sessions (${pct(v)}) were over in under ten minutes. Sprinter starts at 50%.`,
   },
   {
     id: "toolsmith",
     name: "Toolsmith",
-    line: "You reach for a skill in nearly every chat.",
+    line: "You reach for a skill in nearly every session.",
     bar: 1,
     value: (d) => (d.habits && d.habits.chats >= MIN_CHATS_FOR_TYPE ? d.skillUses / d.habits.chats : null),
-    why: (d) => `${exact(d.skillUses)} skill uses across ${exact(d.habits?.chats ?? 0)} chats. Toolsmith starts at one skill use per chat.`,
+    why: (d) => `${exact(d.skillUses)} skill uses across ${exact(d.habits?.chats ?? 0)} sessions. Toolsmith starts at one skill use per session.`,
   },
   {
     id: "loyalist",
@@ -455,10 +456,12 @@ export function spikeGraphic(d: Pick<WrappedData, "from" | "dayTokens">, busyDay
 /**
  * The name a slide shows for each skill or helper: a plugin's own prefix ("design:design-critique")
  * is dropped, because it only makes the name longer than the slide can print. Two names that would
- * then read the same keep their prefix, so they stay apart.
+ * then read the same keep their prefix, so they stay apart. A connector's tool
+ * ("mcp__server__read_page") is shown by the tool's own name for the same reason.
  */
 export function plainNames(ids: string[]): string[] {
-  const plain = ids.map((id) => id.slice(id.lastIndexOf(":") + 1) || id);
+  const own = (id: string) => (id.startsWith("mcp__") ? id.slice(id.lastIndexOf("__") + 2) : id.slice(id.lastIndexOf(":") + 1));
+  const plain = ids.map((id) => own(id) || id);
   return ids.map((id, i) => (plain.filter((p) => p === plain[i]).length > 1 ? id : plain[i]));
 }
 
@@ -483,14 +486,17 @@ function timesText(ratio: number): string {
 }
 
 /** A slide with a hero item (skill, helper or tool): its name and how often it was used. */
-function itemSlide(id: string, kicker: string, verb: string, list: ItemUse[]): Slide | null {
+function itemSlide(id: string, kicker: string, verb: string, list: ItemUse[], show: (name: string) => string = (n) => n): Slide | null {
   if (list.length === 0) return null;
   const top = list[0];
   const times = plural(top.uses, "time");
+  const name = plainNames(list.map((i) => i.id))[0];
   return {
     id,
     kicker,
-    figure: plainNames(list.map((i) => i.id))[0],
+    figure: show(name),
+    // A shortened name keeps its exact one a hover away.
+    ...(name !== top.id ? { hint: top.id } : {}),
     line: `${verb} ${times} in ${plural(top.sessions, "session")}.`,
     strong: times,
   };
@@ -607,12 +613,12 @@ export function buildSlides(d: WrappedData): Slide[] {
     const times = ratio >= MIN_CHAT_RATIO ? `${timesText(ratio)} times` : null;
     out.push({
       id: "biggest",
-      kicker: "Your biggest chat",
+      kicker: "Your biggest session",
       figure: compact(big),
       unit: "tokens",
-      line: times ? `That is ${times} a usual chat.` : "More than any other single chat.",
+      line: times ? `That is ${times} a usual session.` : "More than any other single session.",
       strong: times ?? undefined,
-      hint: `${exact(big)} tokens in one chat.`,
+      hint: `${exact(big)} tokens in one session.`,
       graphic: times ? { kind: "circles", ratio } : undefined,
     });
   }
@@ -630,7 +636,8 @@ export function buildSlides(d: WrappedData): Slide[] {
   }
 
   const skill = itemSlide("skill", "Your top skill", "Used", d.skills);
-  const helper = itemSlide("helper", "Your go-to helper", "Called", d.agents);
+  // A helper reads the way it does on Team, Sessions and Now: "General purpose", not its type id.
+  const helper = itemSlide("helper", "Your go-to helper", "Called", d.agents, typeName);
   const tool = itemSlide("tool", "Your go-to tool", "Run", d.tools);
   if (short) {
     const first = skill ?? helper ?? tool;

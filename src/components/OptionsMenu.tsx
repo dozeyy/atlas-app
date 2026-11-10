@@ -84,7 +84,7 @@ export function OptionsMenu({
       </Button>
       {open && (
         <div id={panelId} role="dialog" aria-label={label} className="options-panel" style={{ width }}>
-          <div className="flex flex-col gap-3.5">{typeof children === "function" ? children(close) : children}</div>
+          <div className="flex flex-col gap-3">{typeof children === "function" ? children(close) : children}</div>
           {onReset && count > 0 && (
             <div className="mt-4 border-t border-line pt-3">
               <Button onClick={onReset}>Reset</Button>
@@ -99,7 +99,7 @@ export function OptionsMenu({
 /** A captioned option inside the panel. */
 export function OptionField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <span className="text-caption font-medium text-ink-2">{label}</span>
       {children}
     </div>
@@ -137,7 +137,7 @@ export function ChoiceList<T extends string>({
               onChange(c.value);
               onPick?.();
             }}
-            className={`row-btn items-center justify-between gap-3 rounded-control px-2 py-1.5 text-body ${on ? "font-semibold text-ink" : "text-ink-2"}`}
+            className={`row-btn items-center justify-between gap-3 rounded-control px-2 py-2 text-body ${on ? "font-semibold text-ink" : "text-ink-2"}`}
           >
             {c.label}
             {on && <Check size={14} weight="bold" aria-hidden="true" className="text-accent-text" />}

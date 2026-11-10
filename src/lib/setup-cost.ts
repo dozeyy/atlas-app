@@ -3,6 +3,7 @@
 // the API-price dollar estimate lives in hover text only. Every figure is an estimate.
 
 import { compact, exact } from "./usage";
+import { loadsInWords } from "./sessionWords";
 import type { CostReport, CostRow, ItemKind } from "./setup-types";
 
 /** Dollars for hover text: `$0.04`, `$4.20`, `$21`, `$1.2k`. Never more than 3 digits. */
@@ -76,6 +77,14 @@ export function topRows(report: CostReport | null, n: number): CostRow[] {
     .slice(0, n);
 }
 
+/**
+ * Everything the setup added to messages over the window, in tokens: every row that loads with a
+ * message, not only the few the ranking shows. The cost card's headline, in the rows' own unit.
+ */
+export function weekTotal(report: CostReport): number {
+  return report.rows.reduce((sum, r) => (r.tokens > 0 ? sum + weeklyTokens(r) : sum), 0);
+}
+
 /** The cost row for one setup item, if it has one. */
 export function rowFor(report: CostReport | null, id: string): CostRow | null {
   return report?.rows.find((r) => r.id === id) ?? null;
@@ -88,11 +97,31 @@ export function windowLabel(report: CostReport): string {
 
 /**
  * The name a ranking row shows. Something that only loads in one project's chats carries that
- * project's name ("CLAUDE.md · heavens-casino"), so two files with the same name never look alike.
+ * project's name ("CLAUDE.md", a middle dot, "pixel-garden"), so two files with the same name never look alike.
  */
 export function rowTitle(r: CostRow): string {
-  const project = /^Chats in (.+)$/.exec(r.loadsIn)?.[1];
-  return project ? `${r.name} · ${project}` : r.name;
+  const project = /^(?:Chats|Sessions) in (.+)$/.exec(r.loadsIn)?.[1];
+  return project ? `${r.name} \u00b7 ${project}` : r.name;
+}
+
+/**
+ * A title that ends in a bracketed count ("Other connected tools (19)") as its label and its
+ * count, so the count is set the way every Toolkit heading sets one: "Global 3", never "(3)".
+ */
+export function titleCount(title: string): { label: string; count: string | null } {
+  const m = /^(.*\S)\s*\((\d[\d,]*)\)$/.exec(title);
+  return m ? { label: m[1]!, count: m[2]! } : { label: title, count: null };
+}
+
+/**
+ * Where a ranking row loads, in words that set it against the headline ("loads in every session"):
+ * "Every session" for what the headline counts, "Only sessions in atlas" / "Only sessions that
+ * connect them" for what rides in some sessions and so sits on top of it.
+ */
+export function loadsWhere(r: Pick<CostRow, "global" | "loadsIn">): string {
+  if (r.global) return "Every session";
+  const where = loadsInWords(r.loadsIn.trim());
+  return where ? `Only ${where.charAt(0).toLowerCase()}${where.slice(1)}` : "Some sessions";
 }
 
 /** "8.8k per message" */

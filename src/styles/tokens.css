@@ -59,7 +59,7 @@
 
   /* Trail Map: heat ramp (cells only, exempt from contrast), chart hues, bars, lift. */
   --heat-0: #f0ebe4;
-  --heat-1: #f2d9c6;
+  --heat-1: #e9d1bf; /* 1.46:1 on the card, 1.2x heat-0's 1.19:1 (was #f2d9c6, 1.35:1) */
   --heat-2: #e9b394;
   --heat-3: #dc8a63;
   --heat-4: #c96442;
@@ -122,10 +122,10 @@
   --shadow-pop: 0 8px 24px rgb(31 35 41 / 0.16), 0 1px 3px rgb(31 35 41 / 0.12);
   --scrim: rgb(31 35 41 / 0.45);
 
-  --heat-0: #c9d0da;
-  --heat-1: #f0d6c5;
-  --heat-2: #e9b394;
-  --heat-3: #dc8a63;
+  --heat-0: #dae0e7; /* a quiet cool grey, lighter than heat-1 so the ramp never dips (was #c9d0da) */
+  --heat-1: #d7c0b1; /* 1.47:1 on the card: heat-0 (1.12:1) and the old #f0d6c5 (1.17:1) were the same brightness */
+  --heat-2: #d2a286; /* 1.92:1 (was #e9b394, 1.56:1): heat-1..4 now step by ~1.3x */
+  --heat-3: #d0825e; /* 2.51:1 (was #dc8a63, 2.25:1) */
   --heat-4: #c96442;
   --heat-5: #7a3416;
   --chart-1: #b5573a;
@@ -182,9 +182,9 @@
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
   --scrim: rgb(0 0 0 / 0.55);
 
-  --heat-0: #2e2e2d;
-  --heat-1: #4a3226;
-  --heat-2: #7a4630;
+  --heat-0: #363634; /* 1.20:1 on the card: an empty day shows, and stays under heat-1 (was #2e2e2d, 1.07:1) */
+  --heat-1: #583c2d; /* 1.45:1: a real step up from heat-0, not a hue-only one (was #4a3226, 1.23:1) */
+  --heat-2: #834b34; /* 2.10:1, so the steps stay even (was #7a4630, 1.90:1) */
   --heat-3: #b35e3d;
   --heat-4: #e07a55;
   --heat-5: #f4ad8a;
@@ -240,9 +240,9 @@
     --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
     --scrim: rgb(0 0 0 / 0.55);
 
-    --heat-0: #2e2e2d;
-    --heat-1: #4a3226;
-    --heat-2: #7a4630;
+    --heat-0: #363634;
+    --heat-1: #583c2d;
+    --heat-2: #834b34;
     --heat-3: #b35e3d;
     --heat-4: #e07a55;
     --heat-5: #f4ad8a;
@@ -268,7 +268,12 @@
   /* Type. System fonts only: SF Pro on macOS, Segoe UI Variable on Windows. */
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
     "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  --font-code: ui-monospace, "SF Mono", "Cascadia Code", "Cascadia Mono", Consolas, Menlo,
+  /* Code. On Windows Consolas comes before Cascadia: Cascadia Code's regular (400) has strokes as
+     dark as Segoe's semibold at 12 px, so every path, diff and file read bold (measured 2026-11-10:
+     computed weight 400, face CascadiaCodeRoman; picture docs/shots/fable-pass/for-will/
+     r4-code-text-compare.png), and it draws "=>" and "!=" as single arrows. Cascadia Mono (no
+     ligatures) stays as the fallback. macOS never gets this far: ui-monospace is SF Mono there. */
+  --font-code: ui-monospace, "SF Mono", Consolas, "Cascadia Mono", "Cascadia Code", Menlo,
     monospace;
 
   /* Display face: numbers and titles only (Recursive, CASL 0.4). Never body, buttons, tables, code. */
@@ -290,6 +295,10 @@
   --dur-fast: 120ms;
   --dur: 180ms;
   --dur-slow: 250ms;
+  /* A sheet or scrim leaving: the one source for the exit animation (index.css) and for how
+     long useClosing waits before the thing unmounts. */
+  --dur-close: 180ms;
+  --dur-close-reduced: 120ms;
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
   --travel: 8px;
   --press-scale: 0.97;
@@ -300,6 +309,11 @@
   --dur-draw: 800ms;
   --stagger: 30ms;
   --lift: -2px;
+  /* Room a scroll pane keeps above its lifting cards: the lift plus the part of --shadow-lift
+     that reaches above a card (18px blur minus the 6px drop). Sides stay at 8px (the pane's
+     scrollbar has to stay inside the page gutter), so only the faint outer blur is cut there. */
+  --lift-room-y: 14px;
+  --lift-room-x: 8px;
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
@@ -313,15 +327,39 @@
   --ease-launch: cubic-bezier(0.16, 1, 0.3, 1); /* the app landing after the launch splash */
 
   /* Layout */
-  --sidebar-w: 188px; /* fits the longest label and the streak; was 232 */
-  /* The page fills the window; only its gutters scale (no fixed content width). */
-  --gutter: clamp(20px, calc(var(--app-w) * 0.032), 64px);
-  --gutter-y: clamp(20px, calc(var(--app-w) * 0.024), 44px);
-  --sidebar-w-collapsed: 76px; /* the menu and sidebar buttons (6 + 32 + 32) fit above the icons */
-  --titlebar-h: 40px; /* the row across the top: menu, sidebar toggle, caption buttons */
+  /* Open: the four corner buttons sit evenly across the top row (Will, 2026-11-10: slimmer, four
+     icons, even spacing): inset 4 + 32 + 8 + 32 + 8 + 32 + 8 + 32 + inset 4 = 160. The longest
+     nav label (Dashboard, 69 px) has 73 px of room; was 188, before that 232. */
+  --sidebar-w: 160px;
+  /* The page fills the window; only its gutters step with it (no fixed content width). They are
+     whole grid steps, never a share of the width (that gave 25.6 / 37.8 px: off the 8 px grid;
+     Will, 2026-11-10). The steps are below, after this block. */
+  --gutter: 24px;
+  --gutter-y: 24px;
+  --titlebar-h: 40px; /* the row across the top: menu, Settings, sidebar toggle, Wrapped, caption buttons */
+  /* The shell's corner buttons (32 px): the same distance from every edge of their column as the
+     title bar leaves above them ((40 - 32) / 2), and one gap between neighbours. */
+  --shell-inset: 4px;
+  --shell-gap: 4px; /* inside the folded 2 x 2 square */
+  --shell-row-gap: 8px; /* between the four in the open row (sets --sidebar-w above) */
+  --sidebar-w-collapsed: 76px; /* a 2 x 2 square of 32 px buttons: 4 + 32 + 4 + 32 + 4 */
   /* Same numbers as MIN_WIDTH / MIN_HEIGHT in crates/app/src/main.rs. */
   --window-min-w: 900px;
   --window-min-h: 600px;
+}
+
+/* The gutters' steps: 24 at the smallest window, 32 from 1080 wide, 48 / 40 from 1440. */
+@media (min-width: 1080px) {
+  :root {
+    --gutter: 32px;
+    --gutter-y: 32px;
+  }
+}
+@media (min-width: 1440px) {
+  :root {
+    --gutter: 48px;
+    --gutter-y: 40px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -341,6 +379,11 @@
 
 /* ---- Tailwind names ----------------------------------------------------- */
 @theme inline {
+  /* The spacing unit behind every p-*, gap-*, m-*, h-* and w-* class: 4 px, so the app sits
+     on the 8 px grid (gap-2 = 8, px-5 = 20, py-4 = 16). Tailwind's own unit is 0.25rem, which
+     the 14 px root font made 3.5 px: every padding and gap landed between the grid lines. */
+  --spacing: 4px;
+
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-raised: var(--raised);

@@ -1,17 +1,36 @@
 import type { DayCount } from "../../lib/historyTypes";
-import { ribbonDot, ribbonLabel, shortDate, startOfDay } from "../../lib/historyModel";
+import { ribbonDot, ribbonLabel, ribbonStart, startOfDay } from "../../lib/historyModel";
+import { shortDate } from "../../lib/usage";
+
+/** A start date this close to "Today" would run into it; the number beside the ribbon says it anyway. */
+const LABEL_ROOM = 5;
+/** Fewer days than this and the centre line would run into the dates at either end. */
+const KEY_ROOM = 14;
+/** What the sizes mean, said once under the strip; each dot's own hover gives its day and count. */
+const KEY = "Bigger dot, busier day";
 
 /**
  * The last 30 days as a row of dots: bigger means more changes that day. A day with changes is a
- * button that scrolls the timeline to it.
+ * button that scrolls the timeline to it. The row starts on the day Atlas began watching when that
+ * is inside the 30 days: the days before it are left empty, and the date under the first dot is
+ * the same one "watching since" gives.
  */
-export function Ribbon({ days, onPick, now = Date.now() }: { days: DayCount[]; onPick: (day: number) => void; now?: number }) {
+export function Ribbon({ days, since = 0, onPick, now = Date.now() }: { days: DayCount[]; since?: number; onPick: (day: number) => void; now?: number }) {
   const max = days.reduce((m, d) => Math.max(m, d.count), 0);
   const today = startOfDay(now);
+  const start = ribbonStart(days, since);
+  const cols = { gridTemplateColumns: `repeat(${Math.max(1, days.length)}, minmax(0, 1fr))` };
   return (
     <div>
-      <div className="hx-ribbon" role="group" aria-label="Changes in the last 30 days">
-        {days.map((d) => {
+      <div
+        className="hx-ribbon"
+        style={cols}
+        role="group"
+        aria-label={start > 0 ? "Changes since Atlas began watching" : "Changes in the last 30 days"}
+        title={`One dot a day. ${KEY}; press one to go to that day.`}
+      >
+        {days.map((d, i) => {
+          if (i < start) return <span key={d.day} aria-hidden="true" />;
           const size = ribbonDot(d.count, max);
           return (
             <button
@@ -31,9 +50,20 @@ export function Ribbon({ days, onPick, now = Date.now() }: { days: DayCount[]; o
         })}
       </div>
       {days.length > 0 && (
-        <div className="mt-1 flex justify-between text-caption text-ink-2" aria-hidden="true">
-          <span>{shortDate(days[0].day, now)}</span>
-          <span>Today</span>
+        <div className="hx-ribbon-ends mt-1 text-caption text-ink-2" style={cols} aria-hidden="true">
+          {days.length - start > LABEL_ROOM && (
+            <span className="whitespace-nowrap" style={{ gridColumn: `${start + 1} / -2`, gridRow: 1 }}>
+              {shortDate(days[start].day, now)}
+            </span>
+          )}
+          {days.length - start > KEY_ROOM && (
+            <span className="whitespace-nowrap text-center" style={{ gridColumn: "1 / -1", gridRow: 1 }}>
+              {KEY}
+            </span>
+          )}
+          <span className="whitespace-nowrap text-right" style={{ gridColumn: "1 / -1", gridRow: 1 }}>
+            Today
+          </span>
         </div>
       )}
     </div>

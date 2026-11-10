@@ -6,9 +6,11 @@ import { AtlasProvider } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
 import { MockBackend } from "../lib/mock";
 import type { SearchPage } from "../lib/searchTypes";
+import { hitParts } from "../components/usage/SessionList";
 
-function mount(setup?: (b: MockBackend) => void) {
+function mount(setup?: (b: MockBackend) => void, grouping: "folder" | "day" = "folder") {
   localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "sessions" }));
+  localStorage.setItem("atlas.sessions.grouping", grouping);
   const backend = new MockBackend();
   setup?.(backend);
   setBackend(backend);
@@ -26,7 +28,7 @@ beforeEach(() => {
 });
 afterEach(() => setBackend(null));
 
-const searchbox = () => screen.getByRole("searchbox", { name: "Search chats" });
+const searchbox = () => screen.getByRole("searchbox", { name: "Search sessions" });
 
 describe("Sessions toolbar", () => {
   it("has a Filter button and a Sort button, each with its own panel", async () => {
@@ -71,11 +73,11 @@ describe("Sessions toolbar", () => {
     mount();
     await screen.findAllByRole("button", { name: /tokens/ });
     // The day bands say "N chats" too; the toolbar's count is the live one.
-    const all = await screen.findByText(/^[\d,]+ chats$/, { selector: "[aria-live]" });
+    const all = await screen.findByText(/^[\d,]+ sessions$/, { selector: "[aria-live]" });
     const n = Number(all.textContent!.replace(/[^\d]/g, ""));
     expect(n).toBeGreaterThan(50);
     await userEvent.type(searchbox(), "zzzz-nothing");
-    expect(await screen.findByText(`0 of ${n.toLocaleString("en-US")} chats`)).toBeInTheDocument();
+    expect(await screen.findByText(`0 of ${n.toLocaleString("en-US")} sessions`)).toBeInTheDocument();
   });
 });
 
@@ -126,10 +128,38 @@ describe("Sessions: search inside chats", () => {
     const list = await screen.findAllByRole("button", { name: /tokens/ });
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ })).toHaveLength(1));
     expect(list.length).toBeGreaterThan(0);
-    expect(screen.getByText(/^1 of [\d,]+ chats$/)).toBeInTheDocument();
+    expect(screen.getByText(/^1 of [\d,]+ sessions$/)).toBeInTheDocument();
     // Clicking the row opens that session.
     await userEvent.click(screen.getByRole("button", { name: /tokens/ }));
     expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
+  });
+
+  it("marks the typed words where a title has them, and says what the row's bar is", async () => {
+    mount();
+    await screen.findAllByRole("button", { name: /tokens/ });
+    await userEvent.type(searchbox(), "EXPORT");
+    const marks = await waitFor(() => {
+      const found = document.querySelectorAll("mark.sl-hit");
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    });
+    for (const m of marks) expect(m.textContent!.toLowerCase()).toBe("export");
+    // The row is still named by its whole title: the mark does not split the name.
+    expect(marks[0].closest("button")).toHaveAccessibleName(/export/i);
+    const bar = document.querySelector(".tok-bar")!;
+    expect(bar.getAttribute("data-tip")).toMatch(/biggest session in this list$/);
+  });
+
+  it("cuts a text at every typed word, whatever the case, and leaves it whole when nothing is typed", () => {
+    expect(hitParts("Add the Export button", "export BUT")).toEqual([
+      { text: "Add the ", hit: false },
+      { text: "Export", hit: true },
+      { text: " ", hit: false },
+      { text: "but", hit: true },
+      { text: "ton", hit: false },
+    ]);
+    expect(hitParts("Add the export button", "  ")).toEqual([{ text: "Add the export button", hit: false }]);
+    expect(hitParts("Add the export button", undefined)).toEqual([{ text: "Add the export button", hit: false }]);
   });
 
   it("asks the engine only for 2+ characters and lets the newest query win", async () => {
@@ -152,7 +182,7 @@ describe("Sessions: search inside chats", () => {
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ })).toHaveLength(1), { timeout: 3000 });
     await new Promise((r) => setTimeout(r, 500));
     expect(screen.getAllByRole("button", { name: /tokens/ })).toHaveLength(1);
-    expect(screen.getByText(/^1 of [\d,]+ chats$/)).toBeInTheDocument();
+    expect(screen.getByText(/^1 of [\d,]+ sessions$/)).toBeInTheDocument();
     expect(asked).toEqual(["qz", "qzx"]);
   });
 
@@ -170,13 +200,184 @@ describe("Sessions: search inside chats", () => {
     await screen.findAllByRole("button", { name: /tokens/ });
     await userEvent.type(searchbox(), "zzzz-nothing");
     expect(await screen.findByText(/did not work just now/)).toBeInTheDocument();
-    expect(await screen.findByText("No chats match")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
+  });
+});
+
+describe("Sessions: Show more", () => {
+  const rows = () => document.querySelectorAll(".session-grid > li").length;
+  const showMore = () => screen.getByRole("button", { name: "Show more" });
+
+  it("keeps every loaded page when the engine says a chat changed, and when a pass ends", async () => {
+    const backend = mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    expect(rows()).toBe(50);
+    await userEvent.click(showMore());
+    await waitFor(() => expect(rows()).toBe(100));
+    await userEvent.click(showMore());
+    await waitFor(() => expect(rows()).toBe(150));
+    expect(screen.getByText(/^Showing 150 of [\d,]+$/)).toBeInTheDocument();
+    // A running Claude Code writes its transcript every reply: the engine then says so.
+    backend.usage.emitChanged();
+    await new Promise((r) => setTimeout(r, 600));
+    expect(rows()).toBe(150);
+    // An indexing pass ending is the other refresh.
+    backend.usage.setScenario("data");
+    await new Promise((r) => setTimeout(r, 600));
+    expect(rows()).toBe(150);
+    expect(screen.getByText(/^Showing 150 of [\d,]+$/)).toBeInTheDocument();
+    // The next click still goes on from there.
+    await userEvent.click(showMore());
+    await waitFor(() => expect(rows()).toBe(200));
+  });
+
+  it("a Show more that fails is not re-read on the next refresh: the refresh keeps what is on screen", async () => {
+    const backend = mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    expect(rows()).toBe(50);
+    const real = backend.usage.sessionsList.bind(backend.usage);
+    const calls: (string | null)[] = [];
+    backend.usage.sessionsList = async (q) => {
+      calls.push(q.cursor ?? null);
+      if (q.cursor !== null) throw new Error("disk hiccup");
+      return real(q);
+    };
+    await userEvent.click(showMore());
+    await screen.findByRole("alert");
+    expect(rows()).toBe(50);
+    calls.length = 0;
+    // The engine's refresh reads page one again and stops there: the page that never came is not wanted.
+    backend.usage.emitChanged();
+    await new Promise((r) => setTimeout(r, 600));
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((c) => c === null)).toBe(true);
+    expect(rows()).toBe(50);
+  });
+
+  it("keeps the loaded pages while a chat is open and after coming back from it", async () => {
+    const backend = mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    await userEvent.click(showMore());
+    await waitFor(() => expect(rows()).toBe(100));
+    await userEvent.click(screen.getAllByRole("button", { name: /tokens/ })[60]);
+    await screen.findByRole("region", { name: "Who used it" });
+    backend.usage.emitChanged();
+    await new Promise((r) => setTimeout(r, 600));
+    await userEvent.click(screen.getByRole("button", { name: /^(All sessions|Back to )/ }));
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    expect(rows()).toBe(100);
+  });
+
+  it("starts over at one page when the query changes", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    await userEvent.click(showMore());
+    await waitFor(() => expect(rows()).toBe(100));
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Newest first" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Most tokens" }));
+    await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBe(0));
+    await waitFor(() => expect(rows()).toBe(50));
+  });
+});
+
+describe("Sessions: by folder", () => {
+  const heads = () => [...document.querySelectorAll<HTMLButtonElement>("button.folder-head")];
+  const names = () => heads().map((h) => h.querySelector(".folder-name")!.textContent);
+  const rowsIn = (head: HTMLElement) => head.closest("section")!.querySelectorAll(".session-grid > li").length;
+
+  it("opens grouped by folder: the folder with the newest chat first, newest first inside, every folder once", async () => {
+    const backend = mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    const first = (await backend.sessionsList({ limit: 50, sort: "started", dir: "desc" })).rows;
+    expect(names()[0]).toBe(first[0].projectName);
+    expect(new Set(names()).size).toBe(names().length);
+    expect(document.querySelectorAll(".day-section").length).toBe(0);
+    // Inside a folder the rows keep newest-first and say their whole date (no band names the day).
+    const li = heads()[0].closest("section")!.querySelectorAll(".session-grid > li");
+    expect(li[0].textContent).toMatch(/(Today|Yesterday|[A-Z][a-z]{2} \d+), \d{1,2}:\d\d( [AP]M)?/);
+    // The header: name, count, when the latest chat started, and the path on hover.
+    const h = heads()[0];
+    expect(h).toHaveAccessibleName(new RegExp(`^${first[0].projectName}, \\d+ sessions so far, latest (Today|Yesterday)`));
+    expect(h.querySelector(".folder-name")!.getAttribute("data-tip")).toContain(first[0].projectPath);
+    expect(h.getAttribute("aria-expanded")).toBe("true");
+    // The band names the folder once; its rows do not repeat it (the day bands do the same with the day).
+    expect(li[0].querySelector(".proj-dot")).toBeNull();
+    expect(h.querySelector(".proj-dot")).not.toBeNull();
+  });
+
+  it("folds a folder shut, remembers it, and opens it again with Enter", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    const h = heads()[1];
+    const n = rowsIn(h);
+    expect(n).toBeGreaterThan(0);
+    await userEvent.click(h);
+    expect(h.getAttribute("aria-expanded")).toBe("false");
+    expect(rowsIn(h)).toBe(0);
+    expect(JSON.parse(localStorage.getItem("atlas.sessions.folded")!)).toHaveLength(1);
+    h.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(h.getAttribute("aria-expanded")).toBe("true");
+    expect(rowsIn(h)).toBe(n);
+  });
+
+  it("walks headers and rows with the arrow keys and folds with Left", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    const h = heads()[0];
+    h.focus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(h.closest("section")!.querySelector("button.row-btn"));
+    await userEvent.keyboard("{ArrowUp}");
+    expect(document.activeElement).toBe(h);
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(h.getAttribute("aria-expanded")).toBe("false");
+    // Folded: Down goes straight to the next folder's header.
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(heads()[1]);
+    await userEvent.keyboard("{ArrowRight}");
+    expect(heads()[1].getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("adds a page without a second header for a folder it already shows", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    const before = names();
+    const counts = heads().map(rowsIn);
+    await userEvent.click(screen.getByRole("button", { name: "Show more" }));
+    await waitFor(() => expect(document.querySelectorAll(".session-grid > li").length).toBe(100));
+    expect(names().slice(0, before.length)).toEqual(before);
+    expect(new Set(names()).size).toBe(names().length);
+    expect(heads().map(rowsIn).reduce((s, n) => s + n, 0)).toBe(100);
+    for (let i = 0; i < counts.length; i++) expect(rowsIn(heads()[i])).toBeGreaterThanOrEqual(counts[i]);
+  });
+
+  it("keeps the folders in a search, with the typed word marked, and hides folders with no match", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    await userEvent.click(screen.getByRole("button", { name: "Filter" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Project" }), "-mock-site");
+    await waitFor(() => expect(names()).toEqual(["site"]));
+    await userEvent.keyboard("{Escape}");
+    await userEvent.type(searchbox(), "export");
+    await waitFor(() => expect(document.querySelectorAll("mark.sl-hit").length).toBeGreaterThan(0));
+    expect(names()).toEqual(["site"]);
+  });
+
+  it("switches to day bands from the Sort menu and remembers it", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Newest first" }));
+    await userEvent.click(screen.getByRole("radio", { name: "By day" }));
+    await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBeGreaterThan(0));
+    expect(heads()).toHaveLength(0);
+    expect(localStorage.getItem("atlas.sessions.grouping")).toBe("day");
   });
 });
 
 describe("Sessions: the first view", () => {
-  it("opens with the newest chat as a card and the list under day bands", async () => {
-    mount();
+  it("opens with the newest chat as a card and, by day, the list under day bands", async () => {
+    mount(undefined, "day");
     const card = await screen.findByRole("region", { name: "Pick up where you left off" });
     expect(within(card).getByRole("button", { name: "Copy resume command" })).toBeInTheDocument();
     // At least one band, named for its day, holding rows.
@@ -184,6 +385,42 @@ describe("Sessions: the first view", () => {
     expect(bands.length).toBeGreaterThan(0);
     expect(bands[0].querySelector(".day-name")?.textContent).toMatch(/^(Today|Yesterday|[A-Z][a-z]+( \d+)?(, \d{4})?)$/);
     expect(bands[0].querySelectorAll(".session-grid > li").length).toBeGreaterThan(0);
+    // The band names the day once; its rows say the time only, with the whole date in the hover.
+    // (The clock follows the computer: "16:42" or "4:42 PM". usage.test.ts pins both.)
+    const row = bands[0].querySelector(".session-grid > li")!;
+    expect(row.textContent).not.toMatch(/(Today|Yesterday|[A-Z][a-z]{2} \d+), \d{1,2}:\d\d( [AP]M)?/);
+    const clock = [...row.querySelectorAll("[title]")].find((e) => /^\d{1,2}:\d\d( [AP]M)?$/.test(e.textContent ?? ""));
+    expect(clock?.getAttribute("title")).toMatch(/^(Today|Yesterday|[A-Z][a-z]{2} \d+(, \d{4})?), \d{1,2}:\d\d( [AP]M)?$/);
+  });
+
+  it("leaves no stale rows behind when the order goes to Most tokens and back to Newest first", async () => {
+    mount(undefined, "day");
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    const rows = () => document.querySelectorAll(".session-grid > li").length;
+    const before = rows();
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Newest first" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Most tokens" }));
+    await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBe(0));
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Most tokens" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Newest first" }));
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    // Every day has one band and every chat one row: the page on screen is always laid out in its own order.
+    const days = [...document.querySelectorAll(".day-name")].map((d) => d.textContent);
+    expect(new Set(days).size).toBe(days.length);
+    expect(rows()).toBe(before);
+  });
+
+  it("by day, lists search results as one flat list, and brings the day bands back when the search is cleared", async () => {
+    mount(undefined, "day");
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    expect(document.querySelectorAll(".day-section").length).toBeGreaterThan(0);
+    await userEvent.type(searchbox(), "export");
+    await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBe(0));
+    expect(document.querySelectorAll(".session-grid > li").length).toBeGreaterThan(0);
+    // No band names the day any more, so each row says its own date.
+    expect(document.querySelector(".session-grid > li")!.textContent).toMatch(/(Today|Yesterday|[A-Z][a-z]{2} \d+), \d{1,2}:\d\d( [AP]M)?/);
+    await userEvent.clear(searchbox());
+    await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBeGreaterThan(0));
   });
 
   it("drops the card as soon as a search narrows the list", async () => {
@@ -199,10 +436,10 @@ describe("Sessions: the first view", () => {
     mount();
     const card = await screen.findByRole("region", { name: "Pick up where you left off" });
     await userEvent.click(within(card).getByRole("button", { name: "Open" }));
-    const title = await screen.findByRole("heading", { level: 2 });
+    const title = await screen.findByRole("heading", { level: 1 });
     const first = title.textContent;
     await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
-    await waitFor(() => expect(screen.getByRole("heading", { level: 2 }).textContent).not.toBe(first));
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).not.toBe(first));
     await userEvent.click(screen.getByRole("button", { name: /Copy resume/ }));
     await waitFor(() => expect(written.length).toBe(1));
     expect(written[0]).toMatch(/claude --resume [A-Za-z0-9_-]+$/);

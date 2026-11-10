@@ -26,6 +26,29 @@
   background: var(--slate);
 }
 
+/* A card's twelve weeks: 6 px bars 4 px apart, bottom-aligned, the same pair of colours as the
+   Dashboard's bars (rest and today). A week with no runs is a 2 px line in the line colour, so the
+   row never has a hole in it. */
+.team-weeks {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: 4px;
+}
+.team-week {
+  display: block;
+  width: 6px;
+  min-height: 2px;
+  border-radius: var(--r-pill);
+  background: var(--bar-rest);
+}
+.team-week-today {
+  background: var(--accent);
+}
+.team-week-none {
+  background: var(--line-strong);
+}
+
 .team-caret {
   transition: transform var(--dur-fast) var(--ease-out);
 }
@@ -58,8 +81,9 @@
   min-height: 20px;
   padding: 0 12px 0 9px;
   border-left: 3px solid transparent;
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
+  font-family: var(--font-code);
+  font-size: 12px;
+  font-weight: 400;
   line-height: 20px;
   color: var(--ink);
   white-space: pre;

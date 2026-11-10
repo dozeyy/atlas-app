@@ -12,6 +12,7 @@ function row(it: SetupItem | null, name: string, kind: string, extra: Partial<Co
     name,
     kind,
     scopeLabel: it?.scopeLabel ?? "Claude app and claude.ai",
+    // The engine's own wording; `costWords` turns "chats" into sessions on the way in.
     loadsIn: it && it.scope !== "project" && it.scope !== "local" ? "All chats" : "Chats in atlas",
     global: !(it && (it.scope === "project" || it.scope === "local")),
     path: it?.path ?? null,

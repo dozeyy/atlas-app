@@ -9,6 +9,18 @@ export function shortDay(day: string): string {
   return new Date(`${day}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
+/** "Jul 14" for a day on a chart's axis. */
+export function monthDay(day: string): string {
+  return new Date(`${day}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** "Nov 8, 2026" for a date in a sentence. Anything that is not a plain day comes back as it was. */
+export function longDate(day: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return day;
+  const d = new Date(`${day}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? day : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 /** One-letter weekday for the ridge axis. */
 export function weekdayInitial(day: string): string {
   return new Date(`${day}T12:00:00`).toLocaleDateString("en-US", { weekday: "narrow" });

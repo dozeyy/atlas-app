@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getBackend } from "./ipc";
 import type { CostReport } from "./setup-types";
+import { costWords } from "./sessionWords";
 
 /** New sessions arrive in bursts while Claude works; ask again once they settle. */
 export const COST_REFRESH_MS = 4000;
@@ -44,6 +45,8 @@ export function useSetupCost(reloadKey: number): CostReport | null {
     let alive = true;
     getBackend()
       .setupCost()
+      // The one door the cost report comes in by: the engine's "chats" become sessions here.
+      .then(costWords)
       .then((r) => {
         last = r;
         if (alive) setReport(r);

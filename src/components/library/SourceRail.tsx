@@ -1,5 +1,6 @@
 import { Plus } from "@phosphor-icons/react";
 import type { SourceOption } from "../../lib/library";
+import { exact } from "../../lib/usage";
 
 /** Where plugins come from: All, Installed, the directory, and each marketplace added. 232 px at 1100 px wide and up. */
 export function SourceRail({
@@ -7,9 +8,12 @@ export function SourceRail({
   value,
   onChange,
   onAdd,
+  counts = true,
 }: {
   options: SourceOption[];
   value: string;
+  /** False while the catalog loads: the counts are not known yet. */
+  counts?: boolean;
   onChange: (id: string) => void;
   onAdd: () => void;
 }) {
@@ -28,8 +32,17 @@ export function SourceRail({
             }`}
           >
             {on && <span aria-hidden="true" className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-accent" />}
-            <span className="min-w-0 flex-1 truncate">{o.label}</span>
-            <span className="mono shrink-0 text-caption text-ink-2">{o.count.toLocaleString()}</span>
+            <span title={o.label} className="min-w-0 flex-1 truncate">
+              {o.label}
+            </span>
+            {o.flag && (
+              <span title={o.flag.full} className="shrink-0 text-caption font-normal text-warning">
+                {o.flag.short}
+              </span>
+            )}
+            {/* A count is a number in the app's own face (tabular, so the column lines up), and it
+                is only there once it is known: a rail that says "0" while it loads is wrong. */}
+            {counts && <span className="shrink-0 text-caption font-normal tabular-nums text-ink-2">{exact(o.count)}</span>}
           </button>
         );
       })}

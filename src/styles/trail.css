@@ -195,7 +195,7 @@
   isolation: isolate; /* so the slop below can sit under the face without leaving the button */
 }
 /*
- * HIT SLOP (Will, 2026-11-08: ~1-3% of presses at a card's or row's edge do nothing).
+ * HIT SLOP (2026-11-08: ~1-3% of presses at a card's or row's edge do nothing).
  * Root cause, traced with CDP: a click fires on the nearest common ancestor of the pointerdown
  * and pointerup targets, so a press that drifts even 1 px past the box before release never
  * reaches the button. The hover lift (-2px) and the press (scale .9925) also pull the visible
@@ -226,6 +226,22 @@
   transform: translateY(0) scale(calc(1 - (1 - var(--press-scale)) / 2));
   transition-duration: var(--dur-press);
 }
+/*
+ * A scroll pane that holds lifting cards (the Toolkit list, the Team scorecard). The pane clips
+ * at its own edge (overflow: auto), so a card on its first row would lose its lift and the
+ * shadow above it the moment it is hovered. The pane keeps --lift-room-y above (and under) the
+ * cards and --lift-room-x beside them, and pulls itself back by the same amount, so nothing
+ * moves and the hover is drawn whole. The scrollbar's own width (--sb, measured) goes into the
+ * page gutter, so the cards end where the toolbar above them ends. One rule for every such pane;
+ * the layout audit's LIFT-CLIP check catches a pane that lacks it.
+ */
+.lift-room {
+  padding: var(--lift-room-y) var(--lift-room-x);
+  margin-top: calc(-1 * var(--lift-room-y));
+  margin-left: calc(-1 * var(--lift-room-x));
+  margin-right: calc(-1 * var(--lift-room-x) - var(--sb, 0px));
+  scrollbar-gutter: stable;
+}
 
 /* ---- Buttons ----------------------------------------------------------------------------- */
 .btn {
@@ -246,7 +262,7 @@
   gap: 8px;
   width: 100%;
   height: 100%;
-  padding: 0 14px;
+  padding: 0 12px;
   border: 1px solid transparent;
   border-radius: var(--r-control);
   transition:
@@ -293,6 +309,17 @@
 .btn-danger:hover:not(:disabled) .btn-face {
   background: var(--danger-tint);
 }
+/* The "yes" of an in-place confirm (Delete on a Toolkit item, Uninstall in the Library): the
+   danger colour as a fill, so the one button that removes something cannot be mistaken for the
+   one that keeps it. It holds still like every destructive control. */
+.btn-danger-solid .btn-face {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-accent);
+}
+.btn-danger-solid:hover:not(:disabled) .btn-face {
+  background: color-mix(in srgb, var(--danger) 88%, var(--ink));
+}
 .btn .ico {
   width: 16px;
   height: 16px;
@@ -331,20 +358,30 @@
   cursor: not-allowed;
   opacity: 0.5;
 }
+/* An icon button that stands in a row of framed buttons (the session's previous / next, the copy
+   beside Open) wears the same frame, so one row has one border style. */
+.btn-icon.framed .btn-face {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.btn-icon.framed:hover:not(:disabled) .btn-face {
+  background: var(--raised);
+}
 
 /* Segmented control: one thumb that slides (320 ms spring) behind the labels. */
 .seg {
   position: relative;
   display: inline-flex;
-  padding: 3px;
+  padding: 4px;
   border-radius: 10px;
   background: var(--raised);
-  border: 1px solid var(--line);
+  /* The line is drawn inside, so the control stays 36 px tall with a 4 px inset (8 px grid). */
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 .seg-thumb {
   position: absolute;
-  top: 3px;
-  bottom: 3px;
+  top: 4px;
+  bottom: 4px;
   left: 0;
   border-radius: 7px;
   background: var(--surface);
@@ -388,9 +425,9 @@
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   height: 24px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: var(--r-pill);
   font-size: 12px;
   font-weight: 600;
@@ -422,7 +459,7 @@
   width: 36px;
   height: 32px;
 }
-/* Sessions: the search and its two buttons sit one step taller (Will, 2026-11-08). The buttons take
+/* Sessions: the search and its two buttons sit one step taller (2026-11-08). The buttons take
    it here; the search box takes the same --field-tall from its `tall` prop (fields.tsx), because
    a rule in this layer loses to the field's own h-8 utility. That was the miss: the search stayed 28. */
 .toolbar-tall .options-trigger {
@@ -571,9 +608,13 @@ html.reduced .app-menu {
 .qj-list {
   max-height: min(432px, calc(var(--app-h) * 0.88 - 56px - 32px));
   margin: 0;
-  padding: 8px;
+  padding: 8px 8px 24px;
   overflow-y: auto;
   list-style: none;
+  /* A list taller than the sheet fades out at the bottom instead of cutting a row in half; the
+     padding lets the last row scroll clear of the fade. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
 }
 .qj-row {
   position: relative;
@@ -676,7 +717,7 @@ html.reduced .options-panel {
   --side-now: var(--sidebar-w); /* where the title bar's hairline starts: at the sidebar's edge */
 }
 .app-shell[data-side="collapsed"] {
-  --side-now: 0px; /* folded: the hairline runs the full width, under the menu and toggle */
+  --side-now: var(--sidebar-w-collapsed); /* folded: still from the divider, so the 2 x 2 square is whole */
 }
 .titlebar {
   position: absolute;
@@ -698,32 +739,76 @@ html.reduced .options-panel {
   pointer-events: none;
   transition: left var(--side-dur) var(--ease-out);
 }
+/* While a sheet or dialog is open the row dims with the page and its menu, sidebar and Wrapped
+   buttons wait; Minimize, Maximize and Close stay lit and the row still drags the window. */
+body:has(> .fixed.inset-0) .titlebar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--scrim);
+  pointer-events: none;
+  animation: fade-in var(--dur) var(--ease-out) both;
+}
+body:has(> .fixed.inset-0) :is(.titlebar-left, .titlebar-gift) {
+  pointer-events: none;
+}
+body:has(> .fixed.inset-0) .caption-buttons {
+  position: relative;
+  z-index: 2;
+}
 .app-shell[data-side="collapsed"] .titlebar::after {
   transition-delay: 60ms; /* in step with the sidebar, which waits for the labels to fade */
 }
+/* The sidebar's four corner buttons (32 px each, --shell-inset from every edge of the column).
+   Open: one row across the sidebar's width, menu / Settings / toggle / Wrapped with --shell-row-gap
+   between each pair (the width is built from this row: tokens.css). Folded: a 2 x 2 square at the
+   top-left with --shell-gap inside it, Settings under the menu and Wrapped under the toggle, so the
+   folded column is exactly inset + 32 + gap + 32 + inset wide. Settings and Wrapped are placed here
+   (absolute in the row) and slide between the two layouts at the pace of the fold; the toggle
+   closes up its gap for Settings in the same time. */
 .titlebar-left {
   display: flex;
   align-items: center;
-  padding-left: 6px;
+  gap: var(--shell-row-gap);
+  padding-left: var(--shell-inset);
 }
-/* Wrapped's gift: the far right of the sidebar's top row (right edge in line with Settings below).
-   Folded, it drops under the toggle and sits centred over the icons; the list moves down one row
-   to make room, at the pace of the fold. */
-.titlebar-gift {
+.titlebar-toggle {
+  margin-left: calc(32px + var(--shell-row-gap)); /* Settings' place, held open in the row */
+  transition: margin-left var(--side-dur) var(--ease-out);
+}
+.app-shell[data-side="collapsed"] .titlebar-toggle {
+  margin-left: 0;
+  transition-delay: 60ms;
+}
+.titlebar-corner {
   position: absolute;
-  top: 4px;
-  left: calc(var(--sidebar-w) - 13px - 32px);
+  top: var(--shell-inset);
   transition:
     top var(--side-dur) var(--ease-out),
     left var(--side-dur) var(--ease-out);
 }
-.app-shell[data-side="collapsed"] .titlebar-gift {
-  top: calc(var(--titlebar-h) + 8px + 2px); /* centred on the first row (36 px) of the list's old place */
-  left: calc((var(--sidebar-w-collapsed) - 1px) / 2 - 16px);
+.titlebar-settings {
+  left: calc(var(--shell-inset) + 32px + var(--shell-row-gap));
+}
+.titlebar-gift {
+  left: calc(var(--sidebar-w) - var(--shell-inset) - 32px);
+}
+.app-shell[data-side="collapsed"] .titlebar-corner {
+  top: calc(var(--shell-inset) + 32px + var(--shell-gap)); /* the second row of the square */
   transition-delay: 60ms;
 }
-.titlebar-gift[aria-current="page"] .btn-face,
-.titlebar-gift[aria-current="page"]:hover:not(:disabled) .btn-face {
+.app-shell[data-side="collapsed"] .titlebar-settings {
+  left: var(--shell-inset);
+}
+.app-shell[data-side="collapsed"] .titlebar-gift {
+  left: calc(var(--shell-inset) + 32px + var(--shell-gap));
+}
+.app-shell[data-side="collapsed"] .titlebar-left {
+  gap: var(--shell-gap);
+}
+.titlebar-corner[aria-current="page"] .btn-face,
+.titlebar-corner[aria-current="page"]:hover:not(:disabled) .btn-face {
   background: var(--accent-tint);
   color: var(--accent-text);
 }
@@ -731,15 +816,19 @@ html.reduced .options-panel {
   transition: margin-top var(--side-dur) var(--ease-out);
 }
 .side-collapsed .side-main {
-  margin-top: 38px; /* one row (36) and the gap (2) */
+  /* The list waits under the square's second row: that row (32) and the gap over it (4); with
+     the 8 the sidebar already pads below the title bar, the list sits 12 clear of the square. */
+  margin-top: calc(32px + var(--shell-gap));
   transition-delay: 60ms;
 }
-html.reduced .titlebar-gift,
+html.reduced .titlebar-corner,
+html.reduced .titlebar-toggle,
 html.reduced .side-main {
   transition: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  .titlebar-gift,
+  .titlebar-corner,
+  .titlebar-toggle,
   .side-main {
     transition: none !important;
   }
@@ -775,6 +864,23 @@ html.reduced .side-main {
 }
 
 /* ---- Sessions: the pick-up card, day bands, project dots, token hairlines ------------------- */
+/* The list pane. 8 px of side room so a keyboard ring on a row is not cut; the scrollbar's own
+   width (--sb, measured) goes into the page's gutter, so the card lines up with the toolbar. */
+.sessions-pane {
+  margin: 0 calc(-8px - var(--sb, 0px)) 0 -8px;
+  scrollbar-gutter: stable;
+}
+/* A typed word found in a chat's title: heavier and underlined in clay, nothing boxed.
+   A fill would show as a stray patch past the "..." when the word itself is cut off. */
+.sl-hit {
+  background: none;
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 .proj-dot {
   display: inline-block;
   width: 8px;
@@ -834,6 +940,11 @@ html.reduced .side-main {
 .jump-chip:active {
   background: color-mix(in srgb, var(--raised) 85%, var(--ink));
 }
+/* The section under the row: the selection tint, as a chosen row has elsewhere. */
+.jump-chip[aria-current="true"] {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
 .jump-target {
   scroll-margin-top: 44px;
 }
@@ -888,6 +999,19 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   line-height: 16px;
   color: var(--ink-2);
 }
+.pick-main > .pick-meta {
+  display: flex;
+  align-items: baseline;
+}
+.pick-meta > * {
+  flex: none;
+}
+.pick-meta > .pick-proj {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .pick-meta > i {
   margin: 0 6px;
   font-style: normal;
@@ -902,7 +1026,9 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   gap: 8px;
 }
 @container (max-width: 760px) {
-  .pick-strip {
+  /* "svg.chart" sets display too and is the stronger selector: without the parent here the strip
+     stayed and pushed the Open button onto a second row. */
+  .pick > .pick-strip {
     display: none;
   }
   .pick {
@@ -954,6 +1080,100 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   background: var(--accent);
   opacity: 0.85;
 }
+/* A folder's band: the day band's look, but the whole band is one button that folds the folder. */
+.folder-h {
+  margin: 0;
+  font: inherit;
+}
+.folder-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 36px;
+  padding: 0 20px 0 14px;
+  text-align: left;
+  cursor: pointer;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.folder-head:hover {
+  background: var(--raised);
+}
+.folder-head:active {
+  background: color-mix(in srgb, var(--raised) 85%, var(--ink));
+}
+.folder-section + .folder-section .folder-head {
+  border-top: 1px solid var(--line);
+}
+.folder-section:first-child .folder-head {
+  border-radius: var(--r-card) var(--r-card) 0 0;
+}
+/* The ring sits inside the band, so it is not cut by the card's edge or the pane's. */
+html[data-input="keyboard"] .folder-head:focus-visible {
+  outline-offset: -2px;
+}
+.folder-caret {
+  flex: none;
+  color: var(--ink-2);
+  transition: transform var(--dur) var(--ease-out);
+}
+.folder-caret.is-open {
+  transform: rotate(90deg);
+}
+.folder-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.folder-count,
+.folder-latest,
+.folder-total {
+  flex: none;
+  font-size: var(--text-caption);
+  line-height: 16px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.folder-latest {
+  margin-left: auto;
+}
+.folder-bar {
+  flex: none;
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.folder-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+/* A narrow page keeps the name, the count and the latest time; the folder's total gives way. */
+@container (max-width: 720px) {
+  .folder-total,
+  .folder-bar {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .folder-caret {
+    transition: none;
+  }
+}
 
 /* ---- Session rows in columns (container = the page, so the sidebar's width counts) ---------- */
 .session-grid {
@@ -963,10 +1183,50 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
 }
 /* Clips the last rule (top and bottom) but lets the rows' hit slop reach over the card's 1 px side border. */
 .session-clip {
+  /* Its own formatting context: without it the grid's -1px margin collapsed through this box, the
+     box stayed one pixel too tall, and the last rule was drawn straight across the card's rounded
+     bottom edge instead of being clipped. */
+  display: flow-root;
   clip-path: inset(0 -6px);
 }
 .session-grid > li {
   border-bottom: 1px solid var(--line);
+}
+/* A row's quiet line. Each row measures itself, so the same row works in a wide list and in the
+   Dashboard's narrow column. Two parts on a line that wraps and shows its first line only: the facts
+   (project, tokens, helpers, date) and the model. When both do not fit, the model wraps out of view
+   whole, never cut to a stub; then the project name shortens, down to a few letters at least. */
+.session-grid > li {
+  container: srow / inline-size;
+}
+.sl-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  align-content: flex-start;
+  height: var(--text-caption--line-height);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.sl-main {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 100%;
+}
+.sl-proj {
+  flex: 0 1 auto;
+  min-width: 56px; /* the dot and about five letters */
+  max-width: 224px;
+}
+/* A narrow column has room for the project, the tokens and the date: the helpers drop out whole,
+   and a removed file's note takes the date's place. */
+@container srow (max-width: 400px) {
+  .sl-helpers,
+  .sl-drop {
+    display: none;
+  }
 }
 @container (min-width: 1280px) {
   .session-grid {
@@ -1014,7 +1274,10 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
 .side {
   width: var(--sidebar-w);
   overflow: hidden; /* labels are clipped, not wrapped, while the width moves */
-  padding-top: calc(var(--titlebar-h) + 8px);
+  /* 12 at the sides and the foot (the same, so what sits in the bottom corner is as far from the
+     bottom as from the side; it was a `pb-3` glued to a template literal, which Tailwind never
+     emitted, so the foot had no padding at all). */
+  padding: calc(var(--titlebar-h) + 8px) 12px 12px;
   border-right: 1px solid var(--line);
   transition: width var(--side-dur) var(--ease-out);
 }
@@ -1034,41 +1297,30 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   opacity: 0;
   transition-delay: 0ms;
 }
-/* Settings at the foot: one square icon button in the bottom-right corner; centred under the
-   other icons when folded. */
-.nav-settings-row {
+/* The foot holds the update button when there is one (Settings moved up into the title bar row,
+   2026-11-10): the full row open, the icon alone centred under the nav icons when folded. */
+.side-foot {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
 }
-.nav-settings-row .nav-solo {
-  margin-left: auto;
-}
-.side-collapsed .nav-settings-row {
+.side-collapsed .side-foot {
   justify-content: center;
 }
-/* Folded: the update icon stacks above Settings, both centred. */
-.side-collapsed .nav-settings-row {
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-.side-collapsed .nav-settings-row .nav-solo {
-  margin-left: 0;
-}
-.nav-settings-row {
-  align-items: center;
-  gap: 4px;
-}
-.nav-settings-row .nav-item {
-  width: 36px;
-}
-.nav-settings-row .nav-face {
-  justify-content: center;
-  padding: 0;
+/* The Sandbox chip's words may take two lines open ("Preparing sandbox" is wider than the slim
+   column leaves it); the dot stays centred beside them. */
+.side [role="status"] .nav-label {
+  white-space: normal;
+  line-height: 1.25;
 }
 .side-collapsed [role="status"] {
   justify-content: center;
   padding-inline: 0;
+  gap: 0;
+}
+/* The hidden words leave the row, so the dot sits in the middle of the folded chip. */
+.side-collapsed [role="status"] .nav-label {
+  position: absolute;
+  pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .side,
@@ -1084,8 +1336,29 @@ html.reduced .titlebar::after {
 }
 /* macOS: the traffic lights sit at the left of the row, so the buttons start after them. The row
    is its own strip across the window and the sidebar starts below it. */
-html[data-platform="macos"] .titlebar-left {
+html[data-platform="macos"] .app-shell .titlebar-left {
   padding-left: 84px;
+  /* Two columns: the first after the traffic lights, the second --shell-inset from the sidebar's
+     right edge (160 - 84 - 64 - 4 = 8 between them). */
+  gap: calc(var(--sidebar-w) - 84px - 64px - var(--shell-inset));
+}
+/* After the traffic lights only two buttons fit in the sidebar's width, so on macOS Settings and
+   Wrapped keep the square's second row (under the menu and the toggle) in both states; the row is
+   its own strip, so the fold does not move them (these rules outrank the [data-side] ones). */
+html[data-platform="macos"] .app-shell .titlebar-toggle {
+  margin-left: 0;
+}
+html[data-platform="macos"] .app-shell .titlebar-corner {
+  top: calc(var(--shell-inset) + 32px + var(--shell-gap));
+}
+html[data-platform="macos"] .app-shell .titlebar-settings {
+  left: 84px;
+}
+html[data-platform="macos"] .app-shell .titlebar-gift {
+  left: calc(var(--sidebar-w) - var(--shell-inset) - 32px);
+}
+html[data-platform="macos"] .app-shell .side-main {
+  margin-top: calc(32px + var(--shell-gap));
 }
 html[data-platform="macos"] .titlebar {
   background: var(--bg);
@@ -1146,32 +1419,36 @@ html[data-platform="macos"] .side {
   color: var(--accent-text);
   font-weight: 600;
 }
-/* An item with no sliding pill of its own (Settings, at the foot) takes the tint directly. */
-.nav-solo[aria-current="page"] {
-  background: var(--accent-tint);
-}
 
 /* ---- Theme picker (Settings) --------------------------------------------------------------- */
 .theme-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr));
-  gap: 14px;
+  gap: 16px;
 }
 .theme-card {
   border-radius: var(--r-card);
+  /* Settings is a calm page: a theme card answers with its border and press, it does not lift. */
+  --lift: 0px;
 }
 .theme-card-face {
   display: block;
-  padding: 10px;
+  padding: 8px;
 }
+.theme-card:hover .theme-card-face {
+  box-shadow: none;
+}
+/* The chosen theme: a clay ring drawn on the card's own 14 px corners (the face's border alone
+   drew a square-cornered rectangle). */
 .theme-card[aria-checked="true"] .theme-card-face {
   border-color: var(--accent);
+  border-radius: var(--r-card);
   box-shadow: 0 0 0 1px var(--accent);
 }
 .theme-card-label {
   display: grid;
   gap: 2px;
-  padding: 10px 4px 2px;
+  padding: 8px 4px 4px;
 }
 .theme-card-hint {
   display: block;
@@ -1191,9 +1468,9 @@ html[data-platform="macos"] .side {
 .tp-side {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   width: 24%;
-  padding: 8px 7px;
+  padding: 8px;
   background: var(--sidebar-solid);
   border-right: 1px solid var(--line);
 }
@@ -1216,8 +1493,8 @@ html[data-platform="macos"] .side {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 7px;
-  padding: 9px 10px;
+  gap: 8px;
+  padding: 8px;
 }
 .tp-title {
   width: 46%;
@@ -1304,6 +1581,85 @@ html[data-platform="macos"] .side {
   font-weight: 720;
   font-size: 17px;
   line-height: 22px;
+}
+
+/* ---- Toasts (components/Toasts.tsx) -------------------------------------------------------
+   A toast sits at the bottom of the page pane, centred in it (not under the sidebar). While one
+   is up the pane ends above it (--toast-room, set by the host), so a toast never lies over a
+   list row or a button: the list is a little shorter for a few seconds and still scrolls. With
+   a side sheet open the toast centres in the sheet instead (--toast-inset, set by the sheet) and
+   rises over the sheet's buttons; the sheet does not move. */
+.app-shell {
+  --toast-left: var(--sidebar-w);
+}
+.app-shell[data-side="collapsed"] {
+  --toast-left: var(--sidebar-w-collapsed);
+}
+.toast-host {
+  position: fixed;
+  left: var(--toast-inset, var(--toast-left, 0px));
+  right: 0;
+  /* --toast-lift: over a sheet or a dialog the pile rises clear of its buttons (Toasts.tsx). */
+  bottom: calc(20px + var(--toast-lift, 0px));
+  z-index: 70;
+  /* One column as wide as the longest toast (520 px at most): every toast in the pile takes that
+     width, so the pile has one left and one right edge however long each line is. */
+  display: grid;
+  grid-template-columns: fit-content(min(520px, 100%));
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  pointer-events: none;
+}
+.page-pane {
+  padding-bottom: var(--toast-room, 0px);
+}
+.toast-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 8px 10px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  pointer-events: auto;
+}
+/* Folded (data-fold, set by the host): a short window, or a sheet or dialog open, has no room for a
+   pile. Only the newest toast is drawn in full and the older ones wait behind it as thin plates, so
+   the page (or the sheet) gives up one row, never a panel. Resting the pointer on the pile (or
+   tabbing into it) fans it out for as long as you stay; what is under it does not move. A toast
+   with an action (Undo) is never a plate: it stays in full, in reach, for as long as it lives. */
+.toast-host[data-fold] {
+  grid-template-columns: min(440px, 100%);
+}
+/* Bridges the gap to the toast above, so the fanned-out pile does not fold while the pointer crosses it. */
+.toast-host[data-fold] > .toast-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 9px;
+}
+.toast-host[data-fold]:not(:hover):not(:focus-within) > .toast-card:not(:last-child):not([data-action]) {
+  justify-self: center;
+  width: calc(100% - 48px);
+  height: 7px;
+  margin-bottom: -8px; /* takes back the gap: the plate sits on the toast under it */
+  padding: 0;
+  overflow: hidden;
+  border-bottom-width: 0;
+  border-radius: var(--r-card) var(--r-card) 0 0;
+  box-shadow: none;
+}
+.toast-host[data-fold]:not(:hover):not(:focus-within) > .toast-card:not(:last-child):not([data-action]) > * {
+  visibility: hidden;
+}
+.toast-host[data-fold]:not(:hover):not(:focus-within) > .toast-card:nth-last-child(2):not([data-action]) {
+  width: calc(100% - 24px);
 }
 
 /* ---- Hover tip for every title (components/TipLayer.tsx) ----------------------------------
@@ -1413,8 +1769,12 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
 .bar.today {
   fill: var(--accent);
 }
+/* A day with nothing in it: the 3 px nub in the empty tone with a 1 px hairline inside its edge, so
+   the axis never looks broken in Dark either (the History ribbon's empty dot is the same idea). */
 .bar.zero {
   fill: var(--heat-0);
+  stroke: var(--line);
+  stroke-width: 1;
 }
 .bar-hit {
   fill: transparent;
@@ -1462,6 +1822,14 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
   stroke: var(--accent);
   stroke-width: 2;
 }
+/* Today: the solid dot that ends the line. */
+.ridge-end {
+  fill: var(--accent-text);
+}
+.spark.ridge-spark {
+  width: 22px;
+  height: 22px;
+}
 .pole {
   stroke: var(--accent);
   stroke-width: 1.25;
@@ -1481,9 +1849,10 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
   cursor: pointer;
 }
 
+/* The track reads at 0 % (--raised on a card was 1.03:1 in Light) and stays quieter than the arc. */
 .ring-track {
   fill: none;
-  stroke: var(--raised);
+  stroke: var(--line-strong);
 }
 .ring-arc {
   fill: none;
@@ -1504,6 +1873,11 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
 .cell.on {
   scale: 1.35;
 }
+/* An empty day: the same hairline inside the cell's edge (HeatGrid draws it half a pixel in). */
+.cell.empty {
+  stroke: var(--line);
+  stroke-width: 1;
+}
 .streak-ring {
   fill: none;
   stroke: var(--accent);
@@ -1518,6 +1892,33 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
   font-size: 11px;
   font-weight: 600;
   fill: var(--accent-text);
+}
+/* The streak grid's Less/More key: in the label row, between "N weeks ago" and "Today", when
+   the grid is wide enough; under the grid, right-aligned, when it is not. */
+.heat-key {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 20px;
+  color: var(--ink-2);
+  pointer-events: none;
+}
+.heat-key i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.heat-key i.empty {
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.heat-key.in-row {
+  position: absolute;
+  right: 58px;
+  bottom: 0;
+  margin: 0;
 }
 
 .stack {
@@ -1556,9 +1957,9 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
 .legend-row {
   display: grid;
   grid-template-columns: 12px 1fr auto 52px;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
-  padding: 7px 8px;
+  padding: 8px;
   border-radius: 8px;
   transition: background-color var(--dur-fast) var(--ease-out);
 }
@@ -1659,6 +2060,10 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
 }
 
 /*
+/* The Toolkit list (one tile opened) is a .lift-room pane: room for a card's lift, shadow and
+   keyboard ring, the scrollbar in the page gutter. */
+
+/*
  * The corner X (delete) and lock on a Toolkit card. The 28px button never moves; its face
  * lifts with the card, tints on hover, turns a quarter on the X, and shrinks on press.
  */
@@ -1715,6 +2120,16 @@ html[data-input="keyboard"] .x-del:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
+/*
+ * A Toolkit card asking "Delete name?": the card's own box on the danger wash (over its surface,
+ * the wash alone is see-through), holding still until it has its answer.
+ */
+.item-ask {
+  background:
+    linear-gradient(var(--danger-tint), var(--danger-tint)),
+    var(--surface);
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+}
 
 .row-caret {
   opacity: 0;
@@ -1733,11 +2148,23 @@ html[data-input="keyboard"] .x-del:focus-visible {
 
 /* Helpers that were started by another helper hang off a rail, so the nesting reads as a tree. */
 .helper-kids {
-  margin: 12px 0 0 20px;
+  margin: 8px 0 0 20px;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 12px;
+  /* The one column may shrink under a long name: the row shortens the name, never runs off the pane. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+/* A helper's avatar. A helper started by another helper wears the same tile hollow: an outline in
+   its own colour, nothing filled, so the two levels tell apart without reading. */
+.helper-av.nested {
+  background: transparent;
+  /* The outline in its family's colour, and the corner of a second tile behind its top left:
+     "started by another helper" in two shape cues, not in fill against outline alone. */
+  box-shadow:
+    inset 0 0 0 1.5px var(--av, currentColor),
+    calc(-1 * var(--echo, 2px)) calc(-1 * var(--echo, 2px)) 0 0 color-mix(in srgb, var(--av, currentColor) 45%, transparent);
 }
 .helper-kid {
   position: relative;
@@ -1747,9 +2174,9 @@ html[data-input="keyboard"] .x-del:focus-visible {
   content: "";
   position: absolute;
   left: -12px;
-  top: -12px;
+  top: -8px;
   width: 12px;
-  height: 48px;
+  height: 40px;
   border-left: 1.5px solid var(--line-strong);
   border-bottom: 1.5px solid var(--line-strong);
   border-bottom-left-radius: 8px;
@@ -1759,8 +2186,8 @@ html[data-input="keyboard"] .x-del:focus-visible {
   content: "";
   position: absolute;
   left: -12px;
-  top: 36px;
-  bottom: -12px;
+  top: 32px;
+  bottom: -8px;
   border-left: 1.5px solid var(--line-strong);
   pointer-events: none;
 }
@@ -1783,7 +2210,8 @@ html[data-input="keyboard"] .x-del:focus-visible {
   from { stroke-dashoffset: var(--len); }
   to { stroke-dashoffset: 0; }
 }
-.intro .ridge-area {
+.intro .ridge-area,
+.intro .ridge-end {
   animation: t-fade 300ms var(--ease-out) 650ms backwards;
 }
 .intro .summit {
@@ -1866,6 +2294,11 @@ html.reduced .intro .spark-line,
 html.reduced .rise,
 html.reduced .row-in {
   animation-name: t-fade !important;
+}
+/* The ridge and spark lines are drawn on by a dash; faded in, they need the whole line. The ring
+   arc is NOT here: its dash is the share it shows, and "none" drew every ring at 100 %. */
+html.reduced .intro .ridge-stroke,
+html.reduced .intro .spark-line {
   stroke-dasharray: none;
 }
 html.reduced .ico,
@@ -1903,8 +2336,74 @@ html.reduced .nav-item:active .nav-face {
   overflow-x: hidden;
   overflow-y: auto;
 }
+/* When the tab row is tight, "Copy resume" and "Open folder" keep their icons and drop their words
+   (still read out, still in the hover), so the row stays one line and the two buttons stay in the
+   same place whichever tab is open. */
+@container (max-width: 960px) {
+  .sd-act-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .sd-act .btn-face {
+    width: 34px;
+    padding: 0;
+  }
+}
+/* Under the chat's name: the one figure, and one line of plain facts on its baseline (under it when
+   the two do not fit side by side). The line never wraps: the folder name gives way first, and its
+   hover has the whole path. */
+.sd-hero {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 16px;
+  min-width: 0;
+  margin-top: 4px;
+}
+.sd-line {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--text-body);
+  line-height: 20px;
+  color: var(--ink-2);
+}
+.sd-line > span {
+  flex: none;
+}
+.sd-line > span + span::before {
+  content: "\00b7";
+  margin: 0 8px;
+  opacity: 0.6;
+}
+.sd-line > .sd-line-where {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--ink);
+}
+/* Map or list: two small buttons beside the tabs, the one in use held down. */
+.sd-view {
+  display: flex;
+  gap: 2px;
+}
+.sd-view .btn-icon[aria-pressed="true"] .btn-face {
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
 
-/* The receipt: plain lines, a hairline and a total, nothing boxed. */
+/* The receipt: plain lines, nothing boxed. Its total is the figure at the top of the page. */
 .rcpt-head {
   margin-bottom: 6px;
   font-size: var(--text-caption);
@@ -1920,6 +2419,13 @@ html.reduced .nav-item:active .nav-face {
   overflow-y: auto;
   /* A heading never ends up cut in half at the edge: what runs past the bottom fades out, and the
      padding lets the last row scroll clear of the fade. */
+  padding-bottom: 24px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+}
+/* The same fade for any list that scrolls inside a card (the Activity table, the Messages tab):
+   a cut last row reads as "there is more", never as a slip. */
+.scroll-fade {
   padding-bottom: 24px;
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
@@ -1945,17 +2451,6 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 }
 .rcpt-bar > i {
   background: var(--bar, var(--accent));
-}
-.rcpt-total {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  font-size: var(--text-body);
-  line-height: 20px;
-  color: var(--ink-2);
 }
 .rcpt-item {
   display: flex;
@@ -1991,28 +2486,27 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
     gap: 24px;
   }
 }
+/* A row in the slice (.rcpt-item) reaches 8 px past the text on both sides, for its hover and its
+   focus ring. The slice scrolls, so it clips: it is 8 px wider than its column on each open side
+   and pads the same 8 px back, or the ring of "Where it went" lost its right edge. The line above
+   it is drawn inside that padding, as wide as the text. */
 .slice {
   min-height: 0;
   max-height: 14rem;
   overflow-x: hidden;
   overflow-y: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  margin: 0 -8px;
+  padding: 12px 8px 0;
+  background: linear-gradient(var(--line), var(--line)) 8px 0 / calc(100% - 16px) 1px no-repeat;
 }
 @container (min-width: 36rem) {
   .slice {
     max-height: none;
-    padding: 0 0 0 20px;
-    border-top: 0;
+    margin: 0 -8px 0 0;
+    padding: 0 8px 0 20px;
+    background: none;
     border-left: 1px solid var(--line);
   }
-}
-.slice-dot {
-  flex-shrink: 0;
-  width: 10px;
-  height: 10px;
-  margin-top: 7px;
-  border-radius: 50%;
 }
 .slice-facts {
   display: flex;
@@ -2020,6 +2514,51 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
   align-items: center;
   gap: 4px 10px;
   margin-top: 10px;
+}
+/* "Where it went": the kinds and the biggest lines wait behind one row, closed until asked. */
+.slice-more {
+  text-align: left;
+}
+.slice-more > svg {
+  flex-shrink: 0;
+  transition: rotate var(--dur-fast) var(--ease-out);
+}
+.slice-more[aria-expanded="true"] > svg {
+  rotate: 180deg;
+}
+.slice-more-body {
+  margin-top: 4px;
+}
+/* Long text cut to a few lines (ClampText); the button under it shows the rest. */
+.clamp-lines {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.clamp-more {
+  margin-top: 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.clamp-more:hover {
+  text-decoration: underline;
+}
+html[data-input="keyboard"] .clamp-more:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* The helper page: three small facts beside the figure, under it when the window is narrow. */
+.helper-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, max-content));
+  gap: 12px 32px;
+}
+@container (min-width: 42rem) {
+  .helper-facts {
+    grid-template-columns: minmax(0, max-content);
+    padding-left: 32px;
+    border-left: 1px solid var(--line);
+  }
 }
 .details-grid {
   display: grid;
@@ -2079,7 +2618,8 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 .map-hit {
   fill: transparent;
 }
-/* A bubble wears the colour of how the helper ended; its icon is its model. */
+/* A helper is the same tile as its avatar in the list: its kind's icon (--c) on its kind's fill
+   (--cb), hollow when another helper started it. The dot on its corner (--o) is how it ended. */
 .map-body {
   transform-box: fill-box;
   transform-origin: center;
@@ -2100,27 +2640,43 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 .map-node.sel .map-dot {
   fill: color-mix(in srgb, var(--c) 34%, var(--surface));
 }
-.map-glyph {
-  fill: none;
-  stroke: var(--c, var(--ink-2));
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  pointer-events: none;
-}
 .map-icon {
-  color: var(--c, var(--ink-2));
+  color: var(--ci, var(--c, var(--ink-2)));
   pointer-events: none;
 }
-.map-glyph-fill {
-  fill: var(--c, var(--ink-2));
-  stroke: none;
+.map-back {
+  fill: var(--bg);
+}
+.map-echo {
+  fill: color-mix(in srgb, var(--c) 45%, transparent);
+}
+.map-tile {
+  fill: var(--cb);
+  stroke: color-mix(in srgb, var(--c) 28%, transparent);
+  stroke-width: 1;
+  transition: stroke var(--dur-fast) var(--ease-out);
+}
+.map-node.nested .map-tile {
+  fill: transparent;
+  stroke: var(--c);
+  stroke-width: 1.5;
+}
+.map-node:hover .map-tile,
+.map-node:focus-visible .map-tile,
+.map-node.sel .map-tile {
+  stroke: var(--c);
+}
+.map-outcome {
+  fill: var(--o);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+.map-node.root .map-icon {
+  color: var(--on-accent);
 }
 .map-node.root .map-dot {
   fill: var(--accent);
   stroke: var(--accent);
-}
-.map-node.root .map-glyph {
-  stroke: var(--on-accent);
 }
 .map-node.more .map-dot {
   stroke-dasharray: 3 3;
@@ -2156,6 +2712,26 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 .map-node.sel .map-name {
   fill: var(--ink);
 }
+/* A name at rest beside the biggest helpers; the plate takes over while its node is pointed at. */
+.map-rest {
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.map-rest .map-name {
+  fill: var(--ink);
+}
+.map-rest-detail {
+  font-size: 11px;
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.map-node:hover .map-rest,
+.map-node:focus-visible .map-rest {
+  opacity: 0;
+}
 /* The name plate: shown for the bubble pointed at or focused, placed clear of every other one. */
 .map-plate {
   pointer-events: none;
@@ -2179,17 +2755,60 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-.map-legend {
+/* The key: one line under the map, in room of its own (the map ends where it starts, so it never
+   sits on a node). Kinds that do not fit on the line wait behind "Key" and open in a row above it. */
+.map-key {
   flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
   padding-top: 10px;
+}
+.map-key-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 24px;
+}
+.map-key-row > .map-legend {
+  overflow: hidden;
+}
+.map-key-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: -8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.map-key-btn:hover {
+  background: var(--raised);
+}
+.map-key-btn > svg {
+  transition: rotate var(--dur-fast) var(--ease-out);
+}
+.map-key-btn[aria-expanded="true"] > svg {
+  rotate: 180deg;
+}
+html[data-input="keyboard"] .map-key-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.map-legend {
+  display: flex;
+  min-width: 0;
+  gap: 4px 16px;
   font-size: var(--text-caption);
   line-height: 16px;
   color: var(--ink-2);
+  white-space: nowrap;
+}
+.map-legend-kinds {
+  flex-wrap: wrap;
+  padding-bottom: 8px;
 }
 .map-legend li {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2198,9 +2817,6 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-}
-.map-legend-glyph .map-glyph {
-  stroke: var(--ink-2);
 }
 /* Enter: the lines draw out from the middle, then the dots pop in ring by ring. */
 .intro .map-link {
@@ -2241,9 +2857,9 @@ html.reduced .map-node:focus-visible .map-body {
 }
 
 /* ---- Update icon (sidebar footer) ------------------------------------------------------------ */
-/* One 36 px square at the bottom-left, mirroring Settings. The button is a fixed box; the face
+/* One 36 px square at the bottom-left (the row's height). The button is a fixed box; the face
    inside carries the tint and the press, so the hit box never moves. It is drawn in the text colour
-   (white in dark, near-black in light), like Claude's own update button (Will, 2026-11-09). */
+   (white in dark, near-black in light), like Claude's own update button (2026-11-09). */
 .upd-btn {
   position: relative;
   flex: 1 1 0;
@@ -2401,4 +3017,31 @@ html.reduced .upd-pop {
 }
 html.reduced .upd-spin .upd-arc {
   animation: none;
+}
+
+/*
+ * The file editor grown to the whole Atlas window (TextEditor `wide`). The same element moves
+ * from its place in the sheet to cover the window, so it lands from a touch smaller, like a
+ * sheet; reduced motion fades it in. Its button sits in the Save row, never over the text.
+ */
+@keyframes editor-wide-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.editor-wide {
+  animation: editor-wide-in var(--dur-slow) var(--ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .editor-wide {
+    animation: fade-in 120ms var(--ease-out) both;
+  }
+}
+html.reduced .editor-wide {
+  animation: fade-in 120ms var(--ease-out) both;
 }

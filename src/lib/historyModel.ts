@@ -1,6 +1,7 @@
 // Pure helpers for the History page: sentences, day grouping, the ribbon. No React, no IPC.
 
 import { KIND_BY_ID } from "./setup-model";
+import { clockTime, dayWord, shortDate } from "./usage";
 import type { ItemKind } from "./setup-types";
 import type { ChangeKind, DayCount, HistoryEvent, HistoryGroup, ItemRef } from "./historyTypes";
 
@@ -48,6 +49,25 @@ export function whatHappened(e: Pick<HistoryEvent, "kind" | "item" | "source"> &
   return `${noun(e.item.kind)} ${VERB[e.kind]}`;
 }
 
+/**
+ * A long name in two parts, so a row can cut the middle and keep the ending, which is the part
+ * that tells two files apart: "a-very-long-na" + "e-0123.json". A short name comes back whole
+ * with an empty ending. Wide letters (Chinese, Japanese, Korean) count double.
+ */
+export function splitName(name: string, longFrom = 28, keep = 10): [string, string] {
+  const chars = Array.from(name);
+  if (chars.length <= longFrom) return [name, ""];
+  let at = chars.length;
+  let width = 0;
+  while (at > 1) {
+    const w = (chars[at - 1].codePointAt(0) ?? 0) > 0x2e7f ? 2 : 1;
+    if (width + w > keep) break;
+    width += w;
+    at--;
+  }
+  return [chars.slice(0, at).join(""), chars.slice(at).join("")];
+}
+
 /** Where an item applies, in plain words. */
 export function scopeText(item: ItemRef): string {
   if (item.scope === "user") return "Every project";
@@ -79,42 +99,23 @@ export function startOfDay(ms: number): number {
   return d.getTime();
 }
 
-const WEEKDAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-export function shortDate(ms: number, now = Date.now()): string {
-  const d = new Date(ms);
-  const base = `${MONTH[d.getMonth()]} ${d.getDate()}`;
-  return d.getFullYear() === new Date(now).getFullYear() ? base : `${base}, ${d.getFullYear()}`;
-}
-
-/** "Today", "Yesterday", a weekday this week, else a date. */
+/** "Today", "Yesterday", a weekday this week, else a date: the app's one day rule (`dayWord`). */
 export function dayLabel(start: number, now = Date.now()): string {
-  const today = startOfDay(now);
-  const days = Math.round((today - start) / 86_400_000);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 7) return WEEKDAY[new Date(start).getDay()];
-  return shortDate(start, now);
+  return start >= startOfDay(now) ? "Today" : dayWord(start, now, true);
 }
 
-export function timeText(ms: number): string {
-  try {
-    return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  } catch {
-    return "";
-  }
-}
-
-/** "4 minutes ago", "Yesterday at 3:10 PM", "Oct 9". */
-export function agoText(ms: number, now = Date.now()): string {
+/**
+ * "4 min ago", "2 h ago", "Yesterday at 3:10 PM" (or "at 15:10": the app's one clock, `clockTime`),
+ * "Oct 9 at 9:00 AM". The short units are the ones the Toolkit and Now use.
+ */
+export function agoText(ms: number, now = Date.now(), locale?: string): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
-  if (s < 60) return "just now";
+  if (s < 45) return "just now";
   const m = Math.round(s / 60);
-  if (m < 60) return `${m} ${m === 1 ? "minute" : "minutes"} ago`;
+  if (m < 60) return `${m} min ago`;
   const h = Math.round(m / 60);
-  if (h < 24 && startOfDay(ms) === startOfDay(now)) return `${h} ${h === 1 ? "hour" : "hours"} ago`;
-  return `${dayLabel(startOfDay(ms), now)} at ${timeText(ms)}`;
+  if (h < 24 && startOfDay(ms) === startOfDay(now)) return `${h} h ago`;
+  return `${dayLabel(startOfDay(ms), now)} at ${clockTime(ms, { locale })}`;
 }
 
 /** The changes one item had on one day, newest first. */
@@ -154,11 +155,25 @@ export function groupEvents(events: HistoryEvent[], now: number, watchingSince: 
   return out;
 }
 
-/** What a dot on the rail looks like: accent for added/changed, sand for dated, grey otherwise. */
-export function dotTone(kind: ChangeKind): "accent" | "sand" | "quiet" {
-  if (kind === "added" || kind === "changed") return "accent";
-  if (kind === "dated") return "sand";
-  return "quiet";
+/**
+ * What a dot on the rail looks like. History is a calm page: every change Atlas saw is the same
+ * quiet dot, and a date from before it was watching is a hollow one. Clay is kept for the change
+ * that is open.
+ */
+export function dotTone(kind: ChangeKind): "seen" | "before" {
+  return kind === "dated" ? "before" : "seen";
+}
+
+/**
+ * The first day on the ribbon Atlas was watching for. Days before it have nothing to show, so the
+ * ribbon starts there and its first date agrees with "watching since". 0 when watching began
+ * before the ribbon does, or is not known.
+ */
+export function ribbonStart(days: DayCount[], watchingSince: number): number {
+  if (watchingSince <= 0 || days.length === 0) return 0;
+  const first = startOfDay(watchingSince);
+  const at = days.findIndex((d) => d.day >= first);
+  return at < 0 ? 0 : at;
 }
 
 /** Dot diameter in px for a day with this many changes (0 = a faint pip). */

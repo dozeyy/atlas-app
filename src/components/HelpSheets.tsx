@@ -1,11 +1,14 @@
 import { useState } from "react";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
+import { Eye, Globe, PencilSimple } from "@phosphor-icons/react";
+import type { IconProps } from "@phosphor-icons/react";
 import { Dialog } from "./Dialog";
 import { Button } from "./controls";
+import { NAV } from "./Sidebar";
 import { shortcutGroups } from "../lib/appMenu";
 import type { SheetId } from "../lib/appMenu";
 import { useAtlas } from "../state/AtlasProvider";
-import type { Platform } from "../lib/types";
+import type { Platform, View } from "../lib/types";
 
 const PLATFORM_NAME: Record<Platform, string> = { windows: "Windows", macos: "macOS", linux: "Linux" };
 
@@ -13,22 +16,26 @@ function Para({ children }: { children: ReactNode }) {
   return <p className="selectable mb-3 last:mb-0">{children}</p>;
 }
 
-function List({ items }: { items: ReactNode[] }) {
+/** A short, scannable list: an icon you can tell at a glance, a name, and one line. Never a paragraph. */
+function Points({ items }: { items: { icon: ComponentType<IconProps>; title: string; text: ReactNode }[] }) {
   return (
-    <ul className="selectable mb-3 flex list-disc flex-col gap-1.5 pl-5 last:mb-0">
-      {items.map((it, i) => (
-        <li key={i}>{it}</li>
+    <ul className="selectable m-0 flex list-none flex-col gap-3 p-0">
+      {items.map(({ icon: Icon, title, text }) => (
+        <li key={title} className="flex items-start gap-3">
+          <Icon size={18} aria-hidden="true" className="mt-px shrink-0 text-ink" />
+          <div className="min-w-0">
+            <div className="font-semibold text-ink">{title}</div>
+            <div>{text}</div>
+          </div>
+        </li>
       ))}
     </ul>
   );
 }
 
+/** These sheets only tell you something, so they end in an outlined Close: the filled button is kept for the thing you came to do. */
 function Close({ onClose }: { onClose: () => void }) {
-  return (
-    <Button variant="primary" onClick={onClose}>
-      Close
-    </Button>
-  );
+  return <Button onClick={onClose}>Close</Button>;
 }
 
 /** The one place the sheets from Help > ... are chosen, so the menu only names an id. */
@@ -53,14 +60,14 @@ function About({ onClose }: { onClose: () => void }) {
   const { info } = useAtlas();
   const rows: [string, string][] = [
     ["Version", info.version],
-    ["Build", info.build],
+    ["Build", info.build === "release" ? "Release" : "Debug"],
     ["System", PLATFORM_NAME[info.platform]],
     ["Licence", "Proprietary. Not licensed for redistribution."],
   ];
   return (
     <Dialog title="About Atlas" onClose={onClose} width={420} footer={<Close onClose={onClose} />}>
       <Para>Atlas shows how you use Claude Code: your sessions, your spending, and the skills and agents you have set up. It works from the files already on this computer.</Para>
-      <dl className="selectable mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5">
+      <dl className="selectable mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
         {rows.map(([k, v]) => (
           <div key={k} className="contents">
             <dt className="text-ink-2">{k}</dt>
@@ -72,26 +79,24 @@ function About({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** One line each, so the sheet is read at a glance. Keyed by the sidebar's own views: the row shows that page's icon and name. */
+const GUIDE: Partial<Record<View, string>> = {
+  dashboard: "Your week at a glance: tokens, cost and streak.",
+  now: "Sessions that are running, waiting for you or just finished.",
+  sessions: "Every session. Search, filter, and open one to read it.",
+  setup: "Your skills, agents and commands. Every edit keeps a backup.",
+  history: "Every change to your Claude files, with the lines that changed.",
+  settings: "The theme, your Claude folder, and Sandbox mode.",
+  wrapped: "Your year with Claude, told as a short story.",
+};
+
 function Guide({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="How to use Atlas" onClose={onClose} width={520} footer={<Close onClose={onClose} />}>
-      <List
-        items={[
-          <>
-            <b className="font-semibold text-ink">Dashboard</b> is the week at a glance: tokens, the estimated cost, your streak, and which models and projects took the most. Hover or arrow through any chart for the exact numbers.
-          </>,
-          <>
-            <b className="font-semibold text-ink">Sessions</b> lists every conversation. Search by title or project, narrow it with Filters, and open one to read it with the helpers it started.
-          </>,
-          <>
-            <b className="font-semibold text-ink">Toolkit</b> holds what you have set up for Claude: skills, agents, commands and the rest. Open a type to read, edit or remove an item. Removing asks first and keeps a backup, so Undo works.
-          </>,
-          <>
-            <b className="font-semibold text-ink">Settings</b> picks the theme and which Claude folder Atlas reads. Sandbox mode works on a copy, so nothing real changes while you try things.
-          </>,
-        ]}
+      <Points
+        items={NAV.filter((n) => GUIDE[n.view]).map((n) => ({ icon: n.icon, title: n.label, text: GUIDE[n.view] }))}
       />
-      <Para>The sidebar folds to icons with the button next to the menu. Keyboard shortcuts are under Help.</Para>
+      <p className="selectable mt-4 text-caption">Hover any chart for the exact numbers. Keyboard shortcuts are under Help.</p>
     </Dialog>
   );
 }
@@ -103,12 +108,13 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
       <div className="flex flex-col gap-5">
         {shortcutGroups(info.platform).map((g) => (
           <section key={g.title} aria-label={g.title}>
-            <h3 className="mb-2 text-caption font-semibold uppercase tracking-wide text-ink-2">{g.title}</h3>
-            <dl className="grid grid-cols-[minmax(0,auto)_1fr] gap-x-6 gap-y-2">
+            <h3 className="h-sub mb-2">{g.title}</h3>
+            {/* One key column for every group, so the right-hand column starts on one line down the sheet. */}
+            <dl className="grid grid-cols-[9rem_minmax(0,1fr)] gap-x-6 gap-y-2">
               {g.rows.map((r) => (
                 <div key={r.keys} className="contents">
                   <dt>
-                    <kbd className="whitespace-nowrap rounded-[4px] border border-line bg-raised px-1.5 py-0.5 text-caption text-ink-2">{r.keys}</kbd>
+                    <kbd className="code-text whitespace-nowrap rounded-[4px] border border-line bg-raised px-2 py-0.5 text-ink-2">{r.keys}</kbd>
                   </dt>
                   <dd className="text-ink">{r.does}</dd>
                 </div>
@@ -124,21 +130,15 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
 function Privacy({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="Privacy" onClose={onClose} width={520} footer={<Close onClose={onClose} />}>
-      <Para>Atlas works only on this computer. It makes no network connections and has no account, no analytics and no crash reporting.</Para>
-      <List
+      {/* Every word here was checked against the Rust side (update.rs, library.rs, setup/files.rs, connect.rs). Keep it that way. */}
+      <Para>Atlas has no account, no analytics and no crash reports.</Para>
+      <Points
         items={[
-          <>
-            <b className="font-semibold text-ink">What it reads:</b> the Claude folder you point it at (your session files, settings, skills, agents and commands). Nothing outside that folder is read.
-          </>,
-          <>
-            <b className="font-semibold text-ink">What it writes:</b> its own settings and a cache in its data folder, and, only when you ask in the Toolkit, the item you edited or removed. A backup copy is made first.
-          </>,
-          <>
-            <b className="font-semibold text-ink">What it sends:</b> nothing. The window is not allowed to load anything from the internet.
-          </>,
+          { icon: Eye, title: "Reads", text: "Your Claude folder, and the Claude files inside your projects." },
+          { icon: PencilSimple, title: "Writes", text: "Its own data, what you change in your Claude files (backed up first), and the entry that connects Claude Code to Atlas." },
+          { icon: Globe, title: "Goes online", text: "Only to look for a new version, and to load the Library and what you install from it. Atlas sends none of your sessions or files." },
         ]}
       />
-      <Para>Sandbox mode (Settings) reads a copy of your folder instead, so your real files are never touched.</Para>
     </Dialog>
   );
 }
@@ -180,14 +180,19 @@ function Report({ onClose }: { onClose: () => void }) {
       width={480}
       footer={
         <>
-          <Button onClick={() => void openDataDir()}>Open data folder</Button>
-          <Button onClick={() => void copy()}>{copied ? "Copied" : "Copy details"}</Button>
+          <Button className="mr-auto" onClick={() => void openDataDir()}>
+            Open data folder
+          </Button>
           <Close onClose={onClose} />
+          {/* The one thing this sheet is for. */}
+          <Button variant="primary" onClick={() => void copy()}>
+            {copied ? "Copied" : "Copy details"}
+          </Button>
         </>
       }
     >
       <Para>Atlas keeps no log files, so there is nothing to attach. Write down what you were doing and what happened, and include these details.</Para>
-      <pre className="selectable rounded-control border border-line bg-raised px-3 py-2 font-mono text-caption text-ink">{details}</pre>
+      <pre className="code-text selectable whitespace-pre-wrap [overflow-wrap:anywhere] rounded-control border border-line bg-raised px-3 py-2 text-ink-2">{details}</pre>
     </Dialog>
   );
 }

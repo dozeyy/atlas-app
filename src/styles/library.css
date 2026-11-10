@@ -1,10 +1,17 @@
 /* Toolkit > Library. Colours come from tokens.css; nothing here is a literal value. */
 
-/* The highlighted row (arrow keys, or the one that opened the sheet): accent tint and a bar. */
-.lib-sel {
+/*
+ * The highlighted row (arrow keys, or the one that opened the sheet): accent tint and a bar. It
+ * is a cursor, so it is drawn only while it is one: the keyboard is in use, or the sheet it opened
+ * is up. After a mouse install the row shows its own state (the clay tile and its check) and
+ * nothing that could be read as a second "installed" mark.
+ */
+html[data-input="keyboard"] .lib-sel,
+[data-sheet-open] .lib-sel {
   background: var(--accent-tint);
 }
-.lib-sel::before {
+html[data-input="keyboard"] .lib-sel::before,
+[data-sheet-open] .lib-sel::before {
   content: "";
   position: absolute;
   inset: 8px auto 8px 0;
@@ -12,4 +19,59 @@
   border-radius: var(--r-pill);
   background: var(--accent);
   pointer-events: none;
+}
+
+/* A row asking "Uninstall name?": it holds still on the danger wash until it has its answer. */
+.lib-ask {
+  background: var(--danger-tint);
+}
+
+/*
+ * A row's picture. On the shelf it is a quiet tile, so the names lead, in the topic's family
+ * colour (--tile, one of the four chart colours): a wash of it over the raised fill, and its glyph
+ * in the colour pulled 30 % to ink. At 55 % to ink on plain raised the four families all read as
+ * brown-grey (design review, 2026-11-10); now the glyph keeps >= 3.2:1 on its wash in every theme
+ * (measured). Installed, it is the Toolkit's clay tile ("this one is yours") and carries a mark on
+ * its corner. The tile relaxes into a blob when its row is pointed at, like the Toolkit's tiles,
+ * and its glyph comes to ink.
+ */
+.lib-tile {
+  border-radius: var(--r-control);
+  background: color-mix(in srgb, var(--tile, var(--raised)) 25%, var(--raised));
+  color: color-mix(in srgb, var(--tile, var(--ink-2)) 70%, var(--ink));
+  transition:
+    border-radius var(--dur-hover) var(--ease-spring),
+    color var(--dur-fast) var(--ease-out);
+}
+.lib-tile-own {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+.hover-host:hover .lib-tile {
+  border-radius: 46% 54% 52% 48% / 54% 46% 54% 46%;
+}
+.hover-host:hover .lib-tile:not(.lib-tile-own) {
+  color: var(--ink);
+}
+/* The corner mark: a filled disc on a patch of the list's own surface, so it reads on any tile. */
+.lib-mark {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: flex;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+}
+
+/*
+ * Install is a quiet word until its row is pointed at, highlighted or holds the keyboard; then it
+ * is the usual button. It is always in the tab order and always readable. The subject is the
+ * face (a descendant), so the button's hit box never moves.
+ */
+.hover-host:not(:hover):not(:focus-within):not(.lib-sel) .lib-install .btn-face {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-2);
 }

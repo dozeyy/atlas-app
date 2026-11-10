@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent } from "react";
 import { heatLayout } from "../../lib/chartPaths";
 import { useIntro } from "../../lib/motion";
 import { ChartTooltip } from "./ChartTooltip";
@@ -14,6 +14,8 @@ export const HEAT_CELL = 13;
 const MAX_CELL = 18;
 export const MIN_WEEKS = 12;
 export const MAX_WEEKS = 52;
+/** The Less/More key sits in the label row when the grid is at least this wide, else under it. */
+const LEGEND_INLINE_MIN = 280;
 
 /** How many whole weeks fit in `width`: at least MIN_WEEKS, at most a year. */
 export function heatWeeks(width: number): number {
@@ -36,17 +38,21 @@ export function HeatGrid({
   values: allValues,
   readouts: allReadouts,
   label,
-  footer,
+  legend = false,
 }: {
   id: string;
   /** Daily activity, oldest first, the last entry is today. Give it a year; the grid shows what fits. */
   values: number[];
-  /** One readout per day, same order. */
-  readouts: Readout[];
+  /**
+   * One readout per day, same order. `axis` is the day as the left end of the grid names it
+   * ("Jul 14"): the grid shows as many weeks as fit, so its first day is named by its date, never
+   * by a count of weeks that changes with the window.
+   */
+  readouts: (Readout & { axis?: string })[];
   /** Says what the grid shows; the week count is added. */
   label: string;
-  /** Rendered under the grid with the number of weeks on show. */
-  footer?: (weeks: number) => ReactNode;
+  /** Show the Less/More colour key. */
+  legend?: boolean;
 }) {
   const intro = useIntro(id);
   const [active, setActive] = useState<number | null>(null);
@@ -82,23 +88,28 @@ export function HeatGrid({
       onKeyDown={onKey}
       onBlur={() => setActive(null)}
       onPointerLeave={() => setActive(null)}
-      className={`chart-wrap inline-block max-w-full${intro ? " intro" : ""}`}
+      className={`chart-wrap inline-block max-w-full ${intro ? "intro" : ""}`}
       style={{ width }}
     >
       <svg className="chart" width={width} height={height} aria-hidden="true">
-        {layout.cells.map((c) => (
-          <rect
-            key={c.index}
-            className={`cell${active === c.index ? " on" : ""}`}
-            x={c.x}
-            y={c.y}
-            width={CELL}
-            height={CELL}
-            rx={3.5}
-            style={{ fill: `var(--heat-${c.band})`, ["--c" as string]: c.col }}
-            onPointerEnter={() => setActive(c.index)}
-          />
-        ))}
+        {layout.cells.map((c) => {
+          // An empty day wears a 1 px hairline inside its edge (the fill alone is a whisper on
+          // the card), so the rect sits half a pixel in and the stroke stays within the cell.
+          const inset = c.band === 0 ? 0.5 : 0;
+          return (
+            <rect
+              key={c.index}
+              className={`cell${c.band === 0 ? " empty" : ""}${active === c.index ? " on" : ""}`}
+              x={c.x + inset}
+              y={c.y + inset}
+              width={CELL - inset * 2}
+              height={CELL - inset * 2}
+              rx={3.5 - inset}
+              style={{ fill: `var(--heat-${c.band})`, ["--c" as string]: c.col }}
+              onPointerEnter={() => setActive(c.index)}
+            />
+          );
+        })}
         {layout.cells.map((c) =>
           inStreak(c.index) ? (
             <rect
@@ -113,18 +124,26 @@ export function HeatGrid({
           ) : null,
         )}
         <text className="axis-label" x={0} y={layout.height + 15}>
-          {`${weeks} weeks ago`}
+          {readouts[0]?.axis ?? `${weeks} weeks ago`}
         </text>
         <text className="today-label" x={width} y={layout.height + 15} textAnchor="end">
           Today
         </text>
       </svg>
+      {legend && (
+        <span aria-hidden="true" className={`heat-key${width >= LEGEND_INLINE_MIN ? " in-row" : ""}`}>
+          Less
+          {[0, 1, 2, 3, 4, 5].map((b) => (
+            <i key={b} className={b === 0 ? "empty" : undefined} style={{ background: `var(--heat-${b})` }} />
+          ))}
+          More
+        </span>
+      )}
       <ChartTooltip tip={tip} width={width} />
       <span className="sr-only" aria-live="polite">
         {active !== null && readouts[active] ? `${readouts[active].title}: ${readouts[active].valueText}` : ""}
       </span>
     </div>
-    {footer?.(weeks)}
     </div>
   );
 }

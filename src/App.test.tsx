@@ -10,6 +10,7 @@ import { App } from "./App";
 import { AtlasProvider } from "./state/AtlasProvider";
 import { setBackend } from "./lib/ipc";
 import { MockBackend } from "./lib/mock";
+import { pushToast, resetToasts } from "./state/toastStore";
 
 function mount() {
   setBackend(new MockBackend());
@@ -31,10 +32,10 @@ describe("navigation", () => {
     const nav = screen.getByRole("navigation", { name: "Main" });
     const labels = Array.from(nav.querySelectorAll("button")).map((b) => b.textContent);
     expect(labels).toEqual(["Dashboard", "Now", "Sessions", "Toolkit", "History"]);
-    // Settings sits at the foot of the sidebar, where the version used to be; the version lives in Settings.
-    const foot = screen.getByRole("navigation", { name: "Secondary" });
-    // Icon only (Will, 2026-11-08): the name is the accessible label and tooltip, not visible text.
-    expect(Array.from(foot.querySelectorAll("button")).map((b) => b.getAttribute("aria-label"))).toEqual(["Settings"]);
+    // Settings is the gear in the title bar row (2026-11-10), not a list item; the version lives in Settings.
+    const settings = screen.getByRole("button", { name: "Settings" });
+    expect(settings.closest("header.titlebar")).not.toBeNull();
+    expect(settings).toHaveTextContent("");
     expect(screen.queryByText(/^Version /)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
@@ -47,6 +48,19 @@ describe("navigation", () => {
     expect(await screen.findByRole("list", { name: "Changes" })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/lorem ipsum/i);
     expect(screen.getByRole("button", { name: "History" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("leaves a page's own toast behind on the way to another page, and keeps one that is the only Undo", async () => {
+    mount();
+    act(() => {
+      pushToast({ message: "Installed demo.", action: { label: "Undo", onClick: () => {} }, leavesWithPage: true });
+      pushToast({ message: "Deleted my-skill.", action: { label: "Undo", onClick: () => {} } });
+    });
+    expect(screen.getByText("Installed demo.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "History" }));
+    expect(screen.queryByText("Installed demo.")).not.toBeInTheDocument();
+    expect(screen.getByText("Deleted my-skill.")).toBeInTheDocument();
+    act(() => resetToasts());
   });
 
   it("jumps with Ctrl+number", async () => {
@@ -70,7 +84,7 @@ describe("navigation", () => {
   it("numbers the shortcuts 1 to 7 with no gap, Wrapped's gift included (Show shortcuts on)", () => {
     localStorage.setItem("atlas.mock.settings", JSON.stringify({ showShortcuts: true }));
     mount();
-    const keys = [...screen.getByRole("navigation", { name: "Main" }).querySelectorAll("button"), ...screen.getByRole("navigation", { name: "Secondary" }).querySelectorAll("button"), screen.getByRole("button", { name: "Wrapped" })].map((b) => /\+(\d)\)$/.exec(b.getAttribute("title") ?? "")?.[1]);
+    const keys = [...screen.getByRole("navigation", { name: "Main" }).querySelectorAll("button"), screen.getByRole("button", { name: "Settings" }), screen.getByRole("button", { name: "Wrapped" })].map((b) => /\+(\d)\)$/.exec(b.getAttribute("title") ?? "")?.[1]);
     expect(keys.sort()).toEqual(["1", "2", "3", "4", "5", "6", "7"]);
   });
 

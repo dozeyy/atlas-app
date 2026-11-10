@@ -1,15 +1,16 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowsClockwise, GithubLogo, MagnifyingGlass, Package, X } from "@phosphor-icons/react";
+import { ArrowsClockwise, GithubLogo, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
 import { Button, IconButton } from "../controls";
 import { EmptyState } from "../EmptyState";
 import { SelectField } from "../usage/fields";
 import { AddFromGitHub } from "./AddFromGitHub";
-import { LibraryList, type RowActions } from "./LibraryList";
+import { LibraryList, ListSkeleton, type RowActions } from "./LibraryList";
 import { LibrarySheet, type SheetTarget } from "./LibrarySheet";
 import { SourceRail } from "./SourceRail";
-import { NO_CLI, OFFLINE, buildRows, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
+import { NO_CLI, OFFLINE, buildList, changedCount, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
 import { openToolkitItemNext, openToolkitTabNext } from "../../lib/nav";
+import { exact } from "../../lib/usage";
 import { checkThenInstall, openLibrary, refreshLibrary, reportFirstRows, setQuery, setSource, useLibrary } from "../../state/libraryStore";
 import { useSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
@@ -28,6 +29,16 @@ function useWide(px: number): boolean {
     return () => m.removeEventListener("change", on);
   }, [q]);
   return wide;
+}
+
+/**
+ * True when the reason reads like the network: the sentence the catalog call gives for it, or the
+ * words a failed lookup or connection leaves in Claude Code's own answer. Anything else (no
+ * command, an empty answer, a refused write, a timeout of the command itself) is not offline.
+ */
+export function looksOffline(reason: string | null): boolean {
+  if (!reason) return false;
+  return reason === OFFLINE || /\b(ENOTFOUND|ECONNREFUSED|ECONNRESET|ENETUNREACH|EAI_AGAIN|getaddrinfo|offline|no internet|network (is )?(unreachable|error|request failed)|could not reach)\b/i.test(reason);
 }
 
 /** Toolkit > Library: find a plugin or skill, read what it is, install it. */
@@ -50,14 +61,25 @@ export function LibraryTab() {
   }, []);
 
   const query = useDeferredValue(lib.query);
-  const rows = useMemo(() => buildRows({ idx: lib.idx, installed: lib.installed, source: lib.source, query }), [lib.idx, lib.installed, lib.source, query]);
-  const options = useMemo(() => sourceOptions(lib.view?.total ?? 0, lib.view?.counts ?? {}, lib.view?.marketplaces ?? [], lib.installed.length), [lib.view, lib.installed.length]);
+  const { rows, heads, showSource } = useMemo(() => buildList({ idx: lib.idx, installed: lib.installed, source: lib.source, query }), [lib.idx, lib.installed, lib.source, query]);
+  const options = useMemo(
+    () => sourceOptions(lib.view?.total ?? 0, lib.view?.counts ?? {}, lib.view?.marketplaces ?? [], lib.installed.length, changedCount(lib.idx, lib.installed)),
+    [lib.view, lib.idx, lib.installed],
+  );
   const cli = lib.view?.cli ?? true;
 
   const index = selectedKey ? rows.findIndex((r) => r.key === selectedKey) : -1;
   // The highlighted row follows the filter: when it is gone, nothing is highlighted.
   useEffect(() => {
     if (selectedKey && index < 0) setSelectedKey(null);
+  }, [selectedKey, index]);
+  // A row that moves (installing lifts it under "Installed", undoing sends it back) is followed:
+  // the highlighted row stays in view instead of slipping out from under the pointer.
+  const was = useRef<{ key: string | null; index: number }>({ key: null, index: -1 });
+  useEffect(() => {
+    const moved = was.current.key === selectedKey && was.current.index >= 0 && index >= 0 && was.current.index !== index;
+    was.current = { key: selectedKey, index };
+    if (moved) setScrollTo({ index, n: Date.now() });
   }, [selectedKey, index]);
 
   const move = (to: number) => {
@@ -96,7 +118,10 @@ export function LibraryTab() {
   const actions: RowActions = useMemo(
     () => ({
       open: openRow,
-      quickInstall: (row) => void checkThenInstall(row.entry.pluginId, row.entry.name).then((r) => r === "open" && openRow(row, true)),
+      quickInstall: (row) => {
+        setSelectedKey(row.key);
+        void checkThenInstall(row.entry.pluginId, row.entry.name).then((r) => r === "open" && openRow(row, true));
+      },
       openItem,
     }),
     [openRow, openItem],
@@ -143,7 +168,7 @@ export function LibraryTab() {
 
   let body;
   if (loading) {
-    body = <div role="status" aria-label="Loading the Library" className="skeleton min-h-0 flex-1 rounded-card" />;
+    body = <ListSkeleton label="Loading the Library" />;
   } else if (noCatalog && lib.source !== "installed") {
     body = lib.refreshing ? (
       <div role="status" aria-label="Loading the plugin catalog" className="relative min-h-0 flex-1">
@@ -152,34 +177,73 @@ export function LibraryTab() {
           Getting the plugin list from Claude Code. The first time takes a few seconds.
         </p>
       </div>
+    ) : looksOffline(lib.error) ? (
+      // The connection line is only said when the failure is one: the list comes from Claude
+      // Code's own command, and most of the ways that can fail have nothing to do with the network.
+      <EmptyState
+        fill
+        variant="error"
+        title="Atlas could not reach the plugin catalog"
+        body="Check your connection and press Refresh."
+        reason={lib.error !== OFFLINE ? lib.error : null}
+        action={{ label: "Refresh", onClick: () => void refreshLibrary() }}
+      />
+    ) : (
+      // A calm error: what happened, the next step, the engine's own words behind Details. The
+      // list comes from Claude Code's own command, so a failure that is not the network is its
+      // answer (or no answer); the sentence says where that answer is, and never blames the connection.
+      <EmptyState
+        fill
+        variant="error"
+        title="The Library could not load"
+        body="Claude Code did not give Atlas the plugin list. Refresh tries again; what it said is under Details."
+        reason={lib.error}
+        action={{ label: "Refresh", onClick: () => void refreshLibrary() }}
+      />
+    );
+  } else if (rows.length === 0 && partial && lib.source !== "installed") {
+    body = <ListSkeleton label="Searching the catalog" />;
+  } else if (rows.length === 0) {
+    const nothingInstalled = lib.source === "installed" && !lib.query;
+    // What to do next, in words that fit what is on screen: the rail is only "on the left" when it is drawn.
+    const wider = lib.source === "all" ? "" : wide ? ", or pick All on the left" : ", or pick All in the list of sources";
+    body = lib.query ? (
+      // The way out is offered right here, not back up in the search box.
+      <EmptyState
+        fill
+        variant="no-match"
+        query={lib.query}
+        body={`Try fewer words${wider}.`}
+        action={{
+          onClick: () => {
+            setQuery("");
+            search.current?.focus();
+          },
+        }}
+      />
     ) : (
       <EmptyState
         fill
-        icon={Package}
-        title="The plugin catalog is not here yet"
-        body={lib.error ?? OFFLINE}
-        seed={4}
-      >
-        <Button variant="primary" onClick={() => void refreshLibrary()}>
-          Refresh
-        </Button>
-      </EmptyState>
-    );
-  } else if (rows.length === 0 && partial && lib.source !== "installed") {
-    body = <div role="status" aria-label="Searching the catalog" className="skeleton min-h-0 flex-1 rounded-card" />;
-  } else if (rows.length === 0) {
-    body = (
-      <EmptyState
-        fill
-        icon={lib.source === "installed" && !lib.query ? Package : MagnifyingGlass}
-        title={lib.source === "installed" && !lib.query ? "Nothing installed yet" : lib.query ? `Nothing matches ${lib.query}` : "Nothing here yet"}
-        body={lib.source === "installed" && !lib.query ? "Plugins and skills you add from the Library show up here." : "Try fewer words, or pick All on the left."}
-        seed={7}
+        title={nothingInstalled ? "Nothing installed yet" : "Nothing here yet"}
+        body={nothingInstalled ? "Plugins and skills you add from the Library show up here." : "This marketplace lists no plugins. Pick All to see the rest."}
+        seed={31}
       />
     );
   } else {
     body = (
-      <LibraryList rows={rows} selectedKey={selectedKey} cli={cli} busy={lib.busy} actions={actions} scrollTo={scrollTo} onFirstRows={reportFirstRows} />
+      <LibraryList
+        rows={rows}
+        heads={heads}
+        showSource={showSource}
+        installedOnly={lib.source === "installed"}
+        query={query}
+        selectedKey={selectedKey}
+        cli={cli}
+        busy={lib.busy}
+        actions={actions}
+        scrollTo={scrollTo}
+        onFirstRows={reportFirstRows}
+      />
     );
   }
 
@@ -214,7 +278,7 @@ export function LibraryTab() {
             </button>
           )}
         </div>
-        {!wide && <SelectField label="Source" value={lib.source} onChange={setSource} options={options.map((o) => ({ value: o.id, label: `${o.label} (${o.count.toLocaleString()})` }))} />}
+        {!wide && <SelectField label="Source" value={lib.source} onChange={setSource} options={options.map((o) => ({ value: o.id, label: loading ? o.label : `${o.label} ${exact(o.count)}${o.flag ? `, ${o.flag.short}` : ""}` }))} />}
         <Button onClick={() => setAdding(true)}>
           <GithubLogo size={16} aria-hidden="true" className="ico" />
           Add from GitHub
@@ -227,17 +291,27 @@ export function LibraryTab() {
         </span>
       </div>
 
-      {(!cli || lib.view?.sandbox) && !loading && (
+      {/* Said once, here, in the warning colour with its icon; the rows below keep their descriptions. */}
+      {!cli && !loading && (
+        <p role="note" className="flex shrink-0 items-start gap-2 rounded-control bg-warning-tint px-3 py-2 text-body text-warning">
+          <WarningCircle size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">{NO_CLI}</span> Adding skills and agents from a GitHub link still works.
+          </span>
+        </p>
+      )}
+      {lib.view?.sandbox && !loading && (
         <p role="note" className="shrink-0 text-caption text-ink-2">
-          {!cli && `${NO_CLI} Adding skills and agents from a GitHub link still works.`}
-          {!cli && lib.view?.sandbox ? " " : ""}
-          {lib.view?.sandbox && "Sandbox Mode is on: installs go to the copy, not your real folder."}
+          Sandbox Mode is on: installs go to the copy, not your real folder.
         </p>
       )}
 
       <div className="flex min-h-0 flex-1 gap-4">
-        {wide && <SourceRail options={options} value={lib.source} onChange={setSource} onAdd={() => setAdding(true)} />}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{body}</div>
+        {wide && <SourceRail options={options} value={lib.source} counts={!loading} onChange={setSource} onAdd={() => setAdding(true)} />}
+        {/* data-sheet-open: the highlighted row is drawn while its sheet is up (library.css). */}
+        <div data-sheet-open={sheet ? "" : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {body}
+        </div>
       </div>
 
       {sheet && <LibrarySheet key={sheet.pluginId} target={sheet} onClose={() => setSheet(null)} />}

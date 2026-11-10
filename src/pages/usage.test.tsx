@@ -70,7 +70,7 @@ describe("Dashboard", () => {
     mount();
     await screen.findByRole("group", { name: /Tokens, last 30 days/ });
     const readout = screen.getByTestId("chart-readout");
-    expect(readout.getAttribute("title")).toMatch(/cache writes\.\nCache reads are listed apart\./);
+    expect(readout.getAttribute("title")).toMatch(/saved for reuse \(cache writes\)\.\nWhat it reused \(cache reads\) is listed apart\./);
     const card = screen.getByRole("region", { name: "Activity" });
     expect(within(card).queryByText(/Tokens count what you sent/)).not.toBeInTheDocument();
   });
@@ -125,9 +125,12 @@ describe("Dashboard", () => {
 
   it("explains an engine error and recovers on retry", async () => {
     const backend = mount("error");
-    const alerts = await screen.findAllByRole("alert");
-    expect(alerts.length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/could not be opened/).length).toBeGreaterThan(0);
+    // One calm message takes the page: a plain sentence, with the engine's own words behind Details.
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Atlas could not read your usage");
+    expect(screen.queryByText(/could not be opened/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(screen.getByText(/could not be opened/)).toBeInTheDocument();
     backend.usage.setScenario("data");
     await userEvent.click(screen.getAllByRole("button", { name: "Try again" })[0]);
     await screen.findByText("Last 7 days");
@@ -148,8 +151,9 @@ describe("Dashboard", () => {
     const list = await screen.findByRole("region", { name: "Recent sessions" });
     const first = within(list).getAllByRole("button", { name: /tokens/ })[0];
     await userEvent.click(first);
-    expect(await screen.findByRole("heading", { level: 1, name: "Sessions" })).toBeInTheDocument();
+    // An open session is the page: its own name is the one title, and the way back names the list.
     expect(await screen.findByRole("button", { name: "All sessions" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1, name: "Sessions" })).not.toBeInTheDocument();
     // A session opens on its receipt.
     expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
   });
@@ -170,10 +174,19 @@ describe("Sessions", () => {
   it("filters by search text and says so when nothing matches", async () => {
     mount("data", "sessions");
     await screen.findAllByRole("button", { name: /tokens/ });
-    await userEvent.type(screen.getByRole("searchbox", { name: "Search chats" }), "zzzz-nothing");
-    expect(await screen.findByText("No chats match")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search sessions" }), "zzzz-nothing");
+    expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
+    // Two ways to clear: the X in the field and the worded button in the empty state. Each brings the list back.
+    const clears = screen.getAllByRole("button", { name: "Clear search" });
+    expect(clears).toHaveLength(2);
+    await userEvent.click(screen.getByText("Clear search"));
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ }).length).toBeGreaterThan(0));
+    expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search sessions" }), "zzzz-nothing");
+    expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole("button", { name: "Clear search" })[0]);
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ }).length).toBeGreaterThan(0));
+    expect(screen.getByRole("searchbox", { name: "Search sessions" })).toHaveValue("");
   });
 
   it("shows an empty state when there are no sessions at all", async () => {
@@ -188,13 +201,14 @@ describe("Sessions", () => {
     expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "Details" }));
     expect(await screen.findByText("Token breakdown")).toBeInTheDocument();
-    expect(screen.getByText("Cache reads")).toBeInTheDocument();
+    // Plain word on the surface, the exact term in its hover.
+    expect(within(screen.getByRole("region", { name: "Token breakdown" })).getByText("Reused").closest("th")).toHaveAttribute("title", expect.stringMatching(/^Cache reads/));
     expect(screen.queryByText(/Mock request number 1\./)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "Messages" }));
-    await userEvent.click(screen.getByRole("button", { name: /Show conversation/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Show messages/ }));
     expect(await screen.findByText(/Mock request number 1\./)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "All sessions" }));
-    expect(await screen.findByRole("searchbox", { name: "Search chats" })).toBeVisible();
+    expect(await screen.findByRole("searchbox", { name: "Search sessions" })).toBeVisible();
   });
 
   it("reports a load failure with a retry", async () => {
@@ -277,9 +291,11 @@ describe("Helpers (subagents) inside a session", () => {
     const row = page.rows.find((r) => r.agentCount > 0)!;
     const list = await screen.findAllByRole("button", { name: /tokens/ });
     const chip = `${row.agentCount} ${row.agentCount === 1 ? "helper" : "helpers"}`;
-    const line = list.find((b) => within(b).queryByText(chip) !== null)!;
+    // Find the row by its name: other sessions can carry the same helper count, and the list
+    // groups by folder, so its order is not the page's order.
+    const name = row.name ?? `Session in ${row.projectName}`;
+    const line = list.find((b) => within(b).queryByText(name) !== null && within(b).queryByText(chip) !== null)!;
     expect(line).toBeDefined();
-    expect(within(line).getByText(row.name ?? `Session in ${row.projectName}`)).toBeInTheDocument();
     // Text only: no chip, pill or box around the count.
     const count = within(line).getByText(chip);
     expect(count.className).toContain("text-accent-text");
@@ -289,7 +305,7 @@ describe("Helpers (subagents) inside a session", () => {
   /** The helper cards live behind the Helpers tab's List view. */
   async function openHelperList() {
     await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
-    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Show as a list" }));
   }
 
   it("opens a session on its receipt: the main chat and its helpers, and a card per helper in the list", async () => {
@@ -297,7 +313,7 @@ describe("Helpers (subagents) inside a session", () => {
     const { row, detail } = await withHelpers(backend);
     mountDetail(backend, row.sessionId);
     const who = await screen.findByRole("region", { name: "Who used it" });
-    expect(within(who).getByText("Main chat")).toBeInTheDocument();
+    expect(within(who).getByText("Main session")).toBeInTheDocument();
     await openHelperList();
     for (const a of detail.agents) {
       expect(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) }).length).toBeGreaterThan(0);
@@ -313,28 +329,35 @@ describe("Helpers (subagents) inside a session", () => {
     mountDetail(backend, row.sessionId);
     await openHelperList();
     await userEvent.click(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) })[0]);
-    expect(await screen.findByRole("heading", { level: 2, name: a.name })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: a.name })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "What it was asked" })).toHaveTextContent(full.prompt!);
     expect(screen.getByText("Tool calls")).toBeInTheDocument();
     expect(screen.getByText("Ran for")).toBeInTheDocument();
     const breakdown = screen.getByRole("region", { name: "Token breakdown" });
-    expect(within(breakdown).getByText("Cache reads")).toBeInTheDocument();
+    expect(within(breakdown).getByText("Reused").closest("th")).toHaveAttribute("title", expect.stringMatching(/^Cache reads/));
     expect(within(breakdown).getByText(a.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
+    // Its file is named by whose it is; the path is the hover and the copy button, never the surface.
+    const file = screen.getByRole("region", { name: "File" });
+    expect(file).not.toHaveTextContent(full.file!.path);
+    expect(within(file).getByText("This helper's file")).toHaveAttribute("title", full.file!.path);
+    expect(within(file).getByRole("button", { name: "Copy the file path of This helper's file" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^Back to / }));
     // Back lands on the same tab and view it left.
     expect(await screen.findByRole("radio", { name: "Started" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) }).length).toBeGreaterThan(0);
   });
 
-  it("switches the token breakdown between the main conversation and everything", async () => {
+  it("shows the main chat's token breakdown beside the whole chat's, with nothing to switch", async () => {
     const backend = sessionsBackend();
     const { row, detail } = await withHelpers(backend);
     mountDetail(backend, row.sessionId);
     await userEvent.click(await screen.findByRole("radio", { name: "Details" }));
     const section = await screen.findByRole("region", { name: "Token breakdown" });
+    expect(within(section).getByRole("columnheader", { name: "Main session" })).toBeInTheDocument();
+    expect(within(section).getByRole("columnheader", { name: "With helpers" })).toBeInTheDocument();
     expect(within(section).getByText(row.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("radio", { name: "Main only" }));
     expect(within(section).getByText(detail.main.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Main only" })).toBeNull();
   });
 });
 

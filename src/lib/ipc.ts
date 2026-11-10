@@ -302,6 +302,19 @@ export interface Backend {
   onLibraryProgress(cb: (p: LibraryProgress) => void): Promise<Unlisten>;
 }
 
+/**
+ * The engine stamps "last indexed" in whole seconds; every other time the UI holds is in
+ * milliseconds. This is the one place the stamp is converted: each status that comes over IPC
+ * passes through here, so no reader has to know (Settings once read it as 1970).
+ */
+export function indexedAtMs<T extends { lastIndexedAt: number | null }>(status: T): T {
+  // A payload that leaves the field out (or sends anything but a number) means "never": a missing
+  // stamp times 1000 is NaN, which every reader would print as a date.
+  const at = status.lastIndexedAt;
+  if (typeof at !== "number" || !Number.isFinite(at)) return at === null ? status : { ...status, lastIndexedAt: null };
+  return { ...status, lastIndexedAt: at * 1000 };
+}
+
 const tauriBackend: Backend = {
   boot: () => window.__ATLAS_BOOT__ as AppInfo,
   updateSettings: (patch) => invoke<AppInfo>("update_settings", { patch }),
@@ -329,7 +342,7 @@ const tauriBackend: Backend = {
     return off;
   },
 
-  usageStatus: () => invoke<UsageStatus>("usage_status"),
+  usageStatus: () => invoke<UsageStatus>("usage_status").then(indexedAtMs),
   usageDashboard: () => invoke<Dashboard>("usage_dashboard"),
   usageTimeline: (a) => invoke<Timeline>("usage_timeline", a),
   sessionsList: (query) => invoke<SessionPage>("sessions_list", { query }),
@@ -342,7 +355,7 @@ const tauriBackend: Backend = {
   sessionTranscript: (sessionId, cursor = null, limit = 50) =>
     invoke<TranscriptPage>("session_transcript", { sessionId, cursor, limit }),
   usageFilterOptions: () => invoke<FilterOptions>("usage_filter_options"),
-  usageReindex: (scope) => invoke<UsageStatus>("usage_reindex", { scope }),
+  usageReindex: (scope) => invoke<UsageStatus>("usage_reindex", { scope }).then(indexedAtMs),
   pricingGet: () => invoke<PricingInfo>("pricing_get"),
   pricingReveal: async () => {
     await invoke("pricing_reveal");
@@ -350,12 +363,12 @@ const tauriBackend: Backend = {
   sessionOpenFolder: async (sessionId) => {
     await invoke("session_open_folder", { sessionId });
   },
-  onUsageStatus: (cb) => listen<UsageStatus>(USAGE_STATUS_EVENT, (e) => cb(e.payload)),
+  onUsageStatus: (cb) => listen<UsageStatus>(USAGE_STATUS_EVENT, (e) => cb(indexedAtMs(e.payload))),
   onUsageProgress: (cb) => listen<IndexProgress>(USAGE_PROGRESS_EVENT, (e) => cb(e.payload)),
   onUsageChanged: (cb) => listen<UsageChanged>(USAGE_CHANGED_EVENT, (e) => cb(e.payload)),
   searchChats: (query, limit = 20, offset = 0) => invoke<SearchPage>("search_chats", { query, limit, offset }),
-  searchStatus: () => invoke<SearchStatus>("search_status"),
-  onSearchStatus: (cb) => listen<SearchStatus>(SEARCH_STATUS_EVENT, (e) => cb(e.payload)),
+  searchStatus: () => invoke<SearchStatus>("search_status").then(indexedAtMs),
+  onSearchStatus: (cb) => listen<SearchStatus>(SEARCH_STATUS_EVENT, (e) => cb(indexedAtMs(e.payload))),
   nowSnapshot: () => invoke<NowSnapshot>("now_snapshot"),
   onNowUpdate: (cb) => listen<NowSnapshot>(NOW_UPDATE_EVENT, (e) => cb(e.payload)),
   onNowFinished: (cb) => listen<NowFinished>(NOW_FINISHED_EVENT, (e) => cb(e.payload)),

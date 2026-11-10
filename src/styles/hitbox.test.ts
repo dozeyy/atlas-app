@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Regression guard for "buttons ignore clicks near their edge" (Will, 2026-11-08).
+ * Regression guard for "buttons ignore clicks near their edge" (2026-11-08).
  *
  * Proven with a real mouse: a `:active { transform: scale(.96) }` on the button itself
  * shrinks its hit box while the mouse is down, so a mouseup 2 px inside the original edge
@@ -64,7 +64,7 @@ describe("hit box stays put", () => {
     expect(offenders).toEqual([]);
   });
 
-  // Dead edges (Will, 2026-11-08). Traced with CDP: a click lands on the nearest common ancestor of the
+  // Dead edges (2026-11-08). Traced with CDP: a click lands on the nearest common ancestor of the
   // pointerdown and pointerup targets, so a press that slips 1-2 px past a row or card before release,
   // or starts on the 1 px rule / border the row sits against, never clicks the button. The fix lives on
   // the shared primitive: an invisible ring owned by the button, under its content.

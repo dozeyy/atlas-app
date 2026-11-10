@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Minus, Plus } from "@phosphor-icons/react";
+import { ClockCounterClockwise, Database, FolderSimple, Minus, Mountains, Palette, PlugsConnected, Plus, SlidersHorizontal } from "@phosphor-icons/react";
 import { Button, Card, IconButton, PageTitle, Row, Toggle } from "../components/controls";
 import { Dialog } from "../components/Dialog";
 import { ThemePicker } from "../components/ThemePicker";
@@ -9,8 +9,10 @@ import { pushToast } from "../state/toastStore";
 import { getBackend } from "../lib/ipc";
 import type { McpStatus } from "../lib/ipc";
 import { describeSource, formatBytes } from "../lib/labels";
+import { longDate } from "../lib/dashboardModel";
 import { agoText } from "../lib/historyModel";
 import { plural } from "../lib/usage";
+import { rememberSettingsSection, savedSettingsSection } from "../lib/settingsSection";
 import { useFetched, useUsageStatus } from "../lib/useUsage";
 import { useWidth } from "../lib/useWidth";
 import { checkForUpdate, startInstall, useUpdate } from "../lib/updateStore";
@@ -21,17 +23,35 @@ const KEEP_MAX = 200;
 const KEEP_STEP = 10;
 
 const SECTIONS = [
-  { id: "appearance", label: "Appearance" },
-  { id: "folder", label: "Claude folder" },
-  { id: "claude", label: "Claude Code" },
-  { id: "data", label: "Your data" },
-  { id: "history", label: "History" },
-  { id: "about", label: "About" },
+  { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "general", label: "General", icon: SlidersHorizontal },
+  { id: "folder", label: "Claude folder", icon: FolderSimple },
+  { id: "claude", label: "Claude Code", icon: PlugsConnected },
+  { id: "data", label: "Your data", icon: Database },
+  { id: "history", label: "History", icon: ClockCounterClockwise },
+  // Not the info circle: across the app that one means "hover for more".
+  { id: "about", label: "About", icon: Mountains },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
+/** A path that breaks at a slash first, and inside a word only when one piece is wider than the row. */
 function Path({ children }: { children: string }) {
-  return <code className="selectable break-all text-ink">{children}</code>;
+  return (
+    <code className="selectable wrap-anywhere text-ink">
+      {(children.match(/[^\\/]*[\\/]?/g) ?? []).filter(Boolean).map((part, i) => (
+        <Fragment key={i}>
+          {part}
+          <wbr />
+        </Fragment>
+      ))}
+    </code>
+  );
+}
+
+// The section last looked at, so Settings reopens where you left it (kept like the Toolkit tab).
+function savedSection(): SectionId {
+  const saved = savedSettingsSection();
+  return SECTIONS.find((s) => s.id === saved)?.id ?? "appearance";
 }
 
 /** Fewer / more with the number between. Steps of ten, never outside the range. */
@@ -155,7 +175,7 @@ export function Settings() {
       // Rust saves the choice first (so a failure never leaves Atlas free to reconnect on its
       // own), then changes the connection, and announces the new settings to the page.
       await (connect ? backend.mcpConnect() : backend.mcpDisconnect());
-      pushToast({ message: connect ? "Claude Code can use Atlas now. Open a new chat to see it." : "Atlas is disconnected from Claude Code and will stay that way.", tone: "info" });
+      pushToast({ message: connect ? "Claude Code can use Atlas now. Open a new session to see it." : "Atlas is disconnected from Claude Code and will stay that way.", tone: "info" });
     } catch (e) {
       pushToast({ message: typeof e === "string" ? e : e instanceof Error ? e.message : "Could not change the connection.", tone: "error" });
     } finally {
@@ -209,7 +229,11 @@ export function Settings() {
           : (updateNote ?? undefined);
 
   const ov = overview.data;
-  const [active, setActive] = useState<SectionId>("appearance");
+  const [active, setActiveState] = useState<SectionId>(savedSection);
+  const setActive = (id: SectionId) => {
+    setActiveState(id);
+    rememberSettingsSection(id);
+  };
   const [confirmRebuild, setConfirmRebuild] = useState(false);
   const [busy, setBusy] = useState<"changed" | "full" | null>(null);
 
@@ -217,9 +241,9 @@ export function Settings() {
     setBusy(scope);
     try {
       await backend.usageReindex(scope);
-      pushToast({ message: scope === "full" ? "Rebuilding from scratch. Numbers fill in as the files are read." : "Reading your logs again.", tone: "info" });
+      pushToast({ message: scope === "full" ? "Rebuilding from scratch. Numbers fill in as the files are read." : "Reading your sessions again.", tone: "info" });
     } catch (e) {
-      pushToast({ message: e instanceof Error ? e.message : "Could not start reading the logs.", tone: "error" });
+      pushToast({ message: e instanceof Error ? e.message : "Could not start reading your sessions.", tone: "error" });
     } finally {
       setBusy(null);
     }
@@ -229,8 +253,8 @@ export function Settings() {
   const indexing = status?.state === "indexing";
   const cleanup =
     ov?.cleanupDays != null
-      ? `Claude Code keeps conversation logs for ${plural(ov.cleanupDays, "day")}.`
-      : "Claude Code keeps conversation logs for its default of 30 days.";
+      ? `Claude Code keeps sessions for ${plural(ov.cleanupDays, "day")}.`
+      : "Claude Code keeps sessions for its default of 30 days.";
 
   const bodies: Record<SectionId, ReactNode> = {
     appearance: (
@@ -239,6 +263,14 @@ export function Settings() {
         <Row label="Launch animation">
           <Toggle label="Launch animation" checked={info.settings.launchAnimation} onChange={setLaunchAnimation} />
         </Row>
+        <Row label="Show shortcuts" tip="Shows the keys in hovers, menus and search boxes. The shortcuts work either way, and Help lists them all.">
+          <Toggle label="Show shortcuts" checked={info.settings.showShortcuts} onChange={setShowShortcuts} />
+        </Row>
+      </>
+    ),
+    // How Atlas behaves, apart from how it looks.
+    general: (
+      <>
         <Row
           label="Keep running when closed"
           tip={info.platform === "macos" ? "Keeps Atlas in the menu bar only, out of the Dock." : "Hides Atlas to the tray instead of quitting."}
@@ -250,11 +282,8 @@ export function Settings() {
             <Toggle label="Shortcut on the desktop" checked={shortcutOn} onChange={(on) => void setShortcut(on)} />
           </Row>
         )}
-        <Row label="Tell me when a chat finishes">
-          <Toggle label="Tell me when a chat finishes" checked={info.settings.notifyOnFinish} onChange={setNotifyOnFinish} />
-        </Row>
-        <Row label="Show shortcuts" tip="Shows the keys in hovers, menus and search boxes. The shortcuts work either way, and Help lists them all.">
-          <Toggle label="Show shortcuts" checked={info.settings.showShortcuts} onChange={setShowShortcuts} />
+        <Row label="Tell me when a session finishes">
+          <Toggle label="Tell me when a session finishes" checked={info.settings.notifyOnFinish} onChange={setNotifyOnFinish} />
         </Row>
       </>
     ),
@@ -290,16 +319,17 @@ export function Settings() {
         )}
         {cfg && <Row label="Claude Code settings" hint={ov?.claudeSettingsFile ? <Path>{ov.claudeSettingsFile}</Path> : "No settings file yet"} />}
         {cfg && <Row label="Account and projects file" hint={<Path>{cfg.claudeJson}</Path>} />}
-        <Row label="Conversation logs" hint={cleanup} />
-        <Row label="Work on a copy" tip="Atlas copies your Claude folder to a temporary place and only touches the copy. Your real files are never changed.">
+        <Row label="Saved sessions" hint={cleanup} />
+        <Row label="Work on a copy" hint="Sandbox mode" tip="Atlas copies your Claude folder to a temporary place and only touches the copy. Your real files are never changed.">
           <Toggle label="Sandbox mode" checked={sb.enabled} onChange={(v) => void setSandbox(v)} />
         </Row>
         {sb.enabled && (
           <div role="status" className="border-t border-line px-5 py-3 text-body text-ink-2">
             {sb.state === "preparing" && "Making the copy..."}
             {sb.state === "failed" && (
-              <span className="text-danger">
-                The copy could not be made{sb.error ? `: ${sb.error}` : "."} Atlas is showing nothing rather than your real folder.
+              // The reason is the system's own words (often a path): it waits in the hover.
+              <span className="text-danger" title={sb.error ?? undefined}>
+                The copy could not be made. Atlas is showing nothing rather than your real folder.
               </span>
             )}
             {sb.state === "ready" && sb.report && (
@@ -321,14 +351,8 @@ export function Settings() {
       <>
         <Row
           label="Let Claude Code use Atlas"
-          hint={
-            <>
-              Claude Code can list and edit your skills, agents and commands through Atlas, with a backup before every change.
-              <div role="status" className="mt-1 text-caption">
-                {mcpBusy ? "Working" : mcpState}
-              </div>
-            </>
-          }
+          tip="Claude Code can list and edit your skills, agents and commands through Atlas, with a backup before every change."
+          hint={<span role="status">{mcpBusy ? "Working" : mcpState}</span>}
         >
           <Toggle label="Let Claude Code use Atlas" checked={mcpWanted && !mcpForeign} onChange={(v) => void changeMcp(v)} disabled={mcpBusy || !mcp || mcp.sandbox || mcp.server === null || mcpForeign} />
         </Row>
@@ -345,11 +369,17 @@ export function Settings() {
           hint={
             status ? (
               <>
-                {status.state === "error"
-                  ? status.error ?? "The usage cache could not be opened."
-                  : `${plural(status.filesTracked, "session log")} read${status.lastIndexedAt ? `, updated ${agoText(status.lastIndexedAt)}` : ""}.`}
+                {status.state === "error" ? (
+                  // A plain sentence; the engine's own words (paths, codes) wait in the hover.
+                  <span className="text-danger" title={status.error ?? undefined}>
+                    Atlas could not read your usage.
+                  </span>
+                ) : (
+                  `${plural(status.filesTracked, "session file")} read${status.lastIndexedAt ? `, updated ${agoText(status.lastIndexedAt)}` : ""}.`
+                )}
+                {/* The file is in the Atlas data folder two rows down; its full path waits in the hover. */}
                 <div className="mt-1 text-caption">
-                  {formatBytes(status.cacheBytes)} on disk. <Path>{status.cachePath}</Path>
+                  <span title={status.cachePath}>{formatBytes(status.cacheBytes)} on disk</span>
                 </div>
               </>
             ) : (
@@ -359,7 +389,7 @@ export function Settings() {
         >
           <div className="flex flex-wrap justify-end gap-2">
             <Button onClick={() => void reindex("changed")} disabled={indexing || busy !== null}>
-              Read logs again
+              Read sessions again
             </Button>
             <Button onClick={() => setConfirmRebuild(true)} disabled={indexing || busy !== null}>
               Rebuild from scratch
@@ -371,14 +401,12 @@ export function Settings() {
           hint={
             price.data ? (
               price.data.error ? (
-                <span className="text-danger">{price.data.error}</span>
+                // The last good list stays in force (pricing_file.rs); the reason waits in the hover.
+                <span className="text-danger" title={price.data.error}>
+                  The price file could not be read. Atlas is using its last good prices.
+                </span>
               ) : (
-                <>
-                  Updated {price.data.table.updated}
-                  <div className="mt-1 text-caption">
-                    <Path>{price.data.path}</Path>
-                  </div>
-                </>
+                <span title={price.data.path}>Updated {longDate(price.data.table.updated)}</span>
               )
             ) : (
               "Loading"
@@ -387,8 +415,9 @@ export function Settings() {
         >
           <Button onClick={() => void backend.pricingReveal().catch(() => {})}>Show file</Button>
         </Row>
-        <Row label="Atlas data" hint={<Path>{info.dataDir}</Path>}>
-          <Button onClick={() => void openDataDir()}>Open Atlas data folder</Button>
+        {/* No raw path on the surface in this section: a plain line, the path in its hover, the folder behind the button. */}
+        <Row label="Atlas data" hint={<span title={info.dataDir}>Its settings, usage data and backups</span>}>
+          <Button onClick={() => void openDataDir()}>Open folder</Button>
         </Row>
       </>
     ),
@@ -404,9 +433,9 @@ export function Settings() {
                 : "Nothing saved yet"
           }
         >
-          <Button onClick={() => void backend.historyOpenFolder().catch(() => {})}>Open history folder</Button>
+          <Button onClick={() => void backend.historyOpenFolder().catch(() => {})}>Open folder</Button>
         </Row>
-        <Row label="Keep up to" tip="Older copies of a file are let go once it passes this many. The newest are always kept.">
+        <Row label="Versions kept per file" tip="Older copies of a file are let go once it passes this many. The newest are always kept.">
           <Stepper value={keep} onChange={setHistoryKeep} />
         </Row>
       </>
@@ -429,17 +458,23 @@ export function Settings() {
             </Button>
           )}
         </Row>
-        <Row label="Build">
-          <span className="text-body text-ink-2">{info.build === "release" ? "Release" : "Debug"}</span>
-        </Row>
-        <Row label="Started in" tip="Time from launch to the first screen.">
-          <span className="text-body text-ink-2">{info.firstPaintMs === null ? "Not measured" : `${info.firstPaintMs} ms`}</span>
-        </Row>
-        <Row label="Privacy" tip="Atlas never sends your data anywhere. The only thing it asks the internet is whether a newer version exists.">
-          <span className="text-body text-ink-2">Stays on this computer</span>
+        {/* Facts only when there is one to tell: a release build is the normal case, and a start
+            that was not timed says nothing. */}
+        {info.build !== "release" && (
+          <Row label="Build">
+            <span className="text-body text-ink-2">Debug</span>
+          </Row>
+        )}
+        {info.firstPaintMs !== null && (
+          <Row label="Started in" tip="Time from launch to the first screen.">
+            <span className="text-body text-ink-2">{`${info.firstPaintMs} ms`}</span>
+          </Row>
+        )}
+        <Row label="Privacy" tip="Atlas sends none of your sessions or files anywhere. It goes online only to look for a new version and to load the Library.">
+          <span className="text-body text-ink-2">Your sessions and files are not sent</span>
         </Row>
         {canUninstall && (
-          <Row label="Uninstall" tip="Closes Atlas and asks whether to keep or remove its saved data. Your Claude Code chats are never touched.">
+          <Row label="Uninstall" tip="Closes Atlas and asks whether to keep or remove its saved data. Your Claude Code sessions are never touched.">
             <Button
               onClick={() =>
                 void backend.uninstallAtlas().catch((e: unknown) => pushToast({ message: typeof e === "string" ? e : "Could not start the uninstaller.", tone: "error" }))
@@ -469,6 +504,7 @@ export function Settings() {
               aria-controls="st-panel"
               onClick={() => setActive(s.id)}
             >
+              <s.icon size={16} aria-hidden="true" className="st-nav-ico" />
               {s.label}
             </button>
           ))}
@@ -500,7 +536,7 @@ export function Settings() {
           }
         >
           <p className="text-body text-ink">
-            Atlas reads every session log again and makes the numbers from scratch. Logs that Claude Code has already cleared cannot be read again, so their numbers are kept.
+            Atlas reads every session file again. Numbers from files that Claude Code already cleared are kept.
           </p>
         </Dialog>
       )}

@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ClockCounterClockwise, PauseCircle } from "@phosphor-icons/react";
 import { getBackend } from "../lib/ipc";
 import { useFetched } from "../lib/useUsage";
 import { useWidth } from "../lib/useWidth";
 import { useHistoryEvents } from "../lib/useHistoryEvents";
 import { prefersReducedMotion } from "../lib/motion";
-import { GROUP_CHIPS, groupEvents, shortDate } from "../lib/historyModel";
-import { exact } from "../lib/usage";
+import { GROUP_CHIPS, groupEvents } from "../lib/historyModel";
+import { exact, shortDate } from "../lib/usage";
 import { useAtlas } from "../state/AtlasProvider";
+import { rememberSettingsSection } from "../lib/settingsSection";
 import { Card, PageTitle } from "../components/controls";
-import { CountUp } from "../components/CountUp";
 import { EmptyState } from "../components/EmptyState";
 import { SearchField, SelectField } from "../components/usage/fields";
-import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
+import { Skeleton } from "../components/usage/StateBlocks";
 import { Ribbon } from "../components/history/Ribbon";
 import { Timeline } from "../components/history/Timeline";
 import { Detail } from "../components/history/Detail";
@@ -27,7 +26,8 @@ function Hero({ o, now, onPick }: { o: HistoryOverview; now: number; onPick: (da
       <Card className="grid grid-cols-1 items-center gap-x-10 gap-y-2 px-5 py-2 @[740px]:grid-cols-[auto_minmax(0,1fr)]">
         <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
           <div>
-            <CountUp value={o.watchedEvents} format={exact} id="hist:seen" className="d d-hero text-ink" />
+            {/* A plain number: History is a calm page, nothing counts up here. */}
+            <div className="d d-hero text-ink">{exact(o.watchedEvents)}</div>
             <div className="text-body text-ink-2">changes seen</div>
           </div>
           <div>
@@ -42,7 +42,7 @@ function Hero({ o, now, onPick }: { o: HistoryOverview; now: number; onPick: (da
           )}
         </div>
         <div className="min-w-0 self-end">
-          <Ribbon days={o.days} onPick={onPick} now={now} />
+          <Ribbon days={o.days} since={o.watchingSince} onPick={onPick} now={now} />
         </div>
       </Card>
     </section>
@@ -51,7 +51,7 @@ function Hero({ o, now, onPick }: { o: HistoryOverview; now: number; onPick: (da
 
 export function History() {
   const backend = getBackend();
-  const { info } = useAtlas();
+  const { info, setView } = useAtlas();
   const root = useRef<HTMLDivElement>(null);
   const width = useWidth(root);
   const wide = width === 0 || width >= WIDE_AT;
@@ -153,6 +153,12 @@ export function History() {
 
   const o = overview.data;
   const filtered = group !== "all" || project !== "" || q.trim() !== "";
+  const showEverything = () => {
+    setGroup("all");
+    setProject("");
+    setText("");
+    setQ("");
+  };
 
   if (overview.loading && !o && !overview.error) {
     return (
@@ -167,7 +173,7 @@ export function History() {
     return (
       <div className="@container" ref={root}>
         <PageTitle title="History" />
-        <ErrorBlock title="Could not load History" message={overview.error} onRetry={() => overview.reload(false)} />
+        <EmptyState variant="error" title="Could not load History" reason={overview.error} action={{ onClick: () => overview.reload(false) }} />
       </div>
     );
   }
@@ -175,12 +181,19 @@ export function History() {
     return (
       <div className="@container flex flex-1 flex-col" ref={root}>
         <PageTitle title="History" />
+        {/* The one way out is a press away, not a sentence to follow (the shared empty state, one action). */}
         <EmptyState
           fill
-          seed={11}
-          icon={PauseCircle}
-          title="History is paused while Sandbox Mode is on"
-          body="Atlas keeps its copies of your real Claude folder only. Turn Sandbox Mode off in Settings and History picks up where it left off."
+          seed={14}
+          title="History is paused while Sandbox mode is on"
+          body="Atlas keeps its copies of your real Claude folder only. Turn Sandbox mode off in Settings, under Claude folder, and History picks up where it left off."
+          action={{
+            label: "Open Settings",
+            onClick: () => {
+              rememberSettingsSection("folder");
+              setView("settings");
+            },
+          }}
         />
       </div>
     );
@@ -191,8 +204,7 @@ export function History() {
         <PageTitle title="History" />
         <EmptyState
           fill
-          seed={11}
-          icon={ClockCounterClockwise}
+          seed={14}
           title="Atlas is taking its first look"
           body="It is reading your Claude folder now. Changes you make from here on show up on this page, newest first."
         />
@@ -218,12 +230,15 @@ export function History() {
             </div>
             <div className="ml-auto flex min-w-max flex-1 items-center justify-end gap-2">
               {o.projects.length > 0 && (
-                <SelectField
-                  label="Project"
-                  value={project}
-                  onChange={setProject}
-                  options={[{ value: "", label: "All projects" }, ...o.projects.map((p) => ({ value: p, label: p }))]}
-                />
+                // The picker cuts a long project name; the hover says which one is chosen.
+                <span className="inline-flex" title={project || undefined}>
+                  <SelectField
+                    label="Project"
+                    value={project}
+                    onChange={setProject}
+                    options={[{ value: "", label: "All projects" }, ...o.projects.map((p) => ({ value: p, label: p }))]}
+                  />
+                </span>
               )}
               <SearchField value={text} onChange={setText} label="Search changes" placeholder="Search changes" />
             </div>
@@ -232,16 +247,26 @@ export function History() {
       )}
 
       {list.error && !list.events.length ? (
-        <ErrorBlock title="Could not load the changes" message={list.error} onRetry={list.retry} />
+        <EmptyState variant="error" title="Could not load the changes" reason={list.error} action={{ onClick: list.retry }} />
       ) : list.loading && list.events.length === 0 ? (
         <Skeleton className="h-64" />
       ) : list.events.length === 0 ? (
-        <p role="status" className="py-10 text-center text-body text-ink-2">
-          {filtered ? "Nothing matches that. Try another filter or search." : "No changes yet."}
-        </p>
+        filtered ? (
+          // The same words every list uses for a search that finds nothing (Sessions, Library, Team):
+          // the hint line, then "Clear search", "and filters" only when a kind or project is set too.
+          <EmptyState
+            variant="no-match"
+            query={q.trim() || undefined}
+            body={q.trim() && (group !== "all" || project !== "") ? "Filters are on too." : q.trim() ? "Try fewer words." : undefined}
+            action={{ onClick: showEverything, label: q.trim() && (group !== "all" || project !== "") ? "Clear search and filters" : q.trim() ? "Clear search" : "Clear filters" }}
+          />
+        ) : (
+          <EmptyState seed={14} className="min-h-[240px]" title="No changes yet" body="Changes to your Claude setup show up here, newest first." />
+        )
       ) : wide ? (
-        <div className="rise grid min-h-[240px] flex-1 grid-cols-[minmax(300px,380px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-6" style={rise(3)}>
-          <div className="min-h-0 overflow-y-auto pr-1">
+        // The list gets half: its rows are sentences, and a diff wraps inside its pane.
+        <div className="rise grid min-h-[240px] flex-1 grid-cols-[minmax(380px,1fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-6" style={rise(3)}>
+          <div className="hx-pane pr-1">
             <Timeline
               sections={view.sections}
               selectedId={selected?.id ?? null}
@@ -253,7 +278,7 @@ export function History() {
               now={view.now}
             />
           </div>
-          <div className="min-h-0 overflow-y-auto rounded-card">
+          <div className="hx-pane rounded-t-card">
             {showDetail && selected && (
               <Card className="p-5">
                 <Detail key={selected.id} event={selected} />

@@ -70,6 +70,21 @@ export function barTop(v: number, max: number, base: number, top: number): numbe
   return Math.min(base - (Math.min(v, max) / max) * (base - top), base - MIN_BAR);
 }
 
+/**
+ * The top of a bar chart's value axis for a largest value `v`. The axis prints three labels (top,
+ * half and 0), so the top is picked from 1 (tens and up), 2, 4, 6, 8 and 10 times a power of ten:
+ * its half is then a round number too. That keeps "2.5M / 1.3M" (a half that had to be rounded)
+ * and "1 / 1 / 0" (a count axis whose half was 0.5) from ever being drawn. Never below 2.
+ */
+export function axisMax(v: number): number {
+  if (!(v > 2)) return 2;
+  const base = 10 ** Math.floor(Math.log10(v));
+  for (const step of base >= 10 ? [1, 2, 4, 6, 8, 10] : [2, 4, 6, 8, 10]) {
+    if (v <= step * base * (1 + 1e-12)) return step * base;
+  }
+  return 10 * base;
+}
+
 export interface RidgeGeometry {
   pts: Pt[];
   line: string;
@@ -225,4 +240,16 @@ export function stackFlex(values: number[]): number[] {
   const total = values.reduce((s, v) => s + Math.max(0, v), 0);
   if (total <= 0) return values.map(() => 0);
   return values.map((v) => (Math.max(0, v) / total) * 100);
+}
+
+/** Steps that read well under an axis: hours, days and weeks all land on a round count. */
+const LABEL_STEPS = [1, 2, 3, 4, 6, 7, 8, 10, 12, 14, 15, 20, 30];
+
+/**
+ * How many bars apart the x labels sit so that at most `maxLabels` are drawn: the smallest
+ * step from `LABEL_STEPS` that does it (24 hours at 5 labels: every 6 hours, four labels).
+ */
+export function labelStep(n: number, maxLabels: number): number {
+  const need = Math.max(1, Math.ceil(n / Math.max(1, maxLabels)));
+  return LABEL_STEPS.find((s) => s >= need) ?? need;
 }

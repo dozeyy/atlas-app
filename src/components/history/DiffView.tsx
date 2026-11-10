@@ -78,13 +78,20 @@ export function DiffView({ diff, onExpand }: { diff: HistoryDiff; onExpand?: () 
 
 /** A copy shown whole, for a file that is gone: the last thing Atlas kept. */
 export function TextPreview({ text, max = 400 }: { text: string; max?: number }) {
+  // Nothing to draw: say so, a box holding only a line number reads as a fault.
+  if (text.trim() === "") return <p className="text-body text-ink-2">The file was empty.</p>;
   const all = text.replace(/\n$/, "").split("\n");
   const lines = all.slice(0, max);
   return (
     <>
-      <div className="hx-diff" role="group" aria-label="Last copy">
+      <div className="hx-diff hx-preview" role="group" aria-label="Last copy">
         {lines.map((t, i) => (
-          <Line key={i} line={{ kind: "same", oldNo: i + 1, newNo: null, text: t, segs: null }} />
+          <div key={i} className="hx-line" data-kind="same">
+            <span className="hx-no" aria-hidden="true">
+              {i + 1}
+            </span>
+            <span className="selectable">{t}</span>
+          </div>
         ))}
       </div>
       {all.length > max && <p className="mt-2 text-caption text-ink-2">Showing the first {max} lines.</p>}

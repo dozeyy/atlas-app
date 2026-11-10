@@ -1,11 +1,10 @@
 import { useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ZERO_STUB, barPath, barTop } from "../../lib/chartPaths";
+import { ZERO_STUB, axisMax, barPath, barTop, labelStep } from "../../lib/chartPaths";
 import { useIntro } from "../../lib/motion";
-import { niceMax } from "../../lib/usage";
 import { ChartTooltip } from "./ChartTooltip";
 import type { TipAt } from "./ChartTooltip";
-import { stepIndex, useWidth } from "./shared";
+import { clearPeak, stepIndex, useWidth } from "./shared";
 import type { BarDatum } from "./shared";
 
 export type { BarDatum } from "./shared";
@@ -18,7 +17,7 @@ const BOTTOM = 22;
 /**
  * Activity bars. A bar grows from a fixed baseline; hover raises its top 4 px (scale from the
  * bottom edge) and fills it darker, a three-line tooltip follows, and the spark that sits
- * over the busiest bar steps aside while a tooltip is open. Keyboard: the group takes focus,
+ * over a clear single peak (`clearPeak`: level bars get none) steps aside while a tooltip is open. Keyboard: the group takes focus,
  * Left/Right (Home/End) read each bar. The pointer target is a separate full-height slot, so
  * the bar's growth never moves what the mouse is over.
  */
@@ -29,6 +28,7 @@ export function Bars({
   formatTick,
   height: fixedHeight,
   highlight,
+  anchor = "start",
   calm = false,
 }: {
   /** Intro id: the entrance animation plays once per id per launch. */
@@ -39,6 +39,8 @@ export function Bars({
   height?: number;
   /** Which bar wears the accent (default: the last, "now"). -1 for none. */
   highlight?: number;
+  /** Which end the x labels count from. "end" keeps a label under the newest bar. */
+  anchor?: "start" | "end";
   /** A calm zone (a sheet): no entrance animation and no summit spark. */
   calm?: boolean;
 }) {
@@ -49,7 +51,7 @@ export function Bars({
   const intro = introId && !calm;
   const [active, setActive] = useState<number | null>(null);
   const n = data.length;
-  const max = niceMax(Math.max(0, ...data.map((d) => d.value)));
+  const max = axisMax(Math.max(0, ...data.map((d) => d.value)));
   const plotW = Math.max(40, width - LEFT - RIGHT);
   const base = height - BOTTOM;
   const slot = plotW / Math.max(1, n);
@@ -64,9 +66,20 @@ export function Bars({
     });
     return at;
   }, [data]);
+  const peak = useMemo(() => clearPeak(data.map((d) => d.value)), [data]);
 
-  const labelEvery = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 64))));
+  // Four or five labels across the axis (three when narrow: one per ~100 px of plot, so a 480 px
+  // Dashboard chart gets four, not three), stepping by a count that reads well (every 6 hours,
+  // every 6 days, every 3 weeks), never by 5.
+  const labelEvery = labelStep(n, Math.min(5, Math.max(3, Math.floor(plotW / 100))));
+  // A range with nothing in it shows its baseline and no ticks: "2 / 1 / 0" on an empty day was
+  // a made-up scale.
+  const empty = !data.some((d) => d.value > 0);
   const cx = (i: number) => LEFT + i * slot + slot / 2;
+  const labelled = (i: number) => (anchor === "end" ? n - 1 - i : i) % labelEvery === 0;
+  // Counting from the end, the newest bar's label ends at the plot's right edge (the first one
+  // starts at its left edge), so neither hangs outside the chart.
+  const endLabel = (i: number) => anchor === "end" && i === n - 1 && i > 0;
 
   const tip: TipAt | null =
     active !== null && data[active]
@@ -98,18 +111,21 @@ export function Bars({
       className={`chart-wrap${intro ? " intro" : ""}`}
     >
       <svg className="chart" width={width} height={height} aria-hidden="true">
-        {[0.5, 1].map((f) => (
-          <g key={f}>
-            <line className="grid-line" x1={LEFT} x2={width - RIGHT} y1={yOf(max * f)} y2={yOf(max * f)} />
-            <text className="axis-label" x={LEFT - 8} y={yOf(max * f) + 4} textAnchor="end">
-              {formatTick(max * f)}
-            </text>
-          </g>
-        ))}
+        {!empty &&
+          [0.5, 1].map((f) => (
+            <g key={f}>
+              <line className="grid-line" x1={LEFT} x2={width - RIGHT} y1={yOf(max * f)} y2={yOf(max * f)} />
+              <text className="axis-label" x={LEFT - 8} y={yOf(max * f) + 4} textAnchor="end">
+                {formatTick(max * f)}
+              </text>
+            </g>
+          ))}
         <line className="base-line" x1={LEFT} x2={width - RIGHT} y1={base} y2={base} />
-        <text className="axis-label" x={LEFT - 8} y={base + 4} textAnchor="end">
-          0
-        </text>
+        {!empty && (
+          <text className="axis-label" x={LEFT - 8} y={base + 4} textAnchor="end">
+            0
+          </text>
+        )}
 
         {data.map((d, i) => {
           const x = LEFT + i * slot + (slot - bw) / 2;
@@ -125,7 +141,9 @@ export function Bars({
                   style={{ ["--hs" as string]: Math.min(1.6, (h + 4) / Math.max(h, 1)), ["--i" as string]: i }}
                 />
               ) : (
-                <rect className="bar zero" x={x} y={base - ZERO_STUB} width={bw} height={ZERO_STUB} rx={1.5} style={{ ["--i" as string]: i }} />
+                // Half a pixel in on every side: the stub's 1 px hairline (trail.css) then sits inside
+                // the 3 px nub instead of straddling its edge and the baseline.
+                <rect className="bar zero" x={x + 0.5} y={base - ZERO_STUB + 0.5} width={bw - 1} height={ZERO_STUB - 1} rx={1} style={{ ["--i" as string]: i }} />
               )}
               {/* The pointer target never moves: a full-height slot, not the bar. */}
               <rect
@@ -136,12 +154,12 @@ export function Bars({
                 height={base - TOP + 18}
                 onPointerEnter={() => setActive(i)}
               />
-              {i % labelEvery === 0 && (
+              {labelled(i) && (
                 <text
-                  className="axis-label"
-                  x={i === 0 ? LEFT : cx(i)}
+                  className={endLabel(i) && i === hot ? "today-label" : "axis-label"}
+                  x={i === 0 ? LEFT : endLabel(i) ? width - RIGHT : cx(i)}
                   y={height - 4}
-                  textAnchor={i === 0 ? "start" : "middle"}
+                  textAnchor={i === 0 ? "start" : endLabel(i) ? "end" : "middle"}
                 >
                   {d.axis}
                 </text>
@@ -151,11 +169,12 @@ export function Bars({
         })}
       </svg>
 
-      {busiest >= 0 && !calm && (
+      {peak >= 0 && !calm && (
         <span
           aria-hidden="true"
           className="spark summit"
-          style={{ position: "absolute", left: cx(busiest) - 9, top: Math.max(0, yOf(data[busiest].value) - 28), pointerEvents: "none" }}
+          // The 18 px spark floats 12 px above the busiest bar's top.
+          style={{ position: "absolute", left: cx(peak) - 9, top: Math.max(0, yOf(data[peak].value) - 30), pointerEvents: "none" }}
         />
       )}
       <ChartTooltip tip={tip} width={width} />

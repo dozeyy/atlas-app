@@ -3,8 +3,9 @@ import { ArrowLeft, ArrowSquareOut, Copy, FloppyDisk } from "@phosphor-icons/rea
 import { getBackend } from "../../lib/ipc";
 import { useFetched } from "../../lib/useUsage";
 import { Button } from "../controls";
-import { KindTile } from "../setup/parts";
-import { ErrorBlock, Skeleton } from "../usage/StateBlocks";
+import { ItemIcon } from "../setup/parts";
+import { Skeleton } from "../usage/StateBlocks";
+import { EmptyState } from "../EmptyState";
 import { DiffView, TextPreview, diffNote } from "./DiffView";
 import type { HistoryEvent, VersionRow } from "../../lib/historyTypes";
 import { agoText, scopeText, setupKind, sourceNote, whatHappened } from "../../lib/historyModel";
@@ -102,13 +103,15 @@ export function Detail({ event, onBack }: { event: HistoryEvent; onBack?: () => 
       )}
 
       <header className="flex items-start gap-3">
-        <KindTile kind={setupKind(event.item.kind)} size={44} />
+        <ItemIcon item={{ kind: setupKind(event.item.kind), name: event.item.name }} size={44} />
         <div className="min-w-0 flex-1">
-          <h2 className="d d-figure truncate text-ink">{event.item.name}</h2>
-          <p className="text-body text-ink-2">
+          {/* A long name is read in full here (it wraps); where the file is waits in the name's hover. */}
+          <h2 className="h-section wrap-anywhere" title={event.item.path || undefined}>
+            {event.item.name}
+          </h2>
+          <p className="wrap-anywhere text-body text-ink-2">
             {whatHappened(event)}, {agoText(event.at)}. {scopeText(event.item)}.
           </p>
-          {event.item.path && <p className="selectable mt-0.5 break-all font-mono text-caption text-ink-2">{event.item.path}</p>}
         </div>
       </header>
 
@@ -134,7 +137,7 @@ export function Detail({ event, onBack }: { event: HistoryEvent; onBack?: () => 
             </label>
           )}
 
-          {diff.error && <ErrorBlock message={diff.error} onRetry={() => diff.reload()} />}
+          {diff.error && <EmptyState compact variant="error" title="Could not load this change" reason={diff.error} action={{ onClick: () => diff.reload() }} />}
           {diff.loading && !d && <Skeleton className="h-24" />}
           {d && diffNote(d, now ? "now" : "before") && <p className="text-body text-ink-2">{diffNote(d, now ? "now" : "before")}</p>}
           {d && <DiffView diff={d} onExpand={() => setFull(true)} />}
@@ -142,7 +145,9 @@ export function Detail({ event, onBack }: { event: HistoryEvent; onBack?: () => 
 
           {removed && lastCopy.data !== null && (
             <section aria-label="Last copy">
-              <p className="mb-2 text-body text-ink-2">This is the last copy Atlas kept before it was removed.</p>
+              <p className="mb-2 text-body text-ink-2">
+                {lastCopy.data.trim() === "" ? "Atlas kept the last copy from before it was removed." : "This is the last copy Atlas kept before it was removed."}
+              </p>
               <TextPreview text={lastCopy.data} />
             </section>
           )}

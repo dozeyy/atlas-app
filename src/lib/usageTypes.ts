@@ -25,6 +25,7 @@ export type IndexState = "idle" | "indexing" | "error" | "readOnly" | "recoverin
 export interface UsageStatus {
   state: IndexState;
   firstIndexDone: boolean;
+  /** Milliseconds, like every time in the UI (the engine sends seconds; `indexedAtMs` in ipc.ts). */
   lastIndexedAt: number | null;
   filesTracked: number;
   filesMissing: number;

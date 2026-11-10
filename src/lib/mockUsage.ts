@@ -1,5 +1,5 @@
 // Stand-in usage data for a plain browser and for tests. Deterministic: the same
-// numbers every run, spread over the 60 days before "now". Nothing here is real.
+// numbers every run, spread over the 300 days before "now". Nothing here is real.
 
 import type {
   AgentDetail,
@@ -177,11 +177,14 @@ function summarize(prompt: string): string {
   return prompt.length <= 60 ? prompt : `${prompt.slice(0, 57).trimEnd()}...`;
 }
 
+/** Days of history. The first 60 are the ones every page was tuned on; the rest make the list long enough to page many times (400+ chats). */
+const DAYS = 300;
+
 function build(now: Date): MockSession[] {
   const rand = rng(20261108);
   const out: MockSession[] = [];
   const today = localDay(now);
-  for (let back = 0; back < 60; back++) {
+  for (let back = 0; back < DAYS; back++) {
     const day = addDays(today, -back);
     const n = back % 7 === 5 || back % 7 === 6 ? (rand() < 0.4 ? 1 : 0) : 1 + Math.floor(rand() * 3);
     for (let k = 0; k < n; k++) {
@@ -333,6 +336,7 @@ export class MockUsage {
       case "empty":
         return { ...STATUS_IDLE, filesTracked: 0 };
       default:
+        // Milliseconds: what the real backend hands the UI once ipc.ts has converted the stamp.
         return { ...STATUS_IDLE, lastIndexedAt: this.now.getTime() };
     }
   }
@@ -461,13 +465,18 @@ export class MockUsage {
 
   private points(t: Tokens, model: string, messages: number, startedAt: number, durationMs: number, agentId: string | null): MessagePoint[] {
     const n = Math.max(1, Math.min(messages, 40));
+    // A real run is uneven: quiet stretches, a few heavy replies, one clear busiest moment. The
+    // weights are fixed (no random) and add up to n, so the points still sum to the thread.
+    const raw = Array.from({ length: n }, (_, i) => 0.35 + 0.65 * Math.abs(Math.sin(i * 1.7 + n)) + (i === Math.floor(n * 0.62) ? 1.6 : 0));
+    const scale = n / raw.reduce((s, w) => s + w, 0);
     return Array.from({ length: n }, (_, i) => {
+      const w = raw[i] * scale;
       const part: Tokens = {
         ...zero(),
-        input: Math.round(t.input / n),
-        output: Math.round(t.output / n),
-        cacheWrite5m: Math.round(t.cacheWrite5m / n),
-        cacheRead: Math.round(t.cacheRead / n),
+        input: Math.round((t.input * w) / n),
+        output: Math.round((t.output * w) / n),
+        cacheWrite5m: Math.round((t.cacheWrite5m * w) / n),
+        cacheRead: Math.round((t.cacheRead * w) / n),
       };
       part.total = part.input + part.output + part.cacheWrite5m;
       return { ts: startedAt + Math.round((durationMs * i) / n), model, agentId, tokens: part, cost: costOf(model, part), skill: null };
@@ -528,6 +537,7 @@ export class MockUsage {
     if (!s) return null;
     const main: MockThread = {
       agentId: null,
+      // The engine's own name for it; `receiptWords` makes it "Main session" on the way in.
       name: "Main chat",
       parentAgentId: null,
       spawnDepth: 0,

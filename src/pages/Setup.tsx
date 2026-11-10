@@ -8,8 +8,10 @@ import { ConfirmDelete } from "../components/setup/ConfirmDelete";
 import { CreateFlow } from "../components/setup/CreateFlow";
 import { DetailSheet } from "../components/setup/DetailSheet";
 import { ItemRow } from "../components/setup/ItemViews";
-import { NoSetup, SetupError, SetupSkeleton } from "../components/setup/states";
-import { TopSlot } from "../components/setup/TopSlot";
+import { PathText } from "../components/setup/parts";
+import { NoSetup, SetupSkeleton } from "../components/setup/states";
+import { EmptyState } from "../components/EmptyState";
+import { Insights, TopSlot } from "../components/setup/TopSlot";
 import { TypeTiles } from "../components/setup/TypeTiles";
 import { CostProvider } from "../components/setup/CostContext";
 import { countByKind, itemsForTile, MORE_KINDS, type TileId } from "../lib/setup-model";
@@ -18,13 +20,19 @@ import { clearPendingToolkitItem, clearPendingToolkitTab, onNavRequest, peekPend
 import type { CreateKind, SetupItem, SetupProject, SetupSnapshot } from "../lib/setup-types";
 import { reloadSetup, startSetup, useSetup } from "../state/setupStore";
 import { useAtlas } from "../state/AtlasProvider";
+import { dismissPageToasts } from "../state/toastStore";
 import { guardLeave } from "../state/unsavedStore";
 import { Team } from "./Team";
 
+/*
+ * One line about Claude Code's own settings file, in the app's words: what it means for this
+ * page and what makes it right. The file's name and path stay behind the hover (V5: a fresh,
+ * empty folder has no such file yet, and "could not find your .claude.json" read as a fault).
+ */
 const CLAUDE_JSON_NOTE: Record<string, string> = {
-  missing: "Atlas could not find your .claude.json, so the project list and per-project MCP servers may be incomplete.",
-  stale: "Your .claude.json looks out of date, so the project list may be incomplete.",
-  unreadable: "Atlas could not read your .claude.json, so the project list and per-project MCP servers may be incomplete.",
+  missing: "Claude Code has not written its own settings file yet, so no projects or per-project MCP servers are listed. It appears after Claude Code runs once.",
+  stale: "Claude Code's settings file looks out of date, so the project list may be incomplete.",
+  unreadable: "Atlas could not read Claude Code's settings file, so the project list and per-project MCP servers may be incomplete.",
 };
 
 function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]; items: SetupItem[]; onOpen: (id: string) => void }) {
@@ -51,7 +59,7 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <h2 id="missing-title" className="d d-figure text-ink">
+            <h2 id="missing-title" className="h-section">
               Projects no longer on disk
             </h2>
             <span className="chip">{projects.length}</span>
@@ -65,10 +73,10 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
             const mine = byProject.get(p.id) ?? [];
             return (
               <li key={p.id} className="border-b border-line last:border-b-0">
-                <div className="px-4 py-2.5">
+                <div className="px-4 py-2">
                   <div className="text-body font-medium text-ink">{p.name}</div>
-                  <div className="mono selectable truncate text-ink-2" title={p.path}>
-                    {p.path}
+                  <div className="selectable text-ink-2">
+                    <PathText path={p.path} />
                   </div>
                 </div>
                 {mine.map((i) => (
@@ -168,19 +176,20 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
           mac={mac}
           onBack={closeTile}
           onOpenItem={setSelectedId}
-          onDelete={setPendingDelete}
           onCreate={setCreating}
         />
       ) : (
         <>
           {jsonNote && (
-            <p role="note" className="mb-4 flex items-start gap-2 rounded-card bg-raised px-4 py-3 text-body text-ink-2">
+            <p role="note" title={snap.root.claudeJson} className="mb-4 flex items-start gap-2 rounded-card bg-raised px-4 py-3 text-body text-ink-2">
               <Info size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
               {jsonNote}
             </p>
           )}
-          <TopSlot items={counted} loads={loads} cost={cost} onCreate={setCreating} onOpen={setSelectedId} />
+          {/* The layout: the checklist, then the tiles (the way in to everything), then the numbers. */}
+          <TopSlot items={counted} onCreate={setCreating} />
           <TypeTiles counts={counts} moreCount={moreCount} onOpen={openTile} />
+          <Insights items={counted} loads={loads} cost={cost} onOpen={setSelectedId} />
           <div className="mt-4">
             <MissingProjects projects={missingProjects} items={gone} onOpen={setSelectedId} />
           </div>
@@ -188,6 +197,7 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
       )}
       {selected && (
         <DetailSheet
+          key={selected.id}
           item={selected}
           all={byId}
           loads={loads}
@@ -250,6 +260,17 @@ export function Setup() {
     }
   }, []);
 
+  // A tab is a page of its own: a toast that belongs to the one just left ("Installed x. Undo",
+  // raised in the Library) does not follow onto Team or Your setup.
+  const firstTabRender = useRef(true);
+  useEffect(() => {
+    if (firstTabRender.current) {
+      firstTabRender.current = false;
+      return;
+    }
+    dismissPageToasts();
+  }, [tab]);
+
   // Ctrl+K, or "Open in Toolkit" on a copied item, asks for a tab while the page is already open.
   useEffect(
     () =>
@@ -289,7 +310,14 @@ export function Setup() {
       ) : st.snapshot ? (
         <Loaded snap={st.snapshot} includeWorktrees={st.includeWorktrees} loads={st.loads} error={st.status === "ready" ? st.error : null} />
       ) : st.status === "error" ? (
-        <SetupError message={st.error ?? "Something went wrong."} onRetry={reloadSetup} />
+        <EmptyState
+          fill
+          variant="error"
+          title="Atlas could not read your toolkit"
+          body="Nothing in your Claude folder was changed."
+          reason={st.error}
+          action={{ onClick: reloadSetup }}
+        />
       ) : (
         <SetupSkeleton />
       )}

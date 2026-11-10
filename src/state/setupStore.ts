@@ -1,7 +1,7 @@
 // The Setup data, loaded before anyone opens the page.
 //
 // A tiny external store (no provider needed): main.tsx calls `startSetup()` right
-// after the first render, so by the time Will clicks Setup the snapshot is already
+// after the first render, so by the time you click Setup the snapshot is already
 // here. A change on disk (event from Rust) or a different Claude folder reloads it.
 // The snapshot never contains file bodies or secret values.
 

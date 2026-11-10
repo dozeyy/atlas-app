@@ -6,13 +6,13 @@ import { TextEditor } from "./TextEditor";
 import { getBackend } from "../../lib/ipc";
 import { readField, setField } from "../../lib/frontmatter";
 import { errorText } from "../../lib/setup-actions";
-import { KIND_BY_ID } from "../../lib/setup-model";
+import { displayName, KIND_BY_ID } from "../../lib/setup-model";
 import type { RawEdit, SetupItem, SkillFile } from "../../lib/setup-types";
 import { reloadSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
 
 const FIELD_INPUT =
-  "h-8 w-full min-w-0 rounded-control border border-line-strong bg-surface px-2.5 text-body text-ink outline-none focus:border-ink-2 disabled:cursor-default disabled:text-ink-2";
+  "h-8 w-full min-w-0 rounded-control border border-line-strong bg-surface px-3 text-body text-ink outline-none focus:border-ink-2 disabled:cursor-default disabled:text-ink-2";
 
 /** The header's name and description as fields; they read and change the same text the editor holds. */
 function HeaderFields({ item, text, setText }: { item: SetupItem; text: string; setText: (next: string) => void }) {
@@ -26,7 +26,7 @@ function HeaderFields({ item, text, setText }: { item: SetupItem; text: string; 
           <label htmlFor="hf-name" className="text-body text-ink-2">
             Name
           </label>
-          <input id="hf-name" className={`${FIELD_INPUT} mono`} value={name.value} disabled readOnly title="A skill's name is its folder name" />
+          <input id="hf-name" className={FIELD_INPUT} value={name.value} disabled readOnly title="A skill's name is its folder name" />
         </>
       )}
       {desc?.single && (
@@ -82,7 +82,7 @@ function FileTabs({ files, current, onPick }: { files: SkillFile[]; current: str
               if (e.key === "ArrowRight") (e.preventDefault(), move(i + 1));
               else if (e.key === "ArrowLeft") (e.preventDefault(), move(i - 1));
             }}
-            className={`press mono inline-flex h-7 max-w-[220px] cursor-pointer items-center rounded-control px-2.5 text-body disabled:cursor-default disabled:opacity-50 ${
+            className={`press mono inline-flex h-7 max-w-[220px] cursor-pointer items-center rounded-control px-2 text-body disabled:cursor-default disabled:opacity-50 ${
               on ? "bg-raised font-medium text-ink" : "text-ink-2 hover:bg-raised hover:text-ink"
             }`}
           >
@@ -96,7 +96,7 @@ function FileTabs({ files, current, onPick }: { files: SkillFile[]; current: str
 
 /**
  * Edit one item's text. Save = backup, atomic write, read back. If the file
- * changed on disk since it was opened, Will chooses instead of losing either side.
+ * changed on disk since it was opened, you choose instead of losing either side.
  * Saving keeps the editor open on the same file; a skill's other files are one tab away.
  */
 export function ItemEditor({
@@ -168,7 +168,7 @@ export function ItemEditor({
     }
   };
 
-  const label = file ? `${item.name}/${file}` : item.name;
+  const label = file ? `${item.name}/${file}` : displayName(item);
 
   const save = async (text: string, force: boolean) => {
     if (!raw) return;
@@ -215,10 +215,10 @@ export function ItemEditor({
               <Lock size={18} aria-hidden="true" />
             </span>
             <div>
-              <h3 className="text-lead font-semibold text-ink">This {KIND_BY_ID[item.kind].singular} holds secret values</h3>
+              {/* A message, not a heading: the system face a step above body. */}
+              <p className="text-lead font-semibold text-ink">This {KIND_BY_ID[item.kind].singular} holds secret values</p>
               <p className="mt-1 text-body text-ink-2">
-                Keys and tokens are kept out of sight everywhere in Atlas. To edit the file you need the real text, so Atlas has to show it. It is not saved
-                or logged anywhere else.
+                Editing shows the real text, keys and tokens included. Atlas does not save or log them anywhere else.
               </p>
             </div>
           </div>
@@ -253,7 +253,7 @@ export function ItemEditor({
         key={version}
         initial={raw.text}
         language={raw.language}
-        label={file ? `Editing ${item.name} ${file}` : `Editing ${item.name}`}
+        label={file ? `Editing ${item.name} ${file}` : `Editing ${displayName(item)}`}
         validate={(t) => getBackend().setupValidate(item.id, t, file)}
         onSubmit={(t) => save(t, false)}
         onCancel={onCancel}

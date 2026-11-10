@@ -89,6 +89,27 @@ describe("title bar row", () => {
   });
 });
 
+describe("the Settings gear", () => {
+  it("is an icon-only button in the title bar row, after the menu and before the sidebar toggle, that opens Settings and shows it selected", async () => {
+    mount("windows", true);
+    const gear = screen.getByRole("button", { name: "Settings" });
+    expect(gear.closest("header.titlebar")).not.toBeNull();
+    expect(gear.closest("nav")).toBeNull();
+    expect(gear).toHaveTextContent("");
+    expect(gear).not.toHaveAttribute("data-tauri-drag-region");
+    expect(gear).toHaveClass("titlebar-settings");
+    // Reading order of the row: menu, Settings, sidebar toggle, Wrapped (the CSS places them).
+    const order = Array.from(document.querySelectorAll("header.titlebar button")).map((b) => b.getAttribute("aria-label"));
+    expect(order.slice(0, 4)).toEqual(["Menu", "Settings", "Sidebar", "Wrapped"]);
+    expect(gear.getAttribute("title")).toMatch(/^Settings \((Ctrl|Cmd)\+6\)$/);
+    expect(gear).not.toHaveAttribute("aria-current");
+    await userEvent.click(gear);
+    expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+    expect(gear).toHaveAttribute("aria-current", "page");
+    expect(gear.getAttribute("title") ?? "").toBe("");
+  });
+});
+
 describe("Wrapped's gift", () => {
   it("is an icon-only button in the title bar row, outside the main list, that opens Wrapped and shows it selected", async () => {
     mount("windows", true);
@@ -137,9 +158,9 @@ describe("session row", () => {
     expect(title.className).toMatch(/font-bold/);
     const meta = btn.querySelector(".truncate.text-caption") as HTMLElement;
     expect(meta).not.toBeNull();
-    // Will's order (2026-11-08): project, tokens, helpers, when. The dollar estimate lives in the tokens hover.
+    // The order (2026-11-08): project, tokens, helpers, when. The dollar estimate lives in the tokens hover.
     // (The dollar estimate also reaches screen readers as hidden text right after the tokens.)
-    expect(meta.textContent).toMatch(/^pixel-garden\u00b7117k tokens(, about \$0\.56 at API prices, estimated)?\u00b72 helpers\u00b7.+\d\d:\d\d$/);
+    expect(meta.textContent).toMatch(/^pixel-garden\u00b7117k tokens(, about \$0\.56 at API prices, estimated)?\u00b72 helpers\u00b7.+\d{1,2}:\d\d( [AP]M)?$/);
     expect(meta.querySelector("[title]")?.getAttribute("title")).toMatch(/About \$0\.56 at API prices\. An estimate/);
     // The helper count is colored text and nothing else.
     expect(screen.getByText("2 helpers").className).toMatch(/text-accent-text/);

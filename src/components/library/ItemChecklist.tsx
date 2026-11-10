@@ -18,7 +18,7 @@ export function ItemChecklist({
 }) {
   const takenBy = (i: InnerItem) => taken.find((t) => t.kind === i.kind && t.name === i.name);
   return (
-    <ul className="grid gap-0.5" aria-label="Things to install">
+    <ul className="grid grid-cols-[minmax(0,1fr)] gap-0.5" aria-label="Things to install">
       {items.map((i) => {
         const key = itemKey(i);
         const t = takenBy(i);
@@ -26,7 +26,7 @@ export function ItemChecklist({
         return (
           <li key={key}>
             <label
-              className={`flex items-start gap-2.5 rounded-control px-2 py-1.5 text-body ${t ? "cursor-default opacity-70" : "cursor-pointer hover:bg-raised"}`}
+              className={`flex items-start gap-2 rounded-control px-2 py-2 text-body ${t ? "cursor-default opacity-70" : "cursor-pointer hover:bg-raised"}`}
             >
               <input type="checkbox" className="peer sr-only" checked={on} disabled={!!t} onChange={() => onToggle(key)} />
               <span
@@ -37,10 +37,12 @@ export function ItemChecklist({
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-2">
-                  <span className="min-w-0 flex-1 truncate text-ink">{i.name}</span>
+                  <span title={i.name} className="min-w-0 flex-1 truncate text-ink">
+                    {i.name}
+                  </span>
                   <span className="shrink-0 text-caption text-ink-2">{itemWord(i.kind)}</span>
                 </span>
-                {t && <span className="block text-caption text-ink-2">You already have one called {i.name}.</span>}
+                {t && <span className="block break-words text-caption text-ink-2">You already have one called {i.name}.</span>}
               </span>
             </label>
           </li>

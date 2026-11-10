@@ -19,25 +19,30 @@ function ShowMore({ hidden, onClick }: { hidden: number; onClick: () => void }) 
   );
 }
 
-function Cards({ items, onOpen, onDelete }: { items: SetupItem[]; onOpen: (id: string) => void; onDelete?: (item: SetupItem) => void }) {
+function Cards({ items, onOpen, canDelete }: { items: SetupItem[]; onOpen: (id: string) => void; canDelete?: boolean }) {
   const [all, setAll] = useState(false);
   const list = all ? items : items.slice(0, CARD_CAP);
   // When the list mixes places (Global, a project, a plugin), each place gets its own small heading.
   const runs = scopeRuns(list);
-  const headed = runs.length > 1;
+  // A heading earns its line when a place holds several things. When every place holds one, the
+  // cards share one grid (each card's chip already says where it lives), so no card sits alone
+  // under its own heading beside an empty column.
+  const headed = runs.length > 1 && runs.some((r) => r.items.length > 1);
+  const blocks = headed ? runs : [{ label: "all", items: list }];
   return (
     <>
-      {runs.map((r) => (
+      {blocks.map((r) => (
         <div key={r.label} className={headed ? "mb-5 last:mb-0" : undefined}>
           {headed && (
-            <h3 className="mb-2 flex items-baseline gap-2 text-body font-medium text-ink-2">
+            <h3 className="h-sub mb-2 flex items-baseline gap-2">
               {r.label}
               <span className="font-normal">{r.items.length}</span>
             </h3>
           )}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))] gap-3">
+          {/* The only card on the page takes the row, as a list of one would. */}
+          <div className={`grid gap-3 ${list.length === 1 ? "grid-cols-1" : "grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))]"}`}>
             {r.items.map((i) => (
-              <ItemCard key={i.id} item={i} onOpen={onOpen} onDelete={onDelete} />
+              <ItemCard key={i.id} item={i} onOpen={onOpen} canDelete={canDelete} />
             ))}
           </div>
         </div>
@@ -65,11 +70,11 @@ function Rows({ items, onOpen, mono }: { items: SetupItem[]; onOpen: (id: string
 export function GroupBody({
   group,
   onOpenItem,
-  onDelete,
+  canDelete,
 }: {
   group: Group;
   onOpenItem: (id: string) => void;
-  onDelete?: (item: SetupItem) => void;
+  canDelete?: boolean;
 }) {
   const { meta, items } = group;
   if (meta.kind === "permission") {
@@ -77,8 +82,10 @@ export function GroupBody({
       <>
         {permissionBuckets(items).map((b) => (
           <div key={b.id} className="mb-4 last:mb-0">
-            <h3 className="mb-2 text-body font-medium text-ink-2">
-              {BUCKET_TITLE[b.id]} <span className="font-normal">({b.items.length})</span>
+            {/* Same small heading as a place ("Global 3"): name, then the count. */}
+            <h3 className="h-sub mb-2 flex items-baseline gap-2">
+              {BUCKET_TITLE[b.id]}
+              <span className="font-normal">{b.items.length}</span>
             </h3>
             <Rows items={b.items} onOpen={onOpenItem} mono />
           </div>
@@ -87,7 +94,7 @@ export function GroupBody({
     );
   }
   if (meta.compact) return <Rows items={items} onOpen={onOpenItem} mono={meta.kind === "hookScript" || meta.kind === "other"} />;
-  return <Cards items={items} onOpen={onOpenItem} onDelete={onDelete} />;
+  return <Cards items={items} onOpen={onOpenItem} canDelete={canDelete} />;
 }
 
 export function GroupSection({
@@ -95,13 +102,13 @@ export function GroupSection({
   open,
   onToggle,
   onOpenItem,
-  onDelete,
+  canDelete,
 }: {
   group: Group;
   open: boolean;
   onToggle: () => void;
   onOpenItem: (id: string) => void;
-  onDelete?: (item: SetupItem) => void;
+  canDelete?: boolean;
 }) {
   const { meta, items } = group;
   const id = `group-${meta.kind}`;
@@ -119,7 +126,7 @@ export function GroupSection({
         <KindTile kind={meta.kind} size={32} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <h2 id={`${id}-title`} className="d d-figure text-ink">
+            <h2 id={`${id}-title`} className="h-section">
               {meta.plural}
             </h2>
             <span className="chip">{items.length}</span>
@@ -129,7 +136,7 @@ export function GroupSection({
       </button>
       {open && (
         <div id={`${id}-body`} className="fade-in">
-          <GroupBody group={group} onOpenItem={onOpenItem} onDelete={onDelete} />
+          <GroupBody group={group} onOpenItem={onOpenItem} canDelete={canDelete} />
         </div>
       )}
     </section>

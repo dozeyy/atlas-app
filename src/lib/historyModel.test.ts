@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayLabel, dotTone, groupEvents, groupOfKind, ribbonDot, ribbonLabel, scopeText, startOfDay, whatHappened } from "./historyModel";
+import { dayLabel, dotTone, groupEvents, groupOfKind, ribbonDot, ribbonLabel, ribbonStart, scopeText, startOfDay, whatHappened } from "./historyModel";
 import type { HistoryEvent, ItemRef } from "./historyTypes";
 
 const DAY = 86_400_000;
@@ -28,8 +28,8 @@ describe("history sentences", () => {
 
   it("says where an item applies", () => {
     expect(scopeText(item("a"))).toBe("Every project");
-    expect(scopeText({ ...item("a"), scope: "project", project: "gazette" })).toBe("gazette");
-    expect(scopeText({ ...item("a"), scope: "local", project: "gazette" })).toBe("gazette, just you");
+    expect(scopeText({ ...item("a"), scope: "project", project: "newsletter" })).toBe("newsletter");
+    expect(scopeText({ ...item("a"), scope: "local", project: "newsletter" })).toBe("newsletter, just you");
   });
 
   it("labels days relative to today", () => {
@@ -88,9 +88,23 @@ describe("ribbon", () => {
     expect(ribbonLabel({ day: today - DAY, count: 3 }, NOW)).toBe("Yesterday: 3 changes");
   });
 
-  it("colors dots by what happened", () => {
-    expect(dotTone("added")).toBe("accent");
-    expect(dotTone("dated")).toBe("sand");
-    expect(dotTone("removed")).toBe("quiet");
+  it("keeps every seen change the same quiet dot, and a date from before watching a hollow one", () => {
+    expect(dotTone("added")).toBe("seen");
+    expect(dotTone("changed")).toBe("seen");
+    expect(dotTone("removed")).toBe("seen");
+    expect(dotTone("dated")).toBe("before");
+  });
+
+  it("starts the ribbon on the day watching began, so its first date agrees with the number beside it", () => {
+    const days = Array.from({ length: 30 }, (_, i) => ({ day: today - (29 - i) * DAY, count: 0 }));
+    // Began partway through that day, 24 days ago.
+    expect(ribbonStart(days, today - 24 * DAY + 5 * 3_600_000)).toBe(5);
+    expect(ribbonStart(days, today - 24 * DAY)).toBe(5);
+    // Watching for longer than the ribbon shows, or not known yet: the whole ribbon.
+    expect(ribbonStart(days, today - 90 * DAY)).toBe(0);
+    expect(ribbonStart(days, 0)).toBe(0);
+    expect(ribbonStart([], today)).toBe(0);
+    // Began today.
+    expect(ribbonStart(days, NOW)).toBe(29);
   });
 });

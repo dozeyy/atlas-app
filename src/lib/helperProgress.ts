@@ -5,7 +5,8 @@
 // it has moved (Step 3 of 6); else tool calls so far against the median of that kind's finished
 // runs (About 60% of a typical run); else nothing to compare (docs/specs/agent-scorecard.md D43).
 
-import { formatDuration, modelWithEffort } from "./usage";
+import { helperName, typeName } from "./helperName";
+import { effortWords, formatDuration, modelWithEffort } from "./usage";
 import type { NowHelper } from "./nowTypes";
 
 /** No new line for this long (and no call open) reads as "no progress". One constant for the page. */
@@ -26,21 +27,17 @@ export interface Progress {
   hint?: string;
 }
 
-/** "code-reviewer" -> "Code reviewer", "general-purpose" -> "General purpose". */
-export function typeName(t: string | null): string {
-  if (!t) return "Helper";
-  const s = t.replace(/[-_]+/g, " ").trim();
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "Helper";
-}
+// The type's name lives with the other name rules; call sites that import it from here keep working.
+export { typeName };
 
 /**
- * "Opus 5.5 (dot) high": the exact model and the effort the transcript says, through the app's one
+ * "Opus 5.5, high effort": the exact model and the effort the transcript says, through the app's one
  * label rule (`modelWithEffort`, as on Sessions, Session Detail and the chat cards). Either part that the lines do not say is left out, never
  * guessed; with neither there is nothing to show.
  */
 export function modelEffort(h: Pick<NowHelper, "model" | "effort">): string | null {
   if (h.model) return modelWithEffort(h.model, h.effort);
-  return h.effort || null;
+  return h.effort ? effortWords(h.effort) : null;
 }
 
 export function progressOf(h: NowHelper): Progress {
@@ -56,7 +53,7 @@ export function progressOf(h: NowHelper): Progress {
   }
   const t = h.typical;
   if (t && t.calls > 0) {
-    const hint = `A typical ${typeName(h.agentType).toLowerCase()} run: ${t.calls} tool calls, ${formatDuration(t.ms)} (median of ${t.runs} runs).`;
+    const hint = `A typical ${helperName(typeName(h.agentType).toLowerCase())} run: ${t.calls} tool calls, ${formatDuration(t.ms)} (median of ${t.runs} runs).`;
     if (h.toolCalls >= t.calls) return { kind: "over", fill: FILL_CAP, text: "Longer than a typical run", hint };
     const share = h.toolCalls / t.calls;
     // Almost nothing done yet: a percentage would be a made-up number.
@@ -79,6 +76,8 @@ export function statusOf(h: NowHelper, now: number): Status {
   if (h.done || idle < STUCK_MS) return { text: h.phase, tone: "phase" };
   const min = Math.floor(idle / 60_000);
   const open = h.openCall;
-  if (!open) return { text: `No progress for ${min} min`, tone: "warning" };
-  return { text: open.kind === "run" ? `Running ${open.word} for ${min} min` : `Waiting on ${open.word} for ${min} min`, tone: "calm" };
+  // The app's one way to write a length of time: past an hour it is "1 h 15 min", not "75 min".
+  const quiet = formatDuration(min * 60_000);
+  if (!open) return { text: `No progress for ${quiet}`, tone: "warning" };
+  return { text: open.kind === "run" ? `Running ${open.word} for ${quiet}` : `Waiting on ${open.word} for ${quiet}`, tone: "calm" };
 }

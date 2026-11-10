@@ -212,7 +212,9 @@ describe("Wrapped", () => {
     await screen.findByText(OPENER);
     await lastSlide();
     await userEvent.click(screen.getByRole("button", { name: "Save image" }));
-    expect(await screen.findByText("Saved to C:/Users/me/Pictures/Atlas Wrapped 2026-11-08.png")).toBeInTheDocument();
+    // The line is the folder and the name; the whole path is its hover.
+    const said = await screen.findByText("Saved to Pictures/Atlas Wrapped 2026-11-08.png");
+    expect(said.closest('[role="status"]')).toHaveAttribute("title", "C:/Users/me/Pictures/Atlas Wrapped 2026-11-08.png");
     backend.wrappedSaveCard = async () => {
       throw "The image could not be saved: disk full";
     };
@@ -220,7 +222,25 @@ describe("Wrapped", () => {
     expect(await screen.findByText("The image could not be saved: disk full")).toBeInTheDocument();
   });
 
+  it("keeps Save image in the row under the sheet, only on the card, and off when the card cannot draw", async () => {
+    mount();
+    await screen.findByText(OPENER);
+    expect(screen.queryByRole("button", { name: "Save image" })).not.toBeInTheDocument();
+    await lastSlide();
+    // No canvas here (jsdom): the card says so in the row, and there is nothing to save.
+    const save = screen.getByRole("button", { name: "Save image" });
+    expect(save.closest(".sm-foot")).not.toBeNull();
+    expect(save).toBeDisabled();
+    expect(screen.getByRole("status").textContent).toBe("The picture could not be drawn.");
+    // Back off the card: the button goes with it.
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.queryByRole("button", { name: "Save image" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("jumps from the trail, ends on Replay, and starts over", async () => {
+    // A card that cannot draw says so where the count is, so this one draws (as a real window does).
+    fakeCanvas();
     mount();
     await screen.findByText(OPENER);
     const n = total();

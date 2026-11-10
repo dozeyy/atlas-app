@@ -1,12 +1,17 @@
 // Wrapped's end card, drawn to a canvas. The canvas on the page is the picture that gets saved, so
-// what Will sees is what leaves the app. It is drawn at 2x the size it is shown (452 x 420 px on
-// the page) from the app's own tokens at the moment of drawing, so it matches the theme you see, and
+// what you see is what leaves the app. It is laid out on a 452 x 420 grid and drawn at 3x
+// (1356 x 1260), so the preview stays sharp on a 2x screen at the size the sheet shows it. It is
+// drawn from the app's own tokens at the moment of drawing, so it matches the theme you see, and
 // from the numbers and names a ShareCard carries; it never sees a chat name or a prompt.
 // (A canvas cannot set the CASL axis, so the figures use Recursive's default softness here.)
 
+import { bucketAndSmooth } from "./smooth";
+import { drawSparkMark } from "./sparkMark";
 import type { ShareCard } from "./wrappedModel";
 
-const S = 2;
+const S = 3;
+/** The ridge goes through this many points at most: 380 px wide, that is a step every 12 px. */
+export const RIDGE_POINTS = 32;
 export const CARD_W = 452 * S;
 export const CARD_H = 420 * S;
 
@@ -110,25 +115,34 @@ export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boole
   ctx.fillStyle = p.ink2;
   ctx.fillText(card.unit, PAD_X + figW + 8 * S, figBase);
 
-  // The history as a ridge.
+  // The history as a ridge: the Dashboard's curve (monotone cubic through RIDGE_POINTS or fewer,
+  // never under its baseline), the peak wearing a dot and the Atlas mark, today a dot at the end.
   const ridgeTop = PAD_TOP + 18 * S + 22 * S + 88 * S + 18 * S;
   const ridgeH = 64 * S;
-  if (card.ridge.length > 1) {
+  if (card.ridge.length > 1 && typeof Path2D !== "undefined") {
     const w = 380 * S;
-    const pts = card.ridge.map((v, i): [number, number] => [(i / (card.ridge.length - 1)) * w + PAD_X, ridgeTop + ridgeH - 2 * S - v * (ridgeH - 8 * S)]);
-    ctx.beginPath();
-    ctx.moveTo(PAD_X, ridgeTop + ridgeH);
-    pts.forEach(([x, y]) => ctx.lineTo(x, y));
-    ctx.lineTo(PAD_X + w, ridgeTop + ridgeH);
-    ctx.closePath();
+    const g = bucketAndSmooth(card.ridge, RIDGE_POINTS, w, ridgeH, 0, 6 * S, 0);
+    ctx.save();
+    ctx.translate(PAD_X, ridgeTop);
     ctx.fillStyle = p.fill;
-    ctx.fill();
-    ctx.beginPath();
-    pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    ctx.fill(new Path2D(g.area));
     ctx.strokeStyle = p.accent;
     ctx.lineWidth = 1.6 * S;
     ctx.lineJoin = "round";
-    ctx.stroke();
+    ctx.lineCap = "round";
+    ctx.stroke(new Path2D(g.line));
+    ctx.fillStyle = p.accent;
+    const [px, py] = g.pts[g.peak];
+    ctx.beginPath();
+    ctx.arc(px, py, 3 * S, 0, Math.PI * 2);
+    ctx.fill();
+    drawSparkMark(ctx, px, py - 15 * S, 16 * S);
+    if (g.last) {
+      ctx.beginPath();
+      ctx.arc(g.last[0], g.last[1], 2.25 * S, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   // Up to four facts, two to a row: the value over its label.
@@ -137,7 +151,9 @@ export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boole
   card.facts.slice(0, 4).forEach((f, i) => {
     const x = PAD_X + (i % COLS) * (colW + COL_GAP);
     const y = factsTop + Math.floor(i / COLS) * (48 * S + 20 * S);
-    const px = fit(ctx, f.value, display(720), 26 * S, 16 * S, colW);
+    // A long name steps down a little, then is cut with "...": it never shrinks to small print
+    // beside a full-size number.
+    const px = fit(ctx, f.value, display(720), 26 * S, 20 * S, colW);
     ctx.font = display(720)(px);
     ctx.fillStyle = p.ink;
     ctx.fillText(clip(ctx, f.value, colW), x, y + 24 * S);

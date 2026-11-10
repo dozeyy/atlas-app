@@ -1,13 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { MouseEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 import {
   ArrowLeft,
   ArrowRight,
   ArrowCounterClockwise,
+  DownloadSimple,
+  WarningCircle,
 } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { prefersReducedMotion } from "../../lib/motion";
 import type { Slide } from "../../lib/wrappedModel";
+import { CardPortContext, useCardSave } from "./CardSlide";
+import type { CardOnSheet } from "./CardSlide";
 import { FRAME_H, FRAME_W, SlideView } from "./SlideView";
 import { Trail } from "./Trail";
 
@@ -38,6 +42,8 @@ interface At {
  * back); the trail's waypoints are buttons too. A move is a cross-fade with a 24 px drift in the
  * trail's direction; with reduced motion it is a plain fade. Slides are laid out in a fixed
  * 1008 x 625 frame that is scaled to the sheet, so the layout is the same at every window size.
+ * On the recap card the row under the sheet carries its action: Save image is the primary button
+ * there, where Next has been all along, and the line beside it says where the picture went.
  */
 export function Story({
   slides,
@@ -203,6 +209,16 @@ export function Story({
     move(i + (e.clientX - box.left < box.width / 3 ? -1 : 1));
   };
 
+  // The recap card reports its canvas here once it is on the sheet; Save image (below) saves that.
+  const [onSheet, setOnSheet] = useState<CardOnSheet | null>(null);
+  const cardPort = useCallback(
+    (c: CardOnSheet | null) =>
+      setOnSheet((cur) => (cur?.canvas === c?.canvas && cur?.drawn === c?.drawn ? cur : c)),
+    [],
+  );
+  const card = slides[i]?.card;
+  const saving = useCardSave(card, card ? onSheet : null);
+
   if (slides.length === 0) return null;
   const slide = slides[i];
   const outgoing = prev !== null && prev !== i ? (slides[prev] ?? null) : null;
@@ -216,7 +232,16 @@ export function Story({
         <div ref={sheet} className="sm-sheet">
           <div
             className="sm-scaler"
-            style={{ width: FRAME_W, height: FRAME_H, transform: `translate(-50%, -50%) scale(${scale})` }}
+            // --sm-k lets the small print keep a readable size on screen when the frame is scaled
+            // down (summit.css).
+            style={
+              {
+                width: FRAME_W,
+                height: FRAME_H,
+                transform: `translate(-50%, -50%) scale(${scale})`,
+                "--sm-k": scale,
+              } as CSSProperties
+            }
           >
             <div
               key={i}
@@ -224,7 +249,9 @@ export function Story({
               data-in={n > 0 ? dir : undefined}
               aria-live="polite"
             >
-              <SlideView slide={slide} />
+              <CardPortContext.Provider value={cardPort}>
+                <SlideView slide={slide} />
+              </CardPortContext.Provider>
             </div>
             {outgoing && (
               <div key={`out${prev}`} className="sm-slot sm-out" data-out={dir} aria-hidden="true">
@@ -235,19 +262,44 @@ export function Story({
         </div>
       </div>
 
-      <div className="sm-foot">
+      <div className="sm-foot" data-note={saving.note ? "" : undefined}>
         <Button onClick={() => go(i - 1)} disabled={i === 0}>
           <ArrowLeft size={14} aria-hidden="true" />
           Back
         </Button>
-        <span className="text-caption text-ink-2">
-          {i + 1} of {slides.length}
-        </span>
+        {/* The middle of the row: where you are, or (on the card) what Save image has to say. */}
+        <div className="sm-foot-mid">
+          {!saving.note && (
+            <span className="sm-foot-at text-caption text-ink-2">
+              {i + 1} of {slides.length}
+            </span>
+          )}
+          {card && (
+            <span
+              role="status"
+              className="sm-foot-note"
+              data-bad={saving.bad ? "" : undefined}
+              title={saving.path}
+            >
+              {/* A failure is told by a mark and words at body size, never by colour alone. */}
+              {saving.bad && saving.note && <WarningCircle size={16} weight="fill" aria-hidden="true" className="sm-foot-mark" />}
+              {saving.note && <span className="sm-foot-words">{saving.note}</span>}
+            </span>
+          )}
+        </div>
         {i === last ? (
-          <Button onClick={() => go(0)}>
-            <ArrowCounterClockwise size={14} aria-hidden="true" />
-            Replay
-          </Button>
+          <div className="sm-foot-end">
+            <Button onClick={() => go(0)}>
+              <ArrowCounterClockwise size={14} aria-hidden="true" />
+              Replay
+            </Button>
+            {card && (
+              <Button variant="primary" onClick={saving.save} disabled={!saving.ready}>
+                <DownloadSimple size={14} weight="bold" aria-hidden="true" />
+                Save image
+              </Button>
+            )}
+          </div>
         ) : (
           <Button variant="primary" onClick={() => go(i + 1)}>
             {i === 0 ? "Start" : "Next"}

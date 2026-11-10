@@ -1,6 +1,6 @@
 // Pure helpers for the Team tab: what the cards and themes say, in plain words. No React here.
 
-import { addDays, formatDuration, localDay, plural } from "./usage";
+import { addDays, exact, formatDuration, localDay, modelWithEffort, plural } from "./usage";
 import type { BarDatum } from "../components/charts/shared";
 import type { EndCounts, ReviewCounts, ReviewTheme, RunRow, ScorecardArgs, StartedFrom, TypeCard, VerdictCounts } from "./teamTypes";
 
@@ -16,8 +16,8 @@ export const RANGES: { value: RangeId; label: string; days: number | null }[] = 
 
 export const STARTED_OPTIONS: { value: StartedFrom; label: string }[] = [
   { value: "all", label: "Started from: all" },
-  { value: "interactive", label: "Started from: interactive" },
-  { value: "headless", label: "Started from: headless" },
+  { value: "interactive", label: "Started from: your sessions" },
+  { value: "headless", label: "Started from: scripts" },
 ];
 
 export interface TeamPrefs {
@@ -88,12 +88,13 @@ export function reviewCountsLine(r: ReviewCounts): string {
 
 /** A reviewer type's own verdicts, the four rows of the sheet (a partial report counts as other). */
 export function verdictRows(v: VerdictCounts): { key: string; label: string; n: number }[] {
+  // Only the verdicts that were given: a row that counts nothing is noise.
   return [
     { key: "pass", label: "Passed", n: v.pass },
     { key: "findings", label: "Sent back", n: v.findings },
     { key: "other", label: "Other", n: v.other + v.partial },
     { key: "none", label: "No verdict", n: v.none },
-  ];
+  ].filter((r) => r.n > 0);
 }
 
 export function reviewerLine(v: VerdictCounts): string {
@@ -102,24 +103,52 @@ export function reviewerLine(v: VerdictCounts): string {
   return `${v.pass} passed, ${v.findings} sent back`;
 }
 
-export const TOO_FEW = "Too few runs yet";
+export const TOO_FEW = "Too few runs for a typical time yet";
 
-export function medianTime(c: TypeCard): string {
-  return c.tooFewRuns || c.durationMsMedian === null ? TOO_FEW : `${formatDuration(c.durationMsMedian)} typical`;
+/** How a typical run goes, as one line: "Usually 9 min and 38 tool calls". Said once, not per number, when there are too few runs. */
+export function usualLine(c: TypeCard): string {
+  if (c.tooFewRuns) return TOO_FEW;
+  const parts: string[] = [];
+  if (c.durationMsMedian !== null) parts.push(formatDuration(c.durationMsMedian));
+  if (c.toolCallsMedian !== null) parts.push(plural(c.toolCallsMedian, "tool call"));
+  return parts.length ? `Usually ${parts.join(" and ")}` : TOO_FEW;
 }
 
-export function medianCalls(c: TypeCard): string {
-  return c.tooFewRuns || c.toolCallsMedian === null ? TOO_FEW : `${plural(c.toolCallsMedian, "tool call")} typical`;
+/** What a reviewer does, in plain words (the card and the sheet say it under the name). */
+export const REVIEWER_WORDS = "Reviews other helpers' work";
+
+/** Runs nobody typed for: started by a script, a schedule or another program. "Headless" is the name Claude Code gives them. */
+export const HEADLESS_HINT = "From scripts: started by a script, a schedule or another program. Claude Code calls this headless.";
+
+export function startedLine(s: { interactive: number; headless: number }): string {
+  return `${plural(s.interactive, "run")} from your sessions, ${exact(s.headless)} from scripts`;
 }
 
-/** How runs ended, as the sheet words it. Unknown runs are said, never hidden. */
+/** The twelve weekly counts in words, for the hover on the small chart: oldest week first. */
+export function weeklyTitle(weekly: number[]): string {
+  const total = weekly.reduce((a, b) => a + b, 0);
+  return `Runs per week, last ${weekly.length} weeks, oldest first: ${weekly.map((v) => exact(v)).join(", ")}. ${plural(total, "run")} in all.`;
+}
+
+/**
+ * How runs ended, as the sheet words it: only the ways that happened. A row that counts nothing
+ * is noise; a run whose ending is not known is still said, never hidden.
+ */
 export function endRows(e: EndCounts): { key: string; label: string; n: number }[] {
   return [
     { key: "finished", label: "Finished", n: e.finished },
     { key: "errored", label: "Hit an error", n: e.errored },
     { key: "stopped", label: "Stopped", n: e.stopped },
     { key: "unknown", label: "Not known", n: e.unknown },
-  ];
+  ].filter((r) => r.n > 0);
+}
+
+/** The model a helper mostly ran on, with how hard it was asked to think: the app's one rule. */
+export const modelLine = modelWithEffort;
+
+/** What the small bars on every card plot, said once under the cards. */
+export function weeklyLegend(weeks: number): string {
+  return `The small bars on a card are its runs per week, last ${weeks} weeks.`;
 }
 
 export function finishLine(c: TypeCard): string | null {
@@ -152,20 +181,14 @@ export function madeLabel(madeMs: number): string {
   return `Made a rule, ${SHORT.format(new Date(madeMs))}`;
 }
 
-/** "3 high, 1 medium" most severe first; findings without a severity are "unrated". */
+/**
+ * "Severity: 3 high, 1 medium", most severe first, so the counts say what they count. Findings a
+ * reviewer gave no severity are "not rated"; when that is all of them the line says only that.
+ */
 export function severityLine(t: ReviewTheme): string {
-  return t.severities.map((s) => `${s.count} ${s.severity === "none" ? "unrated" : s.severity.toLowerCase()}`).join(", ");
-}
-
-/** Where a theme was found, as one short line: "Found in work by builder (3), tester (1)". */
-export function foundLine(t: ReviewTheme, nameOf: (type: string) => string): string {
-  const parts = t.foundInWorkBy.map((x) => `${nameOf(x.agentType)} (${x.count})`);
-  if (t.notTied > 0) parts.push(`not tied to one helper (${t.notTied})`);
-  return parts.length ? parts.join(", ") : "Not tied to one helper";
-}
-
-export function raisedLine(t: ReviewTheme, nameOf: (type: string) => string): string {
-  return t.reviewers.map((x) => `${nameOf(x.agentType)} (${x.count})`).join(", ");
+  if (t.severities.length === 0) return "";
+  if (t.severities.every((s) => s.severity === "none")) return "Severity: not rated";
+  return `Severity: ${t.severities.map((s) => `${s.count} ${s.severity === "none" ? "not rated" : s.severity.toLowerCase()}`).join(", ")}`;
 }
 
 /** What a run row says about how it went, in a few words. */
@@ -180,7 +203,7 @@ export function runOutcome(r: RunRow): string {
   return "Not known";
 }
 
-/** "History covers the last N days" (Will, 2026-11-09), only when the cache knows it. */
+/** "History covers the last N days" (2026-11-09), only when the cache knows it. */
 export function historyLine(days: number | null): string | null {
   return days === null ? null : `History covers the last ${plural(days, "day")}.`;
 }

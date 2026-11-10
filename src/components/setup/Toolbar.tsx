@@ -6,6 +6,7 @@ import { SelectField } from "../usage/fields";
 import { DEFAULT_FILTERS } from "../../lib/setup-model";
 import type { Filters, ScopeFilter } from "../../lib/setup-model";
 import type { HiddenCounts, SetupProject } from "../../lib/setup-types";
+import { exact } from "../../lib/usage";
 
 function Labeled({ label, checked, onChange, count }: { label: string; checked: boolean; onChange: (v: boolean) => void; count?: number }) {
   return (
@@ -13,10 +14,25 @@ function Labeled({ label, checked, onChange, count }: { label: string; checked: 
       <Toggle checked={checked} onChange={onChange} label={label} />
       <span>
         {label}
-        {count ? <span className="ml-1 text-ink-2">({count})</span> : null}
+        {count ? <span className="ml-2 text-ink-2">{count}</span> : null}
       </span>
     </label>
   );
+}
+
+/** How many of the Filters menu's settings are off their defaults (the count on its button). */
+export function filtersChanged(filters: Filters): number {
+  return [
+    filters.scope !== DEFAULT_FILTERS.scope,
+    filters.scope === "project" && filters.projectId !== null,
+    filters.showWorktrees !== DEFAULT_FILTERS.showWorktrees,
+    filters.showBackups !== DEFAULT_FILTERS.showBackups,
+  ].filter(Boolean).length;
+}
+
+/** Filters that can only take items away (showing worktree copies or backups adds, it never hides). */
+export function filtersNarrow(filters: Filters): boolean {
+  return filters.scope !== DEFAULT_FILTERS.scope;
 }
 
 export function Toolbar({
@@ -44,15 +60,10 @@ export function Toolbar({
   total: number;
   placeholder?: string;
 }) {
-  const changed = [
-    filters.scope !== DEFAULT_FILTERS.scope,
-    filters.scope === "project" && filters.projectId !== null,
-    filters.showWorktrees !== DEFAULT_FILTERS.showWorktrees,
-    filters.showBackups !== DEFAULT_FILTERS.showBackups,
-  ].filter(Boolean).length;
+  const changed = filtersChanged(filters);
   const choices = projects.filter((p) => p.exists && p.itemCount > 0 && !p.isWorktree).sort((a, b) => a.name.localeCompare(b.name));
   return (
-    <div className="sticky top-0 z-10 -mx-[var(--gutter)] mb-6 border-b border-line bg-bg px-[var(--gutter)] py-3">
+    <div className="sticky top-0 z-10 -mx-[var(--gutter)] mb-4 border-b border-line bg-bg px-[var(--gutter)] py-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="relative min-w-[220px] flex-1">
           <MagnifyingGlass size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-2" />
@@ -86,7 +97,7 @@ export function Toolbar({
               <X size={14} aria-hidden="true" />
             </button>
           ) : shortcut ? (
-            <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded-[4px] border border-line bg-raised px-1.5 text-caption text-ink-2">
+            <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded-[4px] border border-line bg-raised px-2 text-caption text-ink-2">
               {shortcut}
             </kbd>
           ) : null}
@@ -133,8 +144,8 @@ export function Toolbar({
       </div>
       <p role="status" className="mt-2 text-caption text-ink-2">
         {shown === total
-          ? `${total.toLocaleString()} ${total === 1 ? "item" : "items"}`
-          : `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} items`}
+          ? `${exact(total)} ${total === 1 ? "item" : "items"}`
+          : `Showing ${exact(shown)} of ${exact(total)} items`}
       </p>
     </div>
   );

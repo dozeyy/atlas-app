@@ -1,38 +1,37 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import type { ComponentType, ReactNode } from "react";
 import {
-  Binoculars,
   CheckCircle,
   Coffee,
   DotsThree,
   FilePlus,
   FileText,
   Globe,
+  HourglassMedium,
   ListChecks,
   MagnifyingGlass,
   PencilSimple,
   Question,
   TerminalWindow,
   UsersThree,
+  Warning,
   Wrench,
   type IconProps,
 } from "@phosphor-icons/react";
 import { PageTitle } from "../components/controls";
-import { Topo } from "../components/Topo";
-import { prefersReducedMotion } from "../lib/motion";
+import { EmptyState } from "../components/EmptyState";
 import { HelperTracker } from "../components/now/HelperTracker";
-import { ago, clock, groupChats, nowCost } from "../lib/nowFormat";
-import type { NowChat, NowLast, NowStep } from "../lib/nowTypes";
+import { useAtlas } from "../state/AtlasProvider";
+import { rememberSettingsSection } from "../lib/settingsSection";
+import { ago, clock, groupChats, nowCost, splitPath } from "../lib/nowFormat";
+import type { NowChat, NowLast } from "../lib/nowTypes";
 import { useClimb, useClock, useNowSnapshot } from "../lib/useNow";
-import { CALM_MS, useSteadyDoing } from "../lib/useSteadyDoing";
+import { useSteadyDoing } from "../lib/useSteadyDoing";
 import { compact, formatDuration, modelWithEffort, plural, tokenHint } from "../lib/usage";
 import "../styles/now.css";
 
-/** More running chats than this and the cards turn into a compact grid that scrolls. */
-const STACK_MAX = 3;
+/** How many of a chat's files the hover on what it is doing names. */
 const FILES_SHOWN = 3;
-/** A step stays marked as new this long, so a second one landing does not cut its entrance short. */
-const FRESH_MS = 700;
 
 const KIND_ICON: Record<string, ComponentType<IconProps>> = {
   read: FileText,
@@ -57,42 +56,67 @@ function KindIcon({ kind, size }: { kind: string; size: number }) {
 // ---- the page ------------------------------------------------------------------------
 
 export function Now() {
+  const { info, setView } = useAtlas();
   const snap = useNowSnapshot();
   const groups = useMemo(() => (snap ? groupChats(snap) : null), [snap]);
   // One clock for every "x min ago" on the page; it only ticks when something shows one.
   const idle = !!groups && (groups.waiting.length > 0 || groups.finished.length > 0);
   const now = useClock(idle, 30_000);
+  // "Nothing to watch" has two causes and only one of them is a missing folder. The engine's
+  // `watching` is false for both (it looks for the sessions folder inside the Claude folder); the
+  // app's own look at the Claude folder says which. A folder that is there but has no sessions in
+  // it yet is simply "No sessions yet".
+  const noFolder = !!snap && !snap.watching && info.config?.dirExists === false;
+  const last = groups?.finished[0] ?? null;
 
   return (
     <>
       <PageTitle title="Now" />
       <div className="now-root">
-        {snap === null || groups === null ? null : !snap.watching ? (
-          <Quiet title="No Claude folder found" />
+        {snap === null || groups === null ? null : noFolder ? (
+          <EmptyState
+            fill
+            seed={44}
+            title="No Claude folder found"
+            body="Choose it in Settings, under Claude folder."
+            action={{
+              label: "Open Settings",
+              onClick: () => {
+                rememberSettingsSection("folder");
+                setView("settings");
+              },
+            }}
+          />
         ) : (
+          // One column, read top to bottom in the order it matters: what is waiting for you, what is
+          // running, what just finished. Nothing scrolls inside itself; the page does.
           <>
+            {groups.waiting.length > 0 && (
+              <List title="Waiting for you" count={groups.waiting.length} needsYou>
+                {groups.waiting.map((c) => (
+                  <WaitRow key={c.sessionId} chat={c} now={now} />
+                ))}
+              </List>
+            )}
             {groups.running.length > 0 ? (
               <Running chats={groups.running} />
             ) : groups.waiting.length === 0 ? (
-              <Quiet title={groups.finished.length > 0 ? "Nothing running" : "No chats yet"} last={groups.finished[0] ?? null} now={now} />
+              // The shared empty state: the spark, one title, one plain line (when the last session
+              // ended, or else what to do next). It takes the room the lists leave.
+              <EmptyState
+                fill
+                seed={44}
+                className="min-h-[240px]"
+                title={last ? "Nothing running" : "No sessions yet"}
+                body={last ? `Last session ended ${ago(last.endedMs, now)}` : "Start a session in Claude Code and it shows up here while it works."}
+              />
             ) : null}
-            {(groups.waiting.length > 0 || groups.finished.length > 0) && (
-              <div className="now-band" data-fill={groups.running.length === 0 && groups.waiting.length > 0 ? "" : undefined} data-cols={(groups.waiting.length > 0 ? 1 : 0) + (groups.finished.length > 0 ? 1 : 0)}>
-                {groups.waiting.length > 0 && (
-                  <List title="Waiting for you" count={groups.waiting.length}>
-                    {groups.waiting.map((c) => (
-                      <WaitRow key={c.sessionId} chat={c} now={now} />
-                    ))}
-                  </List>
-                )}
-                {groups.finished.length > 0 && (
-                  <List title="Finished recently" count={groups.finished.length}>
-                    {groups.finished.map((l) => (
-                      <DoneRow key={l.sessionId} last={l} now={now} />
-                    ))}
-                  </List>
-                )}
-              </div>
+            {groups.finished.length > 0 && (
+              <List title="Finished recently" count={groups.finished.length}>
+                {groups.finished.map((l) => (
+                  <DoneRow key={l.sessionId} last={l} now={now} />
+                ))}
+              </List>
             )}
           </>
         )}
@@ -101,27 +125,14 @@ export function Now() {
   );
 }
 
-// ---- nothing running -----------------------------------------------------------------
-
-function Quiet({ title, last, now }: { title: string; last?: NowLast | null; now?: number }) {
-  return (
-    <section className="now-quiet card" aria-label={title}>
-      <Topo seed={21} />
-      <div className="now-quiet-tile">
-        <Binoculars size={28} weight="duotone" aria-hidden="true" />
-      </div>
-      <h2 className="d d-title now-quiet-title">{title}</h2>
-      {last && now !== undefined && <p className="now-quiet-when">{`Last chat ended ${ago(last.endedMs, now)}`}</p>}
-    </section>
-  );
-}
-
 // ---- lists: waiting for you, finished recently ----------------------------------------
 
-function List({ title, count, children }: { title: string; count: number; children: ReactNode }) {
+/** `needsYou` marks the one list that is waiting on the person: a warning sign beside its name. */
+function List({ title, count, needsYou, children }: { title: string; count: number; needsYou?: boolean; children: ReactNode }) {
   return (
-    <section className="now-list" aria-label={title}>
-      <h2 className="now-list-head">
+    <section className="now-list" aria-label={title} data-needs-you={needsYou || undefined}>
+      <h2 className="h-section now-list-head">
+        {needsYou && <Warning size={16} weight="fill" aria-hidden="true" />}
         <span>{title}</span>
         <span className="now-count">{count}</span>
       </h2>
@@ -131,9 +142,9 @@ function List({ title, count, children }: { title: string; count: number; childr
 }
 
 /** `optional` ranks what a narrow row drops: 1 goes first, then 2; the unranked figure always stays. */
-function Stat({ fig, cap, title, optional, dim }: { fig: string; cap: string; title?: string; optional?: 1 | 2; dim?: boolean }) {
+function Stat({ fig, cap, title, optional }: { fig: string; cap: string; title?: string; optional?: 1 | 2 }) {
   return (
-    <div className="now-stat" title={title} data-opt={optional} data-dim={dim || undefined}>
+    <div className="now-stat" title={title} data-opt={optional}>
       <p className="d d-small now-stat-fig">{fig}</p>
       <p className="nc-cap">{cap}</p>
     </div>
@@ -147,23 +158,28 @@ function WaitRow({ chat, now }: { chat: NowChat; now: number }) {
   return (
     <li className="now-row card" data-state={asking ? "ask" : "wait"}>
       <div className="now-tile" aria-hidden="true">
-        <KindIcon kind={asking ? "ask" : "wait"} size={22} />
+        {asking ? <Question size={22} weight="duotone" /> : <HourglassMedium size={22} weight="duotone" />}
       </div>
       <div className="now-row-main">
         <h3 className="now-row-title" title={name}>
           {name}
         </h3>
         <p className="now-row-sub">
-          {chat.title && <span className="chip">{chat.project}</span>}
+          {chat.title && (
+            <span className="chip now-chip-name" title={chat.project}>
+              {chat.project}
+            </span>
+          )}
           {chat.model && <span className="chip">{modelWithEffort(chat.model, chat.effort)}</span>}
           <span className="now-row-doing" title={line}>
             {line}
           </span>
         </p>
       </div>
-      {chat.workedMs !== null && <Stat fig={formatDuration(chat.workedMs)} cap="Last turn" optional={1} />}
+      {chat.workedMs !== null && <Stat fig={formatDuration(chat.workedMs)} cap="Last turn took" optional={1} />}
       <Stat fig={compact(chat.tokens)} cap="Tokens" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))} optional={2} />
-      <Stat fig={ago(chat.lastWriteMs, now).replace(/ ago$/, "")} cap="Stopped" />
+      {/* "3 min ago" under "Stopped": a time, never mistaken for a length. */}
+      <Stat fig={ago(chat.lastWriteMs, now)} cap="Stopped" />
     </li>
   );
 }
@@ -180,109 +196,107 @@ function DoneRow({ last, now }: { last: NowLast; now: number }) {
           {name}
         </h3>
         <p className="now-row-sub">
-          {last.title && <span className="chip">{last.project}</span>}
+          {last.title && (
+            <span className="chip now-chip-name" title={last.project}>
+              {last.project}
+            </span>
+          )}
           {last.model && <span className="chip">{modelWithEffort(last.model, last.effort)}</span>}
         </p>
       </div>
-      {last.tokens !== null ? (
-        <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false))} optional={2} />
-      ) : (
-        // A chat that was already over when Atlas started: only the end of its transcript is read, so a
-        // total would be a fraction of the real one. The slot stays, so the rows line up.
-        <Stat fig="-" cap="Tokens" title="Atlas was not watching this chat, so it has no total" optional={2} dim />
-      )}
-      <Stat fig={ago(last.endedMs, now).replace(/ ago$/, "")} cap="Ended" />
+      {/* A session that was already over when Atlas started has no total (the engine reads only the
+          end of its file), so its row shows no token figure at all: a dash read as missing data, and
+          right after a launch every row had one. */}
+      {last.tokens !== null && <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false))} optional={2} />}
+      <Stat fig={ago(last.endedMs, now)} cap="Ended" />
     </li>
   );
 }
 
 // ---- running chats ---------------------------------------------------------------------
 
+/**
+ * One row per running chat, the same row whether one chat runs or thirty: its name and where it
+ * runs, what it is doing this second, its tokens, its clock. The rows line up down the page and the
+ * page scrolls; a row never grows, shrinks or turns into another kind of card with the count.
+ */
 function Running({ chats }: { chats: NowChat[] }) {
-  const stacked = chats.length <= STACK_MAX;
+  // One clock for every row.
+  const now = useClock(true, 1000);
   return (
-    <section className="now-run" aria-label="Running" style={{ ["--n" as string]: chats.length }}>
-      <h2 className="now-list-head">
+    <section className="now-run" aria-label="Running">
+      <h2 className="h-section now-list-head">
         <span>Running</span>
         <span className="now-count">{chats.length}</span>
       </h2>
-      {stacked ? (
-        <div className="now-stack">
-          {chats.map((c) => (
-            <ChatCard key={c.sessionId} chat={c} />
-          ))}
-        </div>
-      ) : (
-        <div className="now-grid">
-          {chats.map((c) => (
-            <ChatCard key={c.sessionId} chat={c} />
-          ))}
-        </div>
-      )}
+      <div className="now-chats">
+        {chats.map((c) => (
+          <ChatRow key={c.sessionId} chat={c} now={now} />
+        ))}
+      </div>
       <HelperTracker chats={chats} />
     </section>
   );
 }
 
-function ChatCard({ chat }: { chat: NowChat }) {
-  const working = chat.state === "working";
+function ChatRow({ chat, now }: { chat: NowChat; now: number }) {
   const tokens = useClimb(chat.tokens);
   const { doing, swapKey } = useSteadyDoing(chat.doing);
   const name = chat.title ?? chat.project;
-  const out = chat.helpers.filter((h) => !h.done).length;
+  const out = chat.helpers.filter((h) => !h.done);
+  // The files it has touched are the second line of the hover, not chips on the row.
+  const files = chat.files.map((f) => f.path).filter((p) => p !== doing.target);
+  const more = files.length - FILES_SHOWN;
+  const fileLine = files.length > 0 ? `Files so far: ${files.slice(0, FILES_SHOWN).join(", ")}${more > 0 ? ` and ${more} more` : ""}` : "";
+  const doingTip = [[doing.verb, doing.target].filter(Boolean).join(" "), fileLine].filter(Boolean).join("\n");
 
   return (
-    <article className="now-card card" data-state={chat.state} aria-label={name}>
-      <div className="nc-body">
-        <header className="nc-head">
-          <h3 className="d d-figure nc-title" title={name}>
-            {name}
-          </h3>
-          <div className="now-chips">
-            {chat.title && <span className="chip">{chat.project}</span>}
-            {chat.model && <span className="chip">{modelWithEffort(chat.model, chat.effort)}</span>}
-            {out > 0 && (
-              <span
-                className="chip chip-clay nc-helpers-chip"
-                title={chat.helpers
-                  .filter((h) => !h.done)
-                  .map((h) => h.name)
-                  .join(", ")}
-              >
-                {plural(out, "helper")}
-              </span>
-            )}
-          </div>
-        </header>
+    <article className="now-card card" aria-label={name}>
+      <header className="nc-head">
+        <h3 className="nc-title" title={name}>
+          {name}
+        </h3>
+        <div className="now-chips">
+          {chat.title && (
+            <span className="chip now-chip-name" title={chat.project}>
+              {chat.project}
+            </span>
+          )}
+          {chat.model && <span className="chip">{modelWithEffort(chat.model, chat.effort)}</span>}
+          {out.length > 0 && (
+            <span className="chip chip-clay nc-helpers-chip" title={out.map((h) => h.name).join(", ")}>
+              {plural(out.length, "helper")}
+            </span>
+          )}
+        </div>
+      </header>
 
-        <Elapsed chat={chat} />
+      <section className="nc-doing" aria-label="Doing now" title={doingTip}>
+        <div className="now-tile nc-tile" data-kind={doing.kind}>
+          <KindIcon kind={doing.kind} size={22} />
+        </div>
+        <div className="nc-doing-text" key={swapKey}>
+          <p className="d nc-verb">{doing.verb}</p>
+          {doing.target && (
+            <p className="nc-target">
+              <TargetText text={doing.target} />
+            </p>
+          )}
+        </div>
+      </section>
 
-        <section className="nc-doing" aria-label="Doing now">
-          <div className="nc-doing-row">
-            <div className="nc-tile" data-kind={doing.kind}>
-              <KindIcon kind={doing.kind} size={28} />
-            </div>
-            <div className="nc-doing-text" key={swapKey}>
-              <p className="d nc-verb">{doing.verb}</p>
-              {doing.target && (
-                <p className="nc-target" title={doing.target}>
-                  {doing.target}
-                </p>
-              )}
-            </div>
-          </div>
-          <span className={`nc-sweep${working ? " is-on" : ""}`} aria-hidden="true" />
-          <People chat={chat} />
-        </section>
+      <div className="nc-num" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))}>
+        <p className="d d-figure nc-spend-fig">{compact(Math.round(tokens))}</p>
+        <p className="nc-cap">Tokens</p>
+      </div>
 
-        <section className="nc-numbers" aria-label="Tokens used">
-          <div className="nc-spend" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))}>
-            <p className="d nc-spend-fig">{compact(Math.round(tokens))}</p>
-            <p className="nc-cap">Tokens</p>
-          </div>
-        </section>
-
-        <Trail steps={chat.steps} working={working} />
+      <div className="nc-num">
+        {chat.startedMs !== null && (
+          <>
+            <p className="d d-figure nc-clock-fig">{clock(now - chat.startedMs)}</p>
+            <p className="nc-cap">Elapsed</p>
+          </>
+        )}
       </div>
     </article>
   );
@@ -290,108 +304,15 @@ function ChatCard({ chat }: { chat: NowChat }) {
 
 export { useSteadyDoing };
 
-function Elapsed({ chat }: { chat: NowChat }) {
-  const working = chat.state === "working";
-  const now = useClock(working, 1000);
-  let text = "";
-  if (working) text = chat.startedMs === null ? "" : clock(now - chat.startedMs);
-  else if (chat.workedMs !== null) text = formatDuration(chat.workedMs);
-  if (!text) return <div className="nc-clock" />;
+/** What is being worked on. A file path gives up its folders first, so the file name stays. */
+function TargetText({ text }: { text: string }) {
+  const path = splitPath(text);
+  if (!path) return <>{text}</>;
   return (
-    <div className="nc-clock">
-      <p className="d d-stat nc-clock-fig">{text}</p>
-      <p className="nc-cap">{working ? "Elapsed" : "Last turn"}</p>
-    </div>
+    <span className="now-path">
+      <span className={path.head.length > 2 ? "now-path-head" : "now-path-head is-short"}>{path.head}</span>
+      <span className="now-path-tail">{path.tail}</span>
+    </span>
   );
 }
 
-// ---- files ----------------------------------------------------------------
-
-function People({ chat }: { chat: NowChat }) {
-  const files = chat.files.slice(0, FILES_SHOWN);
-  if (files.length === 0) return null;
-  return (
-    <section className="nc-people" aria-label="Files">
-      <ul className="nc-files">
-        {files.map((f) => (
-          <li key={f.path} className="nc-file" title={f.path} data-edited={f.edited || undefined}>
-            {f.edited ? <PencilSimple size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}
-            <span>{f.path}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-// ---- the trail ------------------------------------------------------------------------
-
-function Trail({ steps, working }: { steps: NowStep[]; working: boolean }) {
-  // Steps already on the page at mount do not animate in. A new step slides in and the rest slide
-  // one slot left, but at most once per CALM_MS: when calls arrive faster than that the trail just
-  // updates in place, so it never flickers.
-  const seen = useRef<Set<string> | null>(null);
-  if (seen.current === null) seen.current = new Set(steps.map((s) => s.id));
-  const nodes = useRef(new Map<string, HTMLLIElement>());
-  const lefts = useRef(new Map<string, number>());
-  const lastAnim = useRef(0);
-  const ids = steps.map((s) => s.id).join("|");
-  useLayoutEffect(() => {
-    const next = new Map<string, number>();
-    nodes.current.forEach((el, id) => next.set(id, el.offsetLeft));
-    const fresh = new Set([...next.keys()].filter((id) => !seen.current!.has(id)));
-    seen.current = new Set(next.keys());
-    const t = performance.now();
-    if (!prefersReducedMotion() && t - lastAnim.current >= CALM_MS) {
-      let moved = false;
-      next.forEach((left, id) => {
-        const el = nodes.current.get(id);
-        if (!el) return;
-        if (fresh.has(id)) {
-          el.classList.add("is-new");
-          setTimeout(() => el.classList.remove("is-new"), FRESH_MS);
-          moved = true;
-          return;
-        }
-        const before = lefts.current.get(id);
-        if (before !== undefined && Math.abs(before - left) > 1 && typeof el.animate === "function") {
-          el.animate([{ transform: `translateX(${before - left}px)` }, { transform: "none" }], {
-            duration: 260,
-            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
-          });
-          moved = true;
-        }
-      });
-      if (moved) lastAnim.current = t;
-    }
-    lefts.current = next;
-  }, [ids]);
-
-  if (steps.length === 0) return <div className="nc-trail" />;
-  const newest = steps[steps.length - 1]!.id;
-  return (
-    <ol className="nc-trail" aria-label="Recent steps">
-      {steps.map((s) => (
-        <li
-          key={s.id}
-          ref={(el) => {
-            if (el) nodes.current.set(s.id, el);
-            else nodes.current.delete(s.id);
-          }}
-          className="nc-step"
-          data-done={s.done || undefined}
-          data-helper={s.by ? "" : undefined}
-          data-now={working && s.id === newest ? "" : undefined}
-          title={[s.verb, s.target, s.count > 1 ? `(${s.count} times)` : "", s.by ? `by ${s.by}` : ""].filter(Boolean).join(" ")}
-        >
-          <span className="nc-dot" aria-hidden="true" />
-          <span className="nc-step-verb">
-            {s.verb}
-            {s.count > 1 && <span className="nc-step-count">{` x${s.count}`}</span>}
-          </span>
-          <span className="nc-step-target">{s.target ?? ""}</span>
-        </li>
-      ))}
-    </ol>
-  );
-}

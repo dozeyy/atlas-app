@@ -61,31 +61,41 @@ export function useChecklistPhase(complete: boolean): Phase {
 
 /**
  * The area above the tiles: the setup checklist while there is something left to do (and for
- * a short moment when it is finished), then the used / never used panel, which draws nothing
- * until the usage engine has an answer. When both are empty the slot takes no room at all.
- * Swap or add panels here and nowhere else.
+ * a short moment when it is finished). Nothing else goes above the tiles: they are the way in
+ * to everything, so they come first. When the checklist is away the slot takes no room at all.
  */
-export function TopSlot({
+export function TopSlot({ items, onCreate }: { items: SetupItem[]; onCreate: (kind: CreateKind) => void }) {
+  const phase = useChecklistPhase(progress(items).complete);
+  if (phase === "hidden") return null;
+  return (
+    <div className="mb-4">
+      <Checklist items={items} onCreate={onCreate} />
+    </div>
+  );
+}
+
+/**
+ * The two "how is it going" panels, under the tiles: what gets used, and what the setup costs.
+ * Each draws nothing until it has an answer; when both are empty the block takes no room.
+ * Side by side whenever the page column has room for both (usage wide, cost narrow); alone,
+ * each takes the full width. It asks the column, not the window: the sidebar being open or
+ * closed changes the answer.
+ */
+export function Insights({
   items,
   loads,
   cost,
-  onCreate,
   onOpen,
 }: {
   items: SetupItem[];
   loads: number;
   cost: CostReport | null;
-  onCreate: (kind: CreateKind) => void;
   onOpen: (id: string) => void;
 }) {
   const rows = useUsageRows(items, loads);
-  const phase = useChecklistPhase(progress(items).complete);
   return (
-    <div className="mb-4 flex flex-col gap-4 empty:hidden">
-      {phase !== "hidden" && <Checklist items={items} onCreate={onCreate} />}
-      {/* Side by side when the window is wide enough for both (usage wide, cost narrow, so the
-          usage lists keep their two columns); alone, each takes the full width. */}
-      <div className="grid gap-4 empty:hidden min-[1240px]:[&:has(>:nth-child(2))]:grid-cols-[minmax(0,1fr)_24rem]">
+    <div className="@container mt-4 empty:hidden">
+      <div className="grid gap-4 empty:hidden @min-[720px]:[&:has(>:nth-child(2))]:grid-cols-[minmax(0,1fr)_22rem] @min-[960px]:[&:has(>:nth-child(2))]:grid-cols-[minmax(0,1fr)_24rem]">
         <UsagePanel rows={rows} items={items} onOpen={onOpen} />
         <CostPanel report={cost} items={items} onOpen={onOpen} />
       </div>

@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { ComponentType, ReactNode } from "react";
 import {
   Buildings,
@@ -12,7 +13,11 @@ import {
   ArrowsSplit,
 } from "@phosphor-icons/react";
 import { IconMotion, type Motion } from "../IconMotion";
-import { enabledTone, KIND_BY_ID, type Tone } from "../../lib/setup-model";
+import { AgentAvatar } from "../usage/helperKit";
+import { displayName, enabledTone, KIND_BY_ID, type Tone } from "../../lib/setup-model";
+import { badge, conflictWords, scopeWords, stateWords } from "../../lib/tagWords";
+import { formatBytes } from "../../lib/labels";
+import { clockTime, shortDate } from "../../lib/usage";
 import type { Conflict, Enabled, ItemKind, ScopeKind, SetupItem } from "../../lib/setup-types";
 
 type Icon = ComponentType<IconProps>;
@@ -27,19 +32,24 @@ const TONE: Record<Tone, string> = {
 
 const CHIP = "inline-flex h-5 max-w-full shrink-0 items-center gap-1 rounded-full px-2 text-caption font-medium";
 
-export function Chip({ tone = "muted", icon: Icon, children, title }: { tone?: Tone; icon?: Icon; children: ReactNode; title?: string }) {
+/**
+ * A chip's `title` is its explanation (tagWords.ts): the app's tooltip shows it on hover and, where
+ * the chip is `focusable` (a sheet, where there are a few), on keyboard focus too. Cards keep their
+ * chips out of the Tab order: the card is one stop, and its name already reads the state aloud.
+ */
+export function Chip({ tone = "muted", icon: Icon, children, title, focusable }: { tone?: Tone; icon?: Icon; children: ReactNode; title?: string; focusable?: boolean }) {
   return (
-    <span title={title} className={`${CHIP} ${TONE[tone]}`}>
+    <span title={title} tabIndex={focusable && title ? 0 : undefined} className={`${CHIP} ${TONE[tone]}`}>
       {Icon && <Icon size={12} weight="bold" aria-hidden="true" className="shrink-0" />}
       <span className="truncate">{children}</span>
     </span>
   );
 }
 
-/** A plain outlined chip for tags such as "stdio" or "PreToolUse". */
-export function TagChip({ children }: { children: ReactNode }) {
+/** A plain outlined chip for tags such as "v1.2.0" or "src/**". */
+export function TagChip({ children, title, focusable }: { children: ReactNode; title?: string; focusable?: boolean }) {
   return (
-    <span className={`${CHIP} border border-line text-ink-2`}>
+    <span title={title} tabIndex={focusable && title ? 0 : undefined} className={`${CHIP} border border-line text-ink-2`}>
       <span className="truncate">{children}</span>
     </span>
   );
@@ -55,36 +65,41 @@ const SCOPE_ICON: Record<ScopeKind, Icon> = {
   managed: Buildings,
 };
 
-export function scopeTone(s: ScopeKind): Tone {
-  return s === "user" ? "accent" : "muted";
+/** Where an item lives. Every place is the same quiet chip: the icon and the word tell them apart, and clay is not spent on it. */
+export function ScopeChip({ scope, label, focusable }: { scope: ScopeKind; label: string; focusable?: boolean }) {
+  const w = scopeWords(scope, label);
+  return (
+    <Chip tone="muted" icon={SCOPE_ICON[scope]} title={w.tip} focusable={focusable}>
+      {w.label}
+    </Chip>
+  );
 }
 
-export function ScopeChip({ scope, label }: { scope: ScopeKind; label: string }) {
+export function StateChip({ enabled, focusable }: { enabled: Enabled; focusable?: boolean }) {
+  if (!enabled.label) return null;
+  const { label, tip } = stateWords(enabled);
   return (
-    <Chip tone={scopeTone(scope)} icon={SCOPE_ICON[scope]} title={label}>
+    <Chip tone={enabledTone(enabled.state)} title={tip || undefined} focusable={focusable}>
       {label}
     </Chip>
   );
 }
 
-export function StateChip({ enabled }: { enabled: Enabled }) {
-  if (enabled.state === "none" || !enabled.label) return null;
-  return <Chip tone={enabledTone(enabled.state)}>{enabled.label}</Chip>;
-}
-
-export function ConflictChip({ conflict }: { conflict: Conflict }) {
+export function ConflictChip({ conflict, focusable }: { conflict: Conflict; focusable?: boolean }) {
   const warn = conflict.status !== "overrides";
+  const w = conflictWords(conflict);
   return (
-    <Chip tone={warn ? "warn" : "muted"} icon={ArrowsSplit} title={conflict.label}>
-      {conflict.label}
+    <Chip tone={warn ? "warn" : "muted"} icon={ArrowsSplit} title={w.tip} focusable={focusable}>
+      {w.label}
     </Chip>
   );
 }
 
-export function SecretsChip() {
+export function SecretsChip({ focusable }: { focusable?: boolean }) {
+  const w = badge("valuesHidden");
   return (
-    <Chip icon={Lock} title="Secret values in this item are hidden until you ask to see them">
-      Values hidden
+    <Chip icon={Lock} title={w.tip} focusable={focusable}>
+      {w.label}
     </Chip>
   );
 }
@@ -115,13 +130,28 @@ export const KIND_MOTION: Record<string, Motion> = {
 };
 
 /** The rounded square holding a kind's icon. It relaxes into a blob and the icon moves when the card is hovered. */
-export function KindTile({ kind, size = 36, icon }: { kind: ItemKind | "more"; size?: number; icon?: ComponentType<IconProps> }) {
+export function KindTile({
+  kind,
+  size = 36,
+  icon,
+  title,
+  quiet = false,
+}: {
+  kind: ItemKind | "more";
+  size?: number;
+  icon?: ComponentType<IconProps>;
+  /** What the icon stands for, on hover. Left out where a label already sits beside the tile. */
+  title?: string;
+  /** No clay: for a long list on a calm page (History), where the tile repeats on every row. */
+  quiet?: boolean;
+}) {
   const Icon = icon ?? KIND_BY_ID[kind as ItemKind].icon;
   return (
     <span
       aria-hidden="true"
+      title={title}
       style={{ width: size, height: size }}
-      className="kind-tile flex shrink-0 items-center justify-center bg-accent-tint text-accent-text"
+      className={`kind-tile flex shrink-0 items-center justify-center ${quiet ? "bg-raised text-ink-2 shadow-[inset_0_0_0_1px_var(--line)]" : "bg-accent-tint text-accent-text"}`}
     >
       <IconMotion motion={KIND_MOTION[kind] ?? "pop"} size={Math.round(size * 0.55)}>
         <Icon />
@@ -130,20 +160,74 @@ export function KindTile({ kind, size = 36, icon }: { kind: ItemKind | "more"; s
   );
 }
 
-export function formatSize(n: number | null): string {
-  if (n === null) return "";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+/**
+ * The picture beside an item's name. An agent wears the avatar it has on Now, Sessions and Team
+ * (one mapping, in helperKit), so the same helper looks the same everywhere; every other kind
+ * shows its kind icon. Hovering a kind icon says what it is; an agent's avatar says nothing,
+ * the name beside it already does (Will, 2026-11-10: "it shouldn't just say general purpose").
+ */
+export function ItemIcon({ item, size = 36 }: { item: Pick<SetupItem, "kind" | "name">; size?: number }) {
+  if (item.kind === "agent") {
+    return (
+      <span className="flex shrink-0 self-start">
+        <AgentAvatar type={item.name} size={size} quiet />
+      </span>
+    );
+  }
+  return <KindTile kind={item.kind} size={size} title={sentenceCase(KIND_BY_ID[item.kind].singular)} />;
 }
 
+/** The same picture at list size, for the one-line rows in the panels: an agent's avatar, or the kind's icon at 16 px. */
+export function MiniKind({ kind, name }: { kind: string; name: string }) {
+  if (kind === "agent") {
+    return (
+      <span className="flex shrink-0 self-center">
+        <AgentAvatar type={name} size={20} quiet />
+      </span>
+    );
+  }
+  const meta = KIND_BY_ID[kind as ItemKind];
+  if (!meta) return null;
+  const Icon = meta.icon;
+  return (
+    <span title={sentenceCase(meta.singular)} className="flex size-5 shrink-0 items-center justify-center self-center text-ink-2">
+      <Icon size={16} aria-hidden="true" />
+    </span>
+  );
+}
+
+/**
+ * A file path that wraps after a slash where it can, and inside one long name only when it has
+ * to, so no folder name is split in two for nothing. Selecting and copying give the plain path.
+ */
+export function PathText({ path, className = "" }: { path: string; className?: string }) {
+  const parts = path.match(/[^\\/]*[\\/]?/g)?.filter(Boolean) ?? [path];
+  return (
+    <span className={`mono [overflow-wrap:anywhere] ${className.includes("text-ink") ? "" : "text-ink-2"} ${className}`}>
+      {parts.map((p, i) => (
+        <Fragment key={i}>
+          {p}
+          <wbr />
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+/** First letter upper-case, the rest as written ("skill" to "Skill", "MCP server" stays). */
+export function sentenceCase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** A file's size, the one way the app writes one (`formatBytes`): "812 B", "3.4 KB", "2.3 MB". */
+export function formatSize(n: number | null): string {
+  return n === null ? "" : formatBytes(n);
+}
+
+/** "Nov 9, 8:58 PM" (the year when it is not this one): the app's one date and one clock. */
 export function formatDate(ms: number | null): string {
   if (!ms) return "";
-  try {
-    return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-  } catch {
-    return "";
-  }
+  return `${shortDate(ms)}, ${clockTime(ms)}`;
 }
 
 export async function copyText(text: string): Promise<boolean> {
@@ -157,5 +241,5 @@ export async function copyText(text: string): Promise<boolean> {
 
 /** For screen readers and the sheet title. */
 export function describeItem(i: SetupItem): string {
-  return `${KIND_BY_ID[i.kind].singular} ${i.name}, ${i.scopeLabel}`;
+  return `${KIND_BY_ID[i.kind].singular} ${displayName(i)}, ${i.scopeLabel}`;
 }

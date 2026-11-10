@@ -2,7 +2,7 @@ import { compact, costView, tokenHint } from "../../lib/usage";
 import type { Cost } from "../../lib/types";
 
 /**
- * A token figure, the number that shows (Will, 2026-11-08: tokens everywhere, money on hover).
+ * A token figure, the number that shows (2026-11-08: tokens everywhere, money on hover).
  * The hover is the exact count and, on a second line, the API-price dollar estimate, always
  * called an estimate. Screen readers get the estimate as words, since a hover is not reachable.
  */

@@ -10,6 +10,7 @@
 // canvas grows past the pane and the pane scrolls, rather than squeezing the nodes together.
 
 import type { Outcome, ReceiptThread } from "./types";
+import { MAIN_SESSION } from "./sessionWords";
 
 /** Helpers drawn before the rest fold into "+N" nodes. */
 export const MAP_LIMIT = 40;
@@ -80,10 +81,22 @@ const LINE_H = 16;
 const PAD_X = 10;
 const PAD_Y = 8;
 const WRAP_AT = 26;
-const PLATE_MAX_W = WRAP_AT * CHAR_W + PAD_X * 2;
-const PLATE_ROOM_H = LINE_H * 5 + PAD_Y * 2; // four lines of name and the detail
-const MARGIN_X = PLATE_MAX_W + 24;
-const MARGIN_Y = PLATE_ROOM_H + 24;
+/**
+ * Room kept beyond the outermost bubble: beside it, a resting name (`restLabels`); above and
+ * below, half a name. The plate finds its own spot inside the canvas and the pane (`placePlate`),
+ * so the canvas no longer reserves a whole plate on every side: that left a three-helper tree
+ * zoomed out to 0.75 in the middle of an empty pane at 1180 wide (design review, 2026-11-10).
+ */
+/** A resting name is one short line: longer ones end in "...". */
+export const REST_NAME_MAX = 22;
+/** At most this many helpers are named at rest, so a crowded map stays a picture, not a page. */
+export const REST_LIMIT = 8;
+const REST_CHAR_W = 6.6; // one 12 px semibold character, a little generous
+const REST_H = 30; // two lines: name and detail
+const REST_LINE = 15; // one more line when the name takes two
+const REST_GAP = 8; // between a node and its name
+const MARGIN_X = REST_NAME_MAX * REST_CHAR_W + REST_GAP + 16; // a resting name, and a little air
+const MARGIN_Y = REST_H / 2 + 16; // half a name, and a little air
 /** A few helpers are spread out to use the pane, but never past this stretch. */
 const MAX_SCALE = 1.6;
 const MAX_ASPECT = 1.6;
@@ -180,7 +193,7 @@ export function layoutMap(threads: ReceiptThread[], size: { width: number; heigh
   add({
     id: MAIN_ID,
     kind: "root",
-    name: main?.name ?? "Main chat",
+    name: main?.name ?? MAIN_SESSION,
     usd: main?.usd ?? 0,
     tokens: main?.tokens ?? 0,
     depth: 0,
@@ -297,16 +310,20 @@ export function layoutMap(threads: ReceiptThread[], size: { width: number; heigh
     ring.forEach((n, i) => (n.rho = best.base + (i % best.tracks) * TRACK_STEP));
     outer = best.outer;
   }
-  const needed = deepest > 0 ? outer : 0;
 
   // A short tree is stretched to use the pane (never past MAX_SCALE); a big one stays at its
-  // natural size and the canvas grows.
+  // natural size and the canvas grows. The room is measured against where the tree really
+  // reaches (from the angles), so a tree that hangs straight down is not held to the width a
+  // full ring would need.
   const roomY = Math.max(1, paneH / 2 - MARGIN_Y - R_MAX);
   const roomX = Math.max(1, paneW / 2 - MARGIN_X - R_MAX);
-  const scale = deepest > 0 ? clamp(Math.min(roomX, roomY) / needed, 1, MAX_SCALE) : 1;
-  const ratio = deepest > 0 && scale > 1 ? clamp(roomX / (needed * scale), 1, MAX_ASPECT) : 1;
-  const extentX = needed * scale * ratio + R_MAX + MARGIN_X;
-  const extentY = needed * scale + R_MAX + MARGIN_Y;
+  const reachX = all.reduce((m, n) => Math.max(m, Math.abs(Math.cos(n.angle)) * n.rho), 0);
+  const reachY = all.reduce((m, n) => Math.max(m, Math.abs(Math.sin(n.angle)) * n.rho), 0);
+  const fit = Math.min(reachX > 1 ? roomX / reachX : Infinity, reachY > 1 ? roomY / reachY : Infinity);
+  const scale = deepest > 0 && Number.isFinite(fit) ? clamp(fit, 1, MAX_SCALE) : 1;
+  const ratio = deepest > 0 && scale > 1 && reachX > 1 ? clamp(roomX / (reachX * scale), 1, MAX_ASPECT) : 1;
+  const extentX = reachX * scale * ratio + R_MAX + MARGIN_X;
+  const extentY = reachY * scale + R_MAX + MARGIN_Y;
   const width = Math.max(paneW, Math.ceil(2 * extentX));
   const height = Math.max(paneH, Math.ceil(2 * extentY));
   const cx = width / 2;
@@ -338,9 +355,15 @@ export function layoutMap(threads: ReceiptThread[], size: { width: number; heigh
 /** How far a big tree is zoomed out so the pane shows more of it: never below this, so a bubble stays readable. */
 export const MIN_ZOOM = 0.7;
 
-/** The zoom for a canvas shown in a pane: 1 when it fits, down to MIN_ZOOM when it does not. */
+/**
+ * The zoom for a canvas shown in a pane: 1 when it fits, smaller when it does not. The picture
+ * always fits the pane's width (nothing in Atlas scrolls sideways); only the height may still
+ * overflow, and there the floor keeps a tall tree readable.
+ */
 export function zoomFor(layout: { width: number; height: number }, pane: { width: number; height: number }): number {
-  return clamp(Math.min(pane.width / layout.width, pane.height / layout.height), MIN_ZOOM, 1);
+  const fitW = Math.min(1, pane.width / layout.width);
+  const fitH = clamp(pane.height / layout.height, MIN_ZOOM, 1);
+  return Math.min(fitW, fitH);
 }
 
 /** The ids from the main chat down to `id`: what lights up when you point at a node. */
@@ -442,7 +465,7 @@ export function placePlate(layout: MapLayout, id: string, detail: string, view?:
       const outside = rect.x < 4 || rect.y < 4 || rect.x + w > layout.width - 4 || rect.y + h > layout.height - 4;
       const unseen = !!view && view.w > 0 && view.h > 0 && (rect.x < view.x + 4 || rect.y < view.y + 4 || rect.x + w > view.x + view.w - 4 || rect.y + h > view.y + view.h - 4);
       // A plate cut off by the pane edge cannot be read at all, so that is the worst outcome
-      // (Will saw a right-edge bubble's name clipped); covering a bubble comes next.
+      // (a right-edge bubble's name was seen clipped); covering a bubble comes next.
       const score = hits * 1000 + (outside ? 500 : 0) + (unseen ? 5000 : 0) + d + Math.abs(step) * 6;
       if (!best || score < best.score) best = { plate: { ...rect, lines, detail }, score };
       if (score < 200) return best.plate;
@@ -456,4 +479,80 @@ export function placePlate(layout: MapLayout, id: string, detail: string, view?:
     p.y = Math.min(Math.max(p.y, view.y + 4), view.y + view.h - 4 - h);
   }
   return p;
+}
+
+// ---- names at rest ----------------------------------------------------------------------------
+// The map should read without pointing at anything: the helpers that did the most carry a short
+// name and their tokens beside them, wherever that covers nothing. The plate still holds the whole
+// name for every node.
+
+export interface RestLabel {
+  id: string;
+  /** Where the text starts (anchor "start") or ends (anchor "end"), in canvas pixels; it sits level with its node. */
+  x: number;
+  anchor: "start" | "end";
+  /** The name's first line; a long name continues on `name2` and is cut there with "...". */
+  name: string;
+  name2?: string;
+  detail: string;
+}
+
+/** Cut a name to one short line. Never mid-air: no trailing space before the dots. */
+export function shortName(name: string, max = REST_NAME_MAX): string {
+  const n = name.trim();
+  return n.length <= max ? n : `${n.slice(0, max - 3).trimEnd()}...`;
+}
+
+/**
+ * A name on up to two short lines: the break falls on the last space that fits the first line,
+ * and what is still too long for the second is cut there with "...". A name that fits stays one line.
+ */
+export function nameLines(name: string, max = REST_NAME_MAX): [string] | [string, string] {
+  const n = name.trim();
+  if (n.length <= max) return [n];
+  const cut = n.lastIndexOf(" ", max);
+  if (cut < Math.floor(max / 2)) return [shortName(n, max)];
+  return [n.slice(0, cut), shortName(n.slice(cut + 1), max)];
+}
+
+/** The box a resting label takes, in canvas pixels (text is drawn at full size, so a zoomed-out canvas gives it more room). */
+export function restBox(l: RestLabel, y: number, zoom = 1): { x: number; y: number; w: number; h: number } {
+  const w = (Math.max(l.name.length, l.name2?.length ?? 0, l.detail.length) * REST_CHAR_W) / zoom;
+  const h = (REST_H + (l.name2 ? REST_LINE : 0)) / zoom;
+  return { x: l.anchor === "start" ? l.x : l.x - w, y: y - h / 2, w, h };
+}
+
+const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }, gap = 0) =>
+  a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+
+/**
+ * Which helpers carry their name at rest, and on which side. The biggest (by tokens) choose first;
+ * a name goes on the side away from the middle, else the other side, and is left off when either
+ * would touch a node, another name, the "Main chat" caption or the canvas edge.
+ */
+export function restLabels(layout: MapLayout, detailOf: (n: MapNode) => string, zoom = 1, limit = REST_LIMIT): RestLabel[] {
+  const cx = layout.width / 2;
+  const root = layout.nodes.find((n) => n.kind === "root");
+  // The caption under the main chat is taken ground.
+  const taken: { x: number; y: number; w: number; h: number }[] = root ? [{ x: root.x - 36 / zoom, y: root.y + root.r + 12, w: 72 / zoom, h: 24 / zoom }] : [];
+  const out: RestLabel[] = [];
+  const helpers = layout.nodes.filter((n) => n.kind === "helper").sort((a, b) => b.tokens - a.tokens || a.index - b.index);
+  for (const n of helpers) {
+    if (out.length >= limit) break;
+    const [name, name2] = nameLines(n.name);
+    const detail = detailOf(n);
+    const right = n.x >= cx;
+    for (const side of right ? (["start", "end"] as const) : (["end", "start"] as const)) {
+      const label: RestLabel = { id: n.id, x: side === "start" ? n.x + n.r + REST_GAP : n.x - n.r - REST_GAP, anchor: side, name, detail };
+      if (name2) label.name2 = name2;
+      const box = restBox(label, n.y, zoom);
+      if (box.x < 4 || box.y < 4 || box.x + box.w > layout.width - 4 || box.y + box.h > layout.height - 4) continue;
+      if (layout.nodes.some((o) => o.id !== n.id && rectHitsCircle(box, o, 4))) continue;
+      if (taken.some((t) => overlaps(box, t, 4))) continue;
+      taken.push(box);
+      out.push(label);
+      break;
+    }
+  }
+  return out;
 }

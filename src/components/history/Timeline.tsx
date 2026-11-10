@@ -2,9 +2,11 @@ import { useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { CaretDown } from "@phosphor-icons/react";
 import { KindTile } from "../setup/parts";
+import { AgentAvatar } from "../usage/helperKit";
 import { Button } from "../controls";
 import type { HistoryEvent } from "../../lib/historyTypes";
-import { dotTone, libraryLabel, setupKind, shortDate, timeText, whatHappened } from "../../lib/historyModel";
+import { dotTone, libraryLabel, setupKind, splitName, whatHappened } from "../../lib/historyModel";
+import { clockTime, shortDate } from "../../lib/usage";
 import type { DaySection, RowGroup } from "../../lib/historyModel";
 
 interface Props {
@@ -37,33 +39,46 @@ function Row({
   const dated = head.kind === "dated";
   const project = head.item.project && head.item.scope !== "user" ? ` (${head.item.project})` : "";
   const picked = group.events.some((e) => e.id === selectedId);
+  const lib = libraryLabel(head);
+  const second = many > 1 ? `Changed ${many} times` : !dated && !lib ? head.summary : "";
+  // A long name keeps its ending and gives way in the middle; the project then waits in the hover.
+  const [nameStart, nameEnd] = splitName(head.item.name);
+  // The hover has what the row had to cut: the whole line, where the file is, and the summary.
+  const first = lib ? whatHappened(head) : `${whatHappened(head)} ${head.item.name}${project}`;
+  const tip = [first, head.item.path, second].filter(Boolean).join("\n");
   return (
     <li>
       <button
         type="button"
-        className="hx-row hover-host"
+        className="hx-row"
         data-event={head.id}
         aria-current={selectedId === head.id || undefined}
+        title={tip}
         onClick={() => onSelect(head)}
       >
-        <span className="hx-dot" data-tone={dotTone(head.kind)} aria-hidden="true" />
+        <span className="hx-dot" data-tone={dotTone(head.kind)} data-picked={picked || undefined} aria-hidden="true" />
         <span className="hx-row-face">
-          <KindTile kind={setupKind(head.item.kind)} size={32} />
+          {/* An agent wears the avatar it has everywhere else (helperKit); the row's hover says the rest.
+              Every other tile is quiet until its change is the open one: clay marks that one only. */}
+          {head.item.kind === "agent" ? <AgentAvatar type={head.item.name} size={32} quiet /> : <KindTile kind={setupKind(head.item.kind)} size={32} quiet={!picked} />}
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-body text-ink">
-              <span className="font-semibold">{whatHappened(head)}</span>{" "}
-              {!libraryLabel(head) && (
-                <span className="text-ink-2">
-                  {head.item.name}
-                  {project}
+            {/* The name gives way first. A cut name always keeps a letter, its dots and its whole
+                ending; past that the label gives way. The space is for screen readers and tests.
+                The line carries itself as its title: the TipLayer shows it only once a part is cut
+                short (or the project waits in it), and hands the hover to the row's tip otherwise. */}
+            <span title={first} className="flex min-w-0 items-baseline text-body text-ink">
+              <span className="min-w-0 truncate font-semibold">{whatHappened(head)}</span>{" "}
+              {!lib && (
+                <span className={`ml-1 shrink-[9999] truncate text-ink-2 ${nameEnd ? "min-w-[3.5ch]" : "min-w-0"}`}>
+                  {nameEnd ? nameStart : `${head.item.name}${project}`}
                 </span>
               )}
+              {!lib && nameEnd && <span className="shrink-0 whitespace-nowrap text-ink-2">{nameEnd}</span>}
             </span>
-            {(many > 1 || (!dated && !libraryLabel(head))) && (
-              <span className="block truncate text-body text-ink-2">{many > 1 ? `Changed ${many} times` : head.summary}</span>
-            )}
+            {/* The sentence is the point of the row: it takes a second line before it is cut. */}
+            {second && <span className="line-clamp-2 text-body text-ink-2">{second}</span>}
           </span>
-          {!dated && <span className="shrink-0 text-caption text-ink-2">{timeText(head.at)}</span>}
+          {!dated && <span className="shrink-0 text-caption text-ink-2">{clockTime(head.at)}</span>}
         </span>
       </button>
       {many > 1 && (
@@ -91,8 +106,8 @@ function Row({
                     aria-current={(picked && selectedId === e.id) || undefined}
                     onClick={() => onSelect(e)}
                   >
-                    <span className="hx-sub-face">
-                      <span className="shrink-0 text-caption text-ink-2">{timeText(e.at)}</span>
+                    <span className="hx-sub-face" title={e.summary}>
+                      <span className="shrink-0 text-caption text-ink-2">{clockTime(e.at)}</span>
                       <span className="min-w-0 truncate text-body text-ink">{e.summary}</span>
                     </span>
                   </button>

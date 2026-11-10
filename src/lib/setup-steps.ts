@@ -6,7 +6,7 @@ import type { CreateKind, SetupItem } from "./setup-types";
 
 export interface SetupStep {
   id: string;
-  /** What Will does, as a short friendly phrase. */
+  /** What you do, as a short friendly phrase. */
   title: string;
   /** One warm line: why it is worth doing. */
   why: string;

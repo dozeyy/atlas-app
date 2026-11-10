@@ -99,7 +99,10 @@ describe("IndexProgress", () => {
   it("reports an error as an alert with a way to retry", async () => {
     const retry = vi.fn();
     render(<IndexProgress status={status({ state: "error", error: "The cache is locked." })} progress={null} onRetry={retry} />);
-    expect(screen.getByRole("alert")).toHaveTextContent("The cache is locked.");
+    // The band says it plainly; the engine's own words are a hover away, never on the surface.
+    expect(screen.getByRole("alert")).toHaveTextContent("Atlas could not read your usage");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("The cache is locked.");
+    expect(screen.getByTitle("The cache is locked.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(retry).toHaveBeenCalledOnce();
   });

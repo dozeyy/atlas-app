@@ -73,10 +73,10 @@ describe("the install screens (it starts by itself, so there is no Install butto
   it("shows the step, the reading under it, and nothing to press or close", () => {
     const early = reading({ done: 300, total: 1000 });
     const s = screenFor(snap({ phase: "installing", stage: "unpack", reading: early }));
-    expect(s.line).toBe("Unpacking\nReading your chats: 300 of 1k");
+    expect(s.line).toBe("Unpacking\nReading your sessions: 300 of 1k");
     expect(s.primary).toBeNull();
     expect(s.closable).toBe(false);
-    expect(screenFor(snap({ phase: "installing", stage: "install", reading: early })).line).toBe("Installing Atlas\nReading your chats: 300 of 1k");
+    expect(screenFor(snap({ phase: "installing", stage: "install", reading: early })).line).toBe("Installing Atlas\nReading your sessions: 300 of 1k");
   });
 
   it("says only 'Installing Atlas' when there is no reading to report", () => {
@@ -150,7 +150,7 @@ describe("the remover screen", () => {
   it("promises nothing about the chats on the screen that the words do not keep", () => {
     // The promise lives in setup.html as a fixed line; the screen text never mentions deleting chats.
     for (const phase of ["ready", "installing", "done", "error"] as const) {
-      expect(screenFor(out({ phase, stage: "removing", error: "x" })).line).not.toMatch(/delete.*chat/i);
+      expect(screenFor(out({ phase, stage: "removing", error: "x" })).line).not.toMatch(/delete.*(chat|session)/i);
     }
   });
 });

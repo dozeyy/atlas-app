@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
@@ -7,8 +7,10 @@ import { setBackend } from "../lib/ipc";
 import { MockBackend } from "../lib/mock";
 import { mockSetupSnapshot } from "../lib/setup-mock";
 import { reloadSetup, resetSetupStore } from "../state/setupStore";
+import { CHECKLIST_FOLDED_KEY } from "../components/setup/Checklist";
+import { FILE_DETAILS_KEY } from "../components/setup/DetailSheet";
 import { CELEBRATE_MS, CHECKLIST_DONE_KEY } from "../components/setup/TopSlot";
-import { resetToasts } from "../state/toastStore";
+import { pushToast, resetToasts } from "../state/toastStore";
 import { resetUnsaved } from "../state/unsavedStore";
 import { clearPendingToolkitItem, openToolkitItemNext, peekPendingToolkitItem } from "../lib/nav";
 import type { SetupSnapshot } from "../lib/setup-types";
@@ -68,7 +70,8 @@ async function open(b: Backend) {
 async function openTile(label: string) {
   await userEvent.click(await screen.findByRole("button", { name: new RegExp(`^${label}, \\d+$`) }));
   // A tile has no page header: the search box ("Search skills") is what says which one is open.
-  return screen.findByPlaceholderText(`Search ${label.toLowerCase()}`);
+  // The name reads as in a sentence: lower-case, except a leading acronym ("Search MCP servers").
+  return screen.findByPlaceholderText(`Search ${/^[A-Z]{2}/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1)}`);
 }
 
 async function openTilesReady() {
@@ -134,7 +137,7 @@ describe("Setup page: main view", () => {
       [...root.querySelectorAll<HTMLElement>(".press")].filter((e) => /content-visibility|overflow-hidden|\btruncate\b/.test(e.className)).map((e) => e.getAttribute("aria-label") ?? e.textContent);
     expect(bad(document)).toEqual([]);
     await userEvent.click(await screen.findByRole("button", { name: /^More, \d+$/ }));
-    await screen.findByPlaceholderText("Search more");
+    await screen.findByPlaceholderText("Search everything else");
     expect(bad(document)).toEqual([]);
     await userEvent.click(screen.getByRole("button", { name: "Back to Toolkit" }));
     await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
@@ -178,6 +181,9 @@ describe("Setup page: main view", () => {
     };
     await open(backend);
     expect(await screen.findByText("Atlas could not read your toolkit")).toBeInTheDocument();
+    // The raw reason waits behind Details.
+    expect(screen.queryByText("The Claude folder could not be read.")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(screen.getByText("The Claude folder could not be read.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("list", { name: "Types of things in your toolkit" })).toBeInTheDocument();
@@ -209,14 +215,27 @@ describe("Setup page: main view", () => {
     await act(async () => reloadSetup());
     await waitFor(() => expect(screen.queryByText("commit-helper")).not.toBeInTheDocument());
   });
+
+  it("leaves a tab's own toast behind on the way to another tab, and keeps one that is the only Undo", async () => {
+    await open(backend);
+    await openTilesReady();
+    act(() => {
+      pushToast({ message: "Installed demo.", action: { label: "Undo", onClick: () => {} }, leavesWithPage: true });
+      pushToast({ message: "Deleted my-skill.", action: { label: "Undo", onClick: () => {} } });
+    });
+    expect(screen.getByText("Installed demo.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "Team" }));
+    expect(screen.queryByText("Installed demo.")).not.toBeInTheDocument();
+    expect(screen.getByText("Deleted my-skill.")).toBeInTheDocument();
+  });
 });
 
 describe("Setup page: a collection", () => {
   it("opens a tile as its own view with a way back that returns focus to the tile", async () => {
     await open(backend);
     await openTile("Skills");
-    // No page header: a plain back control, and nothing else says which page this is.
-    expect(screen.queryByRole("heading", { level: 2, name: "Skills" })).not.toBeInTheDocument();
+    // The list you opened is named, next to a plain back control.
+    expect(screen.getByRole("heading", { level: 2, name: "Skills" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to Toolkit" })).toBeInTheDocument();
     expect(screen.getByText("commit-helper")).toBeInTheDocument();
     expect(screen.queryByText("code-reviewer")).not.toBeInTheDocument();
@@ -235,9 +254,27 @@ describe("Setup page: a collection", () => {
     await waitFor(() => expect(screen.queryByText("deep-research")).not.toBeInTheDocument());
     expect(screen.getByText("commit-helper")).toBeInTheDocument();
     await userEvent.type(screen.getByRole("searchbox"), "zzzz");
-    expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Clear search and filters" }));
+    // G12: one wording on every list. Only a search is on, so the action is "Clear search", with the hint line.
+    const none = (await screen.findByText("Nothing matches")).closest("section")!;
+    expect(within(none).getByText("Try fewer words.")).toBeInTheDocument();
+    await userEvent.click(within(none).getByRole("button", { name: "Clear search" }));
     expect(await screen.findByText("deep-research")).toBeInTheDocument();
+  });
+
+  it("names what the no-match action clears: filters too when a filter is on, filters alone with nothing typed", async () => {
+    await open(backend);
+    await openTile("Output styles");
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await userEvent.click(within(screen.getByLabelText("Show items from")).getByRole("radio", { name: "Projects" }));
+    await userEvent.keyboard("{Escape}");
+    const none = (await screen.findByText("Nothing matches these filters")).closest("section")!;
+    expect(within(none).getByRole("button", { name: "Clear filters" })).toBeInTheDocument();
+    await userEvent.type(screen.getByRole("searchbox"), "zzzz");
+    const both = (await screen.findByText("Nothing matches")).closest("section")!;
+    expect(within(both).getByText("Filters are on too.")).toBeInTheDocument();
+    await userEvent.click(within(both).getByRole("button", { name: "Clear search and filters" }));
+    await waitFor(() => expect(screen.queryByText(/Nothing matches/)).not.toBeInTheDocument());
+    expect(screen.getByRole("searchbox")).toHaveValue("");
   });
 
   it("narrows by where things live: All, Global, then one project", async () => {
@@ -289,10 +326,44 @@ describe("Setup page: detail", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByRole("heading", { level: 2, name: "commit-helper" })).toBeInTheDocument();
     expect(within(dialog).getByText("references/style.md")).toBeInTheDocument();
+    // The sheet opens on the text as it reads; the path and the raw text wait behind one row.
+    expect(await within(dialog).findByText("Preview")).toBeInTheDocument();
+    expect(within(dialog).queryByTestId("source")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Changed")).not.toBeInTheDocument();
+    const more = within(dialog).getByRole("button", { name: "File details" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
     expect(await within(dialog).findByTestId("source")).toBeInTheDocument();
+    expect(within(dialog).getByText("Raw text")).toBeInTheDocument();
+    expect(within(dialog).getByText("Changed")).toBeInTheDocument();
+    expect(localStorage.getItem(FILE_DETAILS_KEY)).toBe("1");
+    localStorage.removeItem(FILE_DETAILS_KEY);
     await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument(), { timeout: 3000 }); // the sheet slides out first (--dur-close)
     expect(card).toHaveFocus();
+  });
+
+  it("a close started on one item never lands on the next: the sheet opened meanwhile stays, visible", async () => {
+    await open(backend);
+    await openTile("Skills");
+    const first = await screen.findByRole("button", { name: /skill commit-helper/ });
+    await userEvent.click(first);
+    const a = await screen.findByRole("dialog");
+    expect(within(a).getByRole("heading", { level: 2, name: "commit-helper" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(a.querySelector("[data-closing]") ?? a.closest("[data-closing]")).not.toBeNull();
+    // Another card is opened while the first sheet is still on its way out.
+    const other = screen.getAllByRole("button", { name: /^skill / }).find((c) => c !== first && !/commit-helper/.test(c.getAttribute("aria-label") ?? ""))!;
+    fireEvent.click(other);
+    const b = await screen.findByRole("dialog");
+    expect(within(b).queryByRole("heading", { level: 2, name: "commit-helper" })).not.toBeInTheDocument();
+    expect(b.querySelector("[data-closing]")).toBeNull();
+    expect(b.closest("[data-closing]")).toBeNull();
+    // Well past the exit time, the second sheet is still open and still not marked as leaving.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.getByRole("dialog")).toBe(b);
+    expect(b.querySelector("[data-closing]")).toBeNull();
   });
 
   it("shows which item wins when two define the same thing", async () => {
@@ -310,9 +381,13 @@ describe("Setup page: detail", () => {
     await openTile("Agents");
     await userEvent.click(await screen.findByRole("button", { name: /agent code-reviewer/ }));
     const dialog = await screen.findByRole("dialog");
+    // The text as it reads comes first; the header's settings are one row away.
+    expect(await within(dialog).findByText("Preview")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Model")).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "File details" }));
     expect(await within(dialog).findByText("Model")).toBeInTheDocument();
     expect(within(dialog).getByText("Tools")).toBeInTheDocument();
-    expect(within(dialog).getByText("Preview")).toBeInTheDocument();
+    localStorage.removeItem(FILE_DETAILS_KEY);
     expect(within(dialog).getByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
 
@@ -349,26 +424,74 @@ describe("Setup page: detail", () => {
 });
 
 describe("Setup page: delete", () => {
-  it("asks first, names what goes away and promises a backup; Cancel changes nothing", async () => {
+  // G8: the card's X asks on the card itself. Nothing is deleted until the filled Delete is pressed.
+  const askOnCard = async () => {
+    const calls: string[] = [];
+    const real = backend.setupDelete.bind(backend);
+    backend.setupDelete = async (id: string) => {
+      calls.push(id);
+      return real(id);
+    };
     await open(backend);
     await openTile("Skills");
+    const id = (await screen.findByRole("button", { name: /skill deep-research/ })).getAttribute("data-id");
     await userEvent.click(await screen.findByRole("button", { name: "Delete deep-research" }));
-    const ask = await screen.findByRole("alertdialog", { name: "Delete deep-research?" });
+    const ask = await screen.findByRole("group", { name: "Delete deep-research?" });
+    return { ask, calls, id };
+  };
+
+  it("asks on the card, names what goes away and promises a backup; Keep changes nothing", async () => {
+    const { ask, calls } = await askOnCard();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(within(ask).getByText(/whole folder/)).toBeInTheDocument();
     expect(within(ask).getByText(/Atlas keeps a backup/)).toBeInTheDocument();
-    await userEvent.click(within(ask).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(screen.getByText("deep-research")).toBeInTheDocument();
+    // Keep has the keyboard first, and Delete is the filled danger button.
+    expect(within(ask).getByRole("button", { name: "Keep" })).toHaveFocus();
+    expect(within(ask).getByRole("button", { name: "Delete" }).className).toMatch(/danger/);
+    // While it asks, the card is not a way into the item: one question, two answers.
+    expect(screen.queryByRole("button", { name: /skill deep-research/ })).not.toBeInTheDocument();
+
+    await userEvent.click(within(ask).getByRole("button", { name: "Keep" }));
+    expect(screen.queryByRole("group", { name: "Delete deep-research?" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /skill deep-research/ })).toHaveFocus();
+    expect(calls).toEqual([]);
+    expect(screen.queryByText("Deleted deep-research.")).not.toBeInTheDocument();
   });
 
-  it("deletes for real, offers Undo, and Undo puts it back", async () => {
-    await open(backend);
-    await openTile("Skills");
-    await userEvent.click(await screen.findByRole("button", { name: "Delete deep-research" }));
-    const ask = await screen.findByRole("alertdialog");
+  it("Escape is Keep: nothing is deleted, the list stays open and the card has the keyboard again", async () => {
+    const { calls } = await askOnCard();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("group", { name: "Delete deep-research?" })).not.toBeInTheDocument();
+    expect(calls).toEqual([]);
+    // The page's own Escape (back to the Toolkit) did not run.
+    expect(screen.getByPlaceholderText("Search skills")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /skill deep-research/ })).toHaveFocus();
+  });
+
+  it("a press anywhere else is Keep", async () => {
+    const { calls } = await askOnCard();
+    fireEvent.pointerDown(screen.getByPlaceholderText("Search skills"));
+    expect(screen.queryByRole("group", { name: "Delete deep-research?" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /skill deep-research/ })).toBeInTheDocument();
+    expect(calls).toEqual([]);
+  });
+
+  it("the X alone never deletes: while the card asks, the X is gone and Enter is Keep", async () => {
+    const { ask, calls } = await askOnCard();
+    expect(screen.queryByRole("button", { name: "Delete deep-research" })).not.toBeInTheDocument();
+    expect(within(ask).getAllByRole("button").map((b) => b.textContent)).toEqual(["Keep", "Delete"]);
+    await userEvent.keyboard("{Enter}");
+    expect(calls).toEqual([]);
+    expect(screen.getByRole("button", { name: /skill deep-research/ })).toBeInTheDocument();
+  });
+
+  it("deletes for real on the Delete press, with the same call as before; Undo puts it back", async () => {
+    const { ask, calls, id } = await askOnCard();
+    expect(id).toBeTruthy();
     await userEvent.click(within(ask).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(screen.queryByRole("button", { name: /skill deep-research/ })).not.toBeInTheDocument());
+    expect(calls).toEqual([id]);
     const toast = await screen.findByText("Deleted deep-research.");
     expect(toast).toBeInTheDocument();
 
@@ -377,16 +500,33 @@ describe("Setup page: delete", () => {
     expect(await screen.findByRole("button", { name: /skill deep-research/ })).toBeInTheDocument();
   });
 
-  it("shows an error and leaves everything alone when the delete fails", async () => {
+  it("shows an error on the card and leaves everything alone when the delete fails", async () => {
     backend.setupDelete = async () => {
       throw new Error("Atlas could not make the backup, so nothing was deleted.");
     };
     await open(backend);
     await openTile("Skills");
     await userEvent.click(await screen.findByRole("button", { name: "Delete deep-research" }));
-    const ask = await screen.findByRole("alertdialog");
+    const ask = await screen.findByRole("group", { name: "Delete deep-research?" });
     await userEvent.click(within(ask).getByRole("button", { name: "Delete" }));
     expect(await within(ask).findByText(/could not make the backup/)).toBeInTheDocument();
+    // Still asking, with both answers back on: Keep leaves the card as it was.
+    await userEvent.click(within(ask).getByRole("button", { name: "Keep" }));
+    expect(screen.getByRole("button", { name: /skill deep-research/ })).toBeInTheDocument();
+  });
+
+  it("the sheet's Delete still asks in a dialog of its own, Cancel first", async () => {
+    await open(backend);
+    await openTile("Skills");
+    await userEvent.click(await screen.findByRole("button", { name: /skill deep-research/ }));
+    const sheet = await screen.findByRole("dialog");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Delete" }));
+    const ask = await screen.findByRole("alertdialog", { name: "Delete deep-research?" });
+    expect(within(ask).getByText(/whole folder/)).toBeInTheDocument();
+    expect(within(ask).getByText(/Atlas keeps a backup/)).toBeInTheDocument();
+    expect(within(ask).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await userEvent.click(within(ask).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /skill deep-research/ })).toBeInTheDocument();
   });
 
@@ -407,7 +547,7 @@ describe("Setup page: delete", () => {
     x.focus();
     expect(x).toHaveFocus();
     await userEvent.keyboard("{Enter}");
-    expect(await screen.findByRole("alertdialog", { name: "Delete deep-research?" })).toBeInTheDocument();
+    expect(await screen.findByRole("group", { name: "Delete deep-research?" })).toBeInTheDocument();
   });
 });
 
@@ -432,6 +572,54 @@ describe("Setup page: edit", () => {
     await waitFor(() => expect(save).toBeEnabled());
     await userEvent.click(save);
     expect(await screen.findByText("Saved deep-research.")).toBeInTheDocument();
+  });
+
+  it("fills the window and comes back on Escape, keeping the edit, the focus and the sheet", async () => {
+    const { dialog, ta } = await openEditor("Skills", /skill deep-research/);
+    const save = within(dialog).getByRole("button", { name: /^Save/ });
+    fireEvent.input(ta, { target: { value: ta.value + "\nOne more line.\n" } });
+    await waitFor(() => expect(save).toBeEnabled());
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Full window" }));
+    expect(dialog.querySelector("[data-wide]")).not.toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Exit full window" })).toBeInTheDocument();
+    expect(document.activeElement).toBe(ta);
+
+    // Escape only leaves full window: the sheet stays open, nothing asks to discard, the edit is kept.
+    await userEvent.keyboard("{Escape}");
+    expect(dialog.querySelector("[data-wide]")).toBeNull();
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(screen.queryByText("Discard your changes?")).toBeNull();
+    expect(ta.value).toContain("One more line.");
+    expect(save).toBeEnabled();
+    expect(document.activeElement).toBe(ta);
+
+    // The shortcut toggles it as well; Save is still there to press.
+    await userEvent.keyboard("{Control>}{Shift>}f{/Shift}{/Control}");
+    expect(dialog.querySelector("[data-wide]")).not.toBeNull();
+    expect(within(dialog).getByRole("button", { name: /^Save/ })).toBeEnabled();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Exit full window" }));
+    expect(dialog.querySelector("[data-wide]")).toBeNull();
+  });
+
+  it("an Escape the editor used itself never reaches the sheet: it stays open, in and out of full window", async () => {
+    const { dialog, ta } = await openEditor("Skills", /skill deep-research/);
+    // Stands in for the code editor taking the key (simplifying a selection, or leaving full window):
+    // it marks the event used before it bubbles to the dialog.
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") e.preventDefault();
+    });
+    ta.focus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(screen.queryByText("Discard your changes?")).toBeNull();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Full window" }));
+    expect(dialog.querySelector("[data-wide]")).not.toBeNull();
+    await userEvent.keyboard("{Escape}");
+    expect(dialog.querySelector("[data-wide]")).toBeNull();
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(screen.queryByText("Discard your changes?")).toBeNull();
   });
 
   it("disables Save and says what is wrong, with the line, while the text is invalid", async () => {
@@ -789,6 +977,28 @@ describe("Setup page: checklist and create", () => {
     await waitFor(() => expect(screen.queryByRole("progressbar", { name: "Toolkit progress" })).not.toBeInTheDocument());
     expect(screen.getByRole("button", { name: /^Skills, \d+$/ })).toBeInTheDocument();
     expect(localStorage.getItem(CHECKLIST_DONE_KEY)).toBe("1");
+  });
+
+  it("puts the steps away on request, keeps the progress in view and remembers the choice", async () => {
+    const snap = await mockSetupSnapshot(false);
+    backend.snapshot = async () => ({ ...snap, items: snap.items.filter((i) => i.kind !== "agent") });
+    await open(backend);
+    expect(await screen.findByRole("button", { name: "Add an agent: Add your first agent" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide steps" }));
+    expect(screen.queryByRole("button", { name: "Add an agent: Add your first agent" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Finish your toolkit" })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Toolkit progress" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show steps" })).toHaveAttribute("aria-expanded", "false");
+    expect(localStorage.getItem(CHECKLIST_FOLDED_KEY)).toBe("1");
+
+    // Coming back to the page finds it as it was left.
+    cleanup();
+    await open(backend);
+    expect(await screen.findByRole("button", { name: "Show steps" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show steps" }));
+    expect(screen.getByRole("button", { name: "Add an agent: Add your first agent" })).toBeInTheDocument();
+    expect(localStorage.getItem(CHECKLIST_FOLDED_KEY)).toBeNull();
   });
 
   it("does not celebrate a second time, and the card returns when a step becomes undone", async () => {

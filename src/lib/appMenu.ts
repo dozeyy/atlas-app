@@ -39,11 +39,12 @@ export const modName = (platform: Platform) => (platform === "macos" ? "Cmd" : "
 /** Every keyboard shortcut Atlas has, for the Keyboard shortcuts sheet and the tests. */
 export function shortcutGroups(platform: Platform): { title: string; rows: { keys: string; does: string }[] }[] {
   const mod = modName(platform);
+  const alt = platform === "macos" ? "Option" : "Alt";
   return [
     {
       title: "Anywhere",
       rows: [
-        { keys: `${mod}+K`, does: "Jump to a chat, page, project or skill; arrows move, Enter goes, Escape closes" },
+        { keys: `${mod}+K`, does: "Jump to a session, page, project or skill; arrows move, Enter goes, Escape closes" },
         { keys: `${mod}+1 to ${mod}+7`, does: "Go to Dashboard, Now, Sessions, Toolkit, History, Settings, Wrapped" },
         { keys: `${mod}+B`, does: "Show or hide the sidebar" },
         ...(platform === "macos"
@@ -56,12 +57,27 @@ export function shortcutGroups(platform: Platform): { title: string; rows: { key
       ],
     },
     {
+      title: "Sessions",
+      rows: [
+        { keys: `Escape or ${alt}+Left`, does: "Go back to the list from an open session" },
+        { keys: `${alt}+Up / ${alt}+Down`, does: "Open the previous or next session" },
+      ],
+    },
+    {
       title: "Toolkit",
       rows: [
         { keys: `${mod}+F`, does: "Search the open list" },
         { keys: "Up / Down", does: "Move between cards" },
         { keys: "Escape", does: "Clear the search, then go back to the tiles" },
         { keys: `${mod}+C`, does: "Copy the path of the selected item" },
+        { keys: `${mod}+Shift+F`, does: "While editing a file: the editor fills the window; Escape brings it back" },
+      ],
+    },
+    {
+      title: "History",
+      rows: [
+        { keys: `${mod}+F`, does: "Search the changes" },
+        { keys: "Up / Down", does: "Move between changes" },
       ],
     },
     {

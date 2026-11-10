@@ -10,6 +10,7 @@ import { refreshPaletteData } from "./lib/usePaletteData";
 import { TipLayer } from "./components/TipLayer";
 import { ToastHost } from "./components/Toasts";
 import { useAtlas } from "./state/AtlasProvider";
+import { dismissPageToasts } from "./state/toastStore";
 import { Dashboard } from "./pages/Dashboard";
 import { History } from "./pages/History";
 import { Now } from "./pages/Now";
@@ -91,6 +92,8 @@ export function App() {
       return;
     }
     main.current?.focus({ preventScroll: true });
+    // A toast that belongs to the page just left ("Installed x. Undo") does not follow.
+    dismissPageToasts();
   }, [view]);
 
   return (
@@ -98,7 +101,7 @@ export function App() {
       <TitleBar />
       {/* One straight divider from the top edge to the bottom: the sidebar's own right border. */}
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col bg-bg pt-[var(--titlebar-h)]">
+      <div className="page-pane flex min-w-0 flex-1 flex-col bg-bg pt-[var(--titlebar-h)]">
         <main ref={main} tabIndex={-1} aria-label={NAV.find((n) => n.view === view)?.label} className="min-h-0 flex-1 overflow-y-auto outline-none">
           <div
             key={view}

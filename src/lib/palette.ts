@@ -41,7 +41,7 @@ export interface PaletteItem {
 export const KIND_LABEL: Record<PaletteKind, string> = {
   page: "Page",
   library: "Library",
-  session: "Chat",
+  session: "Session",
   project: "Project",
   skill: "Skill",
   agent: "Agent",

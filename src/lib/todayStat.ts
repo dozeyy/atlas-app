@@ -1,7 +1,7 @@
 // Pure model for the sidebar's "Today" readout: today's token total and a 24 hour trace.
 // No React, no DOM, so the rules (what counts, the trace never leaving its baseline) are tested.
 
-import { ridgeGeometry } from "./chartPaths";
+import { bucketAndSmooth } from "./smooth";
 import { addDays, headline, localDay } from "./usage";
 import type { TimelinePoint } from "./types";
 
@@ -63,20 +63,25 @@ export interface SparkShape {
   baseline: number;
   /** The last point, for the end dot. */
   last: [number, number] | null;
+  /** The points the trace goes through (the values, bucketed to `max` or fewer). */
+  values: number[];
   empty: boolean;
 }
 
 /**
- * A w x h trace with a 2 px margin all round. The path is a monotone curve, so it stays between
- * its points and never dips under the baseline, even where usage falls to zero.
+ * A w x h trace with a 2 px margin all round, through at most `max` points (a longer run is summed
+ * into that many even buckets, so a chat's 48 steps read as one shape, not a jagged signal). The
+ * path is a monotone curve, so it stays between its points and never dips under the baseline, even
+ * where usage falls to zero.
  */
-export function sparkShape(values: number[], w: number, h: number): SparkShape {
-  const g = ridgeGeometry(values, w, h, 2, 2, 2);
+export function sparkShape(values: number[], w: number, h: number, max = 24): SparkShape {
+  const g = bucketAndSmooth(values, max, w, h, 2, 2, 2);
   return {
     line: g.line,
     area: g.area,
     baseline: g.baseline,
-    last: g.pts.length ? g.pts[g.pts.length - 1] : null,
+    last: g.last,
+    values: g.values,
     empty: !values.some((v) => v > 0),
   };
 }

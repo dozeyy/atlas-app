@@ -46,12 +46,12 @@ describe("UsagePanel", () => {
     expect(names[0]).toContain("12x");
     expect(names[1]).toContain("deep-research");
 
-    // The unused are squares you hover, each named in full for screen readers and the tooltip.
+    // The unused are named: each one a small tag with its name, and the whole line on hover.
     const never = screen.getByRole("heading", { name: /Never used/ }).parentElement!;
     expect(never).toHaveTextContent("3");
-    const cells = never.querySelectorAll("[data-dust-field] [data-dust]");
-    const titles = [...cells].map((c) => c.getAttribute("title")!);
-    expect(titles).toHaveLength(3);
+    const tags = [...never.querySelectorAll("[data-never-list] [data-never]")];
+    expect(tags.map((c) => c.textContent)).toEqual(["brand-new", "code-reviewer", "dusty"]); // A to Z
+    const titles = tags.map((c) => c.getAttribute("title")!);
     expect(titles).toContain("dusty (skill), never used");
     expect(titles.some((t) => /^code-reviewer \(agent\), last used /.test(t))).toBe(true);
   });
@@ -60,46 +60,38 @@ describe("UsagePanel", () => {
     render(<UsagePanel rows={rows} items={items} />);
     expect(screen.queryByText(/too soon/)).toBeNull();
     const never = screen.getByRole("heading", { name: /Never used/ }).parentElement!;
-    expect(never.querySelector('[data-dust-field] [data-dust="s4"]')).toHaveAttribute("title", "brand-new (skill), never used");
+    expect(never.querySelector('[data-never-list] [data-never="s4"]')).toHaveAttribute("title", "brand-new (skill), never used");
   });
 
-  it("packs dozens of unused items into a capped field and says how many are left out", () => {
+  it("names the first few of dozens of unused items and lays out the rest on request", () => {
     const many = Array.from({ length: 130 }, (_, i) => ({ id: `m${i}`, kind: i % 3 ? "skill" : "agent", name: `thing-${i}` })) as SetupItem[];
     const manyRows: UsageRow[] = many.map((it, i) => ({ id: it.id, kind: it.kind, uses30d: i < 6 ? 10 - i : 0, lastUsed: null, isNew: i >= 120 }));
     render(<UsagePanel rows={manyRows} items={many} onOpen={() => {}} />);
     const most = screen.getByRole("heading", { name: "Used most" }).parentElement!;
     expect(within(most).getAllByRole("listitem")).toHaveLength(4);
-    const field = document.querySelector("[data-dust-field]")!;
-    expect(field.querySelectorAll("[data-dust]")).toHaveLength(78); // 124 never used, 78 drawn
-    expect(within(field as HTMLElement).getByText("+46")).toBeInTheDocument();
+    const list = document.querySelector("[data-never-list]")!;
+    expect(list.querySelectorAll("[data-never]")).toHaveLength(8); // 124 never used, 8 named
+    // Numbers sort as numbers: thing-6 comes before thing-10.
+    expect(list.querySelector("[data-never]")).toHaveTextContent("thing-6");
+    const more = within(list as HTMLElement).getByRole("button", { name: "+116 more" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(more);
+    expect(list.querySelectorAll("[data-never]")).toHaveLength(124);
+    fireEvent.click(within(list as HTMLElement).getByRole("button", { name: "Show fewer" }));
+    expect(list.querySelectorAll("[data-never]")).toHaveLength(8);
   });
 
-  it("names a square under the field on hover and focus", () => {
+  it("shows no 'more' button when every unused item is already named", () => {
     render(<UsagePanel rows={rows} items={items} onOpen={() => {}} />);
-    expect(screen.getByText("Gathering dust. Hover one to see which.")).toBeInTheDocument();
-    const dusty = document.querySelector('[data-dust="s3"]')!;
-    fireEvent.mouseEnter(dusty);
-    expect(screen.getAllByText("dusty (skill), never used").length).toBeGreaterThan(0);
-    fireEvent.mouseLeave(dusty);
-    expect(screen.getByText("Gathering dust. Hover one to see which.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /more$/ })).toBeNull();
+    expect(screen.queryByText(/Hover one/)).toBeNull();
   });
 
-  it("walks the field with arrow keys using one tab stop", () => {
-    render(<UsagePanel rows={rows} items={items} onOpen={() => {}} />);
-    const field = document.querySelector("[data-dust-field]")!;
-    const [first, second] = [...field.querySelectorAll<HTMLElement>("[data-dust]")];
-    expect(first).toHaveAttribute("tabindex", "0");
-    expect(second).toHaveAttribute("tabindex", "-1");
-    first!.focus();
-    fireEvent.keyDown(first!, { key: "ArrowRight" });
-    expect(document.activeElement).toBe(second);
-  });
-
-  it("opens an item when its name or its square is pressed", () => {
+  it("opens an item when its name is pressed, used or unused", () => {
     const opened: string[] = [];
     render(<UsagePanel rows={rows} items={items} onOpen={(id) => opened.push(id)} />);
     screen.getByRole("button", { name: "commit-helper" }).click();
-    (document.querySelector('[data-dust="s3"]') as HTMLElement).click();
+    (document.querySelector('[data-never="s3"]') as HTMLElement).click();
     expect(opened).toEqual(["s1", "s3"]);
   });
 

@@ -26,7 +26,7 @@ function parentWords(key: string, label: string): string[] | null {
 
 /**
  * Two projects can share a folder name (the same name under two parents). A legend that says
- * "Origin Client" twice cannot be read, so a colliding row gets a `hint`: the words of its folder
+ * "Trail Guide" twice cannot be read, so a colliding row gets a `hint`: the words of its folder
  * path that set it apart (the key is the project's path with every symbol turned into a dash). Only
  * the words that differ count: what every colliding path shares at the start or the end is left out.
  * `label` becomes "Name (hint)"; `name` and the bare label stay readable for a headline.
@@ -79,9 +79,13 @@ function seriesTotals(
   const out: { label: string; value: number; name: string; hint?: string }[] = byFolder ? uniqueLabels(shown) : shown;
   return out.map(({ label: l, value, name, hint }) => ({ label: l, value, name, ...(hint ? { hint } : {}) }));
 }
+
 /**
  * Everything the story needs, from the same queries the other screens use. Returns null when there
  * is no usage at all. A part that fails is left out; the story is built from what is there.
+ * `modelName` is the app's one namer (`modelLabel`): it names the model inside a cloud provider's
+ * id too, so a raw id never lands on a slide; an id with no model in it stays as it is (the slide
+ * then wraps and cuts it like any long name).
  */
 export async function loadWrapped(daily: Daily, modelName: (id: string) => string): Promise<WrappedData | null> {
   const backend = getBackend();

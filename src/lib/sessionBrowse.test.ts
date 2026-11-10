@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayLabel, groupByDay, projectTone, resumeCommand, shareOfMax } from "./sessionBrowse";
+import { NO_FOLDER, dayLabel, groupByDay, groupByFolder, projectTone, resumeCommand, shareOfMax } from "./sessionBrowse";
 import type { SessionRow } from "./types";
 
 const NOW = new Date(2026, 10, 8, 14, 30); // Sunday 8 Nov 2026
@@ -48,6 +48,51 @@ describe("grouping by day", () => {
   });
 });
 
+describe("grouping by folder", () => {
+  const inFolder = (id: string, at: Date, tokens: number, name: string, path: string): SessionRow => ({ ...row(id, at, tokens), projectName: name, projectPath: path });
+
+  it("puts the folder with the newest chat first, keeps each folder's rows in list order, and the chats with no folder last", () => {
+    const groups = groupByFolder([
+      inFolder("a", new Date(2026, 10, 8, 13), 100, "site", "C:/code/site"),
+      inFolder("x", new Date(2026, 10, 8, 12), 7, "", ""),
+      inFolder("b", new Date(2026, 10, 8, 9), 50, "atlas", "C:/code/atlas/"),
+      inFolder("c", new Date(2026, 10, 7, 22), 400, "site", "C:/code/site"),
+      inFolder("d", new Date(2026, 10, 1, 8), 5, "atlas", "C:/code/atlas"),
+    ]);
+    expect(groups.map((g) => [g.name, g.rows.map((r) => r.sessionId), g.tokens])).toEqual([
+      ["site", ["a", "c"], 500],
+      ["atlas", ["b", "d"], 55],
+      [NO_FOLDER, ["x"], 7],
+    ]);
+    // A trailing slash is the same folder; the first row's path is the one shown on hover.
+    expect(groups[1].path).toBe("C:/code/atlas/");
+    expect(groups[0].latest).toBe(new Date(2026, 10, 8, 13).getTime());
+  });
+
+  it("names a folder that has a path but no name after the path's last segment, never No folder", () => {
+    const groups = groupByFolder([
+      inFolder("a", new Date(2026, 10, 8), 1, "", "C:\\work\\Desktop Apps\\atlas\\"),
+      inFolder("b", new Date(2026, 10, 7), 1, "", "/home/dad/code/site"),
+      inFolder("c", new Date(2026, 10, 6), 1, "", ""),
+    ]);
+    expect(groups.map((g) => g.name)).toEqual(["atlas", "site", NO_FOLDER]);
+  });
+
+  it("adds a page of older rows to the groups that exist and never moves one", () => {
+    const first = [inFolder("a", new Date(2026, 10, 8), 1, "site", "C:/s"), inFolder("b", new Date(2026, 10, 7), 1, "atlas", "C:/a")];
+    const more = [inFolder("c", new Date(2026, 10, 6), 1, "atlas", "C:/a"), inFolder("d", new Date(2026, 10, 5), 1, "notes", "C:/n")];
+    const before = groupByFolder(first).map((g) => g.name);
+    const after = groupByFolder([...first, ...more]);
+    expect(after.map((g) => g.name)).toEqual([...before, "notes"]);
+    expect(after[1].rows.map((r) => r.sessionId)).toEqual(["b", "c"]);
+  });
+
+  it("keeps the latest chat's time even when the list is not in time order", () => {
+    const groups = groupByFolder([inFolder("small", new Date(2026, 10, 1), 1, "a", "C:/a"), inFolder("big", new Date(2026, 10, 8), 9, "a", "C:/a")]);
+    expect(groups[0].latest).toBe(new Date(2026, 10, 8).getTime());
+  });
+});
+
 describe("share of the largest", () => {
   it("scales to the max, keeps a sliver for small values and zero for none", () => {
     expect(shareOfMax(50, 100)).toBe(0.5);
@@ -82,9 +127,9 @@ describe("resume command", () => {
     );
   });
   it("is one POSIX line on macOS and Linux", () => {
-    const want = `cd '/Users/will/My Code' && claude --resume ${ID}`;
-    expect(resumeCommand(ID, "/Users/will/My Code", "macos")).toBe(want);
-    expect(resumeCommand(ID, "/Users/will/My Code", "linux")).toBe(want);
+    const want = `cd '/Users/you/My Code' && claude --resume ${ID}`;
+    expect(resumeCommand(ID, "/Users/you/My Code", "macos")).toBe(want);
+    expect(resumeCommand(ID, "/Users/you/My Code", "linux")).toBe(want);
   });
   it("is just the resume line without a folder", () => {
     for (const p of [undefined, null, "", "   "]) {
@@ -100,9 +145,9 @@ describe("resume command", () => {
     expect(resumeCommand(ID, "/a/$HOME/`id`", "linux")).toBe(`cd '/a/$HOME/\`id\`' && claude --resume ${ID}`);
   });
   it("doubles a single quote for PowerShell, curly ones too", () => {
-    expect(resumeCommand(ID, "C:\\Will's", "windows")).toBe(`Set-Location -LiteralPath 'C:\\Will''s'; claude --resume ${ID}`);
-    expect(resumeCommand(ID, "C:\\Will\u2019s", "windows")).toBe(
-      `Set-Location -LiteralPath 'C:\\Will\u2019\u2019s'; claude --resume ${ID}`,
+    expect(resumeCommand(ID, "C:\\Sam's", "windows")).toBe(`Set-Location -LiteralPath 'C:\\Sam''s'; claude --resume ${ID}`);
+    expect(resumeCommand(ID, "C:\\Sam\u2019s", "windows")).toBe(
+      `Set-Location -LiteralPath 'C:\\Sam\u2019\u2019s'; claude --resume ${ID}`,
     );
   });
   it("escapes a single quote for POSIX as '\\''", () => {

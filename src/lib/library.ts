@@ -2,6 +2,8 @@
 // the plain sentences around them. No React and no IPC here, so every rule has a test.
 
 import type { CatalogEntry, CatalogView, InstalledRow, Inspected, ItemResult, MarketplaceInfo } from "./libraryTypes";
+import { formatBytes } from "./labels";
+import { exact } from "./usage";
 
 /** Claude Code's own marketplace. */
 export const DIRECTORY = "anthropic-plugin-directory";
@@ -74,6 +76,19 @@ export function searchEntries(idx: Indexed[], query: string): CatalogEntry[] {
   return hits.map((h) => h.e);
 }
 
+/**
+ * Nothing typed: the catalog's own order. That is the order each marketplace lists its plugins in
+ * (the directory's is ranked, its most used first), the directory before the marketplaces the
+ * user added. The page carries no install count, so this is the one real "most popular" signal
+ * it has; nothing is invented.
+ */
+export function catalogOrder(idx: Indexed[]): CatalogEntry[] {
+  const first: CatalogEntry[] = [];
+  const rest: CatalogEntry[] = [];
+  for (const x of idx) (x.e.marketplace === DIRECTORY ? first : rest).push(x.e);
+  return first.concat(rest);
+}
+
 // ---- sources -----------------------------------------------------------------------------------
 
 export const ALL = "all";
@@ -88,17 +103,37 @@ export interface SourceOption {
   id: string;
   label: string;
   count: number;
+  /** Something in this source wants a second look: short words for the rail, and the whole sentence. */
+  flag?: { short: string; full: string };
+}
+
+/** Installed plugins the list marks "Changed since you checked it": changed, and still in the catalog. */
+export function changedCount(idx: Indexed[], installed: InstalledRow[]): number {
+  const ids = new Set(idx.map((x) => x.e.pluginId));
+  return installed.filter((r) => r.kind === "plugin" && r.changed && ids.has(r.id)).length;
 }
 
 /** The rail: All, Installed, the directory, then each marketplace the user added. */
-export function sourceOptions(total: number, perMarketplace: Record<string, number>, marketplaces: MarketplaceInfo[], installedCount: number): SourceOption[] {
+export function sourceOptions(
+  total: number,
+  perMarketplace: Record<string, number>,
+  marketplaces: MarketplaceInfo[],
+  installedCount: number,
+  changed = 0,
+): SourceOption[] {
   const counts = new Map<string, number>(Object.entries(perMarketplace));
   const names = new Set<string>([...counts.keys(), ...marketplaces.map((m) => m.name)]);
   names.delete(DIRECTORY);
   const rest = [...names].sort((a, b) => a.localeCompare(b));
   const out: SourceOption[] = [
     { id: ALL, label: "All", count: total },
-    { id: INSTALLED, label: "Installed", count: installedCount },
+    {
+      id: INSTALLED,
+      label: "Installed",
+      count: installedCount,
+      // The row says it too, but that row can be far down the list: the source says so where it is always seen.
+      flag: changed > 0 ? { short: `${exact(changed)} changed`, full: `${exact(changed)} changed since you checked ${changed === 1 ? "it" : "them"}` } : undefined,
+    },
     { id: mpId(DIRECTORY), label: sourceCaption(DIRECTORY), count: counts.get(DIRECTORY) ?? 0 },
   ];
   for (const n of rest) out.push({ id: mpId(n), label: n, count: counts.get(n) ?? 0 });
@@ -113,6 +148,8 @@ export type LibraryRow =
   | { type: "item"; key: string; row: InstalledRow };
 
 export const ROW_H = 56;
+/** A heading over a run of rows (see buildList). */
+export const HEAD_H = 32;
 
 const ITEM_WORD: Record<string, string> = {
   skill: "Skill",
@@ -152,14 +189,152 @@ export function buildRows({ idx, installed, source, query }: RowInput): LibraryR
       if (r.kind === "plugin") rows.push(entry ? { type: "plugin", key: entry.pluginId, entry, installed: r } : { type: "installedPlugin", key: r.id, row: r });
       else rows.push({ type: "item", key: `item:${r.backupId}`, row: r });
     }
-    return rows.sort((a, b) => rowName(a).localeCompare(rowName(b)));
+    // What needs a second look ("Changed since you checked it") first, then A to Z.
+    const look = (r: LibraryRow) => (r.type === "plugin" && r.installed?.changed ? 0 : 1);
+    return rows.sort((a, b) => look(a) - look(b) || rowName(a).localeCompare(rowName(b)));
   }
   const scope = source.startsWith("mp:") ? idx.filter((x) => x.e.marketplace === source.slice(3)) : idx;
-  return searchEntries(scope, query).map((entry) => ({ type: "plugin", key: entry.pluginId, entry, installed: have.get(entry.pluginId) ?? null }));
+  // Typed words rank by match; nothing typed keeps the catalog's own order (see catalogOrder).
+  const typed = tokens(query).length > 0;
+  const list = typed ? searchEntries(scope, query) : catalogOrder(scope);
+  const rows: LibraryRow[] = list.map((entry) => ({ type: "plugin", key: entry.pluginId, entry, installed: have.get(entry.pluginId) ?? null }));
+  if (source !== ALL || typed) return rows;
+  // All, nothing typed: what is installed leads (what changed first), then each marketplace as one
+  // run, the directory before the others in the rail's order. Inside a run the catalog's order holds
+  // (the sort is stable), so buildList can put one heading over each.
+  const rank = (r: LibraryRow) => (r.type === "plugin" && r.installed ? (r.installed.changed ? 0 : 1) : 2);
+  const market = (r: LibraryRow) => (r.type === "plugin" ? r.entry.marketplace : "");
+  return rows.sort((x, y) => {
+    const d = rank(x) - rank(y);
+    if (d || rank(x) < 2) return d;
+    const mx = market(x);
+    const my = market(y);
+    if (mx === my) return 0;
+    return mx === DIRECTORY ? -1 : my === DIRECTORY ? 1 : mx.localeCompare(my);
+  });
+}
+
+/** A heading over a run of rows: it sits above row `at`. */
+export interface ListHead {
+  at: number;
+  label: string;
+}
+
+export interface ListModel {
+  rows: LibraryRow[];
+  /** All with nothing typed: "Installed", then one heading per marketplace. Empty when one heading would say it all. */
+  heads: ListHead[];
+  /**
+   * A row may name where it comes from: only when sources are mixed and no heading says it (a
+   * search under All, the Installed filter). Even then the row stays quiet for the directory.
+   */
+  showSource: boolean;
+}
+
+export const INSTALLED_HEAD = "Installed";
+
+/** The rows, and what frames them: headings under All, the source on a row only where it adds something. */
+export function buildList(input: RowInput): ListModel {
+  const rows = buildRows(input);
+  const typed = tokens(input.query).length > 0;
+  if (input.source !== ALL || typed) return { rows, heads: [], showSource: input.source === ALL || input.source === INSTALLED };
+  const heads: ListHead[] = [];
+  let last: string | null = null;
+  rows.forEach((r, at) => {
+    if (r.type !== "plugin") return;
+    const label = r.installed ? INSTALLED_HEAD : sourceCaption(r.entry.marketplace);
+    if (label !== last) heads.push({ at, label });
+    last = label;
+  });
+  return { rows, heads: heads.length > 1 ? heads : [], showSource: false };
 }
 
 export function rowName(r: LibraryRow): string {
   return r.type === "plugin" ? r.entry.name : r.row.name;
+}
+
+// ---- what a row is about -----------------------------------------------------------------------
+
+/**
+ * What a plugin is about, read from its own name and description: the catalog sends nothing else
+ * (no contents, no counts), so the row's picture is a reading of those words and never a claim
+ * about what is inside. "plugin" is the honest answer when the words say nothing.
+ */
+export type Topic =
+  | "style"
+  | "language"
+  | "hooks"
+  | "agents"
+  | "commands"
+  | "skills"
+  | "design"
+  | "review"
+  | "documents"
+  | "security"
+  | "cloud"
+  | "data"
+  | "web"
+  | "git"
+  | "loop"
+  | "build"
+  | "plugin";
+
+/** One word for the picture's hover. */
+export const TOPIC_WORD: Record<Topic, string> = {
+  style: "Output style",
+  language: "Language server",
+  hooks: "Hooks",
+  agents: "Agents",
+  commands: "Commands",
+  skills: "Skills",
+  design: "Design",
+  review: "Review",
+  documents: "Documents",
+  security: "Security",
+  cloud: "Cloud",
+  data: "Data",
+  web: "Web",
+  git: "Git",
+  loop: "Automation",
+  build: "Building",
+  plugin: "Plugin",
+};
+
+// First match wins. A plain entry is a whole word (or two words in a row); one ending in "*" is
+// the start of a word. What a plugin adds to Claude Code (a style, hooks, agents) comes before
+// what it is for (design, review, documents).
+const TOPIC_RULES: [Topic, string[]][] = [
+  ["style", ["output style", "output styles"]],
+  ["language", ["lsp", "language server"]],
+  ["hooks", ["hook*"]],
+  ["agents", ["agent*", "subagent*"]],
+  ["commands", ["command*", "slash"]],
+  ["skills", ["skill*"]],
+  ["design", ["design*", "frontend", "ui", "ux", "css", "figma", "tailwind"]],
+  ["review", ["review*", "audit*", "lint*"]],
+  ["documents", ["pdf", "docx", "xlsx", "pptx", "excel", "spreadsheet*", "slides", "document*", "notes", "markdown"]],
+  ["security", ["security", "secure", "secret*", "vulnerab*"]],
+  ["cloud", ["infrastructure", "terraform", "deploy*", "cloud", "docker", "kubernetes", "aws", "azure", "gcp"]],
+  ["data", ["sql", "database*", "query", "queries", "postgres*", "csv", "analytics"]],
+  ["web", ["browser*", "playwright", "web", "website*", "http", "scrape*"]],
+  ["git", ["git", "github", "gitlab", "commit*", "branch*", "merge", "changelog", "pull request", "pull requests"]],
+  ["loop", ["loop*", "schedule*", "automat*", "cron", "repeat*"]],
+  ["build", ["dev", "sdk", "build*", "test*", "debug*", "workflow*", "feature*"]],
+];
+
+function topicIn(text: string): Topic | null {
+  const hay = ` ${tokens(text).join(" ")} `;
+  for (const [topic, words] of TOPIC_RULES) {
+    for (const w of words) {
+      if (w.endsWith("*") ? hay.includes(` ${w.slice(0, -1)}`) : hay.includes(` ${w} `)) return topic;
+    }
+  }
+  return null;
+}
+
+/** The name says most, so it is read first; the description only when the name says nothing. */
+export function entryTopic(e: { name: string; description?: string }): Topic {
+  return topicIn(e.name) ?? topicIn(e.description ?? "") ?? "plugin";
 }
 
 // ---- words -------------------------------------------------------------------------------------
@@ -179,10 +354,9 @@ export function isStale(view: CatalogView | null, nowMs: number): boolean {
   return !view || view.fetchedMs === null || nowMs - view.fetchedMs > STALE_MS;
 }
 
-/** "2.1 MB" / "340 KB". */
+/** "2.1 MB" / "340 KB": the app's one size format, never less than 1 KB while something is arriving. */
 export function bytesWords(n: number): string {
-  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(n / 1024))} KB`;
+  return formatBytes(Math.max(1024, n));
 }
 
 /** "Reading owner/repo... 2.1 MB". */

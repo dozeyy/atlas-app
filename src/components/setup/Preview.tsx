@@ -63,7 +63,8 @@ function BlockView({ b }: { b: Block }) {
       );
     }
     case "code":
-      return <pre className="mono mt-2 overflow-x-auto rounded-control bg-raised px-3 py-2 text-ink first:mt-0">{b.text}</pre>;
+      // A long command wraps at the box (the file reads whole); nothing ever scrolls sideways.
+      return <pre className="mono mt-2 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-control bg-raised px-3 py-2 text-ink first:mt-0">{b.text}</pre>;
     case "quote":
       return (
         <blockquote className="mt-2 border-l-2 border-line-strong pl-3 text-body text-ink-2 first:mt-0">

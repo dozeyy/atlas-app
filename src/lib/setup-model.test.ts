@@ -2,9 +2,14 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { mockSetupSnapshot } from "./setup-mock";
 import {
   applyKind,
+  chipWords,
+  connectionWords,
   countByKind,
   countByScope,
   DEFAULT_FILTERS,
+  displayChips,
+  displayDescription,
+  displayName,
   enabledTone,
   gridMove,
   groupItems,
@@ -13,7 +18,10 @@ import {
   matchesQuery,
   permissionBuckets,
   relativeTime,
+  ruleWords,
   scopeRuns,
+  splitSummary,
+  toolsWords,
   visibleItems,
 } from "./setup-model";
 import type { SetupSnapshot } from "./setup-types";
@@ -145,4 +153,127 @@ describe("small helpers", () => {
     expect(enabledTone("shadowed")).toBe("warn");
     expect(enabledTone("none")).toBe("muted");
   });
+});
+
+describe("hooks in plain words", () => {
+  const hook = () => snap.items.find((i) => i.kind === "hook")!;
+
+  it("leads with when the hook runs and keeps the settings name searchable", () => {
+    const h = hook();
+    expect(h.name).toBe("PreToolUse · Bash");
+    expect(displayName(h)).toBe("Before a tool runs · Bash");
+    expect(displayDescription(h)).toBe("Runs fmt.sh --check");
+    expect(matchesQuery(h, "pretooluse")).toBe(true);
+    expect(matchesQuery(h, "before a tool")).toBe(true);
+  });
+
+  it("spells several matchers as a list, drops a catch-all, and leaves an unknown event alone", () => {
+    const h = hook();
+    expect(displayName({ ...h, name: "PostToolUse · Edit|Write" })).toBe("After a tool runs · Edit, Write");
+    expect(displayName({ ...h, name: "Stop · any" })).toBe("When Claude finishes");
+    // A bar inside a pattern is part of the pattern: only a plain list of names is spelled out.
+    expect(displayName({ ...h, name: "PreToolUse · Bash(npm test|lint)" })).toBe("Before a tool runs · Bash(npm test|lint)");
+    expect(displayName({ ...h, name: "PreToolUse · mcp__atlas__.*|Edit" })).toBe("Before a tool runs · mcp__atlas__.*|Edit");
+    expect(displayName({ ...h, name: "PreToolUse · mcp__atlas__read_item|Edit" })).toBe("Before a tool runs · mcp__atlas__read_item, Edit");
+    expect(displayName({ ...h, name: "SomethingNew · Bash" })).toBe("SomethingNew · Bash");
+    expect(displayDescription({ ...h, description: "prompt: Is this safe?" })).toBe("Asks Claude: Is this safe?");
+    expect(displayDescription({ ...h, description: "something else" })).toBe("something else");
+  });
+
+  it("leaves every other kind exactly as it is named", () => {
+    const skill = snap.items.find((i) => i.kind === "skill")!;
+    expect(displayName(skill)).toBe(skill.name);
+    expect(displayDescription(skill)).toBe(skill.description);
+  });
+});
+
+describe("the settings file's own words stay off the surface", () => {
+  const of = (kind: string, name?: string) => snap.items.find((i) => i.kind === kind && (!name || i.name === name))!;
+
+  it("reads a permission rule in words only where it is sure of them", () => {
+    expect(ruleWords("Bash(git status:*)")).toBe("Commands that start with git status");
+    expect(ruleWords("Bash(npm run *)")).toBe("Commands that start with npm run");
+    expect(ruleWords("Bash(npm test)")).toBe("The command npm test");
+    expect(ruleWords("Bash")).toBe("Any command");
+    expect(ruleWords("Read(*)")).toBe("Read any file");
+    expect(ruleWords("Read(~/.zshrc)")).toBe("Read ~/.zshrc");
+    expect(ruleWords("Edit(src/**)")).toBe("Change src/**");
+    expect(ruleWords("WebFetch")).toBe("Open any web page");
+    expect(ruleWords("WebFetch(domain:example.test)")).toBe("Open pages on example.test");
+    expect(ruleWords("mcp__atlas__read_item")).toBe("read_item, from atlas");
+    expect(ruleWords("mcp__atlas")).toBe("Every tool from atlas");
+    // Not sure: shown as written.
+    expect(ruleWords("Bash(git * --force:*)")).toBe("Bash(git * --force:*)");
+    expect(ruleWords("Bash(a && b)")).toBe("Bash(a && b)");
+    expect(ruleWords("Task(reviewer)")).toBe("Task(reviewer)");
+    expect(ruleWords("WebFetch(https://x.test/*)")).toBe("WebFetch(https://x.test/*)");
+  });
+
+  it("names a permission and a plugin for a reader, and still finds them by the stored name", () => {
+    const rule = of("permission", "Bash(git status:*)");
+    expect(displayName(rule)).toBe("Commands that start with git status");
+    expect(matchesQuery(rule, "bash(git")).toBe(true);
+    expect(matchesQuery(rule, "start with git")).toBe(true);
+    const plugin = of("plugin");
+    expect(plugin.name).toBe("helpers@market");
+    expect(displayName(plugin)).toBe("helpers");
+    expect(matchesQuery(plugin, "helpers@market")).toBe(true);
+    expect(displayName({ ...plugin, name: "@odd" })).toBe("@odd");
+  });
+
+  it("says how a connected tool is reached, not the transport", () => {
+    const local = of("mcpServer", "github");
+    expect(displayDescription(local)).toBe("Runs on this computer");
+    expect(displayDescription({ ...local, description: "stdio: npx -y pkg" })).toBe("Runs on this computer");
+    expect(displayDescription(of("mcpServer", "docs"))).toBe("Connects to example.test");
+    expect(displayDescription({ ...local, description: "sse: not a url" })).toBe("Connects over the web");
+    // A transport Atlas has no words for keeps the scan's line.
+    expect(displayDescription({ ...local, description: "carrier-pigeon: coop 4", mcp: null })).toBe("carrier-pigeon: coop 4");
+    expect(splitSummary("stdio: npx -y pkg")).toEqual({ transport: "stdio", target: "npx -y pkg" });
+    expect(splitSummary("https://example.test/mcp")).toEqual({ transport: "", target: "https://example.test/mcp" });
+    expect(connectionWords("stdio", "")).toBe("Runs on this computer");
+    expect(matchesQuery(local, "npx")).toBe(true);
+    expect(matchesQuery(local, "this computer")).toBe(true);
+  });
+
+  it("drops the tags the words already say and counts one thing in the singular", () => {
+    expect(displayChips(of("mcpServer", "github"))).toEqual([]);
+    expect(displayChips(of("hook"))).toEqual([]);
+    expect(displayChips(of("permission"))).toEqual([]);
+    expect(displayChips(of("plugin"))).toEqual(["v1.2.0", "1 skill", "2 hooks"]);
+    expect(displayChips({ ...of("plugin"), chips: ["1 MCP servers", "1 output styles", "11 skills"] })).toEqual(["1 MCP server", "1 output style", "11 skills"]);
+    const agent = of("agent");
+    expect(displayChips(agent)).toEqual(agent.chips);
+  });
+
+  it("writes a tag the way the rest of the app does, with the file's own word on hover", () => {
+    const agent = of("agent");
+    // A bare family name gets no version: Atlas does not make one up.
+    expect(chipWords(agent, "opus")).toEqual({ label: "Opus", title: "The model this agent runs on; its file writes it as opus." });
+    expect(chipWords(agent, "claude-opus-5-5")).toEqual({ label: "Opus 5.5", title: "The model this agent runs on; its file writes it as claude-opus-5-5." });
+    expect(chipWords(agent, "inherit").label).toBe("Session's model");
+    // Only an agent's tag is a model: a skill tagged "opus" keeps its tag, and gets no hover.
+    expect(chipWords(of("skill"), "opus")).toEqual({ label: "opus" });
+    expect(chipWords(of("skill"), "local").label).toBe("This computer only");
+    expect(chipWords(of("skill"), "backup copy").label).toBe("Backup copy");
+    // Every tag the app shows explains itself on hover (the full map is tested in tagWords.test.ts).
+    expect(chipWords(of("rule"), "src/**/*.ts")).toEqual({ label: "src/**/*.ts", title: "Applies only while Claude works on files matching src/**/*.ts." });
+  });
+
+  it("says what the status line runs, with no type tag", () => {
+    const line = of("statusLine");
+    expect(displayDescription(line)).toBe("Runs statusline.sh");
+    // The scan's own line is the bare command.
+    expect(displayDescription({ ...line, description: "~/.claude/statusline.sh" })).toBe("Runs ~/.claude/statusline.sh");
+    expect(displayDescription({ ...line, description: "" })).toBe("");
+    expect(displayChips(line)).toEqual([]);
+  });
+
+  it("reads a file's tool list rule by rule, keeping the commas inside a rule", () => {
+    expect(toolsWords("Read, Grep, Bash(git:*)")).toBe("Read, Grep, Commands that start with git");
+    expect(toolsWords("Bash(git log:*), Read(a,b)")).toBe("Commands that start with git log, Read a,b");
+    expect(toolsWords("Read, Grep")).toBe("Read, Grep");
+    expect(toolsWords("Task(reviewer)")).toBe("Task(reviewer)");
+  });
+
 });

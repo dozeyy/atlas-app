@@ -8,7 +8,7 @@
 import { useSyncExternalStore } from "react";
 import { getBackend } from "../lib/ipc";
 import { errorText } from "../lib/setup-actions";
-import { ALL, OFFLINE, indexEntries, isClean, type Indexed } from "../lib/library";
+import { ALL, indexEntries, isClean, type Indexed } from "../lib/library";
 import type { CatalogView, InstalledRow, LibraryDetail, PluginOutcome } from "../lib/libraryTypes";
 import { pushToast } from "./toastStore";
 
@@ -98,7 +98,8 @@ export function openLibrary(): void {
       if (view.stale || view.total === 0) void refreshLibrary();
     })
     .catch((e) => {
-      set({ status: "ready", error: errorText(e, OFFLINE) });
+      // No words from the engine is not "offline": the page then says only that it could not load.
+      set({ status: "ready", error: errorText(e, "") || null });
       void refreshLibrary();
     });
   if (!wired) {
@@ -127,10 +128,10 @@ export async function refreshLibrary(marketplace?: string): Promise<void> {
     setView(view);
     await reloadInstalled();
   } catch (e) {
-    const words = errorText(e, OFFLINE);
+    const words = errorText(e, "");
     // With a list on screen the old copy stays and one toast says why; with none the page says it.
-    if (state.view && state.view.total) pushToast({ message: words, tone: "error" });
-    else set({ error: words });
+    if (state.view && state.view.total) pushToast({ message: words || "Atlas could not update the plugin list. The one on screen is the last copy.", tone: "error" });
+    else set({ error: words || null });
   } finally {
     set({ refreshing: false });
   }
@@ -191,6 +192,9 @@ export async function installPlugin(pluginId: string, name: string, token: strin
       message: out.changed ? `Installed ${name}. Its files differ from the ones Atlas checked.` : `Installed ${name}.`,
       tone: out.changed ? "info" : "success",
       action: { label: "Undo", onClick: async () => void (await undoPlugin(out.backupId, name)) },
+      // Uninstall in the Library does the same, so a clean install need not follow onto other
+      // pages. "Its files differ" is a safety notice: it stays until it is read or times out.
+      leavesWithPage: !out.changed,
     });
     return out;
   } catch (e) {
@@ -273,7 +277,9 @@ export async function removeItem(row: InstalledRow): Promise<boolean> {
   try {
     await getBackend().libraryRemoveItem(row.backupId);
     await reloadInstalled();
-    pushToast({ message: `Removed ${row.name}. Undo it in History.`, tone: "success" });
+    // True to what happened: the engine backs the files up and moves them to the trash. History
+    // shows the last copy and can save it, but has no Undo button, so none is promised.
+    pushToast({ message: `Removed ${row.name}. Its files are in the trash, and History keeps the last copy.`, tone: "success" });
     return true;
   } catch (e) {
     pushToast({ message: errorText(e, "Atlas could not remove that. Nothing changed."), tone: "error" });

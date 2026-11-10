@@ -18,9 +18,68 @@ const WARM_MS = 400; // moving from one tip straight to the next skips the pause
 const POLL_MS = 400; // while open, notice a target that was removed from the page
 
 const SELECTOR = "[title], [data-tip]";
+/** Anything that closes on Escape itself: a tip inside one never takes the key from it. */
+const ESC_OWNER = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
 function textOf(el: Element): string {
   return el.getAttribute("title") || el.getAttribute("data-tip") || "";
+}
+
+const flat = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+
+/** Is any text in `el` cut short on screen: an ellipsis (`truncate`) or a clamp? */
+function isCut(el: Element): boolean {
+  const cut = (e: Element) => {
+    if (e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1) return false;
+    const s = getComputedStyle(e);
+    return s.overflowX === "hidden" || s.overflowY === "hidden" || s.overflowX === "clip" || s.overflowY === "clip";
+  };
+  if (cut(el)) return true;
+  for (const d of el.querySelectorAll("*")) if (cut(d)) return true;
+  return false;
+}
+
+/**
+ * The text of `el` a person can see: text inside anything faded out (opacity 0), hidden or not
+ * displayed does not count. A folded sidebar keeps each name in the DOM at opacity 0 so it can
+ * fade back in; to the eye the button is icon-only, and its name is new again.
+ */
+function visibleText(el: Element): string {
+  const hidden = (e: Element) => {
+    const s = getComputedStyle(e);
+    // parseFloat: an opacity the engine does not report (jsdom gives "") is not zero.
+    return s.display === "none" || s.visibility === "hidden" || parseFloat(s.opacity) === 0;
+  };
+  if (hidden(el)) return "";
+  let out = "";
+  const walk = (node: Node) => {
+    for (const c of node.childNodes) {
+      if (c.nodeType === Node.TEXT_NODE) out += c.textContent ?? "";
+      else if (c.nodeType === Node.ELEMENT_NODE && !hidden(c as Element)) walk(c);
+    }
+  };
+  walk(el);
+  return out;
+}
+
+/**
+ * The one rule for a tip that says what is already under the pointer (Will, 2026-11-10): a tip
+ * that only repeats a name shown in full adds nothing and stays away; the same tip on a name cut
+ * short with an ellipsis, or on a control whose name is faded out to an icon, is the only way to
+ * read it, so it shows. A name that needs no tip hands the hover on to the next thing above it
+ * that has one (the row's own tip).
+ */
+function worthShowing(el: Element): boolean {
+  const text = flat(textOf(el));
+  if (!text) return false;
+  return text !== flat(visibleText(el)) || isCut(el);
+}
+
+/** The element whose tip a pointer or focus on `from` should show, if any. */
+function pick(from: Element | null): Element | null {
+  let el = from && from.closest ? from.closest(SELECTOR) : null;
+  while (el && !worthShowing(el)) el = el.parentElement?.closest(SELECTOR) ?? null;
+  return el;
 }
 
 /** `:focus-visible` is keyboard focus; engines without it (and jsdom) count every focus. */
@@ -176,8 +235,7 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
 
     const onOver = (e: PointerEvent) => {
       if (e.pointerType === "touch") return;
-      const t = e.target as Element | null;
-      const el = t && t.closest ? t.closest(SELECTOR) : null;
+      const el = pick(e.target as Element | null);
       pointer = { x: e.clientX, y: e.clientY };
       if (stillAt) {
         if (Math.hypot(pointer.x - stillAt.x, pointer.y - stillAt.y) < 4) return;
@@ -185,7 +243,7 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
       }
       if (el === target) return;
       if (target) release();
-      if (!el || !textOf(el)) return;
+      if (!el) return;
       take(el);
       arm(el, performance.now() - lastClosed < WARM_MS ? 0 : SHOW_MS);
     };
@@ -200,9 +258,8 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
     };
 
     const onFocusIn = (e: FocusEvent) => {
-      const t = e.target as Element | null;
-      const el = t && t.closest ? t.closest(SELECTOR) : null;
-      if (!el || !textOf(el) || !keyboardFocused(el)) return;
+      const el = pick(e.target as Element | null);
+      if (!el || !keyboardFocused(el)) return;
       if (el !== target) {
         if (target) release();
         take(el);
@@ -219,9 +276,15 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
 
     // Esc puts the tip away; the title stays parked until the pointer or focus leaves.
     // A shortcut (Ctrl+7 and the like) is the person doing something else: the tip goes with it.
+    // A tip that keyboard focus asked for takes that Esc for itself, so one press does one thing: it
+    // does not also step back a page. A tip inside a dialog, sheet or menu leaves the key to its
+    // owner (closing that takes the tip with it), and a hover tip never holds a key back.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && open) hide();
-      else if ((e.ctrlKey || e.metaKey || e.altKey) && !["Control", "Meta", "Alt"].includes(e.key) && (open || timer)) quiet();
+      if (e.key === "Escape" && open) {
+        const byKeyboard = !!target && target === document.activeElement && keyboardFocused(target);
+        if (byKeyboard && !target!.closest(ESC_OWNER)) e.preventDefault();
+        hide();
+      } else if ((e.ctrlKey || e.metaKey || e.altKey) && !["Control", "Meta", "Alt"].includes(e.key) && (open || timer)) quiet();
     };
 
     // A press is a choice made: the tip does not come back for this target, even when focus lands on it.

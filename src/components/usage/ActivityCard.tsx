@@ -19,15 +19,16 @@ import {
 } from "../../lib/usage";
 import type { RangeKind } from "../../lib/usage";
 import type { Timeline } from "../../lib/types";
-import { ErrorBlock, Skeleton } from "./StateBlocks";
+import { Skeleton } from "./StateBlocks";
+import { EmptyState } from "../EmptyState";
 
 const RANGE_NAME: Record<RangeKind, string> = { today: "Today", "30d": "Last 30 days", "12w": "Last 12 weeks" };
 /** What the total counts: it lives in the total's hover, not in a sentence on the card. */
-const TOKEN_MEANING = "Tokens count what you sent and what Claude wrote, plus cache writes.\nCache reads are listed apart.";
+const TOKEN_MEANING = "Tokens count what you sent, what Claude wrote and what it saved for reuse (cache writes).\nWhat it reused (cache reads) is listed apart.";
 
 /**
  * Tokens over time as activity bars, with a table twin for anyone who prefers numbers. Tokens only
- * (Will, 2026-11-08); the API-price estimate for a bar or a row is in its hover.
+ * (2026-11-08); the API-price estimate for a bar or a row is in its hover.
  */
 export function ActivityCard({ today }: { today: string }) {
   const backend = getBackend();
@@ -40,27 +41,40 @@ export function ActivityCard({ today }: { today: string }) {
   const points = tl.data?.points ?? [];
   const data: BarDatum[] = useMemo(
     () =>
-      points.map((p) => {
+      points.map((p, i) => {
         const tokens = headline(p.tokens);
+        // The newest bar says what it is in words: "Today" under the day that is today, "This week".
+        const newest = i === points.length - 1;
+        const axis =
+          newest && span.bucket === "week"
+            ? "This week"
+            : newest && span.bucket === "day" && p.start.slice(0, 10) === today
+              ? "Today"
+              : axisLabel(p.start, span.bucket);
         return {
           key: p.start,
           value: tokens,
-          axis: axisLabel(p.start, span.bucket),
+          axis,
           title: bucketTitle(p.start, span.bucket),
-          valueText: compact(tokens),
-          detail: `tokens, ${p.cost.usd === null ? "no price" : `${formatUsd(p.cost.usd)} estimated`}, ${plural(p.sessions, "session")} started`,
+          valueText: `${compact(tokens)} tokens`,
+          detail: `${p.cost.usd === null ? "No price" : `${formatUsd(p.cost.usd)} estimated`}, ${plural(p.sessions, "session")} started`,
         };
       }),
-    [points, span.bucket],
+    [points, span.bucket, today],
   );
+
+  // The accent bar is "now": the newest day or week, and on the hourly view the hour it is.
+  const hourNow = new Date().getHours();
+  const nowBar =
+    span.bucket === "hour" ? points.findIndex((p) => p.start.slice(0, 10) === today && Number(p.start.slice(11, 13)) === hourNow) : points.length - 1;
 
   const total = useMemo(() => points.reduce((s, p) => s + headline(p.tokens), 0), [points]);
 
   return (
-    <Card className="px-5 py-4">
+    <Card className="h-full px-5 py-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="d d-figure text-ink">Activity</h2>
+          <h2 className="h-section">Activity</h2>
           <p className="mt-0.5 text-caption text-ink-2" data-testid="chart-readout" title={TOKEN_MEANING}>
             {RANGE_NAME[range]}: {compact(total)} tokens
           </p>
@@ -89,9 +103,11 @@ export function ActivityCard({ today }: { today: string }) {
           <Skeleton className="h-[158px] w-full" />
         </div>
       ) : tl.error ? (
-        <ErrorBlock title="Could not load activity" message={tl.error} onRetry={() => tl.reload(false)} />
+        <EmptyState compact variant="error" title="Could not load activity" reason={tl.error} action={{ onClick: () => tl.reload(false) }} />
       ) : asTable ? (
-        <div className="max-h-[300px] overflow-auto rounded-control border border-line">
+        <div className="rounded-control border border-line">
+          {/* The rows scroll inside the frame and fade out at its bottom; the heading stays. */}
+          <div className="scroll-fade max-h-[300px] overflow-auto">
           <table className="w-full text-body">
             <caption className="sr-only">{`${RANGE_NAME[range]}, one row per ${span.bucket}`}</caption>
             <thead className="sticky top-0 bg-surface text-left text-caption text-ink-2">
@@ -106,15 +122,16 @@ export function ActivityCard({ today }: { today: string }) {
             <tbody className="tabular-nums">
               {points.map((p) => (
                 <tr key={p.start} className="border-t border-line">
-                  <th scope="row" className="px-3 py-1.5 text-left font-normal text-ink">
+                  <th scope="row" className="px-3 py-2 text-left font-normal text-ink">
                     {bucketTitle(p.start, span.bucket)}
                   </th>
-                  <td className="px-3 py-1.5 text-right" title={tokenHint(headline(p.tokens), p.cost)}>{compact(headline(p.tokens))}</td>
-                  <td className="px-3 py-1.5 text-right">{exact(p.sessions)}</td>
+                  <td className="px-3 py-2 text-right" title={tokenHint(headline(p.tokens), p.cost)}>{compact(headline(p.tokens))}</td>
+                  <td className="px-3 py-2 text-right">{exact(p.sessions)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       ) : (
         <Bars
@@ -123,6 +140,8 @@ export function ActivityCard({ today }: { today: string }) {
           label={`Tokens, ${RANGE_NAME[range].toLowerCase()}`}
           formatTick={compact}
           height={158}
+          highlight={nowBar}
+          anchor={span.bucket === "hour" ? "start" : "end"}
         />
       )}
     </Card>

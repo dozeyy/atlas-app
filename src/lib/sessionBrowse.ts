@@ -1,11 +1,8 @@
 // Pure rules for browsing sessions: which day a row belongs to, how a day is named and summed,
 // which colour a project wears, and the command that picks a chat back up. No React, no DOM.
 
-import { addDays, localDay } from "./usage";
+import { dayWord, localDay } from "./usage";
 import type { Platform, SessionRow } from "./types";
-
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export interface DayGroup {
   /** Local day, YYYY-MM-DD. */
@@ -16,18 +13,13 @@ export interface DayGroup {
   tokens: number;
 }
 
-/** "Today", "Yesterday", the weekday for the rest of the week, then "Nov 3" (with the year when it is not this one). */
+/**
+ * "Today", "Yesterday", the weekday for the rest of the week, then "Nov 3" (with the year when it
+ * is not this one): the app's one day rule (`dayWord`), for a local day written YYYY-MM-DD.
+ */
 export function dayLabel(day: string, now: Date): string {
-  const today = localDay(now);
-  if (day === today) return "Today";
-  if (day === addDays(today, -1)) return "Yesterday";
   const [y, m, d] = day.split("-").map(Number);
-  const date = new Date(y, m - 1, d);
-  for (let back = 2; back <= 6; back++) {
-    if (day === addDays(today, -back)) return WEEKDAYS[date.getDay()];
-  }
-  const text = `${MONTHS[m - 1]} ${d}`;
-  return y === now.getFullYear() ? text : `${text}, ${y}`;
+  return dayWord(new Date(y, m - 1, d, 12).getTime(), now.getTime(), true);
 }
 
 /** Cuts a list that is already in time order into runs of one local day. */
@@ -43,6 +35,60 @@ export function groupByDay(rows: SessionRow[], now: Date): DayGroup[] {
       groups.push({ day, label: dayLabel(day, now), rows: [row], tokens: row.tokens.total });
     }
   }
+  return groups;
+}
+
+export interface FolderGroup {
+  /** The project folder, as the rows name it; "" for chats with no folder. */
+  key: string;
+  /** The folder's name in plain words ("atlas"); "No folder" for the last group. */
+  name: string;
+  /** The full path, for the hover; "" when there is none. */
+  path: string;
+  rows: SessionRow[];
+  /** Headline tokens of the rows listed under this folder. */
+  tokens: number;
+  /** When the newest chat here started. */
+  latest: number;
+}
+
+/** The group every chat with no project folder falls into. */
+export const NO_FOLDER = "No folder";
+
+/**
+ * Cuts a list into one group per project folder. A group sits where its first row sits in the
+ * list (newest first: the folder with the newest chat on top), and its rows keep the list's
+ * order, so more rows loading later only ever add to the end of a group or add groups at the
+ * end; nothing moves. Chats with no folder go last, whatever their place in the list.
+ */
+/** A folder with a path but no name reads as its last segment ("C:/work/atlas" -> "atlas"), never "No folder". */
+function lastSegment(path: string): string {
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+  return parts[parts.length - 1] || NO_FOLDER;
+}
+
+export function groupByFolder(rows: SessionRow[]): FolderGroup[] {
+  const groups: FolderGroup[] = [];
+  const at = new Map<string, FolderGroup>();
+  let none: FolderGroup | null = null;
+  for (const row of rows) {
+    const path = (row.projectPath ?? "").trim();
+    const key = path === "" ? "" : path.replace(/[\\/]+$/, "");
+    let g: FolderGroup | null | undefined = key === "" ? none : at.get(key);
+    if (g) {
+      g.rows.push(row);
+      g.tokens += row.tokens.total;
+      if (row.startedAt > g.latest) g.latest = row.startedAt;
+      continue;
+    }
+    g = { key, name: key === "" ? NO_FOLDER : row.projectName || lastSegment(key), path, rows: [row], tokens: row.tokens.total, latest: row.startedAt };
+    if (key === "") none = g;
+    else {
+      at.set(key, g);
+      groups.push(g);
+    }
+  }
+  if (none) groups.push(none);
   return groups;
 }
 

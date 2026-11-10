@@ -142,7 +142,7 @@ export function screenFor(s: Snapshot, removeData = false): Screen {
     case "installing": {
       // The install's own step is the line; the chats being read ride along under it.
       const reading = stillReading(s.reading);
-      const counts = `Reading your chats: ${compact(s.reading.done)} of ${compact(s.reading.total)}`;
+      const counts = `Reading your sessions: ${compact(s.reading.done)} of ${compact(s.reading.total)}`;
       const step = s.stage === "unpack" ? "Unpacking" : s.stage === "opening" ? "Opening Atlas" : "Installing Atlas";
       return { line: `${step}${reading && s.stage !== "opening" ? `\n${counts}` : ""}`, ...none, closable: false };
     }

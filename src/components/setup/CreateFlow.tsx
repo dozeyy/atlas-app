@@ -1,23 +1,15 @@
 import { useEffect, useState } from "react";
 import { Button } from "../controls";
 import { Dialog } from "../Dialog";
+import { PathText } from "./parts";
 import { TextEditor } from "./TextEditor";
+import { SelectField } from "../usage/fields";
 import { getBackend } from "../../lib/ipc";
 import { errorText } from "../../lib/setup-actions";
+import { HOOK_EVENTS } from "../../lib/setup-model";
 import type { CreateKind, Draft } from "../../lib/setup-types";
 import { reloadSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
-
-export const HOOK_EVENTS: { value: string; label: string }[] = [
-  { value: "PostToolUse", label: "After a tool runs" },
-  { value: "PreToolUse", label: "Before a tool runs" },
-  { value: "UserPromptSubmit", label: "When you send a message" },
-  { value: "Stop", label: "When Claude finishes" },
-  { value: "SessionStart", label: "When a session starts" },
-  { value: "Notification", label: "When Claude needs you" },
-  { value: "SubagentStop", label: "When an agent finishes" },
-  { value: "PreCompact", label: "Before the chat is trimmed" },
-];
 
 const NAME_HELP: Record<CreateKind, { label: string; placeholder: string; hint: string } | null> = {
   instructions: null,
@@ -116,39 +108,32 @@ export function CreateFlow({ kind, onClose }: { kind: CreateKind; onClose: () =>
           }}
           className="space-y-4"
         >
+          {/* Labels as the Duplicate dialog writes them: a regular line in the second ink, the field under it. */}
           {help && (
             <label className="block">
-              <span className="text-body font-medium text-ink">{help.label}</span>
+              <span className="mb-2 block text-body text-ink-2">{help.label}</span>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={help.placeholder}
                 spellCheck={false}
                 autoComplete="off"
-                className="selectable mt-1.5 h-9 w-full rounded-control border border-line-strong bg-surface px-3 text-body text-ink placeholder:text-ink-2"
+                className="selectable h-9 w-full rounded-control border border-line-strong bg-surface px-3 text-body text-ink placeholder:text-ink-2"
               />
               <span className="mt-1 block text-caption text-ink-2">{help.hint}</span>
             </label>
           )}
           {kind === "hook" && (
-            <label className="block">
-              <span className="text-body font-medium text-ink">When should it run?</span>
-              <select
-                value={event}
-                onChange={(e) => setEvent(e.target.value)}
-                className="mt-1.5 h-9 w-full cursor-pointer rounded-control border border-line-strong bg-surface px-2 text-body text-ink"
-              >
-                {HOOK_EVENTS.map((h) => (
-                  <option key={h.value} value={h.value}>
-                    {h.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div>
+              {/* The app's own picker (SelectField names itself for the screen reader); the visible
+                  line is the same label style as the name above, and the field is the inputs' 36 px. */}
+              <span aria-hidden="true" className="mb-2 block text-body text-ink-2">
+                When should it run?
+              </span>
+              <SelectField label="When should it run?" value={event} onChange={setEvent} options={HOOK_EVENTS} wide tall />
+            </div>
           )}
-          <p className="text-body text-ink-2">
-            Next you will see a starting text to change. Nothing is written until you press Create, and Atlas never replaces something you already have.
-          </p>
+          <p className="text-caption text-ink-2">Next: a starting text to change. Nothing is written until you press Create.</p>
           {error && (
             <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-body text-danger">
               {error}
@@ -159,7 +144,7 @@ export function CreateFlow({ kind, onClose }: { kind: CreateKind; onClose: () =>
       ) : draft ? (
         <div className="flex flex-col gap-2">
           <p className="text-body text-ink-2">
-            Goes in <span className="mono selectable break-all text-ink">{draft.whereNote || draft.path}</span>
+            Goes in <PathText path={draft.whereNote || draft.path} className="selectable text-ink" />
           </p>
           <TextEditor
             initial={draft.text}

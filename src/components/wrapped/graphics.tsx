@@ -6,17 +6,22 @@ import { addDays, compact } from "../../lib/usage";
 import { barTop, heatLayout, ZERO_STUB } from "../../lib/chartPaths";
 import { hourLabel, longDay, WEEKDAYS_SHORT, weekdayTied } from "../../lib/wrappedModel";
 import type { SlideGraphic } from "../../lib/wrappedModel";
+import { SPARK_BOX, SPARK_PATHS } from "../../lib/sparkMark";
 
-/** The four-point clay spark: planted on a peak, and the trail's "you are here". Unit size 1. */
-export const SPARK = "M0-1Q.16-.16 1 0Q.16 .16 0 1Q-.16 .16-1 0Q-.16-.16 0-1Z";
-
-/** The spark's radius, how far its centre floats above the bar it marks, and the room a chart must keep
- * above its tallest bar so the whole spark (and the spring's overshoot while it pops in) is inside the
- * SVG. A chart sets its top from SPARK_HEAD instead of nudging one number, so a bar at 100 % never clips. */
-export const SPARK_SIZE = 11;
-export const SPARK_LIFT = 20;
+/** The spark's half-size (its box is 2x this), how far its centre floats above the bar it marks, and
+ * the room a chart must keep above its tallest bar so the whole spark (and the spring's overshoot
+ * while it pops in) is inside the SVG. A chart sets its top from SPARK_HEAD instead of nudging one
+ * number, so a bar at 100 % never clips. */
+export const SPARK_SIZE = 10;
+export const SPARK_LIFT = 19;
 export const SPARK_HEAD = SPARK_LIFT + Math.ceil(SPARK_SIZE * 1.25) + 3;
 
+/**
+ * The clay spark: the Atlas mark, planted on a peak (the same glyph as `.spark` elsewhere in the
+ * app, drawn from its path data here so it lives in the chart's own units). `size` is half its box.
+ * The pop (summit.css) is on a group with no transform of its own, centred on the peak: its fill-box
+ * origin is then the peak itself. (A transform-origin on the scaled group would be 512 units off.)
+ */
 export function Spark({
   x,
   y,
@@ -28,14 +33,16 @@ export function Spark({
   size: number;
   delay?: number;
 }) {
+  const k = (size * 2) / SPARK_BOX;
   return (
     <g transform={`translate(${x} ${y})`}>
-      <path
-        className="sm-spark"
-        d={SPARK}
-        transform={`scale(${size})`}
-        style={{ animationDelay: `${delay}ms` }}
-      />
+      <g className="sm-spark" data-size={size} style={{ animationDelay: `${delay}ms` }}>
+        <g transform={`scale(${k}) translate(${-SPARK_BOX / 2} ${-SPARK_BOX / 2})`}>
+          {SPARK_PATHS.map((d, i) => (
+            <path key={i} d={d} />
+          ))}
+        </g>
+      </g>
     </g>
   );
 }
@@ -67,8 +74,9 @@ function HeatArt({ g }: { g: Extract<SlideGraphic, { kind: "heat" }> }) {
   const n = g.values.length;
   // The first column is padded at the top so today is the bottom-right cell (heatLayout).
   const weeks = Math.max(1, Math.ceil(n / 7));
-  // Biggest cell that lets every week fit the width (26 px steps in the mockup at 18 weeks).
-  const step = Math.max(10, Math.min(26, Math.floor(HEAT_W / weeks)));
+  // Biggest cell that lets every week fit the width (26 px steps in the mockup at 18 weeks). A short
+  // history gets larger cells, up to 34 px, so a few weeks do not sit as a small patch in the corner.
+  const step = Math.max(10, Math.min(34, Math.floor(HEAT_W / weeks)));
   const gap = Math.max(3, Math.round(step * 0.23));
   const cell = step - gap;
   const lay = heatLayout(g.values, cell, gap, 0);
@@ -211,18 +219,15 @@ function HoursArt({ g }: { g: Extract<SlideGraphic, { kind: "hours" }> }) {
         y1={base + 0.5}
         y2={base + 0.5}
       />
-      {(
-        [
-          ["12 AM", 0],
-          ["6 AM", 6],
-          ["12 PM", 12],
-          ["6 PM", 18],
-        ] as const
-      ).map(([t, i]) => (
+      {[0, 6, 12, 18].map((i) => [hourLabel(i), i] as const).map(([t, i]) => (
         <text key={t} className="sm-cap" x={12 + i * (w + gap)} y={base + 24}>
           {t}
         </text>
       ))}
+      {/* The axis is named to its end: the last bar is the 11 PM hour, its label ends where the bar does. */}
+      <text className="sm-cap" x={12 + 23 * (w + gap) + w} y={base + 24} textAnchor="end">
+        {hourLabel(23)}
+      </text>
     </svg>
   );
 }
@@ -358,11 +363,11 @@ function CirclesArt({ g }: { g: Extract<SlideGraphic, { kind: "circles" }> }) {
       height={300}
       viewBox="0 0 330 300"
       role="img"
-      aria-label="This chat next to a usual chat, drawn to scale"
+      aria-label="This session next to a usual session, drawn to scale"
     >
       <circle className="sm-dot-usual" cx={44} cy={floor - r} r={r} />
       <text className="sm-cap" x={44} y={286} textAnchor="middle">
-        A usual chat
+        A usual session
       </text>
       <circle className="sm-dot-big" cx={220} cy={floor - R} r={R} />
       <text className="sm-cap" x={220} y={286} textAnchor="middle">

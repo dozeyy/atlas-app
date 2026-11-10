@@ -32,8 +32,8 @@ function report(rows: CostRow[], over: Partial<CostReport> = {}): CostReport {
 const items = [{ id: "i1", kind: "instructions", name: "CLAUDE.md" }] as SetupItem[];
 
 const rows = [
-  row({ id: "i1", name: "CLAUDE.md", loadsIn: "Chats in heavens-casino", tokens: 8804, turns: 12_103, usdWeek: 21.26 }),
-  row({ name: "Other connected tools (19)", kind: "mcpServer", loadsIn: "Chats that connect them", tokens: 7294, turns: 15_682, usdWeek: 25.26, measured: true }),
+  row({ id: "i1", name: "CLAUDE.md", loadsIn: "Chats in pixel-garden", global: false, tokens: 8804, turns: 12_103, usdWeek: 21.26 }),
+  row({ name: "Other connected tools (19)", kind: "mcpServer", loadsIn: "Chats that connect them", global: false, tokens: 7294, turns: 15_682, usdWeek: 25.26, measured: true }),
   row({ id: "i2", name: "agent-routing", kind: "rule", tokens: 2791, usdWeek: 13.92 }),
 ];
 
@@ -50,27 +50,38 @@ describe("CostPanel", () => {
     render(<CostPanel report={report(rows)} items={items} />);
     expect(screen.getByRole("heading", { name: "What your setup costs" })).toBeInTheDocument();
     const head = document.querySelector("[data-cost-headline]")!;
-    expect(head).toHaveTextContent("30k tokens load with every message");
+    // G6: one unit. The headline is the week's total (114M + 107M + 62M), the rows its parts.
+    expect(head).toHaveTextContent("283M tokens a week, across all sessions");
+    expect(head).not.toHaveTextContent("per message");
 
     const lis = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(lis).toHaveLength(3);
     // Ranked by tokens over the window: tools 114M, then CLAUDE.md 107M, then the rule 62M.
-    expect(lis[0]).toHaveTextContent("Other connected tools (19)");
+    // A count is set the way the headings set one ("Global 3"): after the label, no brackets.
+    expect(lis[0]).toHaveTextContent("Other connected tools19");
+    expect(lis[0]).not.toHaveTextContent("(19)");
     expect(lis[0]).toHaveTextContent("114M a week");
-    expect(lis[0]).toHaveTextContent("Chats that connect them - 7.3k per message");
+    // One unit on the surface: the row says where it loads, never a second per-message figure
+    // (a some-chats row can be bigger per message than the every-chat headline).
+    expect(lis[0]).toHaveTextContent("Only sessions that connect them");
+    expect(lis[0]).not.toHaveTextContent("per message");
     // A project's file carries the project name in its title, so same-named files differ.
-    expect(lis[1]).toHaveTextContent("CLAUDE.md · heavens-casino");
+    expect(lis[1]).toHaveTextContent("CLAUDE.md · pixel-garden");
     expect(lis[1]).toHaveTextContent("107M a week");
     expect(lis[2]).toHaveTextContent("agent-routing");
     expect(lis[2]).not.toHaveTextContent("·");
-    expect(lis[1]).toHaveTextContent("Chats in heavens-casino - 8.8k per message");
-    expect(lis[2]).toHaveTextContent("All chats - 2.8k per message");
+    expect(lis[1]).toHaveTextContent("Only sessions in pixel-garden");
+    expect(lis[2]).toHaveTextContent("Every session");
   });
 
   it("shows no dollars on screen: they live in the hover", () => {
     const { container } = render(<CostPanel report={report(rows)} items={items} />);
     expect(container.textContent).not.toContain("$");
-    expect(document.querySelector("[data-cost-headline]")).toHaveAttribute("title", "Estimate: about $287 a week at API prices, last 7 days.");
+    // What every message carries is the size, not the week: it stays one hover away.
+    expect(document.querySelector("[data-cost-headline]")).toHaveAttribute(
+      "title",
+      "29,702 tokens with every message, in every session. Estimate: about $287 a week at API prices, last 7 days.",
+    );
     expect(document.querySelector('[data-cost-row="i1"]')?.getAttribute("title")).toMatch(/8,804 tokens with every message.*Estimate: about \$21 a week/);
   });
 
@@ -85,7 +96,7 @@ describe("CostPanel", () => {
   it("opens an item that is in the setup, and leaves the rest as plain text", async () => {
     const onOpen = vi.fn();
     render(<CostPanel report={report(rows)} items={items} onOpen={onOpen} />);
-    await userEvent.click(screen.getByRole("button", { name: "CLAUDE.md · heavens-casino" }));
+    await userEvent.click(screen.getByRole("button", { name: "CLAUDE.md · pixel-garden" }));
     expect(onOpen).toHaveBeenCalledWith("i1");
     expect(screen.queryByRole("button", { name: /Other connected tools/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "agent-routing" })).not.toBeInTheDocument(); // i2 is not in `items`
@@ -103,7 +114,8 @@ describe("CostPanel", () => {
     expect(container.textContent).not.toContain("$");
     expect(container.textContent).not.toContain("a week");
     const lis = within(screen.getByRole("list")).getAllByRole("listitem");
-    expect(lis[0]).toHaveTextContent("900 each");
+    expect(lis[0]).toHaveTextContent("900 per message");
+    expect(document.querySelector("[data-cost-headline]")).toHaveTextContent("30k tokens per message, in every session");
     expect(document.querySelector("[data-cost-headline]")).not.toHaveAttribute("title");
   });
 

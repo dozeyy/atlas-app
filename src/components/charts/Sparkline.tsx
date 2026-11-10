@@ -27,7 +27,7 @@ export function Sparkline({ id, values, width = 64, height = 20 }: { id: string;
       focusable="false"
       width={width}
       height={height}
-      className={`chart shrink-0${intro ? " intro" : ""}`}
+      className={`chart shrink-0 ${intro ? "intro" : ""}`}
     >
       <path className="spark-line" d={d} style={{ ["--len" as string]: len }} />
       <circle cx={last[0]} cy={last[1]} r={2.25} fill="var(--accent)" />

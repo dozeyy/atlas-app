@@ -1,13 +1,16 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
+import { Info } from "@phosphor-icons/react";
 import * as Switch from "@radix-ui/react-switch";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 
-type Variant = "primary" | "secondary" | "danger";
+type Variant = "primary" | "secondary" | "danger" | "danger-solid";
 
 /**
  * Buttons: primary lifts 1px with a spring on hover and presses to .96 on the same frame
  * (CSS :active, no waiting for React). A danger button holds still: it never lifts.
+ * `danger` is outlined (it opens a confirm, or leaves without saving); `danger-solid` is filled and
+ * is only the "yes" of an in-place confirm, the one press that removes something.
  *
  * Two layers on purpose: the <button> is a fixed box that owns the click; the inner
  * `.btn-face` carries the look and every transform. Moving the button itself moves its hit
@@ -190,10 +193,14 @@ export function Row({
   return (
     <div className="flex items-center justify-between gap-6 border-b border-line px-5 py-4 last:border-b-0">
       <div className="min-w-0">
-        <div className="text-body font-medium text-ink" title={tip}>
-          {label}
+        <div className="text-body font-medium text-ink">
+          {/* The hover sits on the words and the mark together; the mark says there is more to read. */}
+          <span title={tip} className={tip ? "inline-flex items-center gap-2" : undefined}>
+            {label}
+            {tip && <Info size={14} aria-hidden="true" className="shrink-0 text-ink-2" />}
+          </span>
         </div>
-        {hint && <div className="mt-0.5 text-body text-ink-2">{hint}</div>}
+        {hint && <div className="mt-0.5 text-pretty text-body text-ink-2">{hint}</div>}
       </div>
       {children && <div className="shrink-0">{children}</div>}
     </div>

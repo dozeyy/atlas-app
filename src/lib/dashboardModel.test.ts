@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bin, lastAndPrevious, lastDays, percentChange, shortDay, sumTail, updatedText, weekdayInitial } from "./dashboardModel";
+import { bin, lastAndPrevious, lastDays, percentChange, longDate, monthDay, shortDay, sumTail, updatedText, weekdayInitial } from "./dashboardModel";
 import type { TimelinePoint } from "./types";
 
 describe("updatedText", () => {
@@ -76,6 +76,9 @@ describe("bin", () => {
 describe("day labels", () => {
   it("formats a local day for a tooltip and a column head", () => {
     expect(shortDay("2026-11-08")).toBe("Sun, Nov 8");
+    expect(monthDay("2026-07-14")).toBe("Jul 14");
+    expect(longDate("2026-11-08")).toBe("Nov 8, 2026");
+    expect(longDate("last spring")).toBe("last spring");
     expect(weekdayInitial("2026-11-08")).toBe("S");
   });
 });

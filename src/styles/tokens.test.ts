@@ -154,6 +154,32 @@ for (const [name, set] of [
       },
     );
 
+    it("the heat ramp runs from empty to busiest in one direction", () => {
+      // Light themes darken band by band, dark lightens: an empty day is never a deeper
+      // tone than a quiet one (Silver once had heat-0 darker than heat-1).
+      const ramp = [0, 1, 2, 3, 4, 5].map((b) => luminance(get(set, `heat-${b}`)));
+      const dir = Math.sign(luminance(get(set, "surface")) - luminance(get(set, "ink")));
+      for (let b = 1; b < ramp.length; b++) expect(Math.sign(ramp[b - 1] - ramp[b]), `heat-${b - 1} -> heat-${b}`).toBe(dir);
+    });
+
+    it("an empty heat cell is visible on the card surface", () => {
+      expect(contrast(get(set, "heat-0"), get(set, "surface"))).toBeGreaterThanOrEqual(1.1);
+    });
+
+    it("a light day is a real step up from an empty one, not a hue-only one", () => {
+      // Dark once had heat-0 at 1.20:1 and heat-1 at 1.23:1: the same brightness, so an empty day
+      // and a light day could not be told apart. The first step is at least 1.2x in contrast.
+      const empty = contrast(get(set, "heat-0"), get(set, "surface"));
+      const light = contrast(get(set, "heat-1"), get(set, "surface"));
+      expect(light / empty).toBeGreaterThanOrEqual(1.2);
+    });
+
+    it("the ring track is visible on the card surface and quieter than the arc", () => {
+      const track = on(set, "line-strong", "surface");
+      expect(contrast(track, get(set, "surface"))).toBeGreaterThanOrEqual(1.5);
+      expect(contrast(track, get(set, "surface"))).toBeLessThan(contrast(get(set, "accent"), get(set, "surface")));
+    });
+
     it("danger is clearly a different color from the terracotta accent", () => {
       const a = oklchHue(get(set, "accent"));
       const d = oklchHue(get(set, "danger"));

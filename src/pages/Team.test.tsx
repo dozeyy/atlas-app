@@ -114,7 +114,21 @@ describe("Team: Scorecard", () => {
     await openToolkit();
     const worker = await card("General purpose");
     expect(within(worker).getByText("Passed 9 of 12 reviews")).toBeInTheDocument();
-    expect(within(worker).getByText("9 min typical")).toBeInTheDocument();
+    expect(within(worker).getByText(/^Usually 9 min and \d+ tool calls/)).toBeInTheDocument();
+    // The helper's own picture. What the small chart plots is said once under the cards, not on
+    // each one; a card's own hover has its numbers.
+    expect(worker.querySelector("svg")).not.toBeNull();
+    expect(within(worker).queryByText(/last 12 weeks/)).not.toBeInTheDocument();
+    expect(worker.querySelector('[title^="Runs per week, last 12 weeks"]')).not.toBeNull();
+    // Each bar says its own week and count; the last one is this week's, in the accent.
+    const bars = worker.querySelectorAll(".team-week");
+    expect(bars).toHaveLength(12);
+    expect(bars[0].getAttribute("title")).toMatch(/^\d+ runs?, week of [A-Z][a-z]{2} \d+$/);
+    expect(bars[11]).toHaveClass("team-week-today");
+    expect(screen.getAllByText(/The small bars on a card are its runs per week, last 12 weeks\./)).toHaveLength(1);
+    // The model's effort is labelled: a bare "high" says nothing.
+    expect(within(worker).getByText(/, high effort$/)).toBeInTheDocument();
+    expect(within(worker).getByText("Its work in review")).toBeInTheDocument();
 
     // 4 tied reviews: counts, no rate.
     const few = await card("UI builder");
@@ -123,11 +137,16 @@ describe("Team: Scorecard", () => {
 
     // 2 runs: no medians.
     const tiny = await card("Chore runner");
-    expect(within(tiny).getAllByText("Too few runs yet")).toHaveLength(2);
+    // Said once for the card, not once per number.
+    expect(within(tiny).getAllByText(/Too few runs/)).toHaveLength(1);
 
     // A reviewer shows the verdicts it gave.
     const reviewer = await card("Code reviewer");
     expect(within(reviewer).getByText("6 passed, 3 sent back")).toBeInTheDocument();
+    expect(within(reviewer).getByText("Reviews other helpers' work")).toBeInTheDocument();
+    expect(within(reviewer).getByText("Verdicts it gave")).toBeInTheDocument();
+    // No jargon on the surface.
+    expect(screen.queryByText(/headless/i)).not.toBeInTheDocument();
   });
 
   it("puts dollars on hover only", async () => {
@@ -203,7 +222,7 @@ describe("Team: Scorecard", () => {
   it("says so when the numbers cannot be read, and can try again", async () => {
     backend.team.failNext = true;
     await openToolkit();
-    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be read/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not read the team's runs");
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     await card("General purpose");
   });
@@ -216,7 +235,8 @@ describe("Team: Caught in review", () => {
     await openToolkit();
     expect(await screen.findByText("Missing null check on the response before it is used")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Make this a rule" })).toHaveLength(3);
-    expect(screen.getByText(/Raised 7 times in 4 runs, 3 high, 4 medium/)).toBeInTheDocument();
+    // G14: the counts say what they count. A labelled severity, after a full stop.
+    expect(screen.getByText(/Raised 7 times in 4 runs\. Severity: 3 high, 4 medium/)).toBeInTheDocument();
   });
 
   it("Make this a rule saves through one write, offers Undo, and Undo takes it back", async () => {
@@ -246,9 +266,14 @@ describe("Team: Caught in review", () => {
     // A project is offered by its folder, not by its position.
     const project = await within(sheet).findByRole("radio", { name: /CLAUDE\.md in atlas/ });
     await userEvent.click(project);
-    const field = within(sheet).getByRole("textbox", { name: "The line" }) as HTMLInputElement;
-    expect(field.tagName).toBe("INPUT");
+    // A box that wraps a long line so it is read whole; it is still one line in the file.
+    const field = within(sheet).getByRole("textbox", { name: "The line" }) as HTMLTextAreaElement;
+    expect(field.tagName).toBe("TEXTAREA");
     expect(field.maxLength).toBe(400);
+    await userEvent.clear(field);
+    await userEvent.click(field);
+    await userEvent.paste("- One\nline.");
+    expect(field.value).toBe("- One line.");
     // The line must start with a dash: nothing else can be saved.
     await userEvent.clear(field);
     await userEvent.type(field, "A heading would go here");
@@ -278,7 +303,13 @@ describe("Team: Caught in review", () => {
     expect(within(after).getByText("- Brand new rule text.")).toBeInTheDocument();
     expect(within(now).queryByText("- Brand new rule text.")).not.toBeInTheDocument();
     // A new rule file has no preview: the whole file is the editor.
-    await userEvent.click(within(sheet).getByRole("radio", { name: /A rule file/ }));
+    // It is named in words, and so is where it goes; the file name the engine made (a slug it cuts
+    // short) is on the hover, never on the surface.
+    const own = within(sheet).getByRole("radio", { name: /A new rule file of its own/ });
+    const row = own.closest("label") as HTMLElement;
+    expect(row).not.toHaveTextContent(/\.md/);
+    expect(within(row).getByText("In the rules folder of your Claude folder").getAttribute("title")).toMatch(/~\/\.claude\/rules\/.+\.md/);
+    await userEvent.click(own);
     expect(within(sheet).queryByRole("figure", { name: "After saving" })).not.toBeInTheDocument();
   });
 
@@ -287,14 +318,14 @@ describe("Team: Caught in review", () => {
     backend.empty = true;
     backend.usage.setScenario("indexing");
     await openToolkit();
-    expect(await screen.findByText("Still reading your chats")).toBeInTheDocument();
+    expect(await screen.findByText("Still reading your sessions")).toBeInTheDocument();
     // The read finishes. The empty answer from the middle of the read is still on screen for a
     // moment; the page must not call that "No helper runs yet".
     backend.empty = false;
     act(() => backend.usage.setScenario("data"));
     expect(screen.queryByText(/No helper runs/)).not.toBeInTheDocument();
     expect(await card("Code reviewer")).toBeInTheDocument();
-    expect(screen.queryByText("Still reading your chats")).not.toBeInTheDocument();
+    expect(screen.queryByText("Still reading your sessions")).not.toBeInTheDocument();
   });
 
   it("refuses a file that changed since the sheet opened, writes nothing, and can reload", async () => {

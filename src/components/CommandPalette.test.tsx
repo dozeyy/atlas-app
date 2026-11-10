@@ -141,7 +141,7 @@ describe("Quick jump: chats, projects and the Toolkit", () => {
     expect(hit.length).toBeGreaterThan(0);
     await userEvent.keyboard("{Enter}");
     expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(target.name);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(target.name);
   });
 
   it("opens a chat even when Sessions is already the page", async () => {

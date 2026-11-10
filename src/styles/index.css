@@ -75,15 +75,111 @@ code,
   user-select: text;
 }
 
+/* ---- Code text: the one class ---------------------------------------------------------------
+   Anything set in the code face (a command, a path, a key name, a file's raw text) uses
+   `.code-text` (or its older name `.mono`, or a <code> element): the code face at the ramp's
+   caption size and ALWAYS weight 400. Outside a layer on purpose, so a bold parent (a heading, a
+   row title, a button) or a `font-semibold` class next to it can never make code read heavy.
+   Do not write `font-mono` by hand: it takes its parent's weight and size. An exact value (an id,
+   a commit, a full path) belongs behind Details or a hover, not on the surface. */
+.code-text,
 .mono,
-code {
+code,
+pre {
   font-family: var(--font-code);
   font-size: 12px;
+  font-weight: 400;
+  font-variation-settings: normal;
+  /* Code shows the characters that are in the file: "=>" stays two characters in any face. */
+  font-variant-ligatures: none;
+  letter-spacing: 0;
+}
+.code-text {
+  line-height: 16px;
 }
 
+/* ---- Headings: the rule ---------------------------------------------------------------------
+   A page has ONE title and at most two heading levels under it. Nothing else is a heading.
+
+   Page title   <h1 class="h-page">. A top-level page (Dashboard, Sessions, Toolkit...) is already
+                named by the sidebar, so its h1 is `PageTitle` (read out, not drawn). A page or side
+                sheet you open to look at one thing (one chat, one helper, one Toolkit list, one
+                skill) draws it: Recursive 24/28, weight 720. One per page, never a second one.
+                16 px below it before the first block; above it, the page's own padding.
+   Section      <h2 class="h-section">. Names a card, a pane, a dialog or an empty state ("Models",
+                "Recent sessions"): Recursive 20/24, weight 720, the `figure` step of DIRECTION's
+                type table. 12 px below it to its content; 24 px above it when it follows another
+                block (the card's own padding when it is the first thing in a card).
+   Group        <h3 class="h-sub">. A label over a group inside a section (a list of keys, a set of
+                rows): the system face, 12/16, weight 600, ink-2, sentence case, never capitals.
+                8 px below it; 16 px above it when it follows another group.
+
+   That is all three. A row's name, a tile's label, a message ("Nothing matches", "Could not
+   load") and a figure are not headings and do not wear these classes. Recursive stays out of
+   body, buttons, nav, inputs, tables and code. In the components layer, so a page can still add
+   truncation or a colour with a utility class. */
+@layer components {
+.h-page {
+  font-family: var(--font-display);
+  font-variation-settings: var(--display-axes);
+  font-size: 24px;
+  line-height: 28px;
+  font-weight: 720;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.h-section {
+  font-family: var(--font-display);
+  font-variation-settings: var(--display-axes);
+  font-size: 20px;
+  line-height: 24px;
+  font-weight: 720;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.h-sub {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+}
+
+/* In the base layer on purpose. Outside a layer this reset beat every colour, weight and size
+   written for a button in trail.css, screens.css or as a Tailwind class, so buttons showed their
+   parent's text style instead of their own. */
+@layer base {
 button {
   font: inherit;
   color: inherit;
+}
+}
+
+/* Sheets and dialogs open under the title bar, never over it: the window's own buttons and the
+   strip you drag stay in reach while one is open. One rule, outside a layer so it wins over the
+   inset-0 class each of them carries, covers the shared Dialog and every side sheet (they are all
+   put straight into <body>). trail.css dims the row itself to match. */
+body > .fixed.inset-0 {
+  top: var(--titlebar-h);
+}
+
+/* A dialog body taller than its room (Keyboard shortcuts in a short window). Scrollbars hide at
+   rest, so the body shows it itself: what runs on fades out at that edge and the thumb stays
+   drawn. Dialog.tsx sets data-more (more below) and data-less (more above). */
+.dlg-body[data-more],
+.dlg-body[data-less] {
+  --dlg-top: #000;
+  --dlg-bottom: #000;
+  scrollbar-color: var(--line-strong) transparent;
+  -webkit-mask-image: linear-gradient(to bottom, var(--dlg-top), #000 28px, #000 calc(100% - 40px), var(--dlg-bottom));
+  mask-image: linear-gradient(to bottom, var(--dlg-top), #000 28px, #000 calc(100% - 40px), var(--dlg-bottom));
+}
+.dlg-body[data-less] {
+  --dlg-top: transparent;
+}
+.dlg-body[data-more] {
+  --dlg-bottom: transparent;
 }
 
 /* Focus: the one place it is decided. A mouse click, a window coming back to the front and code that
@@ -195,8 +291,36 @@ html[data-input="keyboard"] :focus-within {
   }
 }
 
+/* `backwards`, not `both`: a filled transform animation leaves an identity matrix on the panel for
+   good, and that makes it the box a `position: fixed` child (the full-window editor) sizes to. */
 .sheet-enter {
-  animation: sheet-in var(--dur-slow) var(--ease-out) both;
+  animation: sheet-in var(--dur-slow) var(--ease-out) backwards;
+}
+/* The way out: the same path back, in 180 ms (`useClosing` holds the unmount that long), so a
+   sheet never vanishes inside one frame after animating in. The scrim fades with it. */
+@keyframes sheet-out {
+  to {
+    opacity: 0;
+    transform: translateX(calc(var(--travel) * 3));
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+.sheet-enter[data-closing] {
+  animation: sheet-out var(--dur-close) var(--ease-out) forwards;
+}
+.fade-in[data-closing] {
+  animation: fade-out var(--dur-close) var(--ease-out) forwards;
+}
+/* A sheet on its way out lets clicks through: the next card clicked during the exit opens
+   (the newest action wins), instead of landing on the fading scrim. */
+:has(> .fade-in[data-closing]),
+.fade-in[data-closing],
+.sheet-enter[data-closing] {
+  pointer-events: none;
 }
 
 /* Dialogs rise in place; the checklist's finish gives one small, warm pop. */
@@ -243,7 +367,7 @@ html[data-input="keyboard"] :focus-within {
 }
 /*
  * Press feedback WITHOUT moving the hit box. Scaling the clicked element itself shrinks its
- * box, so a mouseup near the edge lands outside and the click is lost (Will, 2026-11-08).
+ * box, so a mouseup near the edge lands outside and the click is lost (2026-11-08).
  * The element keeps its box; its children shrink and a faint wash marks the press.
  */
 .press:active:not(:disabled) {
@@ -267,10 +391,20 @@ html[data-input="keyboard"] :focus-within {
   .fade-in {
     animation-duration: 1ms;
   }
+  /* Leaving with reduced motion: a short fade in place, no slide. */
+  .sheet-enter[data-closing],
+  .fade-in[data-closing] {
+    animation: fade-out var(--dur-close-reduced) var(--ease-out) forwards;
+  }
 }
 html.reduced .pulse-dot,
 html.reduced .skeleton {
   animation: none !important;
+}
+/* Forced reduced motion (ATLAS_REDUCE_MOTION=1) leaves the same way: the short fade closeMs() waits for. */
+html.reduced .sheet-enter[data-closing],
+html.reduced .fade-in[data-closing] {
+  animation: fade-out var(--dur-close-reduced) var(--ease-out) forwards;
 }
 
 /* ---- Launch intro ------------------------------------------------------------

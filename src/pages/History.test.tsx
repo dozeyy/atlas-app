@@ -35,7 +35,11 @@ describe("History", () => {
     const rail = await screen.findByRole("list", { name: "Changes" });
     expect(screen.getByText("changes seen")).toBeInTheDocument();
     expect(screen.getByText("files watched")).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Changes in the last 30 days" })).toBeInTheDocument();
+    // Watching began 24 days ago: the ribbon starts there, and its first date is the one beside it.
+    const ribbon = screen.getByRole("group", { name: "Changes since Atlas began watching" });
+    expect(within(ribbon).getAllByRole("button")).toHaveLength(25);
+    const since = screen.getByText("watching since").previousElementSibling!.textContent!;
+    expect(ribbon.nextElementSibling).toHaveTextContent(since);
     expect(within(rail).getByText("Today")).toBeInTheDocument();
     expect(within(rail).getByText("Yesterday")).toBeInTheDocument();
     expect(within(rail).getByText("Before Atlas was watching")).toBeInTheDocument();
@@ -72,7 +76,8 @@ describe("History", () => {
     expect(within(screen.getByRole("list", { name: "Changes" })).getAllByText(/Settings file/).length).toBeGreaterThan(0);
     await userEvent.click(within(show).getByRole("button", { name: "All" }));
     await userEvent.type(screen.getByRole("searchbox", { name: "Search changes" }), "zzzz-no-such");
-    expect(await screen.findByText(/Nothing matches that/)).toBeInTheDocument();
+    expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
+    expect(screen.getByText('"zzzz-no-such"')).toBeInTheDocument();
   });
 
   it("compares a copy with what is on disk now when asked", async () => {
@@ -122,9 +127,12 @@ describe("History", () => {
     expect(screen.getByRole("list", { name: "Changes" })).toBeInTheDocument();
   });
 
-  it("is honest while Sandbox Mode pauses it", async () => {
+  it("is honest while Sandbox mode pauses it", async () => {
     mount((b) => (b.history.paused = true));
-    expect(await screen.findByText(/History is paused while Sandbox Mode is on/)).toBeInTheDocument();
+    // Written "Sandbox mode", as the sidebar, Settings and Help write it.
+    expect(await screen.findByText(/History is paused while Sandbox mode is on/)).toBeInTheDocument();
+    // It says where the switch is.
+    expect(screen.getByText(/in Settings, under Claude folder/)).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Changes" })).not.toBeInTheDocument();
   });
 

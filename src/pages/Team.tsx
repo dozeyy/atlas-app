@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChatsCircle, Scales } from "@phosphor-icons/react";
 import { EmptyState } from "../components/EmptyState";
 import { SegmentedControl } from "../components/controls";
 import { AgentSheet } from "../components/team/AgentSheet";
 import { RuleSheet } from "../components/team/RuleSheet";
 import { ScoreCard } from "../components/team/ScoreCard";
 import { ThemeList } from "../components/team/ThemeList";
-import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
+import { Skeleton } from "../components/usage/StateBlocks";
 import { SearchField, SelectField } from "../components/usage/fields";
 import { getBackend } from "../lib/ipc";
 import { openAgentNext, openToolkitItemNext } from "../lib/nav";
 import { plural } from "../lib/usage";
+import { useScrollbarVar } from "../lib/useScrollbarVar";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
-import { DEFAULT_PREFS, RANGES, STARTED_OPTIONS, filterCards, historyLine, loadPrefs, rangeDays, savePrefs, scorecardArgs } from "../lib/teamModel";
+import { DEFAULT_PREFS, RANGES, STARTED_OPTIONS, filterCards, historyLine, loadPrefs, rangeDays, savePrefs, scorecardArgs, weeklyLegend } from "../lib/teamModel";
 import type { RangeId, TeamPrefs, TeamView } from "../lib/teamModel";
 import type { ReviewTheme, RunRow, StartedFrom, ThemeExample } from "../lib/teamTypes";
 import { useAtlas } from "../state/AtlasProvider";
@@ -49,7 +49,7 @@ function useReadingHold(reload: (silent: boolean) => void, answeredAt: number | 
   return notReady || !fresh;
 }
 
-const READING_TITLE = "Still reading your chats";
+const READING_TITLE = "Still reading your sessions";
 const READING_BODY = "This fills in by itself when the first read finishes.";
 
 const RANGE_OPTIONS = RANGES.map((r) => ({ value: r.value, label: r.label }));
@@ -64,9 +64,53 @@ function CardsSkeleton() {
   );
 }
 
+/** "Caught in review" while it loads: the list's own box and rows (two lines, then the button). */
+function ThemesSkeleton() {
+  return (
+    <div role="status" aria-label="Loading" className="rounded-card border border-line bg-surface px-5">
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} aria-hidden="true" className="flex items-start gap-3 border-b border-line py-3 last:border-b-0">
+          <div className="min-w-0 flex-1">
+            <Skeleton className="h-3.5" style={{ width: `${46 + ((i * 19) % 34)}%` }} />
+            <Skeleton className="mt-2 h-3 w-40 max-w-full" />
+          </div>
+          <Skeleton className="h-8 w-[132px] shrink-0" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const NO_RUNS_TITLE = "No helper runs yet";
+const NO_RUNS_BODY = "When Claude hands a job to a helper, its runs are counted here, one card for each kind of helper.";
+
+/**
+ * Nothing to show while a range or a "Started from" is set. Is it those, or has no helper ever
+ * run? One look at everything says which, so the page never says "match" to someone who set
+ * nothing and has nothing (the range has a value from the start). Only when runs do exist
+ * elsewhere is it the no-match message, with the one press that shows them.
+ */
+function NothingInRange({ onClearFilters }: { onClearFilters: () => void }) {
+  const backend = getBackend();
+  const all = useFetched(() => backend.teamScorecard({ days: null, startedFrom: "all" }), []);
+  if (!all.data && !all.error) return <CardsSkeleton />;
+  if (all.data && all.data.totalRuns === 0) return <EmptyState title={NO_RUNS_TITLE} body={NO_RUNS_BODY} seed={29} fill />;
+  return (
+    <EmptyState
+      variant="no-match"
+      fill
+      title="No helper runs match"
+      body="A longer range, or every way a run can start, may show some."
+      action={{ onClick: onClearFilters, label: "Clear filters" }}
+    />
+  );
+}
+
 function Scorecard({
   prefs,
   filter,
+  onClearFilter,
+  onClearFilters,
   onOpenType,
   onSheetRuns,
   openType,
@@ -76,6 +120,9 @@ function Scorecard({
 }: {
   prefs: TeamPrefs;
   filter: string;
+  onClearFilter: () => void;
+  /** Back to everything: the whole range, every way a run can start. */
+  onClearFilters: () => void;
   onOpenType: (t: string) => void;
   onSheetRuns: (r: RunRow) => void;
   openType: string | null;
@@ -92,7 +139,9 @@ function Scorecard({
   const data = score.data;
   const cards = useMemo(() => (data ? filterCards(data.types, filter) : []), [data, filter]);
 
-  if (score.error && !data) return <ErrorBlock title="Could not read the team's runs" message={score.error} onRetry={() => score.reload()} />;
+  if (score.error && !data) {
+    return <EmptyState fill variant="error" title="Could not read the team's runs" reason={score.error} action={{ onClick: () => score.reload() }} />;
+  }
   if (!data) return <CardsSkeleton />;
 
   const narrowed = prefs.range !== "all" || prefs.startedFrom !== "all";
@@ -102,34 +151,33 @@ function Scorecard({
   return (
     <>
       {data.types.length === 0 ? (
-        <EmptyState
-          icon={ChatsCircle}
-          title={reading ? READING_TITLE : narrowed ? "No helper runs match" : "No helper runs yet"}
-          body={
-            reading
-              ? READING_BODY
-              : narrowed
-                ? "Try a longer range, or all the ways a run can start."
-                : "When Claude hands a job to a helper, its runs are counted here, one card for each kind of helper."
-          }
-          seed={11}
-          fill
-        />
+        reading ? (
+          <EmptyState title={READING_TITLE} body={READING_BODY} seed={29} fill />
+        ) : narrowed ? (
+          <NothingInRange onClearFilters={onClearFilters} />
+        ) : (
+          <EmptyState title={NO_RUNS_TITLE} body={NO_RUNS_BODY} seed={29} fill />
+        )
       ) : cards.length === 0 ? (
-        <p className="py-10 text-center text-body text-ink-2">{`No helper matches "${filter.trim()}".`}</p>
+        <EmptyState variant="no-match" fill query={filter.trim()} body="Try fewer words." action={{ onClick: onClearFilter }} />
       ) : (
         <div className="team-grid">
           {cards.map((c) => (
-            <ScoreCard key={c.agentType} card={c} onOpen={() => onOpenType(c.agentType)} />
+            <ScoreCard key={c.agentType} card={c} toTs={data.toTs} onOpen={() => onOpenType(c.agentType)} />
           ))}
         </div>
       )}
-      <p className="mt-4 text-caption text-ink-2">
-        {plural(data.totalRuns, "helper run")} in this range.
-        {history ? ` ${history}` : ""}
-      </p>
+      {/* An empty page says it once, in the middle: no "0 helper runs" under it. */}
+      {data.types.length > 0 && (
+        <p className="mt-4 text-caption text-ink-2">
+          {plural(data.totalRuns, "helper run")} in this range.
+          {cards.length > 0 ? ` ${weeklyLegend(cards[0].weekly.length)}` : ""}
+          {history ? ` ${history}` : ""}
+        </p>
+      )}
       {open && (
         <AgentSheet
+          key={open.agentType}
           card={open}
           toTs={data.toTs}
           onClose={closeSheet}
@@ -160,14 +208,15 @@ function ReviewView({
   const reading = useReadingHold(themes.reload, themes.at);
 
   const data = themes.data;
-  if (themes.error && !data) return <ErrorBlock title="Could not read the reviews" message={themes.error} onRetry={() => themes.reload()} />;
-  if (!data) return <Skeleton aria-label="Loading" className="h-64" />;
+  if (themes.error && !data) {
+    return <EmptyState fill variant="error" title="Could not read the reviews" reason={themes.error} action={{ onClick: () => themes.reload() }} />;
+  }
+  if (!data) return <ThemesSkeleton />;
 
   return (
     <>
       {data.themes.length === 0 ? (
         <EmptyState
-          icon={Scales}
           title={reading ? READING_TITLE : data.findings > 0 ? "No problem keeps coming back yet" : "Nothing caught in review yet"}
           body={
             reading
@@ -176,7 +225,7 @@ function ReviewView({
                 ? `${plural(data.findings, "finding")} so far. A problem shows up here once at least 2 reviews raise it, 3 times in all.`
                 : "When a reviewer sends work back, the problems it keeps finding collect here, and you can turn one into a rule."
           }
-          seed={23}
+          seed={41}
           fill
         />
       ) : (
@@ -205,6 +254,8 @@ export function Team({ onShowSetup }: { onShowSetup: () => void }) {
   const [openType, setOpenType] = useState<string | null>(null);
   const [ruleTheme, setRuleTheme] = useState<ReviewTheme | null>(null);
   const search = useRef<HTMLDivElement>(null);
+  const pane = useRef<HTMLDivElement>(null);
+  useScrollbarVar(pane);
 
   const setPrefs = useCallback((next: Partial<TeamPrefs>) => {
     setPrefsState((p) => {
@@ -248,16 +299,18 @@ export function Team({ onShowSetup }: { onShowSetup: () => void }) {
           <>
             <SelectField label="Started from" value={prefs.startedFrom} options={STARTED_OPTIONS} onChange={(v) => setPrefs({ startedFrom: v as StartedFrom })} />
             <div ref={search} className="flex min-w-[200px] flex-1">
-              <SearchField value={filter} onChange={setFilter} label="Find a helper" placeholder="Find a helper, press / to jump here" />
+              <SearchField value={filter} onChange={setFilter} label="Find a helper" placeholder="Find a helper" />
             </div>
           </>
         )}
       </div>
-      <div className="team-pane flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div ref={pane} className="team-pane lift-room flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
         {prefs.view === "scorecard" ? (
           <Scorecard
             prefs={prefs}
             filter={filter}
+            onClearFilter={() => setFilter("")}
+            onClearFilters={() => setPrefs({ range: "all", startedFrom: "all" })}
             openType={openType}
             onOpenType={setOpenType}
             closeSheet={() => setOpenType(null)}

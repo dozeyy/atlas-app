@@ -54,7 +54,7 @@ export function DuplicateDialog({ item, taken, onClose }: { item: SetupItem; tak
         </>
       }
     >
-      <label htmlFor="dup-name" className="mb-1.5 block text-body text-ink-2">
+      <label htmlFor="dup-name" className="mb-2 block text-body text-ink-2">
         Name of the copy
       </label>
       <input
@@ -66,7 +66,7 @@ export function DuplicateDialog({ item, taken, onClose }: { item: SetupItem; tak
         onKeyDown={(e) => {
           if (e.key === "Enter") void go();
         }}
-        className="mono h-9 w-full rounded-control border border-line-strong bg-surface px-3 text-body text-ink outline-none focus:border-ink-2"
+        className="h-9 w-full rounded-control border border-line-strong bg-surface px-3 text-body text-ink outline-none focus:border-ink-2"
       />
       <p role="status" className={`mt-2 min-h-5 text-caption ${problem || err ? "text-danger" : "text-ink-2"}`}>
         {err ?? problem ?? ""}

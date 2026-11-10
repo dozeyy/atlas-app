@@ -112,13 +112,13 @@ describe("progress words", () => {
 
 describe("model and effort", () => {
   it("reads as the exact model and the effort the transcript says", () => {
-    expect(modelEffort({ model: "claude-opus-5-5", effort: "high" })).toBe("Opus 5.5 · high");
-    expect(modelEffort({ model: "claude-sonnet-5-5", effort: "medium" })).toBe("Sonnet 5.5 · medium");
+    expect(modelEffort({ model: "claude-opus-5-5", effort: "high" })).toBe("Opus 5.5, high effort");
+    expect(modelEffort({ model: "claude-sonnet-5-5", effort: "medium" })).toBe("Sonnet 5.5, medium effort");
   });
 
   it("leaves out what the lines do not say, and shows nothing when they say neither", () => {
     expect(modelEffort({ model: "claude-opus-5-5", effort: null })).toBe("Opus 5.5");
-    expect(modelEffort({ model: null, effort: "high" })).toBe("high");
+    expect(modelEffort({ model: null, effort: "high" })).toBe("high effort");
     expect(modelEffort({ model: null, effort: null })).toBeNull();
   });
 
@@ -131,7 +131,7 @@ describe("model and effort", () => {
 
   it("shows on the row, with the raw id on hover", () => {
     render(<HelperTracker chats={[chat([helper()])]} />);
-    const m = screen.getByText("Opus 5.5 · high", { selector: ".ht-model" });
+    const m = screen.getByText("Opus 5.5, high effort", { selector: ".ht-model" });
     expect(m).toHaveAttribute("title", "claude-opus-5-5");
   });
 
@@ -195,7 +195,7 @@ describe("the list", () => {
     const li = screen.getByRole("listitem");
     expect(li).not.toHaveAttribute("aria-label");
     expect(li).not.toHaveAttribute("aria-labelledby");
-    for (const text of ["About 60% of a typical run", "12 tool calls", "Reading", "Opus 5.5 · high"]) {
+    for (const text of ["About 60% of a typical run", "12 tool calls", "Reading", "Opus 5.5, high effort"]) {
       expect(li.textContent).toContain(text);
     }
     // The decorative trail stays out of the reading order.
@@ -217,11 +217,18 @@ describe("the list", () => {
     clear.mockRestore();
   });
 
-  it("marks a finished helper: the spark fills and the row says so", () => {
+  it("marks a finished helper: the path is full and the row says so", () => {
     const { container } = render(<HelperTracker chats={[chat([helper({ done: true })])]} />);
     expect(container.querySelector(".ht-trail")).toHaveAttribute("data-done");
+    expect(container.querySelector<HTMLElement>(".ht-fill")!.style.getPropertyValue("--fill")).toBe("100");
     expect(screen.getByText("Finished")).toBeInTheDocument();
     expect(screen.getByText("Done", { selector: ".ht-status" })).toBeInTheDocument();
+  });
+
+  it("draws no star at the end of a track: the spark is not a row decoration", () => {
+    const { container } = render(<HelperTracker chats={[chat([helper(), helper({ id: "h2", done: true })])]} />);
+    expect(container.querySelectorAll(".ht-trail")).toHaveLength(2);
+    expect(container.querySelector(".ht-trail svg")).toBeNull();
   });
 
   it("keeps counts only: no step text, no command", () => {

@@ -48,7 +48,7 @@ export const SEED_CATALOG: MockEntry[] = [
   seed("feature-dev", "A guided workflow for building a feature from idea to tests."),
   seed("explanatory-output-style", "Adds short notes on why Claude chose a pattern.", DIR),
   seed("playwright", "Drive a browser to check a page works.", DIR),
-  seed("github", "Work with issues and pull requests from the chat.", DIR),
+  seed("github", "Work with issues and pull requests from a session.", DIR),
   seed("typescript-lsp", "Language server for TypeScript.", DIR),
   seed("plugin-dev", "Tools for writing your own plugin."),
   seed("hookify", "Turn a repeated correction into a rule."),
@@ -207,7 +207,7 @@ export class MockLibrary {
     const e = this.entries.find((x) => x.pluginId === pluginId);
     if (!e) throw new Error("Atlas could not find that plugin.");
     await this.wait();
-    if (this.offline) throw new Error(OFFLINE_ERR);
+    if (this.offline) throw new Error(GITHUB_ERR);
     const repo = e.source.kind === "github" ? e.source.repo : "";
     const d = this.detail(repo, this.pluginShape(e), this.flagged);
     // Like the backend: a plugin that follows a branch (no pinned commit) needs the second click.
@@ -228,7 +228,7 @@ export class MockLibrary {
     if (!m) throw new Error("That is not a GitHub link Atlas understands. Try github.com/owner/repo.");
     const repo = `${m[1]}/${m[2]}`;
     await this.wait();
-    if (this.offline) throw new Error(OFFLINE_ERR);
+    if (this.offline) throw new Error(GITHUB_ERR);
     if (/market/i.test(repo)) {
       const shaped: Shaped = {
         shape: "marketplace",
@@ -374,3 +374,6 @@ export class MockLibrary {
 }
 
 const OFFLINE_ERR = "Atlas could not reach the plugin catalog. Check your connection and press Refresh.";
+// Reading one repository says what the app says (crates/app/src/library.rs): there is no Refresh
+// button where this is shown, so the sentence does not name one.
+const GITHUB_ERR = "Atlas could not reach GitHub. Check your connection.";

@@ -1,4 +1,4 @@
-// What happens when Will deletes or restores something on the Setup page. The
+// What happens when you delete or restore something on the Setup page. The
 // backup and the file work are all in Rust; this is the wording and the Undo.
 
 import { getBackend } from "./ipc";

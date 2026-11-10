@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  labelStep,
   MIN_BAR,
+  axisMax,
   ZERO_STUB,
   barPath,
   barTop,
@@ -117,9 +119,9 @@ describe("paths", () => {
     expect(smoothPath([[1, 2]])).toBe("M1,2");
     expect(smoothPath([[0, 0], [10, 5]])).toMatch(/^M0,0C/);
   });
-  it("the ridge never dips below its baseline or above its peak (Will's week: a peak, a slide, empty days)", () => {
+  it("the ridge never dips below its baseline or above its peak (a week with a peak, a slide and empty days)", () => {
     const weeks = [
-      [56.1, 41.2, 9.11, 0, 0, 1.82, 21],
+      [44, 30, 7.5, 0, 0, 2, 18],
       [100, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 90, 0, 0, 0],
       [5, 80, 1, 0, 70, 0.5, 0],
@@ -154,26 +156,60 @@ describe("paths", () => {
   });
 });
 
+describe("axisMax", () => {
+  it("is never below the largest value, and never below 2", () => {
+    expect(axisMax(0)).toBe(2);
+    expect(axisMax(1)).toBe(2);
+    for (const v of [0.3, 1, 2.4, 3, 7, 9, 12, 49, 51, 999, 1234, 123456, 2_300_000, 8_000_000]) {
+      expect(axisMax(v)).toBeGreaterThanOrEqual(v);
+      expect(axisMax(v)).toBeLessThanOrEqual(Math.max(2, v * 2));
+    }
+  });
+
+  it("picks a top whose half is a round number too", () => {
+    expect(axisMax(3)).toBe(4);
+    expect(axisMax(7)).toBe(8);
+    expect(axisMax(9)).toBe(10);
+    expect(axisMax(12)).toBe(20);
+    expect(axisMax(850_000)).toBe(1_000_000);
+    // 2.3M used to sit on a 2.5M axis whose half printed as "1.3M".
+    expect(axisMax(2_300_000)).toBe(4_000_000);
+    for (const v of [1, 2, 3, 5, 7, 11, 36, 180, 950]) expect(Number.isInteger(axisMax(v) / 2)).toBe(true);
+  });
+});
+
 describe("barTop", () => {
-  // Will's real 30-day Activity chart, 2026-11-08: a 144M peak on a 200M scale, a 162 px plot.
+  // A 30-day Activity chart (made-up figures): a 150M peak on a 200M scale, a 162 px plot.
   const base = 162;
   const top = 28;
   const max = 200e6;
   const h = (v: number) => base - barTop(v, max, base, top);
 
   it("a day with usage is never drawn lower than an empty day's stub", () => {
-    // Sat Nov 7 (1.8M) was 1.2 px tall, under the 3 px stub of Thu Nov 5 and Fri Nov 6 (0).
-    expect(h(1.82e6)).toBeGreaterThan(ZERO_STUB);
+    // A 2M day was 1.3 px tall, under the 3 px stub of the empty days beside it.
+    expect(h(2e6)).toBeGreaterThan(ZERO_STUB);
     expect(h(69e3)).toBe(MIN_BAR);
     expect(h(0)).toBe(0);
   });
   it("stays proportional above the floor", () => {
-    expect(h(144e6)).toBeCloseTo(0.72 * (base - top), 6);
-    expect(h(56.1e6) / h(21.2e6)).toBeCloseTo(56.1 / 21.2, 6);
+    expect(h(150e6)).toBeCloseTo(0.75 * (base - top), 6);
+    expect(h(44e6) / h(18e6)).toBeCloseTo(44 / 18, 6);
     expect(h(max * 3)).toBe(base - top);
   });
   it("an empty scale draws nothing", () => {
     expect(h(NaN)).toBe(0);
     expect(base - barTop(5, 0, base, top)).toBe(0);
+  });
+});
+
+describe("labelStep", () => {
+  it("keeps four or five labels on a round step, never five apart", () => {
+    expect(labelStep(24, 5)).toBe(6); // hours: 12 AM, 6 AM, 12 PM, 6 PM
+    expect(labelStep(30, 5)).toBe(6); // days: five labels
+    expect(labelStep(12, 5)).toBe(3); // weeks: four labels
+    expect(labelStep(7, 5)).toBe(2);
+    expect(labelStep(3, 5)).toBe(1);
+    expect(labelStep(60, 4)).toBe(15);
+    for (let n = 1; n <= 120; n++) expect(Math.ceil(n / labelStep(n, 5))).toBeLessThanOrEqual(5);
   });
 });

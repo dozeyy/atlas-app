@@ -35,7 +35,7 @@ describe("Settings", () => {
   it("shows one section at a time from the rail, so the page never scrolls", async () => {
     mount();
     const rail = await screen.findByRole("navigation", { name: "Settings sections" });
-    expect(within(rail).getAllByRole("button").map((b) => b.textContent)).toEqual(["Appearance", "Claude folder", "Claude Code", "Your data", "History", "About"]);
+    expect(within(rail).getAllByRole("button").map((b) => b.textContent)).toEqual(["Appearance", "General", "Claude folder", "Claude Code", "Your data", "History", "About"]);
     expect(screen.getByRole("heading", { level: 2, name: "Appearance" })).toBeInTheDocument();
     expect(screen.queryByText("Folder Atlas reads")).not.toBeInTheDocument();
     expect(within(rail).getByRole("button", { name: "Appearance" })).toHaveAttribute("aria-current", "true");
@@ -45,8 +45,8 @@ describe("Settings", () => {
     expect(screen.queryByRole("switch", { name: "Keep running when closed" })).not.toBeInTheDocument();
 
     await userEvent.click(within(rail).getByRole("button", { name: "About" }));
-    expect(screen.getByText("Privacy")).toHaveAttribute("title", expect.stringContaining("never sends your data"));
-    expect(screen.queryByText(/never sends your data/)).not.toBeInTheDocument();
+    expect(screen.getByText("Privacy")).toHaveAttribute("title", expect.stringContaining("sends none of your sessions or files"));
+    expect(screen.queryByText(/sends none of your sessions or files/)).not.toBeInTheDocument();
     expect(screen.getByText("Version")).toBeInTheDocument();
   });
 
@@ -82,12 +82,13 @@ describe("Settings", () => {
     await userEvent.click(within(rail).getByRole("button", { name: "About" }));
     await userEvent.click(await screen.findByRole("button", { name: "Uninstall Atlas..." }));
     expect(started).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Uninstall")).toHaveAttribute("title", expect.stringContaining("Your Claude Code chats are never touched."));
+    expect(screen.getByText("Uninstall")).toHaveAttribute("title", expect.stringContaining("Your Claude Code sessions are never touched."));
     expect(screen.queryByText(/never touched/)).not.toBeInTheDocument();
   });
 
   it("turns Keep running when closed on and off", async () => {
     mount();
+    await userEvent.click(await screen.findByRole("button", { name: "General" }));
     const sw = await screen.findByRole("switch", { name: "Keep running when closed" });
     expect(sw).toHaveAttribute("aria-checked", "false");
     await userEvent.click(sw);
@@ -96,9 +97,10 @@ describe("Settings", () => {
 
   it("keeps the finished-chat notice off until it is switched on", async () => {
     mount();
-    const sw = await screen.findByRole("switch", { name: "Tell me when a chat finishes" });
+    await userEvent.click(await screen.findByRole("button", { name: "General" }));
+    const sw = await screen.findByRole("switch", { name: "Tell me when a session finishes" });
     expect(sw).toHaveAttribute("aria-checked", "false");
-    expect(screen.queryByText(/cannot tell when a chat is only waiting/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cannot tell when a session is only waiting/)).not.toBeInTheDocument();
     await userEvent.click(sw);
     await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").notifyOnFinish).toBe(true));
     expect(sw).toHaveAttribute("aria-checked", "true");
@@ -108,12 +110,14 @@ describe("Settings", () => {
     mount();
     const sw = await screen.findByRole("switch", { name: "Show shortcuts" });
     expect(sw).toHaveAttribute("aria-checked", "false");
-    // Off: the gear is named with no keys.
-    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "Settings");
+    // Off: an icon-only button is named with no keys. (The gear itself carries no tip while you
+    // are on Settings, like Wrapped's gift on Wrapped, so the sidebar toggle stands in for it.)
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "");
+    expect(screen.getByRole("button", { name: "Sidebar" })).toHaveAttribute("title", "Hide sidebar");
     await userEvent.click(sw);
     await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").showShortcuts).toBe(true));
     expect(sw).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "Settings (Ctrl+6)");
+    expect(screen.getByRole("button", { name: "Sidebar" })).toHaveAttribute("title", "Hide sidebar (Ctrl+B)");
   });
 
   it("steps how many versions History keeps, inside 10 to 200", async () => {
@@ -127,11 +131,11 @@ describe("Settings", () => {
     expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").historyKeepVersions).toBe(60);
   });
 
-  it("asks before rebuilding from scratch, and reads logs again straight away", async () => {
+  it("asks before rebuilding from scratch, and reads sessions again straight away", async () => {
     const backend = mount();
     const reindex = vi.spyOn(backend, "usageReindex");
     await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Your data" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Read logs again" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Read sessions again" }));
     expect(reindex).toHaveBeenCalledWith("changed");
 
     await userEvent.click(screen.getByRole("button", { name: "Rebuild from scratch" }));
@@ -145,10 +149,10 @@ describe("Settings", () => {
     expect(reindex).toHaveBeenLastCalledWith("full");
   });
 
-  it("shows how long Claude Code keeps its logs", async () => {
+  it("shows how long Claude Code keeps its sessions", async () => {
     mount();
     await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude folder" }));
-    expect(await screen.findByText(/Claude Code keeps conversation logs for/)).toBeInTheDocument();
+    expect(await screen.findByText(/Claude Code keeps sessions for/)).toBeInTheDocument();
   });
 
   it("Claude Code section is one switch, on by default, and the state is read back each time", async () => {
