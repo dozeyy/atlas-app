@@ -76,7 +76,7 @@ export function Now() {
         {snap === null || groups === null ? null : noFolder ? (
           <EmptyState
             fill
-            seed={21}
+            seed={44}
             title="No Claude folder found"
             body="Choose it in Settings, under Claude folder."
             action={{
@@ -105,7 +105,7 @@ export function Now() {
               // ended, or else what to do next). It takes the room the lists leave.
               <EmptyState
                 fill
-                seed={21}
+                seed={44}
                 className="min-h-[240px]"
                 title={last ? "Nothing running" : "No sessions yet"}
                 body={last ? `Last session ended ${ago(last.endedMs, now)}` : "Start a session in Claude Code and it shows up here while it works."}

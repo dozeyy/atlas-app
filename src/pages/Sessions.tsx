@@ -357,7 +357,7 @@ export function Sessions() {
           />
         ) : total === 0 ? (
           <EmptyState
-            seed={11}
+            seed={22}
             className={STATE_HEIGHT}
             title="No sessions yet"
             body="Each Claude Code session shows up here with the tokens it used, when it ran and its project."
