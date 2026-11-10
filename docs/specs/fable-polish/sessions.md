@@ -136,13 +136,42 @@ avatar, 20 from 32, 24 from 40.
   in the hover), dates "Oct 30, 18:44" and "Today, 16:42", durations "1 h 11 min", shares as whole
   percentages, estimates as "$0.06" only inside hovers.
 
+## Round two (2026-11-10)
+
+Four small items on Session detail, each its own commit. Pictures: `s2-before-*` and `s2-after-*`
+under `docs/shots/fable-pass/{session-detail,detail-helpers,detail-helpers-key,detail-details,detail-helpers-list}/`,
+900x600 and 1180x780, Dark and Light, plain and with 17 helpers (`-stress`). Clip:
+`docs/shots/fable-pass/for-will/session-detail-tokens-dark.mp4` (12 s).
+
+| # | What changed | Principle | Commit |
+|---|---|---|---|
+| T1 | Tokens tab, "Who used it": every row wears the 24 px avatar the map and the list give that thread (main chat circle, helper tile, hollow tile for a helper's helper, the stack for "N other helpers"). | One icon per kind of helper, on every page. | `69a65a6` |
+| T2 | Tokens tab, "Biggest line items": the Total row is gone, and so is the total-minus-items "Everything else". The `~` figures are sizes the engine reads off each result (its length in bytes over four, `receipt_scan.rs`), added up per line; they are not shares of the chat's tokens and can add up to more than the total (the mock chat: about 488k of items against a 203k total). One note says so: "~ is a rough size from the length of each result, not a share of the total." Items the column has no room for show as "N smaller items" with their own summed size. | Never show a sum that is not one; say what a figure is. | `69a65a6` |
+| T3 | Escape and Alt+Left go back one level: a helper's page to its session, the session to the list. They stand down while a dialog, sheet, menu or list popup is open, while focus is in a text field, and when something else took the key (a focused chart clearing its readout). With shortcut hints on, the back button's hover names the key. | An escape route from every level; keyboard first. | `36c0076` |
+| T4 | The map's key is one line. It is laid out whole and measured against its room: when it fits (a 3-helper chat at 900x600) nothing changes; when it does not (17 helpers took three lines and the map lost that height) the kinds fold behind "Key" and how the helpers ended stays in view. Opened, the kinds sit in a row of their own above the line, in the key's room, never on the map. | Progressive disclosure; the legend never competes with the chart. | `de3f3b3` |
+| T5 | Details tab: "Spend as it ran" (a dollar ridge) is gone. In tokens it would be "Tokens through the session" again, which stays, moves up beside the token breakdown, and keeps each bar's dollar estimate in its hover. The helper list's order choice reads "Tokens" (it always sorted by tokens; it said "Spend"). | Tokens everywhere, money on hover; say a thing once. | `26a82ac` |
+
+Words on the first screen, 1180x780, before -> after: Tokens tab 151 -> 165 (plain; the note under the
+line items, 14 words, replaces "Total 203k tokens"), 136 -> 151 (17 helpers; adds "1 smaller item");
+map 63 -> 63 (plain), 69 -> 55 (17 helpers, key folded).
+
+Left as it is, on purpose:
+- With "Key" open at 900x600 and 17 helpers the layout check still reports two nodes "covered" by the
+  kinds row. They are scrolled out of the map's pane (the tree is bigger than the pane and scrolls,
+  as before); the key has its own room under the pane and is not drawn over the map.
+- `spendRidge` and `hasClearPeak` in `src/components/usage/timelineBars.ts` have no caller now. That
+  file is shared (Pick up, helper page), so they are left for the integration pass to remove.
+- The shortcuts list (`src/lib/appMenu.ts`, shared) has no "Sessions" group yet: "Escape or Alt+Left:
+  back to the list" and "Alt+Up / Alt+Down: previous and next session" belong there.
+- `src/lib/mockReceipt.ts` (read-only here): the mock line items add up to more than twice the chat's
+  tokens. Real results are written into the chat once, so the sum is normally under the total;
+  scaling the mock items down would make the preview closer to a real chat.
+
 ## Suggestions for Will, ranked
 
-1. Session detail, Tokens tab: it is the densest screen left (151 words at 1180x780). Lead with the
+1. Session detail, Tokens tab: it is still the densest screen (165 words at 1180x780). Lead with the
    split bar and the one flag, and put "Biggest line items" behind a "Where it went" switch like the
    slice beside the map.
-2. A key to go back from a chat to the list (D7): Esc or Alt+Left.
-3. Details tab: "Spend as it ran" in tokens, or gone (D8).
-4. The map legend takes three lines at 900x600 when a chat used eleven kinds of helper; a 17-helper
-   map then scrolls inside its pane (it did before as well). A "Key" switch that folds the legend
-   away would give the map that room back.
+2. Remember whether "Key" was left open, per person, so a reader who wants the icons named sees
+   them on every big map.
+3. Built in round two: the back keys (T3), the one-line key (T4), the dollar chart gone (T5).
