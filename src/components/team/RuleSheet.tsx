@@ -71,7 +71,7 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<{ text: string; stale: boolean } | null>(null);
   const radioName = useId();
-  
+
   const load = useCallback(() => {
     setLoadError(null);
     backend
@@ -199,7 +199,7 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
                       className="mt-1 accent-[var(--accent-solid)]"
                     />
                     <span className="min-w-0">
-                      <span className="block text-body font-medium text-ink">{t.title}</span>
+                      <span className="block break-words text-body font-medium text-ink">{t.title}</span>
                       <span className="selectable block break-all text-caption text-ink-2">{t.path}</span>
                       {t.blocked && <span className="block text-caption text-warning">{t.blocked}</span>}
                       {!t.exists && !t.blocked && <span className="block text-caption text-ink-2">{t.kind === "file" ? "A new file" : "This file is created"}</span>}
@@ -256,7 +256,7 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
             {problem && (
               <p role="alert" className="mt-3 flex items-start gap-2 rounded-card bg-warning-tint px-4 py-3 text-body text-warning">
                 <WarningCircle size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
-                <span className="min-w-0 flex-1">{problem.text}</span>
+                <span className="min-w-0 flex-1 break-words">{problem.text}</span>
                 {problem.stale && (
                   <Button className="shrink-0" onClick={load}>
                     Reload

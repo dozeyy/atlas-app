@@ -16,7 +16,7 @@ export const RANGES: { value: RangeId; label: string; days: number | null }[] = 
 
 export const STARTED_OPTIONS: { value: StartedFrom; label: string }[] = [
   { value: "all", label: "Started from: all" },
-  { value: "interactive", label: "Started from: interactive" },
+  { value: "interactive", label: "Started from: a chat" },
   { value: "headless", label: "Started from: headless" },
 ];
 

@@ -96,7 +96,7 @@ export function SideSheet({
             <h2 id={titleId} className="selectable break-words text-subtitle font-semibold text-ink">
               {title}
             </h2>
-            {subtitle && <div className="mt-1 text-body text-ink-2">{subtitle}</div>}
+            {subtitle && <div className="mt-1 break-words text-body text-ink-2">{subtitle}</div>}
           </div>
           <button
             type="button"

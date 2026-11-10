@@ -11,8 +11,8 @@ const SHOWN = 12;
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex gap-3 py-0.5 text-body">
-      <dt className="w-28 shrink-0 text-ink-2">{label}</dt>
-      <dd className="min-w-0 flex-1 text-ink">{children}</dd>
+      <dt className="w-32 shrink-0 text-ink-2">{label}</dt>
+      <dd className="min-w-0 flex-1 break-words text-ink">{children}</dd>
     </div>
   );
 }
@@ -42,7 +42,8 @@ function ThemeRow({
           className="press team-theme-head flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-control text-left"
         >
           <CaretRight size={14} weight="bold" aria-hidden="true" className={`team-caret mt-1 shrink-0 text-ink-2 ${open ? "team-caret-open" : ""}`} />
-          <span className="min-w-0">
+          {/* A long theme wraps inside its own column; it never runs under the button beside it. */}
+          <span className="min-w-0 flex-1 break-words">
             <span className="selectable block text-body font-medium text-ink">{theme.label}</span>
             <span className="mt-0.5 block text-caption text-ink-2">
               {`Raised ${plural(theme.count, "time")} in ${plural(theme.runs, "run")}`}

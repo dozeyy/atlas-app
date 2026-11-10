@@ -1,7 +1,7 @@
 import { Sparkline } from "../charts/Sparkline";
 import { Card } from "../controls";
 import { TokenText } from "../usage/TokenText";
-import { modelWithEffort, plural } from "../../lib/usage";
+import { exact, modelWithEffort, plural } from "../../lib/usage";
 import { finishLine, medianCalls, medianTime, rateSentence, reviewCountsLine, reviewerLine } from "../../lib/teamModel";
 import type { TypeCard } from "../../lib/teamTypes";
 
@@ -33,7 +33,7 @@ export function ScoreCard({ card, onOpen }: { card: TypeCard; onOpen: () => void
           <p className="mt-0.5 text-caption text-ink-2">
             {plural(card.runs, "run")}
             {card.reviewer ? " \u00b7 reviewer" : ""}
-            {headless > 0 ? ` \u00b7 ${headless} headless` : ""}
+            {headless > 0 ? ` \u00b7 ${exact(headless)} headless` : ""}
           </p>
         </div>
         <Sparkline id={`team-${card.agentType}`} values={card.weekly} width={72} height={24} />
@@ -45,7 +45,9 @@ export function ScoreCard({ card, onOpen }: { card: TypeCard; onOpen: () => void
           <TokenText tokens={card.tokens.total} cost={card.cost} />
         </dd>
         <dt className="text-ink-2">Model</dt>
-        <dd className="min-w-0 truncate text-ink">{card.topModel ? modelWithEffort(card.topModel.model, card.topModel.effort) : "Not known"}</dd>
+        <dd title={card.topModel ? modelWithEffort(card.topModel.model, card.topModel.effort) : undefined} className="min-w-0 truncate text-ink">
+          {card.topModel ? modelWithEffort(card.topModel.model, card.topModel.effort) : "Not known"}
+        </dd>
         <dt className="text-ink-2">Time</dt>
         <dd className={`min-w-0 ${card.tooFewRuns ? "text-ink-2" : "text-ink"}`}>{medianTime(card)}</dd>
         <dt className="text-ink-2">Work</dt>
