@@ -300,6 +300,9 @@
   align-self: start;
 }
 .st-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   height: 32px;
   padding: 0 12px;
   border: 0;
@@ -314,6 +317,10 @@
   transition:
     background-color var(--dur) var(--ease-out),
     color var(--dur) var(--ease-out);
+}
+/* Side by side (a narrow window) the names alone fit on one line; the icons come with the rail. */
+.st-nav:not([data-wide]) .st-nav-ico {
+  display: none;
 }
 .st-nav-item:hover {
   background: var(--raised);

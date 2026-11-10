@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Minus, Plus } from "@phosphor-icons/react";
+import { ClockCounterClockwise, Database, FolderSimple, Info, Minus, Palette, PlugsConnected, Plus, SlidersHorizontal } from "@phosphor-icons/react";
 import { Button, Card, IconButton, PageTitle, Row, Toggle } from "../components/controls";
 import { Dialog } from "../components/Dialog";
 import { ThemePicker } from "../components/ThemePicker";
@@ -21,12 +21,13 @@ const KEEP_MAX = 200;
 const KEEP_STEP = 10;
 
 const SECTIONS = [
-  { id: "appearance", label: "Appearance" },
-  { id: "folder", label: "Claude folder" },
-  { id: "claude", label: "Claude Code" },
-  { id: "data", label: "Your data" },
-  { id: "history", label: "History" },
-  { id: "about", label: "About" },
+  { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "general", label: "General", icon: SlidersHorizontal },
+  { id: "folder", label: "Claude folder", icon: FolderSimple },
+  { id: "claude", label: "Claude Code", icon: PlugsConnected },
+  { id: "data", label: "Your data", icon: Database },
+  { id: "history", label: "History", icon: ClockCounterClockwise },
+  { id: "about", label: "About", icon: Info },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
@@ -268,6 +269,14 @@ export function Settings() {
         <Row label="Launch animation">
           <Toggle label="Launch animation" checked={info.settings.launchAnimation} onChange={setLaunchAnimation} />
         </Row>
+        <Row label="Show shortcuts" tip="Shows the keys in hovers, menus and search boxes. The shortcuts work either way, and Help lists them all.">
+          <Toggle label="Show shortcuts" checked={info.settings.showShortcuts} onChange={setShowShortcuts} />
+        </Row>
+      </>
+    ),
+    // How Atlas behaves, apart from how it looks.
+    general: (
+      <>
         <Row
           label="Keep running when closed"
           tip={info.platform === "macos" ? "Keeps Atlas in the menu bar only, out of the Dock." : "Hides Atlas to the tray instead of quitting."}
@@ -281,9 +290,6 @@ export function Settings() {
         )}
         <Row label="Tell me when a chat finishes">
           <Toggle label="Tell me when a chat finishes" checked={info.settings.notifyOnFinish} onChange={setNotifyOnFinish} />
-        </Row>
-        <Row label="Show shortcuts" tip="Shows the keys in hovers, menus and search boxes. The shortcuts work either way, and Help lists them all.">
-          <Toggle label="Show shortcuts" checked={info.settings.showShortcuts} onChange={setShowShortcuts} />
         </Row>
       </>
     ),
@@ -350,14 +356,8 @@ export function Settings() {
       <>
         <Row
           label="Let Claude Code use Atlas"
-          hint={
-            <>
-              Claude Code can list and edit your skills, agents and commands through Atlas, with a backup before every change.
-              <div role="status" className="mt-1 text-caption">
-                {mcpBusy ? "Working" : mcpState}
-              </div>
-            </>
-          }
+          tip="Claude Code can list and edit your skills, agents and commands through Atlas, with a backup before every change."
+          hint={<span role="status">{mcpBusy ? "Working" : mcpState}</span>}
         >
           <Toggle label="Let Claude Code use Atlas" checked={mcpWanted && !mcpForeign} onChange={(v) => void changeMcp(v)} disabled={mcpBusy || !mcp || mcp.sandbox || mcp.server === null || mcpForeign} />
         </Row>
@@ -498,6 +498,7 @@ export function Settings() {
               aria-controls="st-panel"
               onClick={() => setActive(s.id)}
             >
+              <s.icon size={16} aria-hidden="true" className="st-nav-ico" />
               {s.label}
             </button>
           ))}
@@ -529,7 +530,7 @@ export function Settings() {
           }
         >
           <p className="text-body text-ink">
-            Atlas reads every session log again and makes the numbers from scratch. Logs that Claude Code has already cleared cannot be read again, so their numbers are kept.
+            Atlas reads every session log again. Numbers from logs that Claude Code already cleared are kept.
           </p>
         </Dialog>
       )}

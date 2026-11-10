@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
+import { Info } from "@phosphor-icons/react";
 import * as Switch from "@radix-ui/react-switch";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 
@@ -190,8 +191,12 @@ export function Row({
   return (
     <div className="flex items-center justify-between gap-6 border-b border-line px-5 py-4 last:border-b-0">
       <div className="min-w-0">
-        <div className="text-body font-medium text-ink" title={tip}>
-          {label}
+        <div className="text-body font-medium text-ink">
+          {/* The hover sits on the words and the mark together; the mark says there is more to read. */}
+          <span title={tip} className={tip ? "inline-flex items-center gap-1.5" : undefined}>
+            {label}
+            {tip && <Info size={14} aria-hidden="true" className="shrink-0 text-ink-2" />}
+          </span>
         </div>
         {hint && <div className="mt-0.5 text-body text-ink-2">{hint}</div>}
       </div>
