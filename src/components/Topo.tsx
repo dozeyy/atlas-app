@@ -1,9 +1,10 @@
 import { useMemo } from "react";
-import { contourPath } from "../lib/topo";
+import { contourPaths } from "../lib/topo";
 
 /**
- * Atlas's signature: topographic contour lines. One static SVG path, drawn from
- * the accent color at low opacity, masked to fade out at the edges.
+ * Atlas's signature: topographic contour lines. Two static SVG paths drawn from the accent color
+ * at low opacity (the ordinary lines at 1 px, every fifth line a heavier index contour at 1.5 px,
+ * as on a printed map), masked to fade out at the edges.
  */
 export function Topo({
   seed = 7,
@@ -16,8 +17,17 @@ export function Topo({
   width?: number;
   height?: number;
 }) {
-  const d = useMemo(() => contourPath({ width, height, seed }), [width, height, seed]);
+  const { minor, index } = useMemo(() => contourPaths({ width, height, seed }), [width, height, seed]);
   const maskId = `topo-fade-${seed}`;
+  const line = {
+    mask: `url(#${maskId})`,
+    fill: "none",
+    stroke: "var(--accent)",
+    strokeOpacity: 0.32,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    vectorEffect: "non-scaling-stroke" as const,
+  };
   return (
     <svg
       aria-hidden="true"
@@ -35,16 +45,8 @@ export function Topo({
           <rect width={width} height={height} fill={`url(#${maskId}-g)`} />
         </mask>
       </defs>
-      <path
-        d={d}
-        mask={`url(#${maskId})`}
-        fill="none"
-        stroke="var(--accent)"
-        strokeOpacity="0.32"
-        strokeWidth="1"
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-      />
+      <path d={minor} strokeWidth="1" {...line} />
+      <path d={index} strokeWidth="1.5" {...line} />
     </svg>
   );
 }
