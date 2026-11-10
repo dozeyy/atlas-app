@@ -230,7 +230,8 @@ describe("Team: Caught in review", () => {
     await openToolkit();
     expect(await screen.findByText("Missing null check on the response before it is used")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Make this a rule" })).toHaveLength(3);
-    expect(screen.getByText(/Raised 7 times in 4 runs, 3 high, 4 medium/)).toBeInTheDocument();
+    // G14: the counts say what they count. A labelled severity, after a full stop.
+    expect(screen.getByText(/Raised 7 times in 4 runs\. Severity: 3 high, 4 medium/)).toBeInTheDocument();
   });
 
   it("Make this a rule saves through one write, offers Undo, and Undo takes it back", async () => {

@@ -80,10 +80,36 @@ function ThemesSkeleton() {
   );
 }
 
+const NO_RUNS_TITLE = "No helper runs yet";
+const NO_RUNS_BODY = "When Claude hands a job to a helper, its runs are counted here, one card for each kind of helper.";
+
+/**
+ * Nothing to show while a range or a "Started from" is set. Is it those, or has no helper ever
+ * run? One look at everything says which, so the page never says "match" to someone who set
+ * nothing and has nothing (the range has a value from the start). Only when runs do exist
+ * elsewhere is it the no-match message, with the one press that shows them.
+ */
+function NothingInRange({ onClearFilters }: { onClearFilters: () => void }) {
+  const backend = getBackend();
+  const all = useFetched(() => backend.teamScorecard({ days: null, startedFrom: "all" }), []);
+  if (!all.data && !all.error) return <CardsSkeleton />;
+  if (all.data && all.data.totalRuns === 0) return <EmptyState title={NO_RUNS_TITLE} body={NO_RUNS_BODY} seed={11} fill />;
+  return (
+    <EmptyState
+      variant="no-match"
+      fill
+      title="No helper runs match"
+      body="A longer range, or every way a run can start, may show some."
+      action={{ onClick: onClearFilters, label: "Clear filters" }}
+    />
+  );
+}
+
 function Scorecard({
   prefs,
   filter,
   onClearFilter,
+  onClearFilters,
   onOpenType,
   onSheetRuns,
   openType,
@@ -94,6 +120,8 @@ function Scorecard({
   prefs: TeamPrefs;
   filter: string;
   onClearFilter: () => void;
+  /** Back to everything: the whole range, every way a run can start. */
+  onClearFilters: () => void;
   onOpenType: (t: string) => void;
   onSheetRuns: (r: RunRow) => void;
   openType: string | null;
@@ -122,15 +150,12 @@ function Scorecard({
   return (
     <>
       {data.types.length === 0 ? (
-        narrowed && !reading ? (
-          <EmptyState variant="no-match" fill title="No helper runs match" body="Try a longer range, or all the ways a run can start." />
+        reading ? (
+          <EmptyState title={READING_TITLE} body={READING_BODY} seed={11} fill />
+        ) : narrowed ? (
+          <NothingInRange onClearFilters={onClearFilters} />
         ) : (
-          <EmptyState
-            title={reading ? READING_TITLE : "No helper runs yet"}
-            body={reading ? READING_BODY : "When Claude hands a job to a helper, its runs are counted here, one card for each kind of helper."}
-            seed={11}
-            fill
-          />
+          <EmptyState title={NO_RUNS_TITLE} body={NO_RUNS_BODY} seed={11} fill />
         )
       ) : cards.length === 0 ? (
         <EmptyState variant="no-match" fill query={filter.trim()} body="Try fewer words." action={{ onClick: onClearFilter }} />
@@ -141,11 +166,14 @@ function Scorecard({
           ))}
         </div>
       )}
-      <p className="mt-4 text-caption text-ink-2">
-        {plural(data.totalRuns, "helper run")} in this range.
-        {cards.length > 0 ? ` ${weeklyLegend(cards[0].weekly.length)}` : ""}
-        {history ? ` ${history}` : ""}
-      </p>
+      {/* An empty page says it once, in the middle: no "0 helper runs" under it. */}
+      {data.types.length > 0 && (
+        <p className="mt-4 text-caption text-ink-2">
+          {plural(data.totalRuns, "helper run")} in this range.
+          {cards.length > 0 ? ` ${weeklyLegend(cards[0].weekly.length)}` : ""}
+          {history ? ` ${history}` : ""}
+        </p>
+      )}
       {open && (
         <AgentSheet
           card={open}
@@ -278,6 +306,7 @@ export function Team({ onShowSetup }: { onShowSetup: () => void }) {
             prefs={prefs}
             filter={filter}
             onClearFilter={() => setFilter("")}
+            onClearFilters={() => setPrefs({ range: "all", startedFrom: "all" })}
             openType={openType}
             onOpenType={setOpenType}
             closeSheet={() => setOpenType(null)}
