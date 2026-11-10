@@ -2,6 +2,7 @@ import { createContext, useContext, useLayoutEffect, useRef, useState } from "re
 import type { HTMLAttributes, ReactNode } from "react";
 import { Card } from "../controls";
 import { CostText } from "./CostText";
+import { KIND_WORDS } from "../../lib/receiptView";
 import { compact, effortMix, exact, headline, mergeModelRows, plural } from "../../lib/usage";
 import type { Cost, Tokens } from "../../lib/types";
 import type { EffortUse } from "../../lib/usageTypes";
@@ -95,17 +96,18 @@ export function ClampText({ text, lines = 3, className = "" }: { text: string; l
 }
 
 /**
- * The four kinds of token, each with its exact figure. Cache reads sit apart (Q2). With `main`, the
- * main chat's own figures stand beside the whole chat's (`t`), so nothing has to be switched to
- * compare the two.
+ * The four kinds of token, each with its exact figure, in plain words: the exact term and what it
+ * means are the row's hover. Cache reads sit apart (Q2). With `main`, the main chat's own figures
+ * stand beside the whole chat's (`t`), so nothing has to be switched to compare the two.
  */
 export function Breakdown({ t, main }: { t: Tokens; main?: Tokens }) {
-  const rows: [string, (x: Tokens) => number, string?][] = [
-    ["Input", (x) => x.input],
-    ["Output", (x) => x.output],
-    ["Cache writes, 5-minute", (x) => x.cacheWrite5m],
-    ["Cache writes, 1-hour", (x) => x.cacheWrite1h],
-    ["Cache reads", (x) => x.cacheRead, "Counted apart, not in the total above"],
+  const W = KIND_WORDS;
+  const rows: [name: string, pick: (x: Tokens) => number, hover: string, note?: string][] = [
+    [W.input.label, (x) => x.input, `${W.input.term}\n${W.input.about}`],
+    [W.output.label, (x) => x.output, `${W.output.term}\n${W.output.about}`],
+    [`${W.cacheWrite.label}, 5 minutes`, (x) => x.cacheWrite5m, `${W.cacheWrite.term}, 5-minute\n${W.cacheWrite.about}`],
+    [`${W.cacheWrite.label}, 1 hour`, (x) => x.cacheWrite1h, `${W.cacheWrite.term}, 1-hour\n${W.cacheWrite.about}`],
+    ["Reused", (x) => x.cacheRead, `${W.cacheRead.term}\n${W.cacheRead.about}`, "Counted apart, not in the total"],
   ];
   const cols: [string, Tokens][] = main ? [["Main chat", main], ["With helpers", t]] : [["Tokens", t]];
   return (
@@ -123,9 +125,9 @@ export function Breakdown({ t, main }: { t: Tokens; main?: Tokens }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map(([name, pick, note]) => (
+          {rows.map(([name, pick, hover, note]) => (
             <tr key={name} className="border-b border-line last:border-b-0">
-              <th scope="row" className="px-5 py-2.5 text-left font-normal text-ink">
+              <th scope="row" className="px-5 py-2.5 text-left font-normal text-ink" title={hover}>
                 {name}
                 {note && <span className="ml-2 text-caption text-ink-2">{note}</span>}
               </th>
@@ -162,10 +164,14 @@ export function ModelSplit({ rows }: { rows: { model: string; tokens: Tokens; co
         <tbody className="tabular-nums">
           {mergeModelRows(rows).map((r) => (
             <tr key={r.label} className="border-b border-line last:border-b-0">
-              <th scope="row" className="px-5 py-2 text-left font-normal text-ink" title={r.models.join("\n")}>
+              {/* The exact model ids and the effort mix are detail: they are the name's hover. */}
+              <th
+                scope="row"
+                className="px-5 py-2 text-left font-normal text-ink"
+                title={`${r.models.join(", ")}${effortMix(r.efforts) ? `\nReasoning effort: ${effortMix(r.efforts)}` : ""}`}
+              >
                 {r.label}
                 {!r.known && <span className="ml-2 text-caption text-ink-2">not priced</span>}
-                {effortMix(r.efforts) && <span className="block text-caption text-ink-2">{`Effort ${effortMix(r.efforts)}`}</span>}
               </th>
               <td className="px-3 py-2 text-right" title={exact(headline(r.tokens))}>{compact(headline(r.tokens))}</td>
               <td className="px-5 py-2 text-right"><CostText cost={r.cost} /></td>

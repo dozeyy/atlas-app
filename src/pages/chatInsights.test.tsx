@@ -43,7 +43,7 @@ async function chatWithHelpers(backend: MockBackend) {
 }
 
 describe("Chat receipt and helper map", () => {
-  it("opens a chat on its receipt with every list; dollars sit in hovers and are called an estimate there", async () => {
+  it("opens a chat on its receipt: one figure on top, the lists under it, the line items closed; dollars sit in hovers", async () => {
     const backend = sessionsBackend();
     const { row } = await chatWithHelpers(backend);
     mountDetail(backend, row.sessionId);
@@ -51,14 +51,23 @@ describe("Chat receipt and helper map", () => {
     expect(screen.getByRole("region", { name: "What it used" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Biggest line items" })).toBeInTheDocument();
     expect(screen.queryAllByText(/All figures are estimates/)).toHaveLength(0);
-    // A list of shares ends in a total, so the sum is visible; each of its lines wears the avatar the map gives that thread.
+    // The sum is the one figure at the top of the page, so no list repeats it as a total row.
+    // Each line of "Who used it" wears the avatar the map gives that thread.
+    expect(document.querySelectorAll(".d-hero")).toHaveLength(1);
+    expect(document.querySelector(".d-hero")?.textContent).toMatch(/tokens$/);
+    expect(screen.queryByText("Total")).toBeNull();
     const who = screen.getByRole("region", { name: "Who used it" });
-    expect(within(who).getByText("Total")).toBeInTheDocument();
     expect(within(who).getByRole("img", { name: "Main chat" })).toBeInTheDocument();
     expect(within(who).getAllByRole("img", { name: /helper$/i }).length).toBeGreaterThan(0);
-    // The line items are rough sizes, not shares: no total under them, one note that says what "~" is.
+    // The line items wait behind one row, closed until asked; opening it is remembered.
     const big = screen.getByRole("region", { name: "Biggest line items" });
-    expect(within(big).queryByText("Total")).toBeNull();
+    const more = within(big).getByRole("button", { name: "Biggest line items" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    expect(within(big).queryByText(/^~ is a rough size/)).toBeNull();
+    await userEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(localStorage.getItem("atlas.chat.lineItems")).toBe("1");
+    // They are rough sizes, not shares: no total under them, one note that says what "~" is.
     expect(within(big).queryByText("Everything else")).toBeNull();
     expect(within(big).getByText(/^~ is a rough size/)).toBeInTheDocument();
     // Tokens are the figure everywhere; dollars live only in hover text.
@@ -67,9 +76,23 @@ describe("Chat receipt and helper map", () => {
       expect(region.textContent).not.toMatch(/\$/);
       expect(region.textContent).toMatch(/\d(k|M|B)?\b/);
     }
-    expect(within(screen.getByRole("region", { name: "Who used it" })).getByText(/tokens$/)).toBeInTheDocument();
     const titled = Array.from(document.querySelectorAll("[title]")).map((e) => e.getAttribute("title") ?? "");
     expect(titled.some((t) => /an estimate of about \$/.test(t))).toBe(true);
+  });
+
+  it("opens the line items by itself when they were left open, and says token kinds in plain words", async () => {
+    const backend = sessionsBackend();
+    localStorage.setItem("atlas.chat.lineItems", "1");
+    const { row } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    const big = await screen.findByRole("region", { name: "Biggest line items" });
+    expect(within(big).getByRole("button", { name: "Biggest line items" })).toHaveAttribute("aria-expanded", "true");
+    // Plain words on the surface; the exact term is the first words of the hover.
+    const used = screen.getByRole("region", { name: "What it used" });
+    expect(used.textContent).not.toMatch(/cache/i);
+    const saved = within(used).getByText("Saved for reuse");
+    expect(saved.closest("[title]")?.getAttribute("title")).toMatch(/^Cache writes: /);
+    expect(within(used).getByText(/^plus .+ reused$/).getAttribute("title")).toMatch(/^Cache reads: /);
   });
 
   it("offers the Helpers tab only when helpers ran", async () => {

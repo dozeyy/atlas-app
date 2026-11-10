@@ -197,7 +197,8 @@ describe("Sessions", () => {
     expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "Details" }));
     expect(await screen.findByText("Token breakdown")).toBeInTheDocument();
-    expect(screen.getByText("Cache reads")).toBeInTheDocument();
+    // Plain word on the surface, the exact term in its hover.
+    expect(screen.getByText("Reused").closest("th")).toHaveAttribute("title", expect.stringMatching(/^Cache reads/));
     expect(screen.queryByText(/Mock request number 1\./)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "Messages" }));
     await userEvent.click(screen.getByRole("button", { name: /Show conversation/ }));
@@ -327,7 +328,7 @@ describe("Helpers (subagents) inside a session", () => {
     expect(screen.getByText("Tool calls")).toBeInTheDocument();
     expect(screen.getByText("Ran for")).toBeInTheDocument();
     const breakdown = screen.getByRole("region", { name: "Token breakdown" });
-    expect(within(breakdown).getByText("Cache reads")).toBeInTheDocument();
+    expect(within(breakdown).getByText("Reused").closest("th")).toHaveAttribute("title", expect.stringMatching(/^Cache reads/));
     expect(within(breakdown).getByText(a.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^Back to / }));
     // Back lands on the same tab and view it left.

@@ -2110,7 +2110,7 @@ html.reduced .nav-item:active .nav-face {
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
-/* The receipt: plain lines, a hairline and a total, nothing boxed. */
+/* The receipt: plain lines, nothing boxed. Its total is the figure at the top of the page. */
 .rcpt-head {
   margin-bottom: 6px;
   font-size: var(--text-caption);
@@ -2151,17 +2151,6 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 }
 .rcpt-bar > i {
   background: var(--bar, var(--accent));
-}
-.rcpt-total {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  font-size: var(--text-body);
-  line-height: 20px;
-  color: var(--ink-2);
 }
 .rcpt-item {
   display: flex;

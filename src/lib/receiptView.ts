@@ -26,11 +26,30 @@ export interface SpendLine {
   kind: "main" | "helper" | "more" | "model" | "kind" | "other";
   /** The line's colour slot, for the model dots. */
   model?: string;
+  /** The exact term the plain label stands for ("Cache writes"); leads the hover text. */
+  term?: string;
+  /** One plain sentence on what the line is; the hover's second paragraph. */
+  about?: string;
 }
 
+/**
+ * Plain words for each kind of token, the exact term each stands for and one sentence on what it
+ * is. The surface shows the plain word; the term and the sentence are the hover.
+ */
+export const KIND_WORDS = {
+  cacheWrite: { label: "Saved for reuse", term: "Cache writes", about: "What Claude stored so later turns can reuse it instead of reading it again." },
+  output: { label: "Output", term: "Output", about: "What Claude wrote: replies, thinking and tool requests." },
+  input: { label: "Input", term: "Input", about: "What Claude read fresh: your messages, files and tool results." },
+  cacheRead: { label: "reused", term: "Cache reads", about: "Stored context read again. Counted apart from the total." },
+} as const;
+
+/** The hover of a token kind: its exact term and figure, then what it is. */
+export const kindTitle = (k: keyof typeof KIND_WORDS, tokens: number, usd: number | null): string =>
+  `${lineTitle({ label: KIND_WORDS[k].term, tokens, usd })}\n${KIND_WORDS[k].about}`;
+
 /** The hover text of a line: what its tokens come to in dollars, as an estimate. */
-export const lineTitle = (l: Pick<SpendLine, "label" | "tokens" | "usd">): string =>
-  `${l.label}: ${tokensText(l.tokens)}${l.usd !== null && l.usd >= 0.005 ? `, ${guess(l.usd)}` : ""}`;
+export const lineTitle = (l: Pick<SpendLine, "label" | "tokens" | "usd" | "term" | "about">): string =>
+  `${l.term ?? l.label}: ${tokensText(l.tokens)}${l.usd !== null && l.usd >= 0.005 ? `, ${guess(l.usd)}` : ""}${l.about ? `\n${l.about}` : ""}`;
 
 const other = (tokens: number): SpendLine[] => (tokens >= 1 ? [{ key: "other", label: "Everything else", tokens, usd: null, agentId: null, kind: "other" }] : []);
 
@@ -54,17 +73,18 @@ export function whoUsed(r: Receipt, limit = 6): SpendLine[] {
   return [...lines, ...other(left(r, lines))];
 }
 
-const KIND_LABEL: ["output" | "cacheWrite" | "input", string][] = [
-  ["cacheWrite", "Cache writes"],
-  ["output", "Output"],
-  ["input", "Input"],
-];
+const HEADLINE_KINDS = ["cacheWrite", "output", "input"] as const;
 
-/** The headline kinds of token, biggest first; a kind with none is left out. */
-export function whatItUsed(r: Receipt): SpendLine[] {
-  const lines: SpendLine[] = KIND_LABEL.map(([k, label]) => ({ key: k, label, tokens: r.tokenKinds[k], usd: r.kinds[k], agentId: null, kind: "kind" as const }))
+/** The headline kinds of token in plain words, biggest first; a kind with none is left out. */
+export function kindLines(tokenKinds: Record<(typeof HEADLINE_KINDS)[number], number>, usd: Record<(typeof HEADLINE_KINDS)[number], number>): SpendLine[] {
+  return HEADLINE_KINDS.map((k) => ({ key: k, ...KIND_WORDS[k], tokens: tokenKinds[k], usd: usd[k], agentId: null, kind: "kind" as const }))
     .filter((l) => l.tokens > 0)
     .sort((a, b) => b.tokens - a.tokens);
+}
+
+/** The chat's headline kinds, with what no kind explains as "Everything else". */
+export function whatItUsed(r: Receipt): SpendLine[] {
+  const lines = kindLines(r.tokenKinds, r.kinds);
   return [...lines, ...other(left(r, lines))];
 }
 
