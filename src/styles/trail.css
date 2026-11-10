@@ -2242,8 +2242,8 @@ html.reduced .map-node:focus-visible .map-body {
 
 /* ---- Update icon (sidebar footer) ------------------------------------------------------------ */
 /* One 36 px square at the bottom-left, mirroring Settings. The button is a fixed box; the face
-   inside carries the tint and the press, so the hit box never moves. Blue (--info) is the
-   update colour and nothing else. */
+   inside carries the tint and the press, so the hit box never moves. It is drawn in the text colour
+   (white in dark, near-black in light), like Claude's own update button (Will, 2026-11-09). */
 .upd-btn {
   position: relative;
   flex: 1 1 0;
@@ -2253,7 +2253,7 @@ html.reduced .map-node:focus-visible .map-body {
   border: 0;
   background: none;
   border-radius: 10px;
-  color: var(--info);
+  color: var(--ink);
   cursor: pointer;
 }
 html[data-input="keyboard"] .upd-btn:focus-visible {
@@ -2277,7 +2277,7 @@ html[data-input="keyboard"] .upd-btn:focus-visible {
   animation: upd-in var(--dur-spring) var(--ease-spring) both;
 }
 .upd-btn:hover .upd-face {
-  background: var(--info-tint);
+  background: color-mix(in srgb, var(--raised) 80%, transparent);
 }
 .upd-btn:active .upd-face {
   transform: scale(var(--press-scale));
@@ -2330,11 +2330,11 @@ html[data-input="keyboard"] .upd-btn:focus-visible {
   stroke-linecap: round;
 }
 .upd-track {
-  stroke: var(--info);
+  stroke: var(--ink);
   opacity: 0.22;
 }
 .upd-arc {
-  stroke: var(--info);
+  stroke: var(--ink);
   transition: stroke-dashoffset var(--dur) linear;
 }
 .upd-spin .upd-arc {
