@@ -379,3 +379,9 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Proven here: a skill's `allowed-tools` matches only a Bash `sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" ...` rule; PowerShell nested calls are refused, so the skill uses Bash on every OS. A resumed headless turn loses the skill's allowed-tools.
 - Privacy: wordings returned to Claude come from the current project only (`--all-projects-text` to widen); docs say plainly the wordings are shown to Claude. `[...]`-wrapped harness lines (e.g. "[Request interrupted by user]") never count. A damaged habits.json reads as offers off; the next answer starts clean.
 - Release to-do: bump plugin + app version, run pin-skill-checksums, publish a CLI with `repeats` (the launcher refuses an older atlas-usage with exit 4 "Update the Atlas plugin or the Atlas app").
+
+## 2026-11-09 - Now helper tracker merged (7f17694)
+- Now lists every live helper under its chat: model + effort, progress vs a typical run (or plan steps), "Just started" / "No progress for N min". A chat with any live helper counts as running ("Waiting on N helpers"), even after the parent ended its turn (real-data verify caught this: it had landed in Waiting for you and hid the tracker).
+- Per-run counts restart only on a message or new calls after the helper's turn ended; mid-turn steering and meta lines are not restarts; a line with no message id never restarts. Verified: 6/6 real helpers' tool calls equal a resume-aware recount; finished rows leave in ~8 s; 0 remounts over 330 s live.
+- typical_runs: skip files with gaps > 30 min or begun before the look-back; `INDEXED BY messages_ts` (7-day 224 -> 60 ms, 90-day 388 -> 252 ms, background thread every 30 min). Killed runs still count until the helper ledger merges.
+- Flaky under load: `fsutil::a_read_only_target_fails_at_once_with_a_clear_message` (300 ms timing) failed once in a full workspace run, passed 3/3 alone.
