@@ -287,7 +287,7 @@ describe("Library tab: installed plugins", () => {
     expect(asked).toHaveTextContent("Uninstall pdf-tools?");
     expect(asked.className).not.toMatch(/hidden/);
     expect(screen.getByRole("button", { name: "Keep" })).toHaveFocus();
-    expect(screen.getByRole("button", { name: "Uninstall" })).toHaveClass("confirm-go");
+    expect(screen.getByRole("button", { name: "Uninstall" })).toHaveClass("btn-danger-solid");
     await userEvent.click(screen.getByRole("button", { name: "Keep" }));
     expect(await row("pdf-tools")).toHaveFocus();
     expect(screen.queryByText("Uninstall pdf-tools?")).not.toBeInTheDocument();

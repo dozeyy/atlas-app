@@ -47,7 +47,7 @@ export function ConfirmDelete({ item, onCancel, onDone }: { item: SetupItem; onC
           <Button autoFocus onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="danger" className="confirm-go" onClick={() => void run()} disabled={busy}>
+          <Button variant="danger-solid" onClick={() => void run()} disabled={busy}>
             {busy ? "Deleting..." : "Delete"}
           </Button>
         </>

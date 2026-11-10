@@ -4,11 +4,13 @@ import { Info } from "@phosphor-icons/react";
 import * as Switch from "@radix-ui/react-switch";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 
-type Variant = "primary" | "secondary" | "danger";
+type Variant = "primary" | "secondary" | "danger" | "danger-solid";
 
 /**
  * Buttons: primary lifts 1px with a spring on hover and presses to .96 on the same frame
  * (CSS :active, no waiting for React). A danger button holds still: it never lifts.
+ * `danger` is outlined (it opens a confirm, or leaves without saving); `danger-solid` is filled and
+ * is only the "yes" of an in-place confirm, the one press that removes something.
  *
  * Two layers on purpose: the <button> is a fixed box that owns the click; the inner
  * `.btn-face` carries the look and every transform. Moving the button itself moves its hit

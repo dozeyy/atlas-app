@@ -409,8 +409,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
                   Keep it
                 </Button>
                 <Button
-                  variant="danger"
-                  className="confirm-go"
+                  variant="danger-solid"
                   disabled={!!busy}
                   onClick={async () => {
                     if (await uninstallPlugin(target.pluginId, target.name)) onClose();

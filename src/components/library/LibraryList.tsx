@@ -145,7 +145,7 @@ function Confirm({ words, yes, onYes, onNo, busy }: { words: string; yes: string
       <Button autoFocus onClick={onNo}>
         Keep
       </Button>
-      <Button variant="danger" className="confirm-go" disabled={busy} onClick={onYes}>
+      <Button variant="danger-solid" disabled={busy} onClick={onYes}>
         {yes}
       </Button>
     </div>
