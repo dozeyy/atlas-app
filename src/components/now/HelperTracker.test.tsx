@@ -217,11 +217,18 @@ describe("the list", () => {
     clear.mockRestore();
   });
 
-  it("marks a finished helper: the spark fills and the row says so", () => {
+  it("marks a finished helper: the path is full and the row says so", () => {
     const { container } = render(<HelperTracker chats={[chat([helper({ done: true })])]} />);
     expect(container.querySelector(".ht-trail")).toHaveAttribute("data-done");
+    expect(container.querySelector<HTMLElement>(".ht-fill")!.style.getPropertyValue("--fill")).toBe("100");
     expect(screen.getByText("Finished")).toBeInTheDocument();
     expect(screen.getByText("Done", { selector: ".ht-status" })).toBeInTheDocument();
+  });
+
+  it("draws no star at the end of a track: the spark is not a row decoration", () => {
+    const { container } = render(<HelperTracker chats={[chat([helper(), helper({ id: "h2", done: true })])]} />);
+    expect(container.querySelectorAll(".ht-trail")).toHaveLength(2);
+    expect(container.querySelector(".ht-trail svg")).toBeNull();
   });
 
   it("keeps counts only: no step text, no command", () => {

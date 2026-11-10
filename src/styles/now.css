@@ -2,12 +2,9 @@
  * The Now tab. Plain CSS on the tokens (tokens.css owns every color, radius and curve);
  * nothing here defines a value of its own except sizes that belong to this layout.
  *
- * Fit rule: one to three chats share the window's height with no page scroll. Each card is
- * a size container, so it picks its own density from the room it was given:
- *   roomy   one chat, or a tall card      every part
- *   medium  two chats                      no file chips
- *   short   three chats                    one row, the trail is dots with a verb
- *   grid    four or more chats             small fixed cards, two or more across
+ * One column, read top to bottom in the order it matters: Waiting for you, Running (with the
+ * helpers that are out), Finished recently. Every group is a list of rows of one fixed height,
+ * the same row at one chat as at thirty; nothing scrolls inside itself, the page does.
  */
 
 .now-root {
@@ -15,14 +12,13 @@
   min-height: 420px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
 }
 
-/* The three groups: Running leads and takes the room; Waiting and Finished sit in a band
-   beneath it. Each list scrolls inside itself, never the page. */
 .now-run {
-  flex: 1 1 0;
-  min-height: 0;
+  flex: none;
+  container: nowrun / inline-size;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -54,38 +50,17 @@
   color: var(--ink-2);
 }
 
-/* Room the chat cards always keep (a short one-row card). */
-.now-run {
-  --card-min: 88px;
-  --stack-min: calc(var(--n, 1) * var(--card-min) + (var(--n, 1) - 1) * 16px);
+/* The list that waits on the person: a warning sign and a warning count beside the words, a
+   warning tile and status on each row. Colour is never the only sign. */
+.now-list-head > svg {
+  flex: none;
 }
-.now-run:has(.now-grid) {
-  --stack-min: 224px;
+.now-list[data-needs-you] .now-list-head > svg {
+  color: var(--warning);
 }
-/* With helpers out the group is as tall as its cards and its rows, never a box that scrolls
-   inside itself: the page scrolls instead (the main panel), and every row is always there. */
-.now-run:has(.ht) {
-  flex: 0 0 auto;
-}
-
-.now-stack {
-  flex: 1 1 0;
-  min-height: var(--stack-min);
-  display: grid;
-  grid-template-rows: repeat(var(--n, 1), minmax(0, 1fr));
-  gap: 16px;
-}
-
-.now-grid {
-  flex: 1 1 0;
-  min-height: var(--stack-min);
-  overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
-  grid-auto-rows: 200px;
-  gap: 16px;
-  align-content: start;
-  padding-right: 4px;
+.now-list[data-needs-you] .now-count {
+  background: var(--warning-tint);
+  color: var(--warning);
 }
 
 .now-chips {
@@ -105,48 +80,19 @@
   text-overflow: ellipsis;
 }
 
-.now-band {
-  flex: 0 1 auto;
-  min-height: 0;
-  max-height: clamp(150px, calc(var(--app-h) * 0.36), 252px);
-  display: grid;
-  grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
-  /* The one row is as tall as the band lets it be, so a long list scrolls inside itself
-     instead of spilling out of the band onto the window's bottom edge. */
-  grid-template-rows: minmax(0, 1fr);
-  gap: 16px;
-}
-.now-band[data-cols="1"] {
-  --cols: 1;
-}
-.now-band[data-cols="2"] {
-  --cols: 2;
-  /* Finished titles run longer than the waiting ones, so that list gets the extra room. */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-}
-/* Nothing is running and chats are waiting: the band is the page. */
-.now-band[data-fill] {
-  flex: 1 1 0;
-  max-height: none;
-}
-
 .now-list {
+  flex: none;
   container: nowlist / inline-size;
   min-width: 0;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
 .now-rows {
-  flex: 1 1 auto;
-  min-height: 0;
-  /* The 4 px of scrollbar room sits outside the column, so the rows end where the cards above do. */
-  margin: 0 -4px 0 0;
-  padding: 0 4px 0 0;
+  margin: 0;
+  padding: 0;
   list-style: none;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -174,8 +120,13 @@
 }
 .now-row[data-state="ask"] .now-tile,
 .now-row[data-state="wait"] .now-tile {
-  background: var(--accent-tint);
-  color: var(--accent-text);
+  background: var(--warning-tint);
+  color: var(--warning);
+}
+.now-row[data-state="ask"] .now-row-doing,
+.now-row[data-state="wait"] .now-row-doing {
+  font-weight: 600;
+  color: var(--warning);
 }
 
 .now-row-main {
@@ -265,22 +216,13 @@
     min-width: 44px;
   }
 }
-/* A half-width list (a narrow window with both lists) drops the status tile, so a title such as
-   "Add dark mode to the garden map" keeps its words instead of ending in an ellipsis. */
-@container nowlist (max-width: 420px) {
-  .now-row > .now-tile {
-    display: none;
-  }
-  .now-row {
-    padding-left: 16px;
-  }
-}
 
 /* ---- Nothing running --------------------------------------------------------------- */
 
 .now-quiet {
   flex: 1 1 0;
-  min-height: 0;
+  /* It takes the room the lists leave, and keeps this much when they leave none (the page scrolls). */
+  min-height: 240px;
   isolation: isolate;
   overflow: hidden;
   display: flex;
@@ -326,102 +268,60 @@
 
 /* ---- A running chat ---------------------------------------------------------------- */
 
+/* One 72 px row: the chat and where it runs, what it is doing now, its tokens, its clock. The
+   number columns are fixed widths (room for "999k" and "1:13:26"), so the icon, the verb and the
+   figures sit at the same x on every row and the eye runs straight down the list. */
+.now-chats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .now-card {
-  container: nowcard / size;
-  padding: clamp(16px, calc(var(--app-w) * 0.02), 32px);
-  overflow: hidden;
-}
-
-/* A container cannot restyle itself, so the grid lives one level in. */
-.nc-body {
-  height: 100%;
-  min-height: 0;
+  flex: none;
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  grid-template-areas:
-    "head clock"
-    "doing numbers"
-    "trail trail";
-  gap: 16px 32px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.2fr) 64px 84px;
+  align-items: center;
+  column-gap: 20px;
+  height: 72px;
+  padding: 0 16px;
 }
-
-/* A roomy card keeps its parts together and centres the group: spare height becomes padding
-   above and below, never a gap between the title and the trail. */
-@container nowcard (min-height: 300px) {
-  .nc-body {
-    grid-template-rows: auto auto auto;
-    align-content: center;
-    align-content: safe center;
-    gap: 28px 32px;
-  }
+.now-card p {
+  margin: 0;
 }
 
 .nc-head {
-  grid-area: head;
   min-width: 0;
 }
-.nc-clock {
-  grid-area: clock;
-  text-align: right;
-}
-.nc-doing {
-  grid-area: doing;
-}
-.nc-numbers {
-  grid-area: numbers;
-}
-.nc-trail {
-  grid-area: trail;
-}
-
 .now-card .nc-title {
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: clamp(20px, 3.6cqmin, 36px);
-  line-height: 1.2;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 650;
+  color: var(--ink);
 }
-
+/* One line of chips. A chip that does not fit whole wraps to a line that is not shown, so each is
+   either all there or gone, never cut. */
 .nc-head .now-chips {
-  margin-top: 8px;
+  height: 24px;
+  margin-top: 2px;
+  overflow: hidden;
 }
-
-.nc-cap {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--ink-2);
-}
-
-.nc-clock .nc-clock-fig {
-  margin: 0;
+.nc-head .now-chips .chip {
+  flex: none;
 }
 
 /* What it is doing right now */
 .nc-doing {
-  position: relative;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 16px;
-}
-
-.nc-doing-row {
   display: flex;
   align-items: center;
-  gap: clamp(14px, 2.6cqmin, 28px);
+  gap: 12px;
   min-width: 0;
 }
-
 .nc-tile {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: clamp(48px, 15cqmin, 96px);
-  aspect-ratio: 1;
-  border-radius: var(--r-card);
   background: var(--accent-tint);
   color: var(--accent-text);
 }
@@ -430,36 +330,26 @@
   background: var(--raised);
   color: var(--ink-2);
 }
-.nc-tile > svg {
-  width: 52%;
-  height: 52%;
-}
-
 .nc-doing-text {
   min-width: 0;
   animation: nc-swap 240ms var(--ease-out);
 }
-
 .now-card .nc-verb {
-  margin: 0;
-  font-size: clamp(22px, 7cqmin, 54px);
-  line-height: 1.1;
-  font-weight: 720;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* Room for the tails of g and y, which the tight line cut off; the layout does not move. */
-  padding-bottom: 0.14em;
-  margin-bottom: -0.14em;
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 700;
+  color: var(--ink);
 }
-
 .nc-target {
-  margin: 6px 0 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-code);
-  font-size: clamp(13px, 3cqmin, 20px);
+  font-size: 12px;
+  line-height: 18px;
   color: var(--ink-2);
 }
 
@@ -491,395 +381,44 @@
   white-space: nowrap;
 }
 
-/* The one quiet sign that work is going on: a slow clay sweep, only while it works. */
-.nc-sweep {
-  position: relative;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--line);
-  overflow: hidden;
-  opacity: 0;
-  transition: opacity var(--dur-slow) var(--ease-out);
-}
-.nc-sweep.is-on {
-  opacity: 1;
-}
-.nc-sweep.is-on::after {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 28%;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  animation: nc-sweep 3.4s ease-in-out infinite;
-}
-html.reduced .nc-sweep.is-on::after {
-  width: 100%;
-  background: var(--accent-tint);
-  animation: none !important;
-}
-
-/* Spend and tokens */
-.nc-numbers {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: clamp(8px, 2.4cqmin, 28px);
+/* Tokens and the clock */
+.nc-num {
   min-width: 0;
-}
-
-.now-card .nc-spend-fig {
-  margin: 0;
-  font-size: clamp(34px, 14cqmin, 112px);
-  line-height: 1;
-  font-weight: 760;
-  letter-spacing: -0.02em;
+  text-align: right;
   white-space: nowrap;
 }
-
-
-/* Files */
-.nc-people {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-  min-width: 0;
-}
-
-.nc-files {
-  display: flex;
-  gap: 8px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.nc-file {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: 260px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  font-family: var(--font-code);
+.nc-cap {
+  margin: 4px 0 0;
   font-size: 12px;
   color: var(--ink-2);
 }
-.nc-file > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nc-file[data-edited] {
-  border-color: transparent;
-  background: var(--accent-tint);
-  color: var(--accent-text);
+.nc-num .nc-cap {
+  line-height: 16px;
 }
 
-/* The trail: the last few tool calls as waypoints on a line, newest at the right */
-.nc-trail {
-  display: flex;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  min-width: 0;
-}
-
-.nc-step {
-  position: relative;
-  flex: 1 1 0;
-  max-width: 12.5%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 26px 8px 0 0;
-}
-.nc-step::before {
-  content: "";
-  position: absolute;
-  top: 10px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--line-strong);
-}
-.nc-step:first-child::before {
-  left: 7px;
-}
-.nc-step:last-child::before {
-  right: calc(100% - 7px);
-}
-
-.nc-dot {
-  position: absolute;
-  top: 3px;
-  left: 0;
-  width: 16px;
-  height: 16px;
-  box-sizing: border-box;
-  border-radius: 50%;
-  border: 2px solid var(--accent);
-  background: var(--surface);
-}
-.nc-step[data-done] .nc-dot {
-  border-color: var(--ink-2);
-  background: var(--ink-2);
-  opacity: 0.5;
-}
-.nc-step[data-helper] .nc-dot {
-  border-color: var(--chart-2);
-}
-.nc-step[data-helper][data-done] .nc-dot {
-  background: var(--chart-2);
-}
-
-/* The newest step of a working chat is the one filled waypoint. */
-.nc-step[data-now] .nc-dot {
-  border-color: var(--accent);
-  background: var(--accent);
-  opacity: 1;
-}
-
-.nc-step-verb,
-.nc-step-target {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nc-step-verb {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.nc-step-target {
-  font-family: var(--font-code);
-  font-size: 11px;
-  color: var(--ink-2);
-}
-.nc-step-count {
-  font-weight: 500;
-  color: var(--ink-2);
-  font-variant-numeric: tabular-nums;
-}
-
-.nc-step.is-new {
-  animation: nc-step-in 320ms var(--ease-out);
-}
-.nc-step.is-new .nc-dot {
-  animation: nc-ring 700ms var(--ease-out);
-}
-
-/* ---- Density ------------------------------------------------------------------------ */
-
-/* Medium and short: the files are the first thing to go. */
-@container nowcard (max-height: 260px) {
-  .nc-files {
-    display: none;
+/* The smallest window with the sidebar open: tighter columns and smaller figures, the same row. */
+@container nowrun (max-width: 700px) {
+  .now-card {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 48px 64px;
+    column-gap: 12px;
+    padding: 0 12px;
   }
-  .nc-step-target {
-    display: none;
-  }
-  .nc-step {
-    padding-top: 24px;
-  }
-}
-
-/* Short (three chats): one row of head, doing, numbers, clock; the trail beneath. */
-@container nowcard (max-height: 235px) and (min-width: 721px) {
-  .nc-body {
-    /* The title column gets the most room: it is the one part that is text and gets cut.
-       The clock column is a fixed width (room for "1:13:26"), never as wide as its own digits:
-       a column sized by its content put the icon, the verb and the tokens at a different x on
-       every card, so nothing lined up down the list. */
-    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.2fr) minmax(88px, 0.6fr) 104px;
-    grid-template-rows: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "head doing numbers clock"
-      "trail trail trail trail";
-    gap: 12px 20px;
-  }
-  .nc-people {
-    display: none;
-  }
-  .nc-tile {
-    width: 44px;
-  }
-  .now-card .nc-verb {
-    font-size: 20px;
-  }
-  .nc-target {
-    font-size: 13px;
-  }
-  .now-card .nc-spend-fig {
-    font-size: 30px;
-  }
-  .now-card .nc-title {
-    font-size: 18px;
-  }
-  /* Head sits level with the doing block, so title and chips are not stranded at the top. */
-  .nc-head {
-    align-self: center;
-  }
-  .nc-numbers {
-    gap: 6px;
-  }
-  .nc-sweep {
-    height: 2px;
-  }
-}
-
-/* Small and short (the compact grid, a narrow window with three chats). */
-@container nowcard (max-height: 235px) and (max-width: 720px) {
-  .nc-body {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "head clock"
-      "doing numbers"
-      "trail trail";
-    gap: 10px 16px;
-  }
-  .nc-people {
-    display: none;
-  }
-  .nc-tile {
-    width: 40px;
-  }
-  .now-card .nc-verb {
-    font-size: 18px;
-  }
-  .nc-target {
-    font-size: 12px;
-    margin-top: 2px;
-  }
-  .now-card .nc-spend-fig {
-    font-size: 26px;
-  }
-  .nc-doing .nc-sweep {
-    display: none;
-  }
-  .now-card .nc-title {
-    font-size: 16px;
-  }
-  .nc-head .now-chips {
-    margin-top: 4px;
-  }
-  .nc-clock .nc-cap {
-    display: none;
-  }
-  .now-card .nc-clock-fig {
-    font-size: 20px;
-    line-height: 24px;
-  }
-  .nc-step-verb {
-    display: none;
-  }
-  .nc-step {
-    padding-top: 20px;
-  }
-}
-
-/* One line of chips, never a second one that runs into the trail. A chip that does not fit whole
-   wraps to a line that is not shown, so each is either all there or gone, never cut. */
-@container nowcard (max-height: 235px) {
-  .nc-head .now-chips {
-    height: 24px;
-    overflow: hidden;
-  }
-  .nc-head .now-chips .chip {
-    flex: none;
-  }
-}
-
-/* Very short and wide (a small window with several chats): one row, the trail is dropped. */
-@container nowcard (max-height: 150px) and (min-width: 721px) {
-  .nc-body {
-    grid-template-rows: minmax(0, 1fr);
-    grid-template-areas: "head doing numbers clock";
-    align-items: center;
-  }
-  .nc-trail,
-  .nc-doing .nc-sweep {
-    display: none;
-  }
-  .nc-head .now-chips {
-    margin-top: 6px;
-  }
-}
-
-/* Very short and narrow (a small window, or the main panel's scrollbar taking its 8 px when
-   helpers are out): the same single row, the trail dropped, the verb never cut in two. */
-@container nowcard (max-height: 150px) and (max-width: 720px) {
-  .nc-body {
-    /* Fixed number columns (room for "999k" and "1:13:26"), so the cards line up down the list. */
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) 64px 72px;
-    grid-template-rows: minmax(0, 1fr);
-    grid-template-areas: "head doing numbers clock";
-    align-items: center;
-    gap: 0 14px;
-  }
-  .nc-trail,
-  .nc-doing .nc-sweep {
-    display: none;
+  .nc-doing {
+    gap: 10px;
   }
   .nc-tile {
     width: 36px;
+    height: 36px;
   }
-  .nc-doing-row {
-    gap: 10px;
-  }
-  .now-card .nc-verb {
+  .now-card .nc-spend-fig,
+  .now-card .nc-clock-fig {
     font-size: 16px;
-  }
-  .now-card .nc-spend-fig {
-    font-size: 24px;
-  }
-  .now-card .nc-title {
-    font-size: 15px;
-  }
-  /* The folder and the model stay under the title: three chats with the same kind of name are
-     told apart by where they run. Title 18 + 4 + chips 24 fits the 50 px the card has. */
-  .nc-head .now-chips {
-    margin-top: 4px;
   }
 }
 
-/* Narrow but tall: stack the parts. */
-@container nowcard (min-height: 236px) and (max-width: 620px) {
-  .nc-body {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto auto auto minmax(0, 1fr);
-    grid-template-areas:
-      "head clock"
-      "doing doing"
-      "numbers numbers"
-      "trail trail";
-    align-content: start;
-  }
-  .nc-numbers {
-    flex-direction: row;
-    align-items: flex-end;
-    gap: 32px;
-  }
-  .now-card .nc-spend-fig {
-    font-size: 40px;
-  }
-}
 
 /* ---- Motion ------------------------------------------------------------------------- */
 
-@keyframes nc-sweep {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(360%);
-  }
-}
 @keyframes nc-swap {
   from {
     opacity: 0;
@@ -900,31 +439,15 @@ html.reduced .nc-sweep.is-on::after {
     transform: none;
   }
 }
-@keyframes nc-step-in {
-  from {
-    opacity: 0;
-    transform: translateX(18px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes nc-ring {
-  from {
-    box-shadow: 0 0 0 0 var(--accent);
-  }
-  to {
-    box-shadow: 0 0 0 12px transparent;
-  }
-}
-/* Helpers at work: one 56 px row per helper under the chat cards. Every row shows: the list grows
+/* Helpers at work: one 56 px row per helper under the chat rows. Every row shows: the list grows
    and the page scrolls. The fill and the phase word are the only things that move, and each
-   moves at most once per second (HelperTracker.tsx); the spark is the only mark of completion. */
+   moves at most once per second (HelperTracker.tsx). */
 .ht {
   flex: none;
   container: ht / inline-size;
   min-width: 0;
+  /* With the group's own 8 px gap: the same 24 px that parts every other list on the page. */
+  margin-top: 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1024,7 +547,7 @@ html.reduced .nc-sweep.is-on::after {
   color: var(--ink-2);
 }
 
-/* The trail: a dotted path, the clay fill up to the progress point, the spark at the goal. */
+/* The trail: a dotted path and the clay fill up to the progress point. No mark at the far end. */
 .ht-trail {
   position: relative;
   height: 16px;
@@ -1033,7 +556,7 @@ html.reduced .nc-sweep.is-on::after {
 .ht-path {
   position: absolute;
   left: 0;
-  right: 16px;
+  right: 0;
   top: 50%;
   border-top: 2px dotted var(--line-strong);
   transform: translateY(-50%);
@@ -1043,7 +566,7 @@ html.reduced .nc-sweep.is-on::after {
   left: 0;
   top: 50%;
   height: 3px;
-  width: calc((100% - 16px) * var(--fill, 0) / 100);
+  width: calc(100% * var(--fill, 0) / 100);
   border-radius: var(--r-pill);
   background: var(--accent);
   transform: translateY(-50%);
@@ -1051,24 +574,6 @@ html.reduced .nc-sweep.is-on::after {
 /* Only a move the page chose to animate gets a transition; every other update just sets the width. */
 .ht-fill[data-anim] {
   transition: width 260ms var(--ease-out);
-}
-.ht-spark {
-  position: absolute;
-  right: 0;
-  top: 0;
-  overflow: visible;
-}
-.ht-spark path {
-  fill: none;
-  stroke: var(--ink-2);
-  stroke-width: 1.5px;
-  vector-effect: non-scaling-stroke;
-  stroke-linejoin: round;
-}
-.ht-trail[data-done] .ht-spark path {
-  fill: var(--accent);
-  stroke: var(--accent);
-  transition: fill var(--dur-slow) var(--ease-out);
 }
 
 .ht-prog {
@@ -1110,14 +615,14 @@ html.reduced .nc-sweep.is-on::after {
   color: var(--ink);
 }
 
-/* Reduced motion: the fill and the spark just set, the phase word just changes. */
+/* Reduced motion: the fill just sets, the phase word and the doing line just change. */
 html.reduced .ht-fill,
 html.reduced .ht-fill[data-anim],
-html.reduced .ht-trail[data-done] .ht-spark path,
 html.reduced .ht-row {
   transition: none !important;
 }
-html.reduced .ht-status {
+html.reduced .ht-status,
+html.reduced .nc-doing-text {
   animation: none !important;
 }
 
@@ -1150,9 +655,3 @@ html.reduced .ht-status {
   }
 }
 
-/* Reduced motion: nothing slides, rings or sweeps. */
-html.reduced .nc-step.is-new,
-html.reduced .nc-step.is-new .nc-dot,
-html.reduced .nc-doing-text {
-  animation: none !important;
-}

@@ -99,7 +99,7 @@ beforeEach(() => {
 afterEach(() => setBackend(null));
 
 describe("Now", () => {
-  it("shows what the chat is doing, its tokens and its recent steps", async () => {
+  it("shows what the chat is doing, its tokens and its clock on one row", async () => {
     mount(snap({ chats: [chat()] }));
     expect(await screen.findByText("Editing", { selector: ".nc-verb" })).toBeInTheDocument();
     // The path is drawn as folders + file name (two spans), so read the line's whole text.
@@ -109,13 +109,14 @@ describe("Now", () => {
     // Tokens, not dollars: money only lives in the hover, called an estimate.
     expect(screen.queryByText(/\$/)).toBeNull();
     expect(screen.getByTitle(/An estimate, not a bill/)).toBeInTheDocument();
-    const trail = screen.getByRole("list", { name: "Recent steps" });
-    expect(within(trail).getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByText(/^1:0\d$/, { selector: ".nc-clock-fig" })).toBeInTheDocument();
+    // No row of unlabelled dots: the steps are not drawn at all.
+    expect(screen.queryByRole("list", { name: "Recent steps" })).toBeNull();
   });
 
-  it("adds a step to the trail when the engine pushes one", async () => {
+  it("follows the chat when the engine pushes what it does next", async () => {
     const backend = mount(snap({ chats: [chat()] }));
-    await screen.findByRole("list", { name: "Recent steps" });
+    await screen.findByText("Editing", { selector: ".nc-verb" });
     act(() => {
       backend.now.push(
         snap({
@@ -129,7 +130,7 @@ describe("Now", () => {
       );
     });
     expect(await screen.findByText("Running", { selector: ".nc-verb" })).toBeInTheDocument();
-    expect(within(screen.getByRole("list", { name: "Recent steps" })).getAllByRole("listitem")).toHaveLength(3);
+    expect(document.querySelector(".nc-target")).toHaveTextContent(/^cargo$/);
   });
 
   it("lists a helper that is out under the chat, not inside its card", async () => {
@@ -139,7 +140,7 @@ describe("Now", () => {
     expect(within(list).getByText("Find the callers")).toBeInTheDocument();
     expect(within(list).getByText("115", { selector: ".ht-tokens" })).toBeInTheDocument();
     expect(within(list).getByText("No past runs to compare")).toBeInTheDocument();
-    // The card keeps its chip and its files; the helper's row is not in it any more.
+    // The chat's row keeps its chip; the helper's row is not in it.
     const card = screen.getByRole("article", { name: "Fix the build" });
     expect(within(card).getByText("1 helper")).toBeInTheDocument();
     expect(card.querySelector(".ht-row")).toBeNull();
@@ -181,7 +182,13 @@ describe("Now", () => {
     // Same model chip as the running and finished cards.
     expect(within(waitRow).getByText("Opus 5.5 · high")).toHaveClass("chip");
 
+    // What waits for you leads the page, with a sign and words beside the colour.
+    expect(wait.compareDocumentPosition(running) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(wait.querySelector("h2 svg")).not.toBeNull();
+    expect(waitRow.querySelector(".now-tile svg")).not.toBeNull();
+
     const fin = screen.getByRole("region", { name: "Finished recently" });
+    expect(running.compareDocumentPosition(fin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const rows = within(fin).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]!).getByText("9.9k")).toBeInTheDocument();
@@ -193,11 +200,14 @@ describe("Now", () => {
     expect(within(rows[1]!).getByText("2 h")).toBeInTheDocument();
   });
 
-  it("keeps the files being edited with the doing block, not alone at the far edge", async () => {
-    mount(snap({ chats: [chat({ files: [{ path: "src/totals.ts", edited: true }] })] }));
+  it("names the files a chat has touched in the hover on what it is doing, not as chips on the row", async () => {
+    const files = ["src/totals.ts", "src/App.tsx", "a.ts", "b.ts", "c.ts"].map((path) => ({ path, edited: true }));
+    mount(snap({ chats: [chat({ files })] }));
     const card = await screen.findByRole("article", { name: "Fix the build" });
     const doing = within(card).getByRole("region", { name: "Doing now" });
-    expect(within(doing).getByText("src/totals.ts")).toBeInTheDocument();
+    // The file it is on is the line itself; the hover adds the others, three at most.
+    expect(doing).toHaveAttribute("title", "Editing src/App.tsx\nFiles so far: src/totals.ts, a.ts, b.ts and 1 more");
+    expect(within(doing).queryByText("src/totals.ts")).toBeNull();
   });
 
   it("with only waiting chats, the waiting list is the page", async () => {
@@ -224,7 +234,7 @@ describe("Now", () => {
 
   it("never says Live", async () => {
     mount(snap({ chats: [chat(), waiting()], recent: [done()] }));
-    await screen.findByRole("list", { name: "Recent steps" });
+    await screen.findByRole("region", { name: "Running" });
     expect(document.body.textContent).not.toMatch(/\blive\b/i);
   });
 
@@ -233,12 +243,16 @@ describe("Now", () => {
     expect(await screen.findByRole("heading", { level: 2, name: "No Claude folder found" })).toBeInTheDocument();
   });
 
-  it("shows compact cards for more than three running chats", async () => {
-    const many = ["a", "b", "c", "d"].map((id) => chat({ sessionId: id, title: `Chat ${id}` }));
-    mount(snap({ chats: many }));
-    await screen.findByRole("heading", { level: 3, name: "Chat d" });
-    expect(document.querySelector(".now-grid")).not.toBeNull();
-    expect(document.querySelector(".now-stack")).toBeNull();
+  it("draws the same row for one running chat as for thirty", async () => {
+    const shape = (el: Element) => [...el.children].map((c) => c.className).join(" | ");
+    const backend = mount(snap({ chats: [chat()] }));
+    const one = await screen.findByRole("article", { name: "Fix the build" });
+    const first = [one.className, shape(one)];
+    act(() => backend.now.push(snap({ chats: Array.from({ length: 30 }, (_, i) => chat({ sessionId: `s${i}`, title: `Chat ${i}` })) })));
+    await screen.findByRole("heading", { level: 3, name: "Chat 29" });
+    const rows = within(screen.getByRole("region", { name: "Running" })).getAllByRole("article");
+    expect(rows).toHaveLength(30);
+    for (const row of rows) expect([row.className, shape(row)]).toEqual(first);
   });
 
   it("toasts when a chat finishes, and says when it asks a question", async () => {
