@@ -330,6 +330,11 @@ describe("Helpers (subagents) inside a session", () => {
     const breakdown = screen.getByRole("region", { name: "Token breakdown" });
     expect(within(breakdown).getByText("Reused").closest("th")).toHaveAttribute("title", expect.stringMatching(/^Cache reads/));
     expect(within(breakdown).getByText(a.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
+    // Its file is named by whose it is; the path is the hover and the copy button, never the surface.
+    const file = screen.getByRole("region", { name: "File" });
+    expect(file).not.toHaveTextContent(full.file!.path);
+    expect(within(file).getByText("This helper's saved chat")).toHaveAttribute("title", full.file!.path);
+    expect(within(file).getByRole("button", { name: "Copy the file path of This helper's saved chat" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^Back to / }));
     // Back lands on the same tab and view it left.
     expect(await screen.findByRole("radio", { name: "Started" })).toBeInTheDocument();

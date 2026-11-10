@@ -1,6 +1,8 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 import type { HTMLAttributes, ReactNode } from "react";
-import { Card } from "../controls";
+import { Copy } from "@phosphor-icons/react";
+import { Card, IconButton } from "../controls";
+import { pushToast } from "../../state/toastStore";
 import { CostText } from "./CostText";
 import { KIND_WORDS } from "../../lib/receiptView";
 import { compact, effortMix, exact, headline, mergeModelRows, plural } from "../../lib/usage";
@@ -184,3 +186,31 @@ export function ModelSplit({ rows }: { rows: { model: string; tokens: Tokens; co
 }
 
 export const toolCallsText = (n: number): string => plural(n, "tool call");
+
+/** Puts a saved chat file's path on the clipboard and says so. */
+async function copyPath(path: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(path);
+    pushToast({ message: "Path copied", tone: "success" });
+  } catch {
+    pushToast({ message: "Could not reach the clipboard.", tone: "error" });
+  }
+}
+
+/**
+ * One saved chat file, named by whose it is. The path is never on the surface: it is the row's
+ * hover and one press away on the clipboard.
+ */
+export function FileRow({ who, path, missing = false, as: Tag = "li" }: { who: string; path: string; missing?: boolean; as?: "li" | "div" }) {
+  return (
+    <Tag className="flex items-center gap-3 py-1 pl-4 pr-2">
+      <span className="min-w-0 flex-1 truncate text-body text-ink" title={path}>
+        {who}
+      </span>
+      {missing && <span className="shrink-0 text-caption text-warning">removed from disk</span>}
+      <IconButton aria-label={`Copy the file path of ${who}`} title={`Copy path\n${path}`} onClick={() => void copyPath(path)}>
+        <Copy size={14} aria-hidden="true" />
+      </IconButton>
+    </Tag>
+  );
+}

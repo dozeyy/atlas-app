@@ -4,7 +4,7 @@ import { ArrowBendDownRight, ArrowLeft, ChatTeardropText, Clock, Hash, Wrench } 
 import { Button, Card } from "../components/controls";
 import { Bars } from "../components/charts/Bars";
 import { IconMotion } from "../components/IconMotion";
-import { Breakdown, ClampText, ModelSplit } from "../components/usage/detailParts";
+import { Breakdown, ClampText, FileRow, ModelSplit } from "../components/usage/detailParts";
 import { AgentAvatar, helperName, ModelChip, OutcomeMark, shownName, TokenFigure, type AvatarLevel } from "../components/usage/helperKit";
 import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
 import { timelineBars } from "../components/usage/timelineBars";
@@ -98,7 +98,9 @@ export function AgentDetailView({
   ];
 
   return (
-    <div className="@container">
+    // The page is taller than the fixed-height pane it sits in, so it carries its own bottom gutter:
+    // the last card never ends flush with the window's edge.
+    <div className="@container pb-[var(--gutter-y)]">
       {back}
       <div className="flex items-center gap-4">
         <AgentAvatar type={agent.agentType} size={48} level={d.data.parentName ? "nested" : level} />
@@ -203,9 +205,9 @@ export function AgentDetailView({
       {file && (
         <section aria-label="File" className="mt-8">
           <SectionTitle>File</SectionTitle>
-          <Card className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5">
-            <code className="selectable min-w-0 flex-1 break-all text-ink">{file.path}</code>
-            {file.missing && <span className="rounded-full border border-line px-2 text-caption text-ink-2">removed from disk</span>}
+          {/* Whose file it is, never its path: the path is the hover and one press away on the clipboard. */}
+          <Card className="px-1">
+            <FileRow as="div" who="This helper's saved chat" path={file.path} missing={file.missing} />
           </Card>
         </section>
       )}

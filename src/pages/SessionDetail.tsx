@@ -20,7 +20,7 @@ import { Button, Card, IconButton, SegmentedControl } from "../components/contro
 import { Bars } from "../components/charts/Bars";
 import { IconMotion } from "../components/IconMotion";
 import { TokenText } from "../components/usage/TokenText";
-import { Breakdown, ClampList, ClampText, ModelSplit, Stat } from "../components/usage/detailParts";
+import { Breakdown, ClampList, ClampText, FileRow, ModelSplit, Stat } from "../components/usage/detailParts";
 import { HelperMap } from "../components/usage/HelperMap";
 import { HelperSlice } from "../components/usage/HelperSlice";
 import { AgentAvatar, ModelDots, OutcomeMark, sessionName, shownName, TokenFigure } from "../components/usage/helperKit";
@@ -34,7 +34,6 @@ import { clearPendingAgent, peekPendingAgent } from "../lib/nav";
 import { copyResume, openFolder } from "../lib/sessionActions";
 import { resumeCommand } from "../lib/sessionBrowse";
 import { useAtlas } from "../state/AtlasProvider";
-import { pushToast } from "../state/toastStore";
 import { KIND_WORDS } from "../lib/receiptView";
 import { useKeyHints } from "../lib/keyHints";
 import { helperTree, type HelperNode } from "../lib/helperTree";
@@ -56,15 +55,6 @@ function isTyping(el: Element | null): boolean {
   return el.isContentEditable || el.matches("input, textarea, select, [contenteditable='true'], [role='textbox']");
 }
 
-/** Puts a saved chat file's path on the clipboard and says so. */
-async function copyPath(path: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(path);
-    pushToast({ message: "Path copied", tone: "success" });
-  } catch {
-    pushToast({ message: "Could not reach the clipboard.", tone: "error" });
-  }
-}
 
 /** One helper as a card: who it was, what it spent, how much of the session that is. */
 function HelperCard({
@@ -448,17 +438,7 @@ function DetailsTab({
               {files.map((f) => {
                 const helper = f.isSubagent ? agents.find((a) => f.path.includes(`agent-${a.agentId}`)) : undefined;
                 const who = f.isSubagent ? (helper ? shownName(helper) : "A helper") : "Main chat";
-                return (
-                  <li key={f.path} className="flex items-center gap-3 py-1 pl-4 pr-2">
-                    <span className="min-w-0 flex-1 truncate text-body text-ink" title={f.path}>
-                      {who}
-                    </span>
-                    {f.missing && <span className="shrink-0 text-caption text-warning">removed from disk</span>}
-                    <IconButton aria-label={`Copy the file path of ${who}`} title={`Copy path\n${f.path}`} onClick={() => void copyPath(f.path)}>
-                      <Copy size={14} aria-hidden="true" />
-                    </IconButton>
-                  </li>
-                );
+                return <FileRow key={f.path} who={who} path={f.path} missing={f.missing} />;
               })}
             </ul>
           </Card>
