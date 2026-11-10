@@ -16,11 +16,11 @@ import { clearPendingProject, clearPendingSession, onNavRequest, peekPendingProj
 import { useChatSearch, useDebounced } from "../lib/useChatSearch";
 import type { ChatSearch } from "../lib/useChatSearch";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
+import { PAGE, useSessionPages } from "../lib/useSessionPages";
 import { groupByDay, shareOfMax } from "../lib/sessionBrowse";
 import { addDays, compact, exact, localDay, modelChoices, plural } from "../lib/usage";
-import type { SessionPage, SessionQuery, SessionRow } from "../lib/types";
+import type { SessionQuery, SessionRow } from "../lib/types";
 
-const PAGE = 50;
 /** Empty, no-match and error take the room the list would: the state never floats over a blank page. */
 const STATE_HEIGHT = "min-h-[max(320px,calc(var(--app-h)-14.5rem))]";
 /** Titles and projects are filtered this soon after the last keystroke. Message text waits a little longer (useChatSearch). */
@@ -35,11 +35,14 @@ const SORTS = {
 type SortKey = keyof typeof SORTS;
 const SORT_CHOICES = (Object.keys(SORTS) as SortKey[]).map((value) => ({ value, label: SORTS[value].label }));
 /**
- * What each loaded page was asked for: its order, and whether it answers a search. While a new
- * answer is on its way the old page stays on screen, and it has to be laid out as what it is: day
- * bands over a page sorted by tokens repeat the same day, and rows get left behind.
+ * What the loaded pages were asked for: their order, and whether they answer a search. While a new
+ * answer is on its way the old pages stay on screen, and they have to be laid out as what they
+ * are: day bands over a page sorted by tokens repeat the same day, and rows get left behind.
  */
-const pageShape = new WeakMap<SessionPage, { sort: SortKey; search: boolean }>();
+interface PageShape {
+  sort: SortKey;
+  search: boolean;
+}
 
 /** Joins the ids behind one model choice in the filter's value; no model id holds a line break. */
 const MODEL_SEP = "\n";
@@ -127,47 +130,22 @@ export function Sessions() {
     };
   }, [titleQ, chat.ids, project, model, span, sortKey]);
 
-  const first = useFetched(
-    () =>
-      backend.sessionsList(query).then((p) => {
-        pageShape.set(p, { sort: sortKey, search: Boolean(query.text) || (query.alsoIds?.length ?? 0) > 0 });
-        return p;
-      }),
-    [JSON.stringify(query), info.config?.projectsDir ?? null],
+  // Every page on screen comes from one loader: a refresh (a chat changed on disk, an indexing
+  // pass ended) reads the same number of pages again, so "Show more" is never undone by it.
+  const shape = useMemo<PageShape>(
+    () => ({ sort: sortKey, search: Boolean(query.text) || (query.alsoIds?.length ?? 0) > 0 }),
+    [sortKey, query.text, query.alsoIds],
   );
+  const first = useSessionPages(query, JSON.stringify(query), shape, [info.config?.projectsDir ?? null]);
   useLiveReload(first.reload);
+  const { busy, moreError, loadMore } = first;
+  const cursor = first.data?.cursor ?? null;
 
   // Every chat there is: the "of N" in the count when the list is narrowed.
   const everything = useFetched(() => backend.sessionsList({ includeMissing: true, limit: 1 }), [info.config?.projectsDir ?? null]);
   useLiveReload(everything.reload);
 
-  // Pages after the first are kept here, tied to the first page they follow: a new query
-  // or a refresh produces a new first page, which drops them without an effect and so
-  // without a render where the count and the "Show more" button disagree.
-  const [tail, setTail] = useState<{ base: SessionPage | null; rows: SessionRow[]; cursor: string | null; error: string | null }>({
-    base: null,
-    rows: [],
-    cursor: null,
-    error: null,
-  });
-  const [busy, setBusy] = useState(false);
-  const live = tail.base !== null && tail.base === first.data;
-  const more = live ? tail.rows : [];
-  const cursor = live ? tail.cursor : (first.data?.nextCursor ?? null);
-  const moreError = live ? tail.error : null;
-
-  const loadMore = () => {
-    const base = first.data;
-    if (!cursor || !base) return;
-    setBusy(true);
-    backend
-      .sessionsList({ ...query, cursor })
-      .then((p) => setTail({ base, rows: [...more, ...p.rows], cursor: p.nextCursor, error: null }))
-      .catch((e) => setTail({ base, rows: more, cursor, error: e instanceof Error ? e.message : String(e) }))
-      .finally(() => setBusy(false));
-  };
-
-  const rows = [...(first.data?.rows ?? []), ...more];
+  const rows = first.data?.rows ?? [];
   const total = first.data?.total ?? 0;
   const filtered = Boolean(typed || project || model || span !== "all");
   // The answer for what is typed is still on its way: an empty list now is not yet "no match".
@@ -187,13 +165,13 @@ export function Sessions() {
   const note = typed.length >= 2 ? searchNote(chat) : null;
 
   // The newest chat gets a card of its own, but only on the plain newest-first list.
-  const shape = first.data ? pageShape.get(first.data) : undefined;
-  const shownSort = shape?.sort ?? sortKey;
+  const shownShape = first.data?.tag;
+  const shownSort = shownShape?.sort ?? sortKey;
   const pick = !filtered && shownSort === "newest" && first.data && rows.length > 0 ? rows[0] : null;
   // Time-ordered lists fall under a band per day; the other orders stay one flat list. So do search
   // results: matches are scattered over the weeks, mostly one a day, and a band per match would
   // repeat that row's own numbers and halve how many matches fit on screen.
-  const byTime = SORTS[shownSort].sort === "started" && !(shape?.search ?? Boolean(typed));
+  const byTime = SORTS[shownSort].sort === "started" && !(shownShape?.search ?? Boolean(typed));
   const groups = byTime ? groupByDay(rows, new Date()) : [];
   const maxRow = Math.max(0, ...rows.map((r) => r.tokens.total));
   const maxDay = Math.max(0, ...groups.filter((_, gi) => !(gi === groups.length - 1 && cursor !== null)).map((g) => g.tokens));

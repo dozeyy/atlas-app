@@ -203,6 +203,59 @@ describe("Sessions: search inside chats", () => {
   });
 });
 
+describe("Sessions: Show more", () => {
+  const rows = () => document.querySelectorAll(".session-grid > li").length;
+  const showMore = () => screen.getByRole("button", { name: "Show more" });
+
+  it("keeps every loaded page when the engine says a chat changed, and when a pass ends", async () => {
+    const backend = mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    expect(rows()).toBe(50);
+    await userEvent.click(showMore());
+    await waitFor(() => expect(rows()).toBe(100));
+    await userEvent.click(showMore());
+    await waitFor(() => expect(rows()).toBe(150));
+    expect(screen.getByText(/^Showing 150 of [\d,]+$/)).toBeInTheDocument();
+    // A running Claude Code writes its transcript every reply: the engine then says so.
+    backend.usage.emitChanged();
+    await new Promise((r) => setTimeout(r, 600));
+    expect(rows()).toBe(150);
+    // An indexing pass ending is the other refresh.
+    backend.usage.setScenario("data");
+    await new Promise((r) => setTimeout(r, 600));
+    expect(rows()).toBe(150);
+    expect(screen.getByText(/^Showing 150 of [\d,]+$/)).toBeInTheDocument();
+    // The next click still goes on from there.
+    await userEvent.click(showMore());
+    await waitFor(() => expect(rows()).toBe(200));
+  });
+
+  it("keeps the loaded pages while a chat is open and after coming back from it", async () => {
+    const backend = mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    await userEvent.click(showMore());
+    await waitFor(() => expect(rows()).toBe(100));
+    await userEvent.click(screen.getAllByRole("button", { name: /tokens/ })[60]);
+    await screen.findByRole("region", { name: "Who used it" });
+    backend.usage.emitChanged();
+    await new Promise((r) => setTimeout(r, 600));
+    await userEvent.click(screen.getByRole("button", { name: /^(All sessions|Back to )/ }));
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    expect(rows()).toBe(100);
+  });
+
+  it("starts over at one page when the query changes", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    await userEvent.click(showMore());
+    await waitFor(() => expect(rows()).toBe(100));
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Newest first" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Most tokens" }));
+    await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBe(0));
+    await waitFor(() => expect(rows()).toBe(50));
+  });
+});
+
 describe("Sessions: the first view", () => {
   it("opens with the newest chat as a card and the list under day bands", async () => {
     mount();
