@@ -153,7 +153,11 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
   return (
     <SideSheet
       title="Make this a rule"
-      subtitle={<span className="selectable">{theme.label}</span>}
+      subtitle={
+        <span title={theme.label} className="selectable line-clamp-2">
+          {theme.label}
+        </span>
+      }
       onClose={onClose}
       width={600}
       footer={
@@ -198,9 +202,14 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
                       }}
                       className="mt-1 accent-[var(--accent-solid)]"
                     />
-                    <span className="min-w-0">
-                      <span className="block break-words text-body font-medium text-ink">{t.title}</span>
-                      <span className="selectable block break-all text-caption text-ink-2">{t.path}</span>
+                    {/* One line each: a long folder or file name is cut with "...", whole on hover. */}
+                    <span className="min-w-0 flex-1">
+                      <span title={t.title} className="block truncate text-body font-medium text-ink">
+                        {t.title}
+                      </span>
+                      <span title={t.path} className="selectable block truncate text-caption text-ink-2">
+                        {t.path}
+                      </span>
                       {t.blocked && <span className="block text-caption text-warning">{t.blocked}</span>}
                       {!t.exists && !t.blocked && <span className="block text-caption text-ink-2">{t.kind === "file" ? "A new file" : "This file is created"}</span>}
                     </span>
