@@ -29,6 +29,7 @@ export function Bars({
   formatTick,
   height: fixedHeight,
   highlight,
+  anchor = "start",
   calm = false,
 }: {
   /** Intro id: the entrance animation plays once per id per launch. */
@@ -39,6 +40,8 @@ export function Bars({
   height?: number;
   /** Which bar wears the accent (default: the last, "now"). -1 for none. */
   highlight?: number;
+  /** Which end the x labels count from. "end" keeps a label under the newest bar. */
+  anchor?: "start" | "end";
   /** A calm zone (a sheet): no entrance animation and no summit spark. */
   calm?: boolean;
 }) {
@@ -67,6 +70,10 @@ export function Bars({
 
   const labelEvery = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 64))));
   const cx = (i: number) => LEFT + i * slot + slot / 2;
+  const labelled = (i: number) => (anchor === "end" ? n - 1 - i : i) % labelEvery === 0;
+  // Counting from the end, the newest bar's label ends at the plot's right edge (the first one
+  // starts at its left edge), so neither hangs outside the chart.
+  const endLabel = (i: number) => anchor === "end" && i === n - 1 && i > 0;
 
   const tip: TipAt | null =
     active !== null && data[active]
@@ -136,12 +143,12 @@ export function Bars({
                 height={base - TOP + 18}
                 onPointerEnter={() => setActive(i)}
               />
-              {i % labelEvery === 0 && (
+              {labelled(i) && (
                 <text
-                  className="axis-label"
-                  x={i === 0 ? LEFT : cx(i)}
+                  className={endLabel(i) && i === hot ? "today-label" : "axis-label"}
+                  x={i === 0 ? LEFT : endLabel(i) ? width - RIGHT : cx(i)}
                   y={height - 4}
-                  textAnchor={i === 0 ? "start" : "middle"}
+                  textAnchor={i === 0 ? "start" : endLabel(i) ? "end" : "middle"}
                 >
                   {d.axis}
                 </text>
