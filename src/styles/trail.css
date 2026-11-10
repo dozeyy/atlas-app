@@ -1357,6 +1357,14 @@ html[data-platform="macos"] .app-shell .titlebar-settings {
 html[data-platform="macos"] .app-shell .titlebar-gift {
   left: calc(var(--sidebar-w) - var(--shell-inset) - 32px);
 }
+/* Folded, that second row moves into the rail (inset + 32 + gap + 32 + inset is the rail's width),
+   so it never sits over the page; the menu and toggle stay after the traffic lights. */
+html[data-platform="macos"] .app-shell[data-side="collapsed"] .titlebar-settings {
+  left: var(--shell-inset);
+}
+html[data-platform="macos"] .app-shell[data-side="collapsed"] .titlebar-gift {
+  left: calc(var(--shell-inset) + 32px + var(--shell-gap));
+}
 html[data-platform="macos"] .app-shell .side-main {
   margin-top: calc(32px + var(--shell-gap));
 }
