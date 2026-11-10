@@ -2273,19 +2273,25 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
     gap: 24px;
   }
 }
+/* A row in the slice (.rcpt-item) reaches 8 px past the text on both sides, for its hover and its
+   focus ring. The slice scrolls, so it clips: it is 8 px wider than its column on each open side
+   and pads the same 8 px back, or the ring of "Where it went" lost its right edge. The line above
+   it is drawn inside that padding, as wide as the text. */
 .slice {
   min-height: 0;
   max-height: 14rem;
   overflow-x: hidden;
   overflow-y: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  margin: 0 -8px;
+  padding: 12px 8px 0;
+  background: linear-gradient(var(--line), var(--line)) 8px 0 / calc(100% - 16px) 1px no-repeat;
 }
 @container (min-width: 36rem) {
   .slice {
     max-height: none;
-    padding: 0 0 0 20px;
-    border-top: 0;
+    margin: 0 -8px 0 0;
+    padding: 0 8px 0 20px;
+    background: none;
     border-left: 1px solid var(--line);
   }
 }
