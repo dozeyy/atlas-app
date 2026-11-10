@@ -8,6 +8,7 @@ import { MockBackend } from "../lib/mock";
 import { mockSetupSnapshot } from "../lib/setup-mock";
 import { reloadSetup, resetSetupStore } from "../state/setupStore";
 import { CHECKLIST_FOLDED_KEY } from "../components/setup/Checklist";
+import { FILE_DETAILS_KEY } from "../components/setup/DetailSheet";
 import { CELEBRATE_MS, CHECKLIST_DONE_KEY } from "../components/setup/TopSlot";
 import { resetToasts } from "../state/toastStore";
 import { resetUnsaved } from "../state/unsavedStore";
@@ -291,7 +292,19 @@ describe("Setup page: detail", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByRole("heading", { level: 2, name: "commit-helper" })).toBeInTheDocument();
     expect(within(dialog).getByText("references/style.md")).toBeInTheDocument();
+    // The sheet opens on the text as it reads; the path and the raw text wait behind one row.
+    expect(await within(dialog).findByText("Preview")).toBeInTheDocument();
+    expect(within(dialog).queryByTestId("source")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Changed")).not.toBeInTheDocument();
+    const more = within(dialog).getByRole("button", { name: "File details" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
     expect(await within(dialog).findByTestId("source")).toBeInTheDocument();
+    expect(within(dialog).getByText("Raw text")).toBeInTheDocument();
+    expect(within(dialog).getByText("Changed")).toBeInTheDocument();
+    expect(localStorage.getItem(FILE_DETAILS_KEY)).toBe("1");
+    localStorage.removeItem(FILE_DETAILS_KEY);
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(card).toHaveFocus();
@@ -312,9 +325,13 @@ describe("Setup page: detail", () => {
     await openTile("Agents");
     await userEvent.click(await screen.findByRole("button", { name: /agent code-reviewer/ }));
     const dialog = await screen.findByRole("dialog");
+    // The text as it reads comes first; the header's settings are one row away.
+    expect(await within(dialog).findByText("Preview")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Model")).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "File details" }));
     expect(await within(dialog).findByText("Model")).toBeInTheDocument();
     expect(within(dialog).getByText("Tools")).toBeInTheDocument();
-    expect(within(dialog).getByText("Preview")).toBeInTheDocument();
+    localStorage.removeItem(FILE_DETAILS_KEY);
     expect(within(dialog).getByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
 

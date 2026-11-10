@@ -1,7 +1,7 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowSquareOut, Check, Copy, CopySimple, Eye, EyeSlash, FolderOpen, Lock, PencilSimple, Trash, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowSquareOut, CaretDown, CaretRight, Check, Copy, CopySimple, Eye, EyeSlash, FolderOpen, Lock, PencilSimple, Trash, WarningCircle, X } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { Dialog } from "../Dialog";
 import { DuplicateDialog } from "./DuplicateDialog";
@@ -52,7 +52,9 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Facts({ rows }: { rows: { label: string; value: ReactNode; copy?: string }[] }) {
+type FactRow = { label: string; value: ReactNode; copy?: string };
+
+function Facts({ rows }: { rows: FactRow[] }) {
   return (
     <dl className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2.5">
       {rows.map((r) => (
@@ -156,9 +158,7 @@ function HiddenValues({ itemId, ranges }: { itemId: string; ranges: MaskedRange[
 
   return (
     <Section title="Hidden values">
-      <p className="mb-3 text-body text-ink-2">
-        These are kept out of sight. Show one to read it for ten seconds; Atlas never saves or logs it.
-      </p>
+      <p className="mb-3 text-body text-ink-2">Show one to read it for ten seconds. Atlas never saves or logs it.</p>
       <ul className="overflow-hidden rounded-card border border-line">
         {ranges.map((r) => {
           const open = shown?.index === r.index;
@@ -237,34 +237,108 @@ const FIELD_LABEL: Record<string, string> = {
   color: "Color",
 };
 
-/** The header fields (model and tools for agents) and the text as it reads. */
-function MarkdownSections({ text }: { text: string }) {
-  const parsed = useMemo(() => splitFrontmatter(text), [text]);
-  const body = parsed.body;
-  // The name is the sheet's title and the description its lead line: never a third time here.
-  const fields = useMemo(() => parsed.fields.filter((f) => f.key !== "name" && f.key !== "description"), [parsed]);
+/** Remembers whether "File details" is open, so someone who always wants the path keeps it. */
+export const FILE_DETAILS_KEY = "atlas.setup.fileDetailsOpen";
+
+function storedFileDetails(): boolean {
+  try {
+    return localStorage.getItem(FILE_DETAILS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Where the file is, the settings in its header and its raw text: the long, exact things, kept
+ * behind one row so the sheet opens on what the item is and what it says. Closed until asked for.
+ * No motion: the sheet is a calm zone.
+ */
+function FileDetails({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(storedFileDetails);
+  const id = useId();
+  const Caret = open ? CaretDown : CaretRight;
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    try {
+      localStorage.setItem(FILE_DETAILS_KEY, next ? "1" : "0");
+    } catch {
+      // Private mode or a full disk: the row still opens, it just is not remembered.
+    }
+  };
   return (
-    <>
-      {fields.length > 0 && (
-        <Section title="Settings in the file's header">
-          <dl className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2">
-            {fields.map((f) => (
-              <div key={f.key} className="contents">
-                <dt className="text-body text-ink-2">{FIELD_LABEL[f.key] ?? f.key}</dt>
-                <dd className="selectable min-w-0 break-words text-body text-ink">{f.value || "-"}</dd>
-              </div>
-            ))}
-          </dl>
-        </Section>
+    <section className="border-t border-line">
+      <h3>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={open ? id : undefined}
+          onClick={toggle}
+          className="flex w-full cursor-pointer items-center gap-2 px-6 py-4 text-left text-body font-semibold text-ink hover:bg-raised"
+        >
+          <Caret size={14} aria-hidden="true" className="shrink-0 text-ink-2" />
+          File details
+        </button>
+      </h3>
+      {open && (
+        <div id={id} className="space-y-5 px-6 pb-4">
+          {children}
+        </div>
       )}
-      <Section title="Preview">
-        <Preview body={body} />
-      </Section>
-    </>
+    </section>
   );
 }
 
-function SourceSection({ item, loads }: { item: SetupItem; loads: number }) {
+/**
+ * The lead line: what the item is and does. Two lines at most, so a long description (some run
+ * to a hundred words) never pushes the rest of the sheet away; "Show all" opens it in place.
+ */
+function Lead({ text }: { text: string }) {
+  const p = useRef<HTMLParagraphElement>(null);
+  const [open, setOpen] = useState(false);
+  const [cut, setCut] = useState(false);
+  useLayoutEffect(() => {
+    const el = p.current;
+    if (!el || open) return;
+    const check = () => setCut(el.scrollHeight > el.clientHeight + 1);
+    check();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text, open]);
+  return (
+    <div className="px-6 py-4">
+      <p ref={p} className={`selectable text-lead text-ink ${open ? "" : "line-clamp-2"}`}>
+        {text}
+      </p>
+      {(cut || open) && (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="mt-1 cursor-pointer text-body font-medium text-accent-text hover:underline"
+        >
+          {open ? "Show less" : "Show all"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The tags worth a place beside the title: the ones nothing else on the sheet already says. */
+function sheetChips(item: SetupItem): string[] {
+  // A hook's tags are its event and its type; the title and the lead line say both in words.
+  if (item.kind === "hook") return [];
+  const said = new Set(
+    [item.mcp?.transport, ...item.detail.filter((d) => !RAW_KEY.test(d.label)).map((d) => d.value)]
+      .filter((v): v is string => Boolean(v))
+      .map((v) => v.toLowerCase()),
+  );
+  return item.chips.filter((c) => !said.has(c.toLowerCase()));
+}
+
+function SourceSection({ item, loads, fileRows }: { item: SetupItem; loads: number; fileRows: FactRow[] }) {
   const [src, setSrc] = useState<SourceView | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const noFile = item.path === null && item.scope === "connector";
@@ -291,30 +365,61 @@ function SourceSection({ item, loads }: { item: SetupItem; loads: number }) {
     };
   }, [item.id, loads, noFile]);
 
+  // Known from the file's name before the text arrives, so the heading never changes under the eye.
+  const markdown = src ? src.language === "markdown" : /\.md$/i.test(item.path ?? "");
+  const parsed = useMemo(() => (src && src.language === "markdown" ? splitFrontmatter(src.text) : null), [src]);
+  // The name is the sheet's title and the description its lead line: never a third time here.
+  const fields = useMemo(() => parsed?.fields.filter((f) => f.key !== "name" && f.key !== "description") ?? [], [parsed]);
+
+  const waiting = noFile ? (
+    <p className="text-body text-ink-2">This lives in your claude.ai account, so there is no file on this computer to show.</p>
+  ) : err ? (
+    <p role="alert" className="text-body text-ink-2">
+      {err}
+    </p>
+  ) : !src ? (
+    <div role="status" aria-label="Loading contents" className="skeleton h-40 rounded-card" />
+  ) : null;
+  const raw = src && (
+    <>
+      <CodeView src={src} />
+      <p className="mt-2 text-caption text-ink-2">
+        {formatSize(src.size)} - {src.lineEnding}
+        {src.truncated ? " - only the start is shown" : ""}
+        {src.maskedRanges.length ? ` - ${src.maskedRanges.length} hidden ${src.maskedRanges.length === 1 ? "value" : "values"}` : ""}
+      </p>
+    </>
+  );
+
   return (
     <>
       {src && src.maskedRanges.length > 0 && <HiddenValues itemId={item.id} ranges={src.maskedRanges} />}
-      {src && src.language === "markdown" && <MarkdownSections text={src.text} />}
-      <Section title={src?.language === "markdown" ? "Raw text" : "Contents"}>
-        {noFile ? (
-          <p className="text-body text-ink-2">This lives in your claude.ai account, so there is no file on this computer to show.</p>
-        ) : err ? (
-          <p role="alert" className="text-body text-ink-2">
-            {err}
-          </p>
-        ) : !src ? (
-          <div role="status" aria-label="Loading contents" className="skeleton h-40 rounded-card" />
-        ) : (
-          <>
-            <CodeView src={src} />
-            <p className="mt-2 text-caption text-ink-2">
-              {formatSize(src.size)} - {src.lineEnding}
-              {src.truncated ? " - only the start is shown" : ""}
-              {src.maskedRanges.length ? ` - ${src.maskedRanges.length} hidden ${src.maskedRanges.length === 1 ? "value" : "values"}` : ""}
-            </p>
-          </>
-        )}
-      </Section>
+      {/* The viewer: the text as it reads for a Markdown file, the file itself for everything else. */}
+      <Section title={markdown ? "Preview" : "Contents"}>{waiting ?? (parsed ? <Preview body={parsed.body} /> : raw)}</Section>
+      {(fileRows.length > 0 || parsed) && (
+        <FileDetails>
+          {fileRows.length > 0 && <Facts rows={fileRows} />}
+          {fields.length > 0 && (
+            <div>
+              <h4 className="mb-2 text-body font-medium text-ink">Settings in the file's header</h4>
+              <dl className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2">
+                {fields.map((f) => (
+                  <div key={f.key} className="contents">
+                    <dt className="text-body text-ink-2">{FIELD_LABEL[f.key] ?? f.key}</dt>
+                    <dd className="selectable min-w-0 break-words text-body text-ink">{f.value || "-"}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
+          {parsed && (
+            <div>
+              <h4 className="mb-2 text-body font-medium text-ink">Raw text</h4>
+              {raw}
+            </div>
+          )}
+        </FileDetails>
+      )}
     </>
   );
 }
@@ -436,13 +541,17 @@ export function DetailSheet({
   const { mcp, conflict } = item;
   const lead = displayDescription(item);
   const costRow = useMemo(() => rowFor(cost, item.id), [cost, item.id]);
-  const rows: { label: string; value: ReactNode; copy?: string }[] = [
-    { label: "Where", value: item.scopeLabel },
-    ...(item.plugin ? [{ label: "Plugin", value: item.plugin }] : []),
+  // Where the file is and when it changed: exact and long, so they wait under "File details".
+  // (Where it lives is the chip beside the title.)
+  const fileRows: FactRow[] = [
     ...(item.path ? [{ label: "File", value: <PathText path={item.path} />, copy: item.path }] : []),
     ...(item.linkTarget ? [{ label: "Linked to", value: <PathText path={item.linkTarget} />, copy: item.linkTarget }] : []),
     ...(item.size !== null ? [{ label: "Size", value: formatSize(item.size) }] : []),
     ...(item.modifiedMs ? [{ label: "Changed", value: `${formatDate(item.modifiedMs)} (${relativeTime(item.modifiedMs)})` }] : []),
+  ];
+  // What the item is, in the few short facts that are its own.
+  const rows: FactRow[] = [
+    ...(item.plugin ? [{ label: "Plugin", value: item.plugin }] : []),
     ...(item.usedBy !== null ? [{ label: "Used by", value: item.usedBy === 0 ? "No hook uses this script" : `${item.usedBy} ${item.usedBy === 1 ? "hook" : "hooks"}` }] : []),
     // Raw header keys (lowercase: name, model, ...) are shown once, under "Settings in the file's header".
     ...item.detail.filter((d) => !RAW_KEY.test(d.label)).map((d) => ({ label: d.label, value: d.value })),
@@ -478,6 +587,9 @@ export function DetailSheet({
               <StateChip enabled={item.enabled} />
               {item.backup && <Chip tone="muted">Backup copy</Chip>}
               {item.worktree && <Chip tone="muted">Agent worktree</Chip>}
+              {sheetChips(item).map((c) => (
+                <TagChip key={c}>{c}</TagChip>
+              ))}
             </div>
           </div>
           <button
@@ -535,7 +647,7 @@ export function DetailSheet({
           <ItemEditor key={item.id} item={item} initialFile={editFile} onCancel={tryStop} onDirtyChange={setDirty} />
         ) : (
           <>
-        {lead && <p className="selectable px-6 py-4 text-lead text-ink">{lead}</p>}
+        {lead ? <Lead key={item.id} text={lead} /> : <div className="h-4 shrink-0" />}
 
         {item.warnings.length > 0 && (
           <div role="note" className="mx-6 mb-4 rounded-card bg-warning-tint px-4 py-3 text-body text-warning">
@@ -548,18 +660,13 @@ export function DetailSheet({
           </div>
         )}
 
-        {costRow && cost && <CostSection row={costRow} report={cost} />}
+        {rows.length > 0 && (
+          <Section title="About">
+            <Facts rows={rows} />
+          </Section>
+        )}
 
-        <Section title="About">
-          <Facts rows={rows} />
-          {item.chips.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {item.chips.map((c) => (
-                <TagChip key={c}>{c}</TagChip>
-              ))}
-            </div>
-          )}
-        </Section>
+        {costRow && cost && <CostSection row={costRow} report={cost} />}
 
         {conflict && (
           <Section title="Also defined elsewhere">
@@ -643,7 +750,7 @@ export function DetailSheet({
           </Section>
         )}
 
-        <SourceSection item={item} loads={loads} />
+        <SourceSection item={item} loads={loads} fileRows={fileRows} />
           </>
         )}
         <div className="h-6 shrink-0" />

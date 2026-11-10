@@ -217,8 +217,7 @@ export function ItemEditor({
             <div>
               <h3 className="text-lead font-semibold text-ink">This {KIND_BY_ID[item.kind].singular} holds secret values</h3>
               <p className="mt-1 text-body text-ink-2">
-                Keys and tokens are kept out of sight everywhere in Atlas. To edit the file you need the real text, so Atlas has to show it. It is not saved
-                or logged anywhere else.
+                Editing shows the real text, keys and tokens included. Atlas does not save or log them anywhere else.
               </p>
             </div>
           </div>

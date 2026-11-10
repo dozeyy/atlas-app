@@ -137,9 +137,7 @@ export function CreateFlow({ kind, onClose }: { kind: CreateKind; onClose: () =>
               </select>
             </label>
           )}
-          <p className="text-body text-ink-2">
-            Next you will see a starting text to change. Nothing is written until you press Create, and Atlas never replaces something you already have.
-          </p>
+          <p className="text-caption text-ink-2">Next: a starting text to change. Nothing is written until you press Create.</p>
           {error && (
             <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-body text-danger">
               {error}
