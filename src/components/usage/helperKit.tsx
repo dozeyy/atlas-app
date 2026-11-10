@@ -118,14 +118,20 @@ export interface Look {
  *   look   slate, an arch             explores, plans, reviews
  *   check  sand, a shield             tests, debugs, measures
  *   run    neutral, a leaf            releases, tidies, everything else
- * The tint is 30% of the chart colour: strong enough to tell the four apart under an ink glyph.
+ * The tint is 30% of the chart colour, the glyph is ink pulled a little over halfway to that colour
+ * (>= 4.3:1 on the tint in every theme, measured 2026-11-10), and a 1 px ring of the colour at 55%
+ * edges the tile, so a family reads at 20 px and on every theme: the tint alone left the neutral
+ * "run" tiles looking like plain grey next to clay, slate and sand (graphic review, 2026-11-10).
+ * The HTML avatar gets the glyph and the ring from `.helper-av.fam` (screens.css); the map draws
+ * them from `ink` and `fg`.
  */
 const tint = (n: number) => `color-mix(in srgb, var(--chart-${n}) 30%, transparent)`;
+const glyph = (n: number) => `color-mix(in srgb, var(--chart-${n}) 55%, var(--ink))`;
 const FAMILIES = {
-  make: { tone: "bg-chart-1/30 text-ink", fg: "var(--chart-1)", bg: tint(1), ink: "var(--ink)", shape: "tile" },
-  look: { tone: "bg-chart-2/30 text-ink", fg: "var(--chart-2)", bg: tint(2), ink: "var(--ink)", shape: "arch" },
-  check: { tone: "bg-chart-3/30 text-ink", fg: "var(--chart-3)", bg: tint(3), ink: "var(--ink)", shape: "shield" },
-  run: { tone: "bg-chart-4/30 text-ink", fg: "var(--chart-4)", bg: tint(4), ink: "var(--ink)", shape: "leaf" },
+  make: { tone: "bg-chart-1/30", fg: "var(--chart-1)", bg: tint(1), ink: glyph(1), shape: "tile" },
+  look: { tone: "bg-chart-2/30", fg: "var(--chart-2)", bg: tint(2), ink: glyph(2), shape: "arch" },
+  check: { tone: "bg-chart-3/30", fg: "var(--chart-3)", bg: tint(3), ink: glyph(3), shape: "shield" },
+  run: { tone: "bg-chart-4/30", fg: "var(--chart-4)", bg: tint(4), ink: glyph(4), shape: "leaf" },
 } as const satisfies Record<string, { tone: string; fg: string; bg: string; ink: string; shape: TileShape }>;
 
 /**
@@ -277,9 +283,10 @@ export function AgentAvatar({
   const { Icon, tone, shape, fg } = agentLook(type);
   const name = avatarName(type, level);
   const Glyph = level === "main" ? MainChatIcon : Icon;
-  // Hollow means no fill at all: the colour class stays, the background class goes (a utility
-  // would win over .helper-av.nested, and the list would not match the map).
-  const paint = level === "main" ? "bg-accent text-on-accent" : level === "nested" ? `${tone.replace(/\bbg-\S+\s*/g, "")} nested` : tone;
+  // `fam` paints the glyph and the ring in the family's colour (--av). Hollow means no fill at
+  // all: the background class goes (a utility would win over .helper-av.nested, and the list
+  // would not match the map).
+  const paint = level === "main" ? "bg-accent text-on-accent" : level === "nested" ? "fam nested" : `${tone} fam`;
   const corners = level === "main" ? "50%" : tileCorners(shape, size).map((r) => `${r}px`).join(" ");
   return (
     <span

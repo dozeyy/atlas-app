@@ -7,6 +7,22 @@
  */
 
 @layer components {
+/* ---- Helper avatars: the family's colour on the glyph and the edge --------------------------
+   The tile's tint (a bg- utility, from helperKit's FAMILIES) says the family; so do the glyph,
+   ink pulled over halfway to the family's chart colour, and a 1 px ring of that colour. Three
+   cues, so the neutral "run" family reads as a family and not as a disabled tile. A nested
+   (hollow) avatar keeps its own outline from trail.css and takes only the glyph. The helper map
+   draws the same tile in SVG: its stroke is matched here to the ring. */
+.helper-av.fam {
+  color: color-mix(in srgb, var(--av, var(--ink-2)) 55%, var(--ink));
+}
+.helper-av.fam:not(.nested) {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--av, var(--ink-2)) 55%, transparent);
+}
+.map-tile {
+  stroke: color-mix(in srgb, var(--c) 55%, transparent);
+}
+
 /* ---- History: the timeline rail ------------------------------------------------------------ */
 .hx-rail {
   position: relative;
