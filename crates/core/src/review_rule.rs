@@ -138,6 +138,10 @@ pub fn clean_label(label: &str) -> String {
     while words.last().is_some_and(|w| matches!(w.as_str(), "-" | ":" | "--" | "|" | "in" | "at" | "on" | "(" | ")")) {
         words.pop();
     }
+    // A finding that is nothing but a location ("src/a/b.rs:12"): keep the place, without the line.
+    if words.is_empty() {
+        words = all[start..].iter().map(|w| strip_line_suffix(w)).filter(|w| !looks_like_line_ref(w)).collect();
+    }
     let joined = words.join(" ");
     if joined.chars().count() <= LABEL_CHARS {
         return joined;
@@ -506,6 +510,8 @@ mod tests {
         // Only directories and line numbers go.
         assert_eq!(draft_line("Retry loop in src/net.rs:42 never backs off"), "- Check before handing work back: Retry loop never backs off.");
         assert_eq!(draft_line("net.rs:42 never backs off"), "- Check before handing work back: Net.rs never backs off.");
+        // A finding that is only a location keeps the place, without the line number.
+        assert_eq!(draft_line("`.github/workflows/release.yml:199`"), "- Check before handing work back: .github/workflows/release.yml.");
         // A leading label goes, in each of its usual shapes.
         assert_eq!(draft_line("Error: net.rs never backs off"), "- Check before handing work back: Net.rs never backs off.");
         assert_eq!(draft_line("High - retries are unbounded"), "- Check before handing work back: Retries are unbounded.");
