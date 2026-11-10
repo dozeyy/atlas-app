@@ -178,8 +178,8 @@ export function HelperSlice({
       {hasMore && t && (
         <div className="mt-3">
           <button type="button" className="rcpt-item rcpt-line-btn slice-more" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-            Where it went
-            <CaretDown size={12} weight="bold" aria-hidden="true" />
+            <span className="text-caption font-semibold text-ink-2">Where it went</span>
+            <CaretDown size={12} weight="bold" aria-hidden="true" className="text-ink-2" />
           </button>
           {open && (
             <div className="slice-more-body">

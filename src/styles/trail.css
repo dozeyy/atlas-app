@@ -2096,10 +2096,6 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 }
 /* "Where it went": the kinds and the biggest lines wait behind one row, closed until asked. */
 .slice-more {
-  font-size: var(--text-caption);
-  line-height: 16px;
-  font-weight: 600;
-  color: var(--ink-2);
   text-align: left;
 }
 .slice-more > svg {
@@ -2111,6 +2107,37 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 }
 .slice-more-body {
   margin-top: 4px;
+}
+/* Long text cut to a few lines (ClampText); the button under it shows the rest. */
+.clamp-lines {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.clamp-more {
+  margin-top: 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.clamp-more:hover {
+  text-decoration: underline;
+}
+html[data-input="keyboard"] .clamp-more:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* The helper page: three small facts beside the figure, under it when the window is narrow. */
+.helper-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, max-content));
+  gap: 12px 32px;
+}
+@container (min-width: 42rem) {
+  .helper-facts {
+    grid-template-columns: minmax(0, max-content);
+    padding-left: 32px;
+    border-left: 1px solid var(--line);
+  }
 }
 .details-grid {
   display: grid;

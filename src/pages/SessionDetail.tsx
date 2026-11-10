@@ -527,6 +527,7 @@ export function SessionDetailView({
         agentId={agentId}
         sessionLabel={sessionName(d.data.row)}
         onBack={() => setAgentId(null)}
+        outcome={receipt.data?.threads.find((t) => t.agentId === agentId)?.outcome}
       />
     );
   }
