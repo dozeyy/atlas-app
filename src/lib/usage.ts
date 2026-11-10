@@ -341,17 +341,6 @@ export function formatWhen(ms: number, now = Date.now(), locale?: string): strin
 
 // ---- charts ------------------------------------------------------------------
 
-/** A round axis maximum at or above `v`: 1, 2, 2.5, 5 or 10 times a power of ten. */
-export function niceMax(v: number): number {
-  if (!(v > 0)) return 1;
-  const exp = Math.floor(Math.log10(v));
-  const base = 10 ** exp;
-  for (const step of [1, 2, 2.5, 5, 10]) {
-    if (v <= step * base + 1e-12) return step * base;
-  }
-  return 10 * base;
-}
-
 /** Total of the four token kinds the headline counts (Q2), cache reads apart. */
 export function headline(t: Tokens): number {
   return t.input + t.output + t.cacheWrite5m + t.cacheWrite1h;

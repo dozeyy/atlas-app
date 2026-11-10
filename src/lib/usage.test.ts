@@ -22,7 +22,6 @@ import {
   modelChoices,
   modelLabel,
   modelWithEffort,
-  niceMax,
   percent,
   plural,
   rangeFor,
@@ -287,19 +286,6 @@ describe("effort", () => {
 });
 
 describe("chart helpers", () => {
-  it("picks a round axis maximum at or above the data", () => {
-    expect(niceMax(0)).toBe(1);
-    expect(niceMax(0.7)).toBe(1);
-    expect(niceMax(1)).toBe(1);
-    expect(niceMax(1.1)).toBe(2);
-    expect(niceMax(2.3)).toBe(2.5);
-    expect(niceMax(3)).toBe(5);
-    expect(niceMax(7)).toBe(10);
-    expect(niceMax(1234)).toBe(2000);
-    expect(niceMax(8_000_000)).toBe(10_000_000);
-    for (const v of [0.3, 1, 2.4, 49, 51, 999, 123456]) expect(niceMax(v)).toBeGreaterThanOrEqual(v);
-  });
-
   it("bins a long list evenly and never drops an item", () => {
     const items = Array.from({ length: 1000 }, (_, i) => i);
     const bins = binEvenly(items, 48);
