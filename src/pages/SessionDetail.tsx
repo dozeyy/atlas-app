@@ -362,8 +362,11 @@ function DetailsTab({
   // the row. Any scroll (the pane's, caught on the way down) re-reads the five positions.
   const nav = useRef<HTMLElement>(null);
   const keys = jumps.map((j) => j.key).join(" ");
+  // The row is only worth its room with four or more sections; with fewer, nothing listens either.
+  const showJumps = jumps.length >= 4;
   const [atKey, setAtKey] = useState(jumps[0].key);
   useEffect(() => {
+    if (!showJumps) return;
     const ids = keys.split(" ");
     let raf = 0;
     const read = () => {
@@ -385,11 +388,11 @@ function DetailsTab({
       document.removeEventListener("scroll", onScroll, true);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [keys]);
+  }, [keys, showJumps]);
 
   return (
     <>
-      {jumps.length >= 4 && (
+      {showJumps && (
         <nav ref={nav} aria-label="Jump to" className="jump-row">
           {jumps.map((j) => (
             <button key={j.key} type="button" className="jump-chip" aria-current={atKey === j.key ? "true" : undefined} onClick={() => jump(j.key)}>
