@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { ArrowLeft, Plus } from "@phosphor-icons/react";
 import { Button } from "../controls";
@@ -23,6 +23,7 @@ import {
 import type { CreateKind, ItemKind, SetupItem, SetupSnapshot } from "../../lib/setup-types";
 import { setIncludeWorktrees } from "../../state/setupStore";
 import { useKeyHints } from "../../lib/keyHints";
+import { useScrollbarVar } from "../../lib/useScrollbarVar";
 
 const CREATABLE: ItemKind[] = ["skill", "agent", "command", "rule", "outputStyle", "hook", "mcpServer", "instructions"];
 
@@ -60,15 +61,8 @@ export function CollectionView({
   // No page header any more: keyboard focus starts in the search box.
   useEffect(() => search.current?.focus({ preventScroll: true }), []);
 
-  // The list's scrollbar sits in the page's gutter (the pane grows by the bar's width, whatever
-  // that is on this system), so the cards end exactly where the toolbar above them ends. The
-  // same measure the Sessions list uses.
-  useLayoutEffect(() => {
-    const el = list.current;
-    if (!el || el.offsetWidth === 0) return;
-    const bar = `${el.offsetWidth - el.clientWidth}px`;
-    if (el.style.getPropertyValue("--sb") !== bar) el.style.setProperty("--sb", bar);
-  });
+  // The list's scrollbar sits in the page's gutter, so the cards end where the toolbar above them ends.
+  useScrollbarVar(list);
 
   const patch = useCallback((p: Partial<Filters>) => {
     setFilters((f) => ({ ...f, ...p }));
@@ -193,7 +187,7 @@ export function CollectionView({
         placeholder={searchPlaceholder(tile)}
       />
 
-      <div ref={list} onKeyDown={onListKey} className="toolkit-pane -mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pt-2">
+      <div ref={list} onKeyDown={onListKey} className="lift-room flex min-h-0 flex-1 flex-col overflow-y-auto">
         {empty ? (
           <EmptyState
             fill

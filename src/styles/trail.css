@@ -226,6 +226,22 @@
   transform: translateY(0) scale(calc(1 - (1 - var(--press-scale)) / 2));
   transition-duration: var(--dur-press);
 }
+/*
+ * A scroll pane that holds lifting cards (the Toolkit list, the Team scorecard). The pane clips
+ * at its own edge (overflow: auto), so a card on its first row would lose its lift and the
+ * shadow above it the moment it is hovered. The pane keeps --lift-room-y above (and under) the
+ * cards and --lift-room-x beside them, and pulls itself back by the same amount, so nothing
+ * moves and the hover is drawn whole. The scrollbar's own width (--sb, measured) goes into the
+ * page gutter, so the cards end where the toolbar above them ends. One rule for every such pane;
+ * the layout audit's LIFT-CLIP check catches a pane that lacks it.
+ */
+.lift-room {
+  padding: var(--lift-room-y) var(--lift-room-x);
+  margin-top: calc(-1 * var(--lift-room-y));
+  margin-left: calc(-1 * var(--lift-room-x));
+  margin-right: calc(-1 * var(--lift-room-x) - var(--sb, 0px));
+  scrollbar-gutter: stable;
+}
 
 /* ---- Buttons ----------------------------------------------------------------------------- */
 .btn {
@@ -1895,15 +1911,8 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
 }
 
 /*
- * A Toolkit list (one tile opened). 8 px of side room so a card's lift and keyboard ring are not
- * cut; the scrollbar's own width (--sb, measured) goes into the page's gutter, so the cards end
- * where the toolbar above them ends, with or without a scrollbar.
- */
-.toolkit-pane {
-  margin-left: -8px;
-  margin-right: calc(-8px - var(--sb, 0px));
-  scrollbar-gutter: stable;
-}
+/* The Toolkit list (one tile opened) is a .lift-room pane: room for a card's lift, shadow and
+   keyboard ring, the scrollbar in the page gutter. */
 
 /*
  * The corner X (delete) and lock on a Toolkit card. The 28px button never moves; its face

@@ -10,6 +10,7 @@ import { SearchField, SelectField } from "../components/usage/fields";
 import { getBackend } from "../lib/ipc";
 import { openAgentNext, openToolkitItemNext } from "../lib/nav";
 import { plural } from "../lib/usage";
+import { useScrollbarVar } from "../lib/useScrollbarVar";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
 import { DEFAULT_PREFS, RANGES, STARTED_OPTIONS, filterCards, historyLine, loadPrefs, rangeDays, savePrefs, scorecardArgs, weeklyLegend } from "../lib/teamModel";
 import type { RangeId, TeamPrefs, TeamView } from "../lib/teamModel";
@@ -252,6 +253,8 @@ export function Team({ onShowSetup }: { onShowSetup: () => void }) {
   const [openType, setOpenType] = useState<string | null>(null);
   const [ruleTheme, setRuleTheme] = useState<ReviewTheme | null>(null);
   const search = useRef<HTMLDivElement>(null);
+  const pane = useRef<HTMLDivElement>(null);
+  useScrollbarVar(pane);
 
   const setPrefs = useCallback((next: Partial<TeamPrefs>) => {
     setPrefsState((p) => {
@@ -300,7 +303,7 @@ export function Team({ onShowSetup }: { onShowSetup: () => void }) {
           </>
         )}
       </div>
-      <div className="team-pane flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+      <div ref={pane} className="team-pane lift-room flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
         {prefs.view === "scorecard" ? (
           <Scorecard
             prefs={prefs}

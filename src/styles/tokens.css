@@ -305,6 +305,11 @@
   --dur-draw: 800ms;
   --stagger: 30ms;
   --lift: -2px;
+  /* Room a scroll pane keeps above its lifting cards: the lift plus the part of --shadow-lift
+     that reaches above a card (18px blur minus the 6px drop). Sides stay at 8px (the pane's
+     scrollbar has to stay inside the page gutter), so only the faint outer blur is cut there. */
+  --lift-room-y: 14px;
+  --lift-room-x: 8px;
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
 

@@ -14,6 +14,7 @@ import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
 import { clearPendingProject, clearPendingSession, onNavRequest, peekPendingProject, peekPendingSession } from "../lib/nav";
 import { useChatSearch, useDebounced } from "../lib/useChatSearch";
+import { useScrollbarVar } from "../lib/useScrollbarVar";
 import type { ChatSearch } from "../lib/useChatSearch";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
 import { groupByDay, shareOfMax } from "../lib/sessionBrowse";
@@ -73,14 +74,8 @@ export function Sessions() {
   useLayoutEffect(() => {
     if (selected === null && listPane.current) listPane.current.scrollTop = listTop.current;
   }, [selected]);
-  // The list's scrollbar sits in the page's gutter (the pane grows by the bar's width, whatever
-  // that is on this system), so the card is exactly as wide as the toolbar above it.
-  useLayoutEffect(() => {
-    const el = listPane.current;
-    if (!el || el.offsetWidth === 0) return;
-    const bar = `${el.offsetWidth - el.clientWidth}px`;
-    if (el.style.getPropertyValue("--sb") !== bar) el.style.setProperty("--sb", bar);
-  });
+  // The list's scrollbar sits in the page's gutter, so the card is exactly as wide as the toolbar above it.
+  useScrollbarVar(listPane);
   const [text, setText] = useState("");
   const [project, setProject] = useState(() => peekPendingProject() ?? "");
   useEffect(() => {
