@@ -226,9 +226,9 @@ export function agentLook(type: string | null): Look {
 /** Where a thread sits in the chat: the chat itself, a helper it started, or a helper started by another helper. */
 export type AvatarLevel = "main" | "helper" | "nested";
 
-/** What an avatar says when pointed at or read out: "Review helper", "Main chat". */
+/** What an avatar says when pointed at or read out: "Review helper", "Main session". */
 export function avatarName(type: string | null, level: AvatarLevel = "helper"): string {
-  if (level === "main") return "Main chat";
+  if (level === "main") return "Main session";
   const { kind, label } = agentLook(type);
   const name = kind === "other" ? "Helper" : `${label} helper`;
   return level === "nested" ? `${name}, started by another helper` : name;
@@ -301,7 +301,7 @@ export function OutcomeMark({ outcome }: { outcome: Outcome }) {
 // ---- a token figure that counts up --------------------------------------------
 
 /**
- * A token figure that counts up the first time `id` shows in a launch (Will, 2026-11-08:
+ * A token figure that counts up the first time `id` shows in a launch (2026-11-08:
  * tokens everywhere, money on hover). The hover holds the exact count and the API-price
  * estimate; screen readers get the final figure and the estimate as words, never the ticks.
  */

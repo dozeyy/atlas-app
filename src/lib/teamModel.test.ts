@@ -34,7 +34,7 @@ describe("team model", () => {
   });
 
   it("says where runs started and the weekly counts in plain words", () => {
-    expect(startedLine({ interactive: 1, headless: 6 })).toBe("1 run from a chat, 6 outside a chat");
+    expect(startedLine({ interactive: 1, headless: 6 })).toBe("1 run from your sessions, 6 from scripts");
     expect(weeklyTitle([0, 2, 1])).toBe("Runs per week, last 3 weeks, oldest first: 0, 2, 1. 3 runs in all.");
   });
 

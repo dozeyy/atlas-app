@@ -99,7 +99,7 @@ function effortTitle(row: SessionRow): string {
  * row is the click target. No icons, pills or boxes: the hierarchy is type alone.
  *
  *   line 1  the title, one step up the type scale (16/24, bold): what the chat was
- *   line 2  the meta line, 12/16, in Will's order (2026-11-08), left to right:
+ *   line 2  the meta line, 12/16, in the decided order (2026-11-08), left to right:
  *             which project / folder  >  the tokens (bold; the API-price estimate is in its
  *             hover)  >  whether helpers ran (accent-colored text, no chip)  >  when it happened
  *             (the time alone, "16:42", under a day band that already names the day; the
@@ -156,7 +156,7 @@ export function SessionLine({
             <span className="flex-none">
               <TokenText tokens={row.tokens.total} cost={row.cost} className="font-semibold text-ink" />
               {barShare !== undefined && (
-                <span aria-hidden="true" className="tok-bar" data-tip={barShare >= 1 ? "The biggest chat in this list" : `${percent(barShare)} of the biggest chat in this list`}>
+                <span aria-hidden="true" className="tok-bar" data-tip={barShare >= 1 ? "The biggest session in this list" : `${percent(barShare)} of the biggest session in this list`}>
                   <i style={{ width: `${Math.round(barShare * 100)}%` }} />
                 </span>
               )}

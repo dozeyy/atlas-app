@@ -57,7 +57,7 @@ describe("Chat receipt and helper map", () => {
     expect(document.querySelector(".d-hero")?.textContent).toMatch(/tokens$/);
     expect(screen.queryByText("Total")).toBeNull();
     const who = screen.getByRole("region", { name: "Who used it" });
-    expect(within(who).getByRole("img", { name: "Main chat" })).toBeInTheDocument();
+    expect(within(who).getByRole("img", { name: "Main session" })).toBeInTheDocument();
     expect(within(who).getAllByRole("img", { name: /helper$/i }).length).toBeGreaterThan(0);
     // The line items wait behind one row, closed until asked; opening it is remembered.
     const big = screen.getByRole("region", { name: "Biggest line items" });
@@ -110,17 +110,17 @@ describe("Chat receipt and helper map", () => {
     const { row, detail } = await chatWithHelpers(backend);
     mountDetail(backend, row.sessionId);
     await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
-    const map = await screen.findByRole("group", { name: /^Helper map: the main chat and \d+ helpers?$/ });
+    const map = await screen.findByRole("group", { name: /^Helper map: the main session and \d+ helpers?$/ });
     const nodes = within(map).getAllByRole("button");
     expect(nodes).toHaveLength(detail.agents.length + 1);
 
     // The main chat is selected to begin with.
-    expect(screen.getByRole("complementary", { name: "Slice: Main chat" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Slice: Main session" })).toBeInTheDocument();
     const target = detail.agents[0];
     await userEvent.click(within(map).getByRole("button", { name: new RegExp(`^${esc(target.name)}, `) }));
     const slice = screen.getByRole("complementary", { name: `Slice: ${target.name}` });
     expect(within(slice).getByRole("button", { name: /Open helper/ })).toBeInTheDocument();
-    expect(within(slice).getByText(/of the chat/)).toBeInTheDocument();
+    expect(within(slice).getByText(/of the session/)).toBeInTheDocument();
     // The slice wears the helper's own avatar, and where the tokens went waits behind one row.
     expect(within(slice).getByRole("img", { name: /helper$/i })).toBeInTheDocument();
     expect(within(slice).queryByRole("region", { name: "What it used" })).toBeNull();
@@ -149,7 +149,7 @@ describe("Chat receipt and helper map", () => {
       expect(tokens).toMatch(/^\S+ tokens$/);
     }
     const writing = Array.from(map.querySelectorAll("text")).filter((t) => !t.closest(".map-rest") && !t.closest(".map-body"));
-    expect(writing.map((t) => t.textContent)).toEqual(["Main chat"]);
+    expect(writing.map((t) => t.textContent)).toEqual(["Main session"]);
 
     const a = detail.agents[0];
     const node = within(map).getByRole("button", { name: new RegExp(`^${esc(a.name)}, `) });
@@ -255,7 +255,7 @@ describe("Chat receipt and helper map", () => {
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("heading", { level: 1, name: a.name })).toBeNull();
     expect(await screen.findByRole("radio", { name: "Helpers" })).toBeChecked();
-    expect(screen.queryByRole("searchbox", { name: "Search chats" })).toBeNull();
+    expect(screen.queryByRole("searchbox", { name: "Search sessions" })).toBeNull();
 
     // A dialog or a text field keeps Escape for itself.
     const sheet = document.body.appendChild(document.createElement("div"));
@@ -268,11 +268,11 @@ describe("Chat receipt and helper map", () => {
     await userEvent.keyboard("{Escape}");
     field.remove();
     expect(screen.getByRole("radio", { name: "Helpers" })).toBeInTheDocument();
-    expect(screen.queryByRole("searchbox", { name: "Search chats" })).toBeNull();
+    expect(screen.queryByRole("searchbox", { name: "Search sessions" })).toBeNull();
 
     // From the session: the list.
     await userEvent.keyboard("{Alt>}{ArrowLeft}{/Alt}");
-    expect(await screen.findByRole("searchbox", { name: "Search chats" })).toBeInTheDocument();
+    expect(await screen.findByRole("searchbox", { name: "Search sessions" })).toBeInTheDocument();
     expect(screen.queryByRole("radio", { name: "Helpers" })).toBeNull();
   });
 
@@ -282,7 +282,7 @@ describe("Chat receipt and helper map", () => {
     mountDetail(backend, row.sessionId);
     await screen.findByRole("region", { name: "Who used it" });
     await userEvent.keyboard("{Escape}");
-    expect(await screen.findByRole("searchbox", { name: "Search chats" })).toBeInTheDocument();
+    expect(await screen.findByRole("searchbox", { name: "Search sessions" })).toBeInTheDocument();
   });
 
   it("draws the run over time once, in tokens: no dollar chart on Details, helpers order by tokens", async () => {
@@ -308,7 +308,7 @@ describe("Chat receipt and helper map", () => {
     const files = await screen.findByRole("region", { name: "Files" });
     expect(files.textContent).not.toMatch(/\.jsonl|projects\//);
     expect(files.textContent).not.toContain(row.projectPath);
-    const main = within(files).getByText("Main chat");
+    const main = within(files).getByText("Main session");
     expect(main.getAttribute("title")).toMatch(/\.jsonl$/);
     expect(within(files).getAllByRole("button", { name: /^Copy the file path of / })).toHaveLength(detail.files.length);
     // The chat's total is the page's one figure; the tile here is what sits apart from it.

@@ -27,7 +27,7 @@ beforeEach(() => {
 });
 afterEach(() => setBackend(null));
 
-const searchbox = () => screen.getByRole("searchbox", { name: "Search chats" });
+const searchbox = () => screen.getByRole("searchbox", { name: "Search sessions" });
 
 describe("Sessions toolbar", () => {
   it("has a Filter button and a Sort button, each with its own panel", async () => {
@@ -72,11 +72,11 @@ describe("Sessions toolbar", () => {
     mount();
     await screen.findAllByRole("button", { name: /tokens/ });
     // The day bands say "N chats" too; the toolbar's count is the live one.
-    const all = await screen.findByText(/^[\d,]+ chats$/, { selector: "[aria-live]" });
+    const all = await screen.findByText(/^[\d,]+ sessions$/, { selector: "[aria-live]" });
     const n = Number(all.textContent!.replace(/[^\d]/g, ""));
     expect(n).toBeGreaterThan(50);
     await userEvent.type(searchbox(), "zzzz-nothing");
-    expect(await screen.findByText(`0 of ${n.toLocaleString("en-US")} chats`)).toBeInTheDocument();
+    expect(await screen.findByText(`0 of ${n.toLocaleString("en-US")} sessions`)).toBeInTheDocument();
   });
 });
 
@@ -127,7 +127,7 @@ describe("Sessions: search inside chats", () => {
     const list = await screen.findAllByRole("button", { name: /tokens/ });
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ })).toHaveLength(1));
     expect(list.length).toBeGreaterThan(0);
-    expect(screen.getByText(/^1 of [\d,]+ chats$/)).toBeInTheDocument();
+    expect(screen.getByText(/^1 of [\d,]+ sessions$/)).toBeInTheDocument();
     // Clicking the row opens that session.
     await userEvent.click(screen.getByRole("button", { name: /tokens/ }));
     expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
@@ -146,7 +146,7 @@ describe("Sessions: search inside chats", () => {
     // The row is still named by its whole title: the mark does not split the name.
     expect(marks[0].closest("button")).toHaveAccessibleName(/export/i);
     const bar = document.querySelector(".tok-bar")!;
-    expect(bar.getAttribute("data-tip")).toMatch(/biggest chat in this list$/);
+    expect(bar.getAttribute("data-tip")).toMatch(/biggest session in this list$/);
   });
 
   it("cuts a text at every typed word, whatever the case, and leaves it whole when nothing is typed", () => {
@@ -181,7 +181,7 @@ describe("Sessions: search inside chats", () => {
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ })).toHaveLength(1), { timeout: 3000 });
     await new Promise((r) => setTimeout(r, 500));
     expect(screen.getAllByRole("button", { name: /tokens/ })).toHaveLength(1);
-    expect(screen.getByText(/^1 of [\d,]+ chats$/)).toBeInTheDocument();
+    expect(screen.getByText(/^1 of [\d,]+ sessions$/)).toBeInTheDocument();
     expect(asked).toEqual(["qz", "qzx"]);
   });
 

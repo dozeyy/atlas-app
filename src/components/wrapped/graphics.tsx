@@ -356,11 +356,11 @@ function CirclesArt({ g }: { g: Extract<SlideGraphic, { kind: "circles" }> }) {
       height={300}
       viewBox="0 0 330 300"
       role="img"
-      aria-label="This chat next to a usual chat, drawn to scale"
+      aria-label="This session next to a usual session, drawn to scale"
     >
       <circle className="sm-dot-usual" cx={44} cy={floor - r} r={r} />
       <text className="sm-cap" x={44} y={286} textAnchor="middle">
-        A usual chat
+        A usual session
       </text>
       <circle className="sm-dot-big" cx={220} cy={floor - R} r={R} />
       <text className="sm-cap" x={220} y={286} textAnchor="middle">

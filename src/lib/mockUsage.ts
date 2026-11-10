@@ -533,6 +533,7 @@ export class MockUsage {
     if (!s) return null;
     const main: MockThread = {
       agentId: null,
+      // The engine's own name for it; `receiptWords` makes it "Main session" on the way in.
       name: "Main chat",
       parentAgentId: null,
       spawnDepth: 0,

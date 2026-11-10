@@ -3,6 +3,7 @@
 // the API-price dollar estimate lives in hover text only. Every figure is an estimate.
 
 import { compact, exact } from "./usage";
+import { loadsInWords } from "./sessionWords";
 import type { CostReport, CostRow, ItemKind } from "./setup-types";
 
 /** Dollars for hover text: `$0.04`, `$4.20`, `$21`, `$1.2k`. Never more than 3 digits. */
@@ -91,7 +92,7 @@ export function windowLabel(report: CostReport): string {
  * project's name ("CLAUDE.md", a middle dot, "pixel-garden"), so two files with the same name never look alike.
  */
 export function rowTitle(r: CostRow): string {
-  const project = /^Chats in (.+)$/.exec(r.loadsIn)?.[1];
+  const project = /^(?:Chats|Sessions) in (.+)$/.exec(r.loadsIn)?.[1];
   return project ? `${r.name} \u00b7 ${project}` : r.name;
 }
 
@@ -105,14 +106,14 @@ export function titleCount(title: string): { label: string; count: string | null
 }
 
 /**
- * Where a ranking row loads, in words that set it against the headline ("loads in every chat"):
- * "Every chat" for what the headline counts, "Only chats in atlas" / "Only chats that connect
- * them" for what rides in some chats and so sits on top of it.
+ * Where a ranking row loads, in words that set it against the headline ("loads in every session"):
+ * "Every session" for what the headline counts, "Only sessions in atlas" / "Only sessions that
+ * connect them" for what rides in some sessions and so sits on top of it.
  */
 export function loadsWhere(r: Pick<CostRow, "global" | "loadsIn">): string {
-  if (r.global) return "Every chat";
-  const where = r.loadsIn.trim();
-  return where ? `Only ${where.charAt(0).toLowerCase()}${where.slice(1)}` : "Some chats";
+  if (r.global) return "Every session";
+  const where = loadsInWords(r.loadsIn.trim());
+  return where ? `Only ${where.charAt(0).toLowerCase()}${where.slice(1)}` : "Some sessions";
 }
 
 /** "8.8k per message" */

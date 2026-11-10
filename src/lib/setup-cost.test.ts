@@ -86,10 +86,10 @@ describe("what an item shows", () => {
   });
 
   it("says where a ranking row loads, set against the every-chat headline", () => {
-    expect(loadsWhere({ global: true, loadsIn: "All chats" })).toBe("Every chat");
-    expect(loadsWhere({ global: false, loadsIn: "Chats in atlas" })).toBe("Only chats in atlas");
-    expect(loadsWhere({ global: false, loadsIn: "Chats that connect them" })).toBe("Only chats that connect them");
-    expect(loadsWhere({ global: false, loadsIn: "  " })).toBe("Some chats");
+    expect(loadsWhere({ global: true, loadsIn: "All chats" })).toBe("Every session");
+    expect(loadsWhere({ global: false, loadsIn: "Chats in atlas" })).toBe("Only sessions in atlas");
+    expect(loadsWhere({ global: false, loadsIn: "Chats that connect them" })).toBe("Only sessions that connect them");
+    expect(loadsWhere({ global: false, loadsIn: "  " })).toBe("Some sessions");
   });
 });
 

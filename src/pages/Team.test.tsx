@@ -309,14 +309,14 @@ describe("Team: Caught in review", () => {
     backend.empty = true;
     backend.usage.setScenario("indexing");
     await openToolkit();
-    expect(await screen.findByText("Still reading your chats")).toBeInTheDocument();
+    expect(await screen.findByText("Still reading your sessions")).toBeInTheDocument();
     // The read finishes. The empty answer from the middle of the read is still on screen for a
     // moment; the page must not call that "No helper runs yet".
     backend.empty = false;
     act(() => backend.usage.setScenario("data"));
     expect(screen.queryByText(/No helper runs/)).not.toBeInTheDocument();
     expect(await card("Code reviewer")).toBeInTheDocument();
-    expect(screen.queryByText("Still reading your chats")).not.toBeInTheDocument();
+    expect(screen.queryByText("Still reading your sessions")).not.toBeInTheDocument();
   });
 
   it("refuses a file that changed since the sheet opened, writes nothing, and can reload", async () => {

@@ -304,10 +304,10 @@ export const CODER_RULES: Rule[] = [
   {
     id: "marathoner",
     name: "Marathoner",
-    line: "You stay in one chat for hours.",
+    line: "You stay in one session for hours.",
     bar: 0.2,
     value: (d) => chatShare(d, (h) => h.longChats),
-    why: (d, v) => `${exact(d.habits?.longChats ?? 0)} of ${exact(d.habits?.chats ?? 0)} chats (${pct(v)}) ran two hours or more. Marathoner starts at 20%.`,
+    why: (d, v) => `${exact(d.habits?.longChats ?? 0)} of ${exact(d.habits?.chats ?? 0)} sessions (${pct(v)}) ran two hours or more. Marathoner starts at 20%.`,
   },
   {
     id: "sprinter",
@@ -315,15 +315,15 @@ export const CODER_RULES: Rule[] = [
     line: "You get in, get it done, get out.",
     bar: 0.5,
     value: (d) => chatShare(d, (h) => h.shortChats),
-    why: (d, v) => `${exact(d.habits?.shortChats ?? 0)} of ${exact(d.habits?.chats ?? 0)} chats (${pct(v)}) were over in under ten minutes. Sprinter starts at 50%.`,
+    why: (d, v) => `${exact(d.habits?.shortChats ?? 0)} of ${exact(d.habits?.chats ?? 0)} sessions (${pct(v)}) were over in under ten minutes. Sprinter starts at 50%.`,
   },
   {
     id: "toolsmith",
     name: "Toolsmith",
-    line: "You reach for a skill in nearly every chat.",
+    line: "You reach for a skill in nearly every session.",
     bar: 1,
     value: (d) => (d.habits && d.habits.chats >= MIN_CHATS_FOR_TYPE ? d.skillUses / d.habits.chats : null),
-    why: (d) => `${exact(d.skillUses)} skill uses across ${exact(d.habits?.chats ?? 0)} chats. Toolsmith starts at one skill use per chat.`,
+    why: (d) => `${exact(d.skillUses)} skill uses across ${exact(d.habits?.chats ?? 0)} sessions. Toolsmith starts at one skill use per session.`,
   },
   {
     id: "loyalist",
@@ -612,12 +612,12 @@ export function buildSlides(d: WrappedData): Slide[] {
     const times = ratio >= MIN_CHAT_RATIO ? `${timesText(ratio)} times` : null;
     out.push({
       id: "biggest",
-      kicker: "Your biggest chat",
+      kicker: "Your biggest session",
       figure: compact(big),
       unit: "tokens",
-      line: times ? `That is ${times} a usual chat.` : "More than any other single chat.",
+      line: times ? `That is ${times} a usual session.` : "More than any other single session.",
       strong: times ?? undefined,
-      hint: `${exact(big)} tokens in one chat.`,
+      hint: `${exact(big)} tokens in one session.`,
       graphic: times ? { kind: "circles", ratio } : undefined,
     });
   }

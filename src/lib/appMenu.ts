@@ -44,7 +44,7 @@ export function shortcutGroups(platform: Platform): { title: string; rows: { key
     {
       title: "Anywhere",
       rows: [
-        { keys: `${mod}+K`, does: "Jump to a chat, page, project or skill; arrows move, Enter goes, Escape closes" },
+        { keys: `${mod}+K`, does: "Jump to a session, page, project or skill; arrows move, Enter goes, Escape closes" },
         { keys: `${mod}+1 to ${mod}+7`, does: "Go to Dashboard, Now, Sessions, Toolkit, History, Settings, Wrapped" },
         { keys: `${mod}+B`, does: "Show or hide the sidebar" },
         ...(platform === "macos"
@@ -59,8 +59,8 @@ export function shortcutGroups(platform: Platform): { title: string; rows: { key
     {
       title: "Sessions",
       rows: [
-        { keys: `Escape or ${alt}+Left`, does: "Go back to the list from an open chat" },
-        { keys: `${alt}+Up / ${alt}+Down`, does: "Open the previous or next chat" },
+        { keys: `Escape or ${alt}+Left`, does: "Go back to the list from an open session" },
+        { keys: `${alt}+Up / ${alt}+Down`, does: "Open the previous or next session" },
       ],
     },
     {

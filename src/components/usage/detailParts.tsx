@@ -111,7 +111,7 @@ export function Breakdown({ t, main }: { t: Tokens; main?: Tokens }) {
     ["Saved for 1 hour", (x) => x.cacheWrite1h, `${W.cacheWrite.term}, 1-hour\n${W.cacheWrite.about}`],
     ["Reused", (x) => x.cacheRead, `${W.cacheRead.term}\n${W.cacheRead.about}`, "Counted apart, not in the total"],
   ];
-  const cols: [string, Tokens][] = main ? [["Main chat", main], ["With helpers", t]] : [["Tokens", t]];
+  const cols: [string, Tokens][] = main ? [["Main session", main], ["With helpers", t]] : [["Tokens", t]];
   return (
     <Card className="overflow-hidden">
       <table className="w-full text-body">

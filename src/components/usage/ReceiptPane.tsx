@@ -58,7 +58,7 @@ function Line({ line, total, index, onOpen, mark }: { line: SpendLine; total: nu
           <span className="w-9 text-right text-caption text-ink-2">{percent(frac)}</span>
         </span>
       </span>
-      <span className="share-bar rcpt-bar mt-1 block" role="img" aria-label={`${percent(frac)} of the chat`}>
+      <span className="share-bar rcpt-bar mt-1 block" role="img" aria-label={`${percent(frac)} of the session`}>
         <i style={{ width: `${barWidth(line.tokens, total)}%`, ["--bar" as string]: tint(line), ["--i" as string]: Math.min(index, 12) }} />
       </span>
     </>
@@ -117,7 +117,7 @@ function Lines({
 
 function ReceiptSkeleton() {
   return (
-    <div role="status" aria-label="Adding up the chat" className="grid gap-x-8 gap-y-6 @xl:grid-cols-2 @4xl:grid-cols-3">
+    <div role="status" aria-label="Adding up the session" className="grid gap-x-8 gap-y-6 @xl:grid-cols-2 @4xl:grid-cols-3">
       {[0, 1, 2].map((c) => (
         <div key={c} className="space-y-3">
           <Skeleton className="h-4 w-28" />
@@ -281,7 +281,7 @@ export function ReceiptPane({
             {itemsOpen && (
               <div id={itemsId} className="slice-more-body">
                 {!r.scanned ? (
-                  <p className="text-body text-ink-2">The chat file is gone, so line items cannot be read.</p>
+                  <p className="text-body text-ink-2">The session file is gone, so line items cannot be read.</p>
                 ) : items.length === 0 ? (
                   <p className="text-body text-ink-2">Nothing here stood out.</p>
                 ) : (

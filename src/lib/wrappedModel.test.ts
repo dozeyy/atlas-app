@@ -203,7 +203,7 @@ describe("buildSlides: the Summit story", () => {
     expect(by.long.line).toBe("Started Jul 26.");
     expect(by.biggest.figure).toBe("110M");
     expect(by.biggest.unit).toBe("tokens");
-    expect(by.biggest.line).toBe("That is 47 times a usual chat.");
+    expect(by.biggest.line).toBe("That is 47 times a usual session.");
     expect(by.project.figure).toBe("Trail Guide");
     expect(by.project.line).toBe("64% of your tokens.");
     expect(by.skill.figure).toBe("release-notes");
@@ -330,7 +330,7 @@ describe("buildSlides: the Summit story", () => {
     // Average chat = chatTokens / chats (the chats the count covers), never the range total.
     const near = buildSlides(rich({ habits: habits({ chats: 100, chatTokens: 9_000_000_000 }) })).find((s) => s.id === "biggest")!;
     expect(near.graphic).toBeUndefined();
-    expect(near.line).toBe("More than any other single chat.");
+    expect(near.line).toBe("More than any other single session.");
     expect(near.strong).toBeUndefined();
   });
 
@@ -365,7 +365,7 @@ describe("buildSlides: the Summit story", () => {
     expect(hovered).toEqual(["tokens", "biggest"]);
     const by = Object.fromEntries(buildSlides(rich()).map((s) => [s.id, s]));
     expect(by.tokens.hint).toBe("640,000,000 tokens.");
-    expect(by.biggest.hint).toBe("110,000,000 tokens in one chat.");
+    expect(by.biggest.hint).toBe("110,000,000 tokens in one session.");
     expect(by.tokens.strongHint).toContain("0.75 words per token");
     expect(by.biggest.strongHint).toBeUndefined();
   });
@@ -609,19 +609,19 @@ describe("coderType", () => {
   it("calls someone with many two-hour chats a Marathoner", () => {
     const t = coderType(plain({ habits: habits({ chats: 50, longChats: 20, shortChats: 5, allTokens: 100, helperTokens: 5 }) }))!;
     expect(t.id).toBe("marathoner");
-    expect(t.why).toContain("20 of 50 chats (40%) ran two hours or more");
+    expect(t.why).toContain("20 of 50 sessions (40%) ran two hours or more");
   });
 
   it("calls someone with many tiny chats a Sprinter", () => {
     const t = coderType(plain({ habits: habits({ chats: 40, shortChats: 30, longChats: 1, allTokens: 100, helperTokens: 5 }) }))!;
     expect(t.id).toBe("sprinter");
-    expect(t.why).toContain("30 of 40 chats (75%) were over in under ten minutes");
+    expect(t.why).toContain("30 of 40 sessions (75%) were over in under ten minutes");
   });
 
   it("calls someone who uses skills in every chat a Toolsmith", () => {
     const t = coderType(plain({ skillUses: 240, habits: habits({ chats: 100, shortChats: 20, longChats: 5, allTokens: 100, helperTokens: 5 }) }))!;
     expect(t.id).toBe("toolsmith");
-    expect(t.why).toBe("240 skill uses across 100 chats. Toolsmith starts at one skill use per chat.");
+    expect(t.why).toBe("240 skill uses across 100 sessions. Toolsmith starts at one skill use per session.");
   });
 
   it("calls someone with one project a Loyalist", () => {

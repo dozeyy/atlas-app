@@ -123,7 +123,7 @@ export const HOOK_EVENTS: { value: string; label: string }[] = [
   { value: "SessionStart", label: "When a session starts" },
   { value: "Notification", label: "When Claude needs you" },
   { value: "SubagentStop", label: "When an agent finishes" },
-  { value: "PreCompact", label: "Before the chat is trimmed" },
+  { value: "PreCompact", label: "Before the session is trimmed" },
 ];
 
 // The middle dot is written as an escape: source strings stay ASCII.

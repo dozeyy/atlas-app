@@ -48,7 +48,7 @@ export const SEED_CATALOG: MockEntry[] = [
   seed("feature-dev", "A guided workflow for building a feature from idea to tests."),
   seed("explanatory-output-style", "Adds short notes on why Claude chose a pattern.", DIR),
   seed("playwright", "Drive a browser to check a page works.", DIR),
-  seed("github", "Work with issues and pull requests from the chat.", DIR),
+  seed("github", "Work with issues and pull requests from a session.", DIR),
   seed("typescript-lsp", "Language server for TypeScript.", DIR),
   seed("plugin-dev", "Tools for writing your own plugin."),
   seed("hookify", "Turn a repeated correction into a rule."),

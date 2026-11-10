@@ -45,8 +45,8 @@ describe("Settings", () => {
     expect(screen.queryByRole("switch", { name: "Keep running when closed" })).not.toBeInTheDocument();
 
     await userEvent.click(within(rail).getByRole("button", { name: "About" }));
-    expect(screen.getByText("Privacy")).toHaveAttribute("title", expect.stringContaining("sends none of your chats or files"));
-    expect(screen.queryByText(/sends none of your chats or files/)).not.toBeInTheDocument();
+    expect(screen.getByText("Privacy")).toHaveAttribute("title", expect.stringContaining("sends none of your sessions or files"));
+    expect(screen.queryByText(/sends none of your sessions or files/)).not.toBeInTheDocument();
     expect(screen.getByText("Version")).toBeInTheDocument();
   });
 
@@ -82,7 +82,7 @@ describe("Settings", () => {
     await userEvent.click(within(rail).getByRole("button", { name: "About" }));
     await userEvent.click(await screen.findByRole("button", { name: "Uninstall Atlas..." }));
     expect(started).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Uninstall")).toHaveAttribute("title", expect.stringContaining("Your Claude Code chats are never touched."));
+    expect(screen.getByText("Uninstall")).toHaveAttribute("title", expect.stringContaining("Your Claude Code sessions are never touched."));
     expect(screen.queryByText(/never touched/)).not.toBeInTheDocument();
   });
 
@@ -98,9 +98,9 @@ describe("Settings", () => {
   it("keeps the finished-chat notice off until it is switched on", async () => {
     mount();
     await userEvent.click(await screen.findByRole("button", { name: "General" }));
-    const sw = await screen.findByRole("switch", { name: "Tell me when a chat finishes" });
+    const sw = await screen.findByRole("switch", { name: "Tell me when a session finishes" });
     expect(sw).toHaveAttribute("aria-checked", "false");
-    expect(screen.queryByText(/cannot tell when a chat is only waiting/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cannot tell when a session is only waiting/)).not.toBeInTheDocument();
     await userEvent.click(sw);
     await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").notifyOnFinish).toBe(true));
     expect(sw).toHaveAttribute("aria-checked", "true");
@@ -150,7 +150,7 @@ describe("Settings", () => {
   it("shows how long Claude Code keeps its logs", async () => {
     mount();
     await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude folder" }));
-    expect(await screen.findByText(/Claude Code keeps conversation logs for/)).toBeInTheDocument();
+    expect(await screen.findByText(/Claude Code keeps sessions for/)).toBeInTheDocument();
   });
 
   it("Claude Code section is one switch, on by default, and the state is read back each time", async () => {

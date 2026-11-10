@@ -50,7 +50,7 @@ describe("CostPanel", () => {
     render(<CostPanel report={report(rows)} items={items} />);
     expect(screen.getByRole("heading", { name: "What your setup costs" })).toBeInTheDocument();
     const head = document.querySelector("[data-cost-headline]")!;
-    expect(head).toHaveTextContent("30k tokens per message, in every chat");
+    expect(head).toHaveTextContent("30k tokens per message, in every session");
 
     const lis = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(lis).toHaveLength(3);
@@ -61,15 +61,15 @@ describe("CostPanel", () => {
     expect(lis[0]).toHaveTextContent("114M a week");
     // One unit on the surface: the row says where it loads, never a second per-message figure
     // (a some-chats row can be bigger per message than the every-chat headline).
-    expect(lis[0]).toHaveTextContent("Only chats that connect them");
+    expect(lis[0]).toHaveTextContent("Only sessions that connect them");
     expect(lis[0]).not.toHaveTextContent("per message");
     // A project's file carries the project name in its title, so same-named files differ.
     expect(lis[1]).toHaveTextContent("CLAUDE.md · pixel-garden");
     expect(lis[1]).toHaveTextContent("107M a week");
     expect(lis[2]).toHaveTextContent("agent-routing");
     expect(lis[2]).not.toHaveTextContent("·");
-    expect(lis[1]).toHaveTextContent("Only chats in pixel-garden");
-    expect(lis[2]).toHaveTextContent("Every chat");
+    expect(lis[1]).toHaveTextContent("Only sessions in pixel-garden");
+    expect(lis[2]).toHaveTextContent("Every session");
   });
 
   it("shows no dollars on screen: they live in the hover", () => {

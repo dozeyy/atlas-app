@@ -10,6 +10,7 @@
 // canvas grows past the pane and the pane scrolls, rather than squeezing the nodes together.
 
 import type { Outcome, ReceiptThread } from "./types";
+import { MAIN_SESSION } from "./sessionWords";
 
 /** Helpers drawn before the rest fold into "+N" nodes. */
 export const MAP_LIMIT = 40;
@@ -180,7 +181,7 @@ export function layoutMap(threads: ReceiptThread[], size: { width: number; heigh
   add({
     id: MAIN_ID,
     kind: "root",
-    name: main?.name ?? "Main chat",
+    name: main?.name ?? MAIN_SESSION,
     usd: main?.usd ?? 0,
     tokens: main?.tokens ?? 0,
     depth: 0,
@@ -442,7 +443,7 @@ export function placePlate(layout: MapLayout, id: string, detail: string, view?:
       const outside = rect.x < 4 || rect.y < 4 || rect.x + w > layout.width - 4 || rect.y + h > layout.height - 4;
       const unseen = !!view && view.w > 0 && view.h > 0 && (rect.x < view.x + 4 || rect.y < view.y + 4 || rect.x + w > view.x + view.w - 4 || rect.y + h > view.y + view.h - 4);
       // A plate cut off by the pane edge cannot be read at all, so that is the worst outcome
-      // (Will saw a right-edge bubble's name clipped); covering a bubble comes next.
+      // (a right-edge bubble's name was seen clipped); covering a bubble comes next.
       const score = hits * 1000 + (outside ? 500 : 0) + (unseen ? 5000 : 0) + d + Math.abs(step) * 6;
       if (!best || score < best.score) best = { plate: { ...rect, lines, detail }, score };
       if (score < 200) return best.plate;

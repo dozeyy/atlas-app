@@ -53,12 +53,12 @@ const SPANS = [
 
 /** The quiet line under the toolbar while searching inside chats cannot yet cover everything. */
 function searchNote(chat: ChatSearch): string | null {
-  if (chat.error) return "Searching inside chats did not work just now. Titles and projects still do.";
+  if (chat.error) return "Searching inside sessions did not work just now. Titles and projects still do.";
   const ix = chat.index;
   if (!ix || ix.ready) return null;
-  if (ix.state === "error") return "Searching inside chats is not available right now. Titles and projects still work.";
-  if (ix.filesTotal > 0) return `Still reading your chats so search can look inside them: ${exact(ix.filesDone)} of ${exact(ix.filesTotal)} files. More results appear as it goes.`;
-  return "Getting search ready. Words inside chats start to match in a moment.";
+  if (ix.state === "error") return "Searching inside sessions is not available right now. Titles and projects still work.";
+  if (ix.filesTotal > 0) return `Still reading your sessions so search can look inside them: ${exact(ix.filesDone)} of ${exact(ix.filesTotal)} files. More results appear as it goes.`;
+  return "Getting search ready. Words inside sessions start to match in a moment.";
 }
 
 export function Sessions() {
@@ -217,8 +217,8 @@ export function Sessions() {
 
   const count = first.data
     ? filtered
-      ? `${exact(total)} of ${plural(Math.max(everything.data?.total ?? total, total), "chat")}`
-      : plural(total, "chat")
+      ? `${exact(total)} of ${plural(Math.max(everything.data?.total ?? total, total), "session")}`
+      : plural(total, "session")
     : "";
 
   return (
@@ -234,7 +234,7 @@ export function Sessions() {
       {/* The page is one window tall: the toolbar and the pick-up card stay put and only the list scrolls. */}
       <div hidden={selected !== null} className={selected !== null ? "hidden" : "flex min-h-0 flex-1 flex-col"}>
         <div className="toolbar-tall mb-4 flex shrink-0 items-center gap-2">
-          <SearchField tall value={text} onChange={setText} label="Search chats" placeholder="Search titles, projects and messages" />
+          <SearchField tall value={text} onChange={setText} label="Search sessions" placeholder="Search titles, projects and messages" />
           <span aria-live="polite" className="min-w-[4.5rem] shrink-0 whitespace-nowrap px-1 text-caption tabular-nums text-ink-2">
             {count}
           </span>
@@ -351,7 +351,7 @@ export function Sessions() {
                       <span className="day-name">{g.label}</span>
                       {!open && (
                         <>
-                          <span className="day-count">{plural(g.rows.length, "chat")}</span>
+                          <span className="day-count">{plural(g.rows.length, "session")}</span>
                           <span className="day-total" title={`${exact(g.tokens)} tokens`}>
                             {`${compact(g.tokens)} tokens`}
                           </span>

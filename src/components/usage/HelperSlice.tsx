@@ -107,7 +107,7 @@ export function HelperSlice({
         <span
           className="whitespace-nowrap text-body tabular-nums text-ink-2"
           title={subtotal - node.tokens >= 1 ? `${tokensText(subtotal)} with the helpers it started` : undefined}
-        >{`${percent(share(node.tokens, total))} of the chat`}</span>
+        >{`${percent(share(node.tokens, total))} of the session`}</span>
       </div>
 
       {t && (

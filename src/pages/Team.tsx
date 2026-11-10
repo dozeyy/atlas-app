@@ -48,7 +48,7 @@ function useReadingHold(reload: (silent: boolean) => void, answeredAt: number | 
   return notReady || !fresh;
 }
 
-const READING_TITLE = "Still reading your chats";
+const READING_TITLE = "Still reading your sessions";
 const READING_BODY = "This fills in by itself when the first read finishes.";
 
 const RANGE_OPTIONS = RANGES.map((r) => ({ value: r.value, label: r.label }));

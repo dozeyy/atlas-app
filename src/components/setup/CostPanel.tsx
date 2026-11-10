@@ -27,7 +27,7 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
       </h2>
       <p data-cost-headline title={total || undefined} className="mt-1 flex items-baseline gap-2 text-body text-ink-2">
         <span className="d d-tile text-ink">{compact(report.globalTokens)}</span>{" "}
-        tokens per message, in every chat
+        tokens per message, in every session
       </p>
 
       {/* The headline is what every chat carries with each message; the list ranks by the week

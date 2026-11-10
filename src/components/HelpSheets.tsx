@@ -82,8 +82,8 @@ function About({ onClose }: { onClose: () => void }) {
 /** One line each, so the sheet is read at a glance. Keyed by the sidebar's own views: the row shows that page's icon and name. */
 const GUIDE: Partial<Record<View, string>> = {
   dashboard: "Your week at a glance: tokens, cost and streak.",
-  now: "Chats that are running, waiting for you or just finished.",
-  sessions: "Every conversation. Search, filter, and open one to read it.",
+  now: "Sessions that are running, waiting for you or just finished.",
+  sessions: "Every session. Search, filter, and open one to read it.",
   setup: "Your skills, agents and commands. Every edit keeps a backup.",
   history: "Every change to your Claude files, with the lines that changed.",
   settings: "The theme, your Claude folder, and Sandbox mode.",
@@ -136,7 +136,7 @@ function Privacy({ onClose }: { onClose: () => void }) {
         items={[
           { icon: Eye, title: "Reads", text: "Your Claude folder, and the Claude files inside your projects." },
           { icon: PencilSimple, title: "Writes", text: "Its own data, what you change in your Claude files (backed up first), and the entry that connects Claude Code to Atlas." },
-          { icon: Globe, title: "Goes online", text: "Only to look for a new version, and to load the Library and what you install from it. Atlas sends none of your chats or files." },
+          { icon: Globe, title: "Goes online", text: "Only to look for a new version, and to load the Library and what you install from it. Atlas sends none of your sessions or files." },
         ]}
       />
     </Dialog>

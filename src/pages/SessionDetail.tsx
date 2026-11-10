@@ -31,6 +31,7 @@ import { EmptyState } from "../components/EmptyState";
 import { timelineBars } from "../components/usage/timelineBars";
 import type { BarDatum } from "../components/charts/shared";
 import { getBackend } from "../lib/ipc";
+import { receiptWords } from "../lib/sessionWords";
 import { clearPendingAgent, peekPendingAgent } from "../lib/nav";
 import { copyResume, openFolder } from "../lib/sessionActions";
 import { resumeCommand } from "../lib/sessionBrowse";
@@ -277,7 +278,7 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
   }, [sessionId]);
 
   return (
-    <section aria-label="Conversation" className="flex h-full min-h-0 flex-col">
+    <section aria-label="Messages" className="flex h-full min-h-0 flex-col">
       {!open ? (
         <Card className="flex items-center justify-between gap-4 px-5 py-4">
           <p className="text-body text-ink-2">Read from your files only when you ask. Nothing is copied anywhere.</p>
@@ -289,7 +290,7 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
             }}
           >
             <ChatsCircle size={14} aria-hidden="true" />
-            Show conversation
+            Show messages
           </Button>
         </Card>
       ) : (
@@ -428,14 +429,14 @@ function DetailsTab({
         )}
 
         <section id="sd-files" aria-label="Files" className="jump-target min-w-0 @3xl:col-span-2">
-          <h3 className="rcpt-head" title="The saved chat files these figures were read from">{`Files (${files.length})`}</h3>
+          <h3 className="rcpt-head" title="The saved session files these figures were read from">{`Files (${files.length})`}</h3>
           {/* A row says whose file it is; the path is its hover and one press away on the clipboard.
               (The project folder is the first fact on the page's line and behind "Open folder".) */}
           <Card>
             <ul className="max-h-52 divide-y divide-line overflow-y-auto">
               {files.map((f) => {
                 const helper = f.isSubagent ? agents.find((a) => f.path.includes(`agent-${a.agentId}`)) : undefined;
-                const who = f.isSubagent ? (helper ? shownName(helper) : "A helper") : "Main chat";
+                const who = f.isSubagent ? (helper ? shownName(helper) : "A helper") : "Main session";
                 return <FileRow key={f.path} who={who} path={f.path} missing={f.missing} />;
               })}
             </ul>
@@ -480,7 +481,7 @@ export function SessionDetailView({
   useLiveReload(d.reload);
   // The receipt reads the chat's files once and is then kept, so it is not reloaded with every
   // tick: only when the chat's cost itself moved.
-  const receipt = useFetched(() => backend.sessionReceipt(id), [id]);
+  const receipt = useFetched(() => backend.sessionReceipt(id).then(receiptWords), [id]);
   // The Team tab can ask for a helper of this chat: it opens straight on that helper.
   const [agentId, setAgentId] = useState<string | null>(() => peekPendingAgent(id));
   const agentChat = useRef(id);
@@ -648,7 +649,7 @@ export function SessionDetailView({
               models={row.models}
               main={row.mainModel}
               effort={topEffort(row.efforts)}
-              hint={mix ? `${row.models.join(" + ")}\nReasoning effort in the main chat: ${mix}` : undefined}
+              hint={mix ? `${row.models.join(" + ")}\nReasoning effort in the main session: ${mix}` : undefined}
             />
           </span>
           {hasHelpers && <span>{plural(agents.length, "helper")}</span>}
@@ -670,7 +671,7 @@ export function SessionDetailView({
         )}
         <div className="ml-auto flex items-center gap-2">
           {resume && (
-            <Button className="sd-act" title={"Copy resume command\nPaste it in a terminal to reopen this chat."} onClick={() => void copyResume(resume)}>
+            <Button className="sd-act" title={"Copy resume command\nPaste it in a terminal to reopen this session."} onClick={() => void copyResume(resume)}>
               <Copy size={14} aria-hidden="true" />
               <span className="sd-act-label">Copy resume</span>
             </Button>

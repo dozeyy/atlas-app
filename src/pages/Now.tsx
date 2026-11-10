@@ -82,8 +82,8 @@ export function Now() {
               <Running chats={groups.running} />
             ) : groups.waiting.length === 0 ? (
               <Quiet
-                title={groups.finished.length > 0 ? "Nothing running" : "No chats yet"}
-                hint={groups.finished.length > 0 ? undefined : "Start a chat in Claude Code and it shows up here while it works."}
+                title={groups.finished.length > 0 ? "Nothing running" : "No sessions yet"}
+                hint={groups.finished.length > 0 ? undefined : "Start a session in Claude Code and it shows up here while it works."}
                 last={groups.finished[0] ?? null}
                 now={now}
               />
@@ -106,7 +106,7 @@ export function Now() {
 
 /** One title and one plain second line: when the last chat ended, or else what to do next. */
 function Quiet({ title, hint, last, now }: { title: string; hint?: string; last?: NowLast | null; now?: number }) {
-  const line = last && now !== undefined ? `Last chat ended ${ago(last.endedMs, now)}` : hint;
+  const line = last && now !== undefined ? `Last session ended ${ago(last.endedMs, now)}` : hint;
   return (
     <section className="now-quiet card" aria-label={title}>
       <Topo seed={21} />
@@ -202,7 +202,7 @@ function DoneRow({ last, now }: { last: NowLast; now: number }) {
       ) : (
         // A chat that was already over when Atlas started: only the end of its transcript is read, so a
         // total would be a fraction of the real one. The slot stays, so the rows line up.
-        <Stat fig="-" cap="Tokens" title="Atlas was not watching this chat, so it has no total" optional={2} dim />
+        <Stat fig="-" cap="Tokens" title="Atlas was not watching this session, so it has no total" optional={2} dim />
       )}
       <Stat fig={ago(last.endedMs, now).replace(/ ago$/, "")} cap="Ended" />
     </li>

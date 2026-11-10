@@ -179,7 +179,7 @@ export function Settings() {
       // Rust saves the choice first (so a failure never leaves Atlas free to reconnect on its
       // own), then changes the connection, and announces the new settings to the page.
       await (connect ? backend.mcpConnect() : backend.mcpDisconnect());
-      pushToast({ message: connect ? "Claude Code can use Atlas now. Open a new chat to see it." : "Atlas is disconnected from Claude Code and will stay that way.", tone: "info" });
+      pushToast({ message: connect ? "Claude Code can use Atlas now. Open a new session to see it." : "Atlas is disconnected from Claude Code and will stay that way.", tone: "info" });
     } catch (e) {
       pushToast({ message: typeof e === "string" ? e : e instanceof Error ? e.message : "Could not change the connection.", tone: "error" });
     } finally {
@@ -261,8 +261,8 @@ export function Settings() {
   const indexing = status?.state === "indexing";
   const cleanup =
     ov?.cleanupDays != null
-      ? `Claude Code keeps conversation logs for ${plural(ov.cleanupDays, "day")}.`
-      : "Claude Code keeps conversation logs for its default of 30 days.";
+      ? `Claude Code keeps sessions for ${plural(ov.cleanupDays, "day")}.`
+      : "Claude Code keeps sessions for its default of 30 days.";
 
   const bodies: Record<SectionId, ReactNode> = {
     appearance: (
@@ -290,8 +290,8 @@ export function Settings() {
             <Toggle label="Shortcut on the desktop" checked={shortcutOn} onChange={(on) => void setShortcut(on)} />
           </Row>
         )}
-        <Row label="Tell me when a chat finishes">
-          <Toggle label="Tell me when a chat finishes" checked={info.settings.notifyOnFinish} onChange={setNotifyOnFinish} />
+        <Row label="Tell me when a session finishes">
+          <Toggle label="Tell me when a session finishes" checked={info.settings.notifyOnFinish} onChange={setNotifyOnFinish} />
         </Row>
       </>
     ),
@@ -327,7 +327,7 @@ export function Settings() {
         )}
         {cfg && <Row label="Claude Code settings" hint={ov?.claudeSettingsFile ? <Path>{ov.claudeSettingsFile}</Path> : "No settings file yet"} />}
         {cfg && <Row label="Account and projects file" hint={<Path>{cfg.claudeJson}</Path>} />}
-        <Row label="Conversation logs" hint={cleanup} />
+        <Row label="Saved sessions" hint={cleanup} />
         <Row label="Work on a copy" hint="Sandbox mode" tip="Atlas copies your Claude folder to a temporary place and only touches the copy. Your real files are never changed.">
           <Toggle label="Sandbox mode" checked={sb.enabled} onChange={(v) => void setSandbox(v)} />
         </Row>
@@ -383,7 +383,7 @@ export function Settings() {
                     Atlas could not read your usage.
                   </span>
                 ) : (
-                  `${plural(status.filesTracked, "session log")} read${status.lastIndexedAt ? `, updated ${agoText(status.lastIndexedAt)}` : ""}.`
+                  `${plural(status.filesTracked, "session file")} read${status.lastIndexedAt ? `, updated ${agoText(status.lastIndexedAt)}` : ""}.`
                 )}
                 {/* The file is in the Atlas data folder two rows down; its full path waits in the hover. */}
                 <div className="mt-1 text-caption">
@@ -472,11 +472,11 @@ export function Settings() {
         <Row label="Started in" tip="Time from launch to the first screen.">
           <span className="text-body text-ink-2">{info.firstPaintMs === null ? "Not measured" : `${info.firstPaintMs} ms`}</span>
         </Row>
-        <Row label="Privacy" tip="Atlas sends none of your chats or files anywhere. It goes online only to look for a new version and to load the Library.">
-          <span className="text-body text-ink-2">Your chats and files are not sent</span>
+        <Row label="Privacy" tip="Atlas sends none of your sessions or files anywhere. It goes online only to look for a new version and to load the Library.">
+          <span className="text-body text-ink-2">Your sessions and files are not sent</span>
         </Row>
         {canUninstall && (
-          <Row label="Uninstall" tip="Closes Atlas and asks whether to keep or remove its saved data. Your Claude Code chats are never touched.">
+          <Row label="Uninstall" tip="Closes Atlas and asks whether to keep or remove its saved data. Your Claude Code sessions are never touched.">
             <Button
               onClick={() =>
                 void backend.uninstallAtlas().catch((e: unknown) => pushToast({ message: typeof e === "string" ? e : "Could not start the uninstaller.", tone: "error" }))
@@ -538,7 +538,7 @@ export function Settings() {
           }
         >
           <p className="text-body text-ink">
-            Atlas reads every session log again. Numbers from logs that Claude Code already cleared are kept.
+            Atlas reads every session file again. Numbers from files that Claude Code already cleared are kept.
           </p>
         </Dialog>
       )}

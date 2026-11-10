@@ -145,7 +145,7 @@ describe("helper icons", () => {
     expect(avatarName("code-reviewer")).toBe("Review helper");
     expect(avatarName(null)).toBe("Helper");
     expect(avatarName("verifier", "nested")).toBe("Test helper, started by another helper");
-    expect(avatarName("anything", "main")).toBe("Main chat");
+    expect(avatarName("anything", "main")).toBe("Main session");
   });
 
   it("keeps the icon on the 16 / 20 / 24 grid", () => {
@@ -214,7 +214,7 @@ describe("helper avatar", () => {
     expect(nested.style.getPropertyValue("--echo")).toBe("3px");
     // Same family, same corners, whichever level.
     expect(nested.style.borderRadius).toBe(helper.style.borderRadius);
-    expect(main.getAttribute("aria-label")).toBe("Main chat");
+    expect(main.getAttribute("aria-label")).toBe("Main session");
   });
 
   it("stays silent when the words already stand beside it", () => {

@@ -235,7 +235,7 @@ function Palette() {
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={shown.length ? optionId(at) : undefined}
-            placeholder="Jump to a chat, page, project or skill"
+            placeholder="Jump to a session, page, project or skill"
             spellCheck={false}
             autoComplete="off"
             className="qj-input"

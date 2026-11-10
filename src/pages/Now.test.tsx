@@ -220,15 +220,15 @@ describe("Now", () => {
   it("rests on a calm empty state with the finished chats beneath", async () => {
     mount(snap({ last: done(), recent: [done()] }));
     expect(await screen.findByRole("heading", { level: 2, name: "Nothing running" })).toBeInTheDocument();
-    expect(screen.getByText(/^Last chat ended 3 min ago$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Last session ended 3 min ago$/)).toBeInTheDocument();
     const fin = screen.getByRole("region", { name: "Finished recently" });
     expect(within(fin).getByRole("heading", { level: 3, name: "Old chat" })).toBeInTheDocument();
-    expect(screen.queryByText(/no chats are running|start a chat/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no sessions are running|start a session/i)).not.toBeInTheDocument();
   });
 
   it("says no chats yet when there is nothing at all", async () => {
     mount(snap());
-    expect(await screen.findByRole("heading", { level: 2, name: "No chats yet" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "No sessions yet" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Finished recently" })).toBeNull();
   });
 
@@ -257,7 +257,7 @@ describe("Now", () => {
 
   it("toasts when a chat finishes, and says when it asks a question", async () => {
     const backend = mount(snap());
-    await screen.findByRole("heading", { level: 2, name: "No chats yet" });
+    await screen.findByRole("heading", { level: 2, name: "No sessions yet" });
     act(() => backend.now.finish({ sessionId: "s1", name: "Fix the build", project: "atlas", kind: "done", workedMs: 90_000 }));
     expect(await screen.findByText("Fix the build finished")).toBeInTheDocument();
     act(() => backend.now.finish({ sessionId: "s2", name: "Write the notes", project: "atlas", kind: "ask", workedMs: null }));

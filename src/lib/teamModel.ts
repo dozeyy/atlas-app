@@ -16,8 +16,8 @@ export const RANGES: { value: RangeId; label: string; days: number | null }[] = 
 
 export const STARTED_OPTIONS: { value: StartedFrom; label: string }[] = [
   { value: "all", label: "Started from: all" },
-  { value: "interactive", label: "Started from: a chat" },
-  { value: "headless", label: "Started outside a chat" },
+  { value: "interactive", label: "Started from: your sessions" },
+  { value: "headless", label: "Started from: scripts" },
 ];
 
 export interface TeamPrefs {
@@ -117,11 +117,11 @@ export function usualLine(c: TypeCard): string {
 /** What a reviewer does, in plain words (the card and the sheet say it under the name). */
 export const REVIEWER_WORDS = "Reviews other helpers' work";
 
-/** Runs started outside a chat: by a script, a schedule or another program. "Headless" is the name Claude Code gives them. */
-export const HEADLESS_HINT = "Outside a chat: started by a script, a schedule or another program. Claude Code calls this headless.";
+/** Runs nobody typed for: started by a script, a schedule or another program. "Headless" is the name Claude Code gives them. */
+export const HEADLESS_HINT = "From scripts: started by a script, a schedule or another program. Claude Code calls this headless.";
 
 export function startedLine(s: { interactive: number; headless: number }): string {
-  return `${plural(s.interactive, "run")} from a chat, ${exact(s.headless)} outside a chat`;
+  return `${plural(s.interactive, "run")} from your sessions, ${exact(s.headless)} from scripts`;
 }
 
 /** The twelve weekly counts in words, for the hover on the small chart: oldest week first. */
@@ -204,7 +204,7 @@ export function runOutcome(r: RunRow): string {
   return "Not known";
 }
 
-/** "History covers the last N days" (Will, 2026-11-09), only when the cache knows it. */
+/** "History covers the last N days" (2026-11-09), only when the cache knows it. */
 export function historyLine(days: number | null): string | null {
   return days === null ? null : `History covers the last ${plural(days, "day")}.`;
 }

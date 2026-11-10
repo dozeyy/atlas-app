@@ -71,7 +71,7 @@ export function PickUp({ row, onOpen }: { row: SessionRow; onOpen: (id: string) 
       <svg aria-hidden="true" focusable="false" width={W} height={H} className="pick-strip chart">
         {trace && (
           <>
-            <title>Tokens through the chat</title>
+            <title>Tokens through the session</title>
             <line x1="0" x2={W} y1={shape.baseline} y2={shape.baseline} className="today-base" />
             <path d={shape.area} fill={color} opacity={0.16} />
             <path d={shape.line} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />

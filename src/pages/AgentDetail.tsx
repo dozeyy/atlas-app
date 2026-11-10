@@ -144,10 +144,10 @@ export function AgentDetailView({
             </div>
             <p
               className="mt-2 text-body text-ink-2"
-              title={`Counted once, inside the chat's total.${agent.tokens.cacheRead > 0 ? ` Plus ${compact(agent.tokens.cacheRead)} reused (cache reads), counted apart.` : ""}`}
+              title={`Counted once, inside the session's total.${agent.tokens.cacheRead > 0 ? ` Plus ${compact(agent.tokens.cacheRead)} reused (cache reads), counted apart.` : ""}`}
             >
               <span className="font-medium text-ink">{percent(frac)}</span>
-              {" of the chat"}
+              {" of the session"}
             </p>
           </div>
         </div>
@@ -213,7 +213,7 @@ export function AgentDetailView({
           <SectionTitle>File</SectionTitle>
           {/* Whose file it is, never its path: the path is the hover and one press away on the clipboard. */}
           <Card className="px-1">
-            <FileRow as="div" who="This helper's saved chat" path={file.path} missing={file.missing} />
+            <FileRow as="div" who="This helper's file" path={file.path} missing={file.missing} />
           </Card>
         </section>
       )}

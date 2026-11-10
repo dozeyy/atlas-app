@@ -164,7 +164,7 @@ export function HelperMap({
             height={layout.height * zoom}
             viewBox={`0 0 ${layout.width} ${layout.height}`}
             role="group"
-            aria-label={`Helper map: the main chat and ${layout.nodes.length - 1} ${layout.nodes.length === 2 ? "helper" : "helpers"}`}
+            aria-label={`Helper map: the main session and ${layout.nodes.length - 1} ${layout.nodes.length === 2 ? "helper" : "helpers"}`}
           >
             <g aria-hidden="true">
               {layout.links.map((l, i) => (
@@ -236,7 +236,7 @@ export function HelperMap({
                     </g>
                     {n.kind === "root" && (
                       <text className="map-name" transform={`translate(0 ${ROOT_R + 28}) scale(${1 / zoom})`} textAnchor="middle">
-                        Main chat
+                        Main session
                       </text>
                     )}
                     {/* While the node is pointed at, its plate says the whole name: the short one steps aside, never half under it. */}
