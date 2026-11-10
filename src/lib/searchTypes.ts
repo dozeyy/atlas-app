@@ -34,6 +34,7 @@ export interface SearchStatus {
   bytesTotal: number;
   messages: number;
   dbBytes: number;
+  /** Milliseconds, like every time in the UI (the engine sends seconds; `indexedAtMs` in ipc.ts). */
   lastIndexedAt: number | null;
   error: string | null;
 }

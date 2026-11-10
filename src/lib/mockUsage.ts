@@ -333,6 +333,7 @@ export class MockUsage {
       case "empty":
         return { ...STATUS_IDLE, filesTracked: 0 };
       default:
+        // Milliseconds: what the real backend hands the UI once ipc.ts has converted the stamp.
         return { ...STATUS_IDLE, lastIndexedAt: this.now.getTime() };
     }
   }
