@@ -50,7 +50,7 @@ function Hero({ o, now, onPick }: { o: HistoryOverview; now: number; onPick: (da
 
 export function History() {
   const backend = getBackend();
-  const { info } = useAtlas();
+  const { info, setView } = useAtlas();
   const root = useRef<HTMLDivElement>(null);
   const width = useWidth(root);
   const wide = width === 0 || width >= WIDE_AT;
@@ -180,11 +180,13 @@ export function History() {
     return (
       <div className="@container flex flex-1 flex-col" ref={root}>
         <PageTitle title="History" />
+        {/* The one way out is a press away, not a sentence to follow (the shared empty state, one action). */}
         <EmptyState
           fill
           seed={11}
           title="History is paused while Sandbox mode is on"
           body="Atlas keeps its copies of your real Claude folder only. Turn Sandbox mode off in Settings, under Claude folder, and History picks up where it left off."
+          action={{ label: "Open Settings", onClick: () => setView("settings") }}
         />
       </div>
     );
@@ -243,7 +245,14 @@ export function History() {
         <Skeleton className="h-64" />
       ) : list.events.length === 0 ? (
         filtered ? (
-          <EmptyState variant="no-match" query={q.trim() || undefined} action={{ onClick: showEverything, label: "Show everything" }} />
+          // The same words every list uses for a search that finds nothing (Sessions, Library, Team):
+          // the hint line, then "Clear search", "and filters" only when a kind or project is set too.
+          <EmptyState
+            variant="no-match"
+            query={q.trim() || undefined}
+            body={q.trim() && (group !== "all" || project !== "") ? "Filters are on too." : q.trim() ? "Try fewer words." : undefined}
+            action={{ onClick: showEverything, label: q.trim() && (group !== "all" || project !== "") ? "Clear search and filters" : q.trim() ? "Clear search" : "Clear filters" }}
+          />
         ) : (
           <EmptyState seed={11} className="min-h-[240px]" title="No changes yet" body="Changes to your Claude setup show up here, newest first." />
         )

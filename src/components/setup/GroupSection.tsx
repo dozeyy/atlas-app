@@ -19,7 +19,7 @@ function ShowMore({ hidden, onClick }: { hidden: number; onClick: () => void }) 
   );
 }
 
-function Cards({ items, onOpen, onDelete }: { items: SetupItem[]; onOpen: (id: string) => void; onDelete?: (item: SetupItem) => void }) {
+function Cards({ items, onOpen, canDelete }: { items: SetupItem[]; onOpen: (id: string) => void; canDelete?: boolean }) {
   const [all, setAll] = useState(false);
   const list = all ? items : items.slice(0, CARD_CAP);
   // When the list mixes places (Global, a project, a plugin), each place gets its own small heading.
@@ -42,7 +42,7 @@ function Cards({ items, onOpen, onDelete }: { items: SetupItem[]; onOpen: (id: s
           {/* The only card on the page takes the row, as a list of one would. */}
           <div className={`grid gap-3 ${list.length === 1 ? "grid-cols-1" : "grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))]"}`}>
             {r.items.map((i) => (
-              <ItemCard key={i.id} item={i} onOpen={onOpen} onDelete={onDelete} />
+              <ItemCard key={i.id} item={i} onOpen={onOpen} canDelete={canDelete} />
             ))}
           </div>
         </div>
@@ -70,11 +70,11 @@ function Rows({ items, onOpen, mono }: { items: SetupItem[]; onOpen: (id: string
 export function GroupBody({
   group,
   onOpenItem,
-  onDelete,
+  canDelete,
 }: {
   group: Group;
   onOpenItem: (id: string) => void;
-  onDelete?: (item: SetupItem) => void;
+  canDelete?: boolean;
 }) {
   const { meta, items } = group;
   if (meta.kind === "permission") {
@@ -94,7 +94,7 @@ export function GroupBody({
     );
   }
   if (meta.compact) return <Rows items={items} onOpen={onOpenItem} mono={meta.kind === "hookScript" || meta.kind === "other"} />;
-  return <Cards items={items} onOpen={onOpenItem} onDelete={onDelete} />;
+  return <Cards items={items} onOpen={onOpenItem} canDelete={canDelete} />;
 }
 
 export function GroupSection({
@@ -102,13 +102,13 @@ export function GroupSection({
   open,
   onToggle,
   onOpenItem,
-  onDelete,
+  canDelete,
 }: {
   group: Group;
   open: boolean;
   onToggle: () => void;
   onOpenItem: (id: string) => void;
-  onDelete?: (item: SetupItem) => void;
+  canDelete?: boolean;
 }) {
   const { meta, items } = group;
   const id = `group-${meta.kind}`;
@@ -136,7 +136,7 @@ export function GroupSection({
       </button>
       {open && (
         <div id={`${id}-body`} className="fade-in">
-          <GroupBody group={group} onOpenItem={onOpenItem} onDelete={onDelete} />
+          <GroupBody group={group} onOpenItem={onOpenItem} canDelete={canDelete} />
         </div>
       )}
     </section>

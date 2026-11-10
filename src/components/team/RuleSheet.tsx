@@ -13,9 +13,12 @@ import type { PreviewLine, ReviewTheme, RuleSheetData, RuleTarget } from "../../
 /** The most a CLAUDE.md line may hold; the server enforces the same number. */
 const LINE_MAX = 400;
 
-/** Which file the toast names: "your global CLAUDE.md", "atlas's CLAUDE.md", "the rule file rules/x.md". */
+/**
+ * Which file the toast names: "your global CLAUDE.md", "atlas's CLAUDE.md", "a rule file of its own".
+ * A rule file's name is made from the finding and cut short by the engine, so it is never read out.
+ */
 export function whereWords(t: RuleTarget): string {
-  if (t.kind === "file") return `the rule file ${t.title.replace(/^A rule file, /, "")}`;
+  if (t.kind === "file") return "a rule file of its own";
   if (t.id === "global") return "your global CLAUDE.md";
   return `${t.title.replace(/^CLAUDE\.md in /, "")}'s CLAUDE.md`;
 }
@@ -85,7 +88,7 @@ function Preview({ lines, rule }: { lines: PreviewLine[]; rule: string }) {
   const empty = before.length === 0;
   return (
     <div className="mt-4" aria-label="What will change">
-      <p className="mb-1.5 text-body font-semibold text-ink">What will change</p>
+      <p className="h-sub mb-2">What will change</p>
       <div className="grid gap-2">
         <PreviewBlock label="Now">
           {empty ? <PreviewRow text="This file is empty or new." dim /> : before.map((l, i) => <PreviewRow key={i} text={l.text} />)}
@@ -241,7 +244,7 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
         ) : (
           <>
             <fieldset>
-              <legend className="mb-2 text-body font-semibold text-ink">Where should it go</legend>
+              <legend className="h-sub mb-2">Where should it go</legend>
               <div className="space-y-2">
                 {sheet.targets.map((t) => (
                   <label
@@ -267,7 +270,14 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
                       <span title={targetTitle(t)} className="block truncate text-body font-medium text-ink">
                         {targetTitle(t)}
                       </span>
-                      <span className="selectable block text-caption text-ink-2 [overflow-wrap:anywhere]">{t.path}</span>
+                      {t.kind === "file" ? (
+                        // Its file name is a slug the engine cuts mid-word: the place in words, the exact file on hover.
+                        <span title={t.path} className="block text-caption text-ink-2">
+                          In the rules folder of your Claude folder
+                        </span>
+                      ) : (
+                        <span className="selectable block text-caption text-ink-2 [overflow-wrap:anywhere]">{t.path}</span>
+                      )}
                       {t.blocked && <span className="block text-caption text-warning">{t.blocked}</span>}
                       {!t.exists && !t.blocked && t.kind !== "file" && <span className="block text-caption text-ink-2">This file is created</span>}
                     </span>
@@ -278,7 +288,7 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
 
             {target && (
               <div className="mt-4">
-                <label htmlFor={`${radioName}-text`} className="mb-1.5 block text-body font-semibold text-ink">
+                <label htmlFor={`${radioName}-text`} className="h-sub mb-2 block">
                   {target.kind === "file" ? "The file" : "The line"}
                 </label>
                 {target.kind === "file" ? (

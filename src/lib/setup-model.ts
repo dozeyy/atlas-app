@@ -25,6 +25,7 @@ import {
   TextAa,
 } from "@phosphor-icons/react";
 import type { ItemKind, ScopeKind, SetupItem, SetupProject } from "./setup-types";
+import { tagWords } from "./tagWords";
 
 export interface KindMeta {
   kind: ItemKind;
@@ -272,12 +273,12 @@ export function displayChips(i: SetupItem): string[] {
 }
 
 /**
- * The words on an item's state chip, and what they mean on hover. "Shadowed" is the scan's word
- * for a copy that loses to another with the same name: it reads "Not in use".
+ * A tag as a person reads it, with its explanation for the hover (tagWords.ts holds the map). A
+ * tag the map does not know keeps its own word and gets no hover.
  */
-export function stateWords(e: SetupItem["enabled"]): { label: string; hint?: string } {
-  if (e.state === "shadowed") return { label: "Not in use", hint: "Another copy with the same name is used instead of this one." };
-  return { label: e.label };
+export function chipWords(i: SetupItem, chip: string): { label: string; title?: string } {
+  const w = tagWords(i.kind, chip);
+  return w ? { label: w.label, title: w.tip } : { label: chip };
 }
 
 const keys = new WeakMap<SetupItem, string>();

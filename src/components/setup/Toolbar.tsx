@@ -20,6 +20,21 @@ function Labeled({ label, checked, onChange, count }: { label: string; checked: 
   );
 }
 
+/** How many of the Filters menu's settings are off their defaults (the count on its button). */
+export function filtersChanged(filters: Filters): number {
+  return [
+    filters.scope !== DEFAULT_FILTERS.scope,
+    filters.scope === "project" && filters.projectId !== null,
+    filters.showWorktrees !== DEFAULT_FILTERS.showWorktrees,
+    filters.showBackups !== DEFAULT_FILTERS.showBackups,
+  ].filter(Boolean).length;
+}
+
+/** Filters that can only take items away (showing worktree copies or backups adds, it never hides). */
+export function filtersNarrow(filters: Filters): boolean {
+  return filters.scope !== DEFAULT_FILTERS.scope;
+}
+
 export function Toolbar({
   filters,
   onChange,
@@ -45,12 +60,7 @@ export function Toolbar({
   total: number;
   placeholder?: string;
 }) {
-  const changed = [
-    filters.scope !== DEFAULT_FILTERS.scope,
-    filters.scope === "project" && filters.projectId !== null,
-    filters.showWorktrees !== DEFAULT_FILTERS.showWorktrees,
-    filters.showBackups !== DEFAULT_FILTERS.showBackups,
-  ].filter(Boolean).length;
+  const changed = filtersChanged(filters);
   const choices = projects.filter((p) => p.exists && p.itemCount > 0 && !p.isWorktree).sort((a, b) => a.name.localeCompare(b.name));
   return (
     <div className="sticky top-0 z-10 -mx-[var(--gutter)] mb-4 border-b border-line bg-bg px-[var(--gutter)] py-3">

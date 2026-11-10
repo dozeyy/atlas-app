@@ -181,9 +181,14 @@ export function madeLabel(madeMs: number): string {
   return `Made a rule, ${SHORT.format(new Date(madeMs))}`;
 }
 
-/** "3 high, 1 medium" most severe first; findings without a severity are "unrated". */
+/**
+ * "Severity: 3 high, 1 medium", most severe first, so the counts say what they count. Findings a
+ * reviewer gave no severity are "not rated"; when that is all of them the line says only that.
+ */
 export function severityLine(t: ReviewTheme): string {
-  return t.severities.map((s) => `${s.count} ${s.severity === "none" ? "unrated" : s.severity.toLowerCase()}`).join(", ");
+  if (t.severities.length === 0) return "";
+  if (t.severities.every((s) => s.severity === "none")) return "Severity: not rated";
+  return `Severity: ${t.severities.map((s) => `${s.count} ${s.severity === "none" ? "not rated" : s.severity.toLowerCase()}`).join(", ")}`;
 }
 
 /** What a run row says about how it went, in a few words. */

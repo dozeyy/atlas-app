@@ -254,9 +254,27 @@ describe("Setup page: a collection", () => {
     await waitFor(() => expect(screen.queryByText("deep-research")).not.toBeInTheDocument());
     expect(screen.getByText("commit-helper")).toBeInTheDocument();
     await userEvent.type(screen.getByRole("searchbox"), "zzzz");
-    expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Clear search and filters" }));
+    // G12: one wording on every list. Only a search is on, so the action is "Clear search", with the hint line.
+    const none = (await screen.findByText("Nothing matches")).closest("section")!;
+    expect(within(none).getByText("Try fewer words.")).toBeInTheDocument();
+    await userEvent.click(within(none).getByRole("button", { name: "Clear search" }));
     expect(await screen.findByText("deep-research")).toBeInTheDocument();
+  });
+
+  it("names what the no-match action clears: filters too when a filter is on, filters alone with nothing typed", async () => {
+    await open(backend);
+    await openTile("Output styles");
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await userEvent.click(within(screen.getByLabelText("Show items from")).getByRole("radio", { name: "Projects" }));
+    await userEvent.keyboard("{Escape}");
+    const none = (await screen.findByText("Nothing matches these filters")).closest("section")!;
+    expect(within(none).getByRole("button", { name: "Clear filters" })).toBeInTheDocument();
+    await userEvent.type(screen.getByRole("searchbox"), "zzzz");
+    const both = (await screen.findByText("Nothing matches")).closest("section")!;
+    expect(within(both).getByText("Filters are on too.")).toBeInTheDocument();
+    await userEvent.click(within(both).getByRole("button", { name: "Clear search and filters" }));
+    await waitFor(() => expect(screen.queryByText(/Nothing matches/)).not.toBeInTheDocument());
+    expect(screen.getByRole("searchbox")).toHaveValue("");
   });
 
   it("narrows by where things live: All, Global, then one project", async () => {
@@ -384,26 +402,74 @@ describe("Setup page: detail", () => {
 });
 
 describe("Setup page: delete", () => {
-  it("asks first, names what goes away and promises a backup; Cancel changes nothing", async () => {
+  // G8: the card's X asks on the card itself. Nothing is deleted until the filled Delete is pressed.
+  const askOnCard = async () => {
+    const calls: string[] = [];
+    const real = backend.setupDelete.bind(backend);
+    backend.setupDelete = async (id: string) => {
+      calls.push(id);
+      return real(id);
+    };
     await open(backend);
     await openTile("Skills");
+    const id = (await screen.findByRole("button", { name: /skill deep-research/ })).getAttribute("data-id");
     await userEvent.click(await screen.findByRole("button", { name: "Delete deep-research" }));
-    const ask = await screen.findByRole("alertdialog", { name: "Delete deep-research?" });
+    const ask = await screen.findByRole("group", { name: "Delete deep-research?" });
+    return { ask, calls, id };
+  };
+
+  it("asks on the card, names what goes away and promises a backup; Keep changes nothing", async () => {
+    const { ask, calls } = await askOnCard();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(within(ask).getByText(/whole folder/)).toBeInTheDocument();
     expect(within(ask).getByText(/Atlas keeps a backup/)).toBeInTheDocument();
-    await userEvent.click(within(ask).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(screen.getByText("deep-research")).toBeInTheDocument();
+    // Keep has the keyboard first, and Delete is the filled danger button.
+    expect(within(ask).getByRole("button", { name: "Keep" })).toHaveFocus();
+    expect(within(ask).getByRole("button", { name: "Delete" }).className).toMatch(/danger/);
+    // While it asks, the card is not a way into the item: one question, two answers.
+    expect(screen.queryByRole("button", { name: /skill deep-research/ })).not.toBeInTheDocument();
+
+    await userEvent.click(within(ask).getByRole("button", { name: "Keep" }));
+    expect(screen.queryByRole("group", { name: "Delete deep-research?" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /skill deep-research/ })).toHaveFocus();
+    expect(calls).toEqual([]);
+    expect(screen.queryByText("Deleted deep-research.")).not.toBeInTheDocument();
   });
 
-  it("deletes for real, offers Undo, and Undo puts it back", async () => {
-    await open(backend);
-    await openTile("Skills");
-    await userEvent.click(await screen.findByRole("button", { name: "Delete deep-research" }));
-    const ask = await screen.findByRole("alertdialog");
+  it("Escape is Keep: nothing is deleted, the list stays open and the card has the keyboard again", async () => {
+    const { calls } = await askOnCard();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("group", { name: "Delete deep-research?" })).not.toBeInTheDocument();
+    expect(calls).toEqual([]);
+    // The page's own Escape (back to the Toolkit) did not run.
+    expect(screen.getByPlaceholderText("Search skills")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /skill deep-research/ })).toHaveFocus();
+  });
+
+  it("a press anywhere else is Keep", async () => {
+    const { calls } = await askOnCard();
+    fireEvent.pointerDown(screen.getByPlaceholderText("Search skills"));
+    expect(screen.queryByRole("group", { name: "Delete deep-research?" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /skill deep-research/ })).toBeInTheDocument();
+    expect(calls).toEqual([]);
+  });
+
+  it("the X alone never deletes: while the card asks, the X is gone and Enter is Keep", async () => {
+    const { ask, calls } = await askOnCard();
+    expect(screen.queryByRole("button", { name: "Delete deep-research" })).not.toBeInTheDocument();
+    expect(within(ask).getAllByRole("button").map((b) => b.textContent)).toEqual(["Keep", "Delete"]);
+    await userEvent.keyboard("{Enter}");
+    expect(calls).toEqual([]);
+    expect(screen.getByRole("button", { name: /skill deep-research/ })).toBeInTheDocument();
+  });
+
+  it("deletes for real on the Delete press, with the same call as before; Undo puts it back", async () => {
+    const { ask, calls, id } = await askOnCard();
+    expect(id).toBeTruthy();
     await userEvent.click(within(ask).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(screen.queryByRole("button", { name: /skill deep-research/ })).not.toBeInTheDocument());
+    expect(calls).toEqual([id]);
     const toast = await screen.findByText("Deleted deep-research.");
     expect(toast).toBeInTheDocument();
 
@@ -412,16 +478,33 @@ describe("Setup page: delete", () => {
     expect(await screen.findByRole("button", { name: /skill deep-research/ })).toBeInTheDocument();
   });
 
-  it("shows an error and leaves everything alone when the delete fails", async () => {
+  it("shows an error on the card and leaves everything alone when the delete fails", async () => {
     backend.setupDelete = async () => {
       throw new Error("Atlas could not make the backup, so nothing was deleted.");
     };
     await open(backend);
     await openTile("Skills");
     await userEvent.click(await screen.findByRole("button", { name: "Delete deep-research" }));
-    const ask = await screen.findByRole("alertdialog");
+    const ask = await screen.findByRole("group", { name: "Delete deep-research?" });
     await userEvent.click(within(ask).getByRole("button", { name: "Delete" }));
     expect(await within(ask).findByText(/could not make the backup/)).toBeInTheDocument();
+    // Still asking, with both answers back on: Keep leaves the card as it was.
+    await userEvent.click(within(ask).getByRole("button", { name: "Keep" }));
+    expect(screen.getByRole("button", { name: /skill deep-research/ })).toBeInTheDocument();
+  });
+
+  it("the sheet's Delete still asks in a dialog of its own, Cancel first", async () => {
+    await open(backend);
+    await openTile("Skills");
+    await userEvent.click(await screen.findByRole("button", { name: /skill deep-research/ }));
+    const sheet = await screen.findByRole("dialog");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Delete" }));
+    const ask = await screen.findByRole("alertdialog", { name: "Delete deep-research?" });
+    expect(within(ask).getByText(/whole folder/)).toBeInTheDocument();
+    expect(within(ask).getByText(/Atlas keeps a backup/)).toBeInTheDocument();
+    expect(within(ask).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await userEvent.click(within(ask).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /skill deep-research/ })).toBeInTheDocument();
   });
 
@@ -442,7 +525,7 @@ describe("Setup page: delete", () => {
     x.focus();
     expect(x).toHaveFocus();
     await userEvent.keyboard("{Enter}");
-    expect(await screen.findByRole("alertdialog", { name: "Delete deep-research?" })).toBeInTheDocument();
+    expect(await screen.findByRole("group", { name: "Delete deep-research?" })).toBeInTheDocument();
   });
 });
 

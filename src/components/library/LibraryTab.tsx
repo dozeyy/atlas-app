@@ -31,6 +31,16 @@ function useWide(px: number): boolean {
   return wide;
 }
 
+/**
+ * True when the reason reads like the network: the sentence the catalog call gives for it, or the
+ * words a failed lookup or connection leaves in Claude Code's own answer. Anything else (no
+ * command, an empty answer, a refused write, a timeout of the command itself) is not offline.
+ */
+export function looksOffline(reason: string | null): boolean {
+  if (!reason) return false;
+  return reason === OFFLINE || /\b(ENOTFOUND|ECONNREFUSED|ECONNRESET|ENETUNREACH|EAI_AGAIN|getaddrinfo|offline|no internet|network (is )?(unreachable|error|request failed)|could not reach)\b/i.test(reason);
+}
+
 /** Toolkit > Library: find a plugin or skill, read what it is, install it. */
 export function LibraryTab() {
   const lib = useLibrary();
@@ -167,14 +177,27 @@ export function LibraryTab() {
           Getting the plugin list from Claude Code. The first time takes a few seconds.
         </p>
       </div>
-    ) : (
-      // A calm error: what happened, the next step, the engine's own words behind Details.
+    ) : looksOffline(lib.error) ? (
+      // The connection line is only said when the failure is one: the list comes from Claude
+      // Code's own command, and most of the ways that can fail have nothing to do with the network.
       <EmptyState
         fill
         variant="error"
         title="Atlas could not reach the plugin catalog"
         body="Check your connection and press Refresh."
-        reason={lib.error && lib.error !== OFFLINE ? lib.error : null}
+        reason={lib.error !== OFFLINE ? lib.error : null}
+        action={{ label: "Refresh", onClick: () => void refreshLibrary() }}
+      />
+    ) : (
+      // A calm error: what happened, the next step, the engine's own words behind Details. The
+      // list comes from Claude Code's own command, so a failure that is not the network is its
+      // answer (or no answer); the sentence says where that answer is, and never blames the connection.
+      <EmptyState
+        fill
+        variant="error"
+        title="The Library could not load"
+        body="Claude Code did not give Atlas the plugin list. Refresh tries again; what it said is under Details."
+        reason={lib.error}
         action={{ label: "Refresh", onClick: () => void refreshLibrary() }}
       />
     );
@@ -208,7 +231,19 @@ export function LibraryTab() {
     );
   } else {
     body = (
-      <LibraryList rows={rows} heads={heads} showSource={showSource} installedOnly={lib.source === "installed"} selectedKey={selectedKey} cli={cli} busy={lib.busy} actions={actions} scrollTo={scrollTo} onFirstRows={reportFirstRows} />
+      <LibraryList
+        rows={rows}
+        heads={heads}
+        showSource={showSource}
+        installedOnly={lib.source === "installed"}
+        query={query}
+        selectedKey={selectedKey}
+        cli={cli}
+        busy={lib.busy}
+        actions={actions}
+        scrollTo={scrollTo}
+        onFirstRows={reportFirstRows}
+      />
     );
   }
 
@@ -273,7 +308,10 @@ export function LibraryTab() {
 
       <div className="flex min-h-0 flex-1 gap-4">
         {wide && <SourceRail options={options} value={lib.source} counts={!loading} onChange={setSource} onAdd={() => setAdding(true)} />}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{body}</div>
+        {/* data-sheet-open: the highlighted row is drawn while its sheet is up (library.css). */}
+        <div data-sheet-open={sheet ? "" : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {body}
+        </div>
       </div>
 
       {sheet && <LibrarySheet key={sheet.pluginId} target={sheet} onClose={() => setSheet(null)} />}

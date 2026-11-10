@@ -4,6 +4,10 @@ import { shortDate } from "../../lib/usage";
 
 /** A start date this close to "Today" would run into it; the number beside the ribbon says it anyway. */
 const LABEL_ROOM = 5;
+/** Fewer days than this and the centre line would run into the dates at either end. */
+const KEY_ROOM = 14;
+/** What the sizes mean, said once under the strip; each dot's own hover gives its day and count. */
+const KEY = "Bigger dot, busier day";
 
 /**
  * The last 30 days as a row of dots: bigger means more changes that day. A day with changes is a
@@ -18,7 +22,13 @@ export function Ribbon({ days, since = 0, onPick, now = Date.now() }: { days: Da
   const cols = { gridTemplateColumns: `repeat(${Math.max(1, days.length)}, minmax(0, 1fr))` };
   return (
     <div>
-      <div className="hx-ribbon" style={cols} role="group" aria-label={start > 0 ? "Changes since Atlas began watching" : "Changes in the last 30 days"}>
+      <div
+        className="hx-ribbon"
+        style={cols}
+        role="group"
+        aria-label={start > 0 ? "Changes since Atlas began watching" : "Changes in the last 30 days"}
+        title={`One dot a day. ${KEY}; press one to go to that day.`}
+      >
         {days.map((d, i) => {
           if (i < start) return <span key={d.day} aria-hidden="true" />;
           const size = ribbonDot(d.count, max);
@@ -44,6 +54,11 @@ export function Ribbon({ days, since = 0, onPick, now = Date.now() }: { days: Da
           {days.length - start > LABEL_ROOM && (
             <span className="whitespace-nowrap" style={{ gridColumn: `${start + 1} / -2`, gridRow: 1 }}>
               {shortDate(days[start].day, now)}
+            </span>
+          )}
+          {days.length - start > KEY_ROOM && (
+            <span className="whitespace-nowrap text-center" style={{ gridColumn: "1 / -1", gridRow: 1 }}>
+              {KEY}
             </span>
           )}
           <span className="whitespace-nowrap text-right" style={{ gridColumn: "1 / -1", gridRow: 1 }}>

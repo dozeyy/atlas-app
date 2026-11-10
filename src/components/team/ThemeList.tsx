@@ -18,8 +18,11 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Helpers as avatar, name and count: the same picture a helper has on its card. */
-function Who({ list, nameOf, extra, none }: { list: { agentType: string; count: number }[]; nameOf: (type: string) => string; extra?: string; none: string }) {
+/**
+ * Helpers as avatar, name and count: the same picture a helper has on its card. The count is a
+ * plain number after the name ("Code reviewer 4"), never in brackets; hovering says "4 times".
+ */
+function Who({ list, nameOf, extra, none }: { list: { agentType: string; count: number }[]; nameOf: (type: string) => string; extra?: { label: string; count: number }; none: string }) {
   if (list.length === 0 && !extra) return <>{none}</>;
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
@@ -29,10 +32,19 @@ function Who({ list, nameOf, extra, none }: { list: { agentType: string; count: 
           <span title={nameOf(x.agentType)} className="min-w-0 truncate">
             {nameOf(x.agentType)}
           </span>
-          <span title={plural(x.count, "time")} className="shrink-0 tabular-nums text-ink-2">{`(${exact(x.count)})`}</span>
+          <span title={plural(x.count, "time")} className="shrink-0 tabular-nums text-ink-2">
+            {exact(x.count)}
+          </span>
         </li>
       ))}
-      {extra && <li className="text-ink-2">{extra}</li>}
+      {extra && (
+        <li className="flex min-w-0 max-w-full items-center gap-1.5 text-ink-2">
+          <span className="min-w-0">{extra.label}</span>
+          <span title={plural(extra.count, "time")} className="shrink-0 tabular-nums">
+            {exact(extra.count)}
+          </span>
+        </li>
+      )}
     </ul>
   );
 }
@@ -77,7 +89,7 @@ function ThemeRow({
               )}
               <span className="min-w-0">
                 {`Raised ${plural(theme.count, "time")} in ${plural(theme.runs, "run")}`}
-                {sev ? `, ${sev}` : ""}
+                {sev ? `. ${sev}` : ""}
               </span>
             </span>
           </span>
@@ -96,7 +108,7 @@ function ThemeRow({
       {open && (
         <dl className="mb-3 ml-5 rounded-control bg-raised px-4 py-3">
           <Detail label="Found in work by">
-            <Who list={theme.foundInWorkBy} nameOf={nameOf} extra={theme.notTied > 0 ? `not tied to one helper (${exact(theme.notTied)})` : undefined} none="Not tied to one helper" />
+            <Who list={theme.foundInWorkBy} nameOf={nameOf} extra={theme.notTied > 0 ? { label: "Not tied to one helper", count: theme.notTied } : undefined} none="Not tied to one helper" />
           </Detail>
           <Detail label="Raised by">
             <Who list={theme.reviewers} nameOf={nameOf} none="Not known" />
