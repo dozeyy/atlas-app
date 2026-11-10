@@ -7,6 +7,7 @@ import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import type { SetupItem } from "../../lib/setup-types";
 import { ConflictChip, copyText, formatDate, KindTile, ScopeChip, SecretsChip, StateChip, TagChip, WarningMark } from "./parts";
 import { useItemCost } from "./CostContext";
+import { HOOK_EVENTS } from "./CreateFlow";
 
 interface ItemProps {
   item: SetupItem;
@@ -22,6 +23,17 @@ function onCopyKey(e: KeyboardEvent, item: SetupItem) {
 }
 
 const MAX_CHIPS = 3;
+
+/**
+ * The chips a card shows. A hook's own chips are its event and its type, which its title
+ * ("PreToolUse - Bash") and first line ("command: ...") already say, so the card says when it
+ * runs in plain words instead ("Before a tool runs"). Every other kind shows its chips as given.
+ */
+function cardChips(item: SetupItem): string[] {
+  if (item.kind !== "hook") return item.chips;
+  const event = HOOK_EVENTS.find((h) => item.name.startsWith(h.value));
+  return event ? [event.label] : [];
+}
 
 /**
  * The small control in a card's corner: an X for what Atlas can delete, a lock
@@ -63,8 +75,9 @@ function CornerControl({ item, onDelete }: { item: SetupItem; onDelete?: (item: 
 
 /** A full card: icon, name, two lines of description, then where it lives. The corner holds the delete X or a lock. */
 export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemProps & { onDelete?: (item: SetupItem) => void }) {
-  const shown = item.chips.slice(0, MAX_CHIPS);
-  const more = item.chips.length - shown.length;
+  const chips = cardChips(item);
+  const shown = chips.slice(0, MAX_CHIPS);
+  const more = chips.length - shown.length;
   const showState = item.enabled.state !== "on" && item.enabled.state !== "none" && item.enabled.label;
   const cost = useItemCost(item.id);
   return (
