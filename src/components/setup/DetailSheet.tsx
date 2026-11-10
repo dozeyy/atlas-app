@@ -60,7 +60,7 @@ type FactRow = { label: string; value: ReactNode; copy?: string };
 
 function Facts({ rows }: { rows: FactRow[] }) {
   return (
-    <dl className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2.5">
+    <dl className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2">
       {rows.map((r) => (
         <div key={r.label} className="contents">
           <dt className="text-body text-ink-2">{r.label}</dt>
@@ -177,7 +177,7 @@ function HiddenValues({ itemId, ranges }: { itemId: string; ranges: MaskedRange[
                     <button
                       type="button"
                       onClick={hide}
-                      className="press inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-control border border-line-strong bg-surface px-2.5 text-body font-medium text-ink hover:bg-raised"
+                      className="press inline-flex h-7 cursor-pointer items-center gap-2 rounded-control border border-line-strong bg-surface px-2 text-body font-medium text-ink hover:bg-raised"
                     >
                       <EyeSlash size={14} aria-hidden="true" />
                       Hide
@@ -188,7 +188,7 @@ function HiddenValues({ itemId, ranges }: { itemId: string; ranges: MaskedRange[
                     type="button"
                     aria-label={`Show value of ${r.key}`}
                     onClick={() => void show(r.index)}
-                    className="press inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-control border border-line-strong bg-surface px-2.5 text-body font-medium text-ink hover:bg-raised"
+                    className="press inline-flex h-7 cursor-pointer items-center gap-2 rounded-control border border-line-strong bg-surface px-2 text-body font-medium text-ink hover:bg-raised"
                   >
                     <Eye size={14} aria-hidden="true" />
                     Show
@@ -196,11 +196,11 @@ function HiddenValues({ itemId, ranges }: { itemId: string; ranges: MaskedRange[
                 )}
               </div>
               {open && (
-                <code role="status" className="selectable mt-2 block break-all rounded-control bg-raised px-2.5 py-2 text-ink">
+                <code role="status" className="selectable mt-2 block break-all rounded-control bg-raised px-2 py-2 text-ink">
                   {shown.value}
                 </code>
               )}
-              {failed === r.index && <p className="mt-1.5 text-caption text-danger">That value could not be read. The file may have changed.</p>}
+              {failed === r.index && <p className="mt-2 text-caption text-danger">That value could not be read. The file may have changed.</p>}
             </li>
           );
         })}
@@ -612,7 +612,7 @@ export function DetailSheet({
             <h2 id={titleId} className="h-page selectable break-words">
               {displayName(item)}
             </h2>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               {/* The sheet's chips take keyboard focus (there are a few): the tooltip then reads on Tab as well as hover. */}
               <Chip tone="muted" title={kindWords(meta.singular, meta.blurb).tip} focusable>
                 {kindWords(meta.singular, meta.blurb).label}
@@ -718,7 +718,7 @@ export function DetailSheet({
 
         {conflict && (
           <Section title="Also defined elsewhere">
-            <p className="mb-2.5 flex items-center gap-2 text-body text-ink-2">
+            <p className="mb-2 flex items-center gap-2 text-body text-ink-2">
               <ConflictChip conflict={conflict} focusable />
               The first one listed is the one Claude uses.
             </p>
@@ -771,9 +771,9 @@ export function DetailSheet({
                     {mcp.onCount} of {mcp.totalProjects || mcp.perProject.length} on
                   </span>
                 </h4>
-                <ul className="grid max-h-56 grid-cols-1 gap-1.5 overflow-y-auto sm:grid-cols-2">
+                <ul className="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
                   {mcp.perProject.map((p) => (
-                    <li key={p.projectId} className="flex items-center justify-between gap-2 rounded-control bg-raised px-2.5 py-1.5 text-body">
+                    <li key={p.projectId} className="flex items-center justify-between gap-2 rounded-control bg-raised px-2 py-2 text-body">
                       <span title={p.projectName} className="truncate text-ink">{p.projectName}</span>
                       <Chip tone={p.on ? "good" : "muted"} title={badge(p.on ? "onHere" : "offHere").tip}>
                         {badge(p.on ? "onHere" : "offHere").label}
@@ -797,7 +797,7 @@ export function DetailSheet({
                       type="button"
                       aria-label={`Edit ${a}`}
                       onClick={() => startEdit(a)}
-                      className="press inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-control px-2 text-body text-ink-2 hover:bg-raised hover:text-ink"
+                      className="press inline-flex h-7 shrink-0 cursor-pointer items-center gap-2 rounded-control px-2 text-body text-ink-2 hover:bg-raised hover:text-ink"
                     >
                       <PencilSimple size={14} aria-hidden="true" />
                       Edit

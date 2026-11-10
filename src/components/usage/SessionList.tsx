@@ -79,7 +79,7 @@ export function ProjectDot({ path }: { path: string }) {
 }
 
 const DOT = (
-  <span aria-hidden="true" className="mx-1.5 text-ink-2/60">
+  <span aria-hidden="true" className="mx-2 text-ink-2/60">
     &middot;
   </span>
 );
@@ -138,7 +138,7 @@ export function SessionLine({
   const name = sessionName(row);
   return (
     <li className="row-in" style={{ ["--i" as string]: index }}>
-      <button type="button" onClick={() => onOpen(row.sessionId)} className="row-btn flex-col justify-center px-5 py-3.5">
+      <button type="button" onClick={() => onOpen(row.sessionId)} className="row-btn flex-col justify-center px-5 py-3">
         <span title={name} className={`block w-full truncate text-lead font-bold ${row.name ? "text-ink" : "text-ink-2"}`}>
           <Marked text={name} query={query} />
         </span>

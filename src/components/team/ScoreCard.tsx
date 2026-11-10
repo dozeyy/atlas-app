@@ -81,7 +81,7 @@ export function ScoreCard({ card, toTs, onOpen }: { card: TypeCard; toTs: number
       </div>
 
       <div className="flex items-end justify-between gap-3">
-        <p className="flex min-w-0 items-baseline gap-1.5">
+        <p className="flex min-w-0 items-baseline gap-2">
           <span className="d d-stat text-ink">{exact(card.runs)}</span>
           <span className="text-body text-ink-2">{card.runs === 1 ? "run" : "runs"}</span>
         </p>
@@ -96,7 +96,7 @@ export function ScoreCard({ card, toTs, onOpen }: { card: TypeCard; toTs: number
             <span className="team-meter-fill" style={{ width: `${Math.round((reviews.passed / Math.max(1, reviews.tied)) * 100)}%` }} />
           </span>
         )}
-        {note && <p className="mt-1.5 break-words text-caption text-ink-2">{note}</p>}
+        {note && <p className="mt-2 break-words text-caption text-ink-2">{note}</p>}
       </div>
 
       <div className="mt-auto space-y-0.5 text-caption text-ink-2">

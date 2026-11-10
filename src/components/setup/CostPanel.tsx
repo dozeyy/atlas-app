@@ -37,7 +37,7 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
           the biggest parts of it, each saying where it loads. Before any session it is the size
           per message. No second unit sits on the surface: the exact per-message size of a row
           (which can be bigger than what every session carries) is in its hover. */}
-      <ol aria-label={weekly ? `Biggest over the ${windowLabel(report)}` : "Biggest"} className="mt-3 space-y-2.5">
+      <ol aria-label={weekly ? `Biggest over the ${windowLabel(report)}` : "Biggest"} className="mt-3 space-y-2">
         {rows.map((r, i) => {
           const share = weeklyTokens(r) / max;
           const openable = onOpen && r.id !== null && known.has(r.id);
@@ -48,7 +48,7 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
           const title = (
             <>
               {label}
-              {count && <span className="ml-1.5 font-normal text-ink-2">{count}</span>}
+              {count && <span className="ml-2 font-normal text-ink-2">{count}</span>}
             </>
           );
           const name = openable ? (

@@ -67,7 +67,7 @@ function About({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="About Atlas" onClose={onClose} width={420} footer={<Close onClose={onClose} />}>
       <Para>Atlas shows how you use Claude Code: your sessions, your spending, and the skills and agents you have set up. It works from the files already on this computer.</Para>
-      <dl className="selectable mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5">
+      <dl className="selectable mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
         {rows.map(([k, v]) => (
           <div key={k} className="contents">
             <dt className="text-ink-2">{k}</dt>
@@ -114,7 +114,7 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
               {g.rows.map((r) => (
                 <div key={r.keys} className="contents">
                   <dt>
-                    <kbd className="code-text whitespace-nowrap rounded-[4px] border border-line bg-raised px-1.5 py-0.5 text-ink-2">{r.keys}</kbd>
+                    <kbd className="code-text whitespace-nowrap rounded-[4px] border border-line bg-raised px-2 py-0.5 text-ink-2">{r.keys}</kbd>
                   </dt>
                   <dd className="text-ink">{r.does}</dd>
                 </div>

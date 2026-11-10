@@ -43,7 +43,7 @@ export function TypeTiles({
             title={tileBlurb(id)}
             onClick={() => onOpen(id)}
             hitClassName="min-h-[72px]"
-            className="flex min-h-[72px] items-center gap-3 px-3.5"
+            className="flex min-h-[72px] items-center gap-3 px-3"
           >
             <KindTile kind={id === "more" ? "more" : (id as ItemKind)} size={44} icon={Icon} />
             <span className="min-w-0 flex-1">

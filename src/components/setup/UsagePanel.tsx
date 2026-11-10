@@ -17,7 +17,7 @@ const NAMED = 8;
 
 /** One unused item: a small raised tag (control radius, never a pill) with its picture and name. */
 const TAG =
-  "inline-flex h-7 max-w-full items-center gap-1.5 rounded-control border border-transparent bg-raised pl-1 pr-2.5 text-caption font-medium text-ink transition-colors duration-[var(--dur-fast)]";
+  "inline-flex h-7 max-w-full items-center gap-2 rounded-control border border-transparent bg-raised pl-1 pr-2 text-caption font-medium text-ink transition-colors duration-[var(--dur-fast)]";
 const TAG_HOT = "hover:border-line-strong hover:text-accent-text";
 
 /**
@@ -97,7 +97,7 @@ function NeverList({
   const rest = sorted.length - NAMED;
 
   return (
-    <ul data-never-list className="flex flex-wrap gap-1.5">
+    <ul data-never-list className="flex flex-wrap gap-2">
       {shown.map((r) => {
         const it = byId.get(r.id)!;
         const line = neverLine(it, r);
@@ -123,7 +123,7 @@ function NeverList({
       })}
       {rest > 0 && (
         <li>
-          <button type="button" aria-expanded={all} onClick={() => setAll((v) => !v)} className={`${TAG} ${TAG_HOT} press cursor-pointer !bg-transparent !pl-2.5 !border-line text-ink-2`}>
+          <button type="button" aria-expanded={all} onClick={() => setAll((v) => !v)} className={`${TAG} ${TAG_HOT} press cursor-pointer !bg-transparent !pl-2 !border-line text-ink-2`}>
             {all ? "Show fewer" : `+${exact(rest)} more`}
           </button>
         </li>
@@ -191,7 +191,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
             {used.length === 0 ? (
               <p className="text-body text-ink-2">Nothing has been used yet.</p>
             ) : (
-              <ul className="space-y-1.5">
+              <ul className="space-y-2">
                 {used.slice(0, TOP).map((r) => {
                   const it = byId.get(r.id)!;
                   return (

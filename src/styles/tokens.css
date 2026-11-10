@@ -324,9 +324,11 @@
 
   /* Layout */
   --sidebar-w: 188px; /* fits the longest label and the streak; was 232 */
-  /* The page fills the window; only its gutters scale (no fixed content width). */
-  --gutter: clamp(20px, calc(var(--app-w) * 0.032), 64px);
-  --gutter-y: clamp(20px, calc(var(--app-w) * 0.024), 44px);
+  /* The page fills the window; only its gutters step with it (no fixed content width). They are
+     whole grid steps, never a share of the width (that gave 25.6 / 37.8 px: off the 8 px grid;
+     Will, 2026-11-10). The steps are below, after this block. */
+  --gutter: 24px;
+  --gutter-y: 24px;
   --titlebar-h: 40px; /* the row across the top: menu, Settings, sidebar toggle, Wrapped, caption buttons */
   /* The shell's corner buttons (32 px): the same distance from every edge of their column as the
      title bar leaves above them ((40 - 32) / 2), and one gap between neighbours. */
@@ -336,6 +338,20 @@
   /* Same numbers as MIN_WIDTH / MIN_HEIGHT in crates/app/src/main.rs. */
   --window-min-w: 900px;
   --window-min-h: 600px;
+}
+
+/* The gutters' steps: 24 at the smallest window, 32 from 1080 wide, 48 / 40 from 1440. */
+@media (min-width: 1080px) {
+  :root {
+    --gutter: 32px;
+    --gutter-y: 32px;
+  }
+}
+@media (min-width: 1440px) {
+  :root {
+    --gutter: 48px;
+    --gutter-y: 40px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

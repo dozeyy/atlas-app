@@ -121,7 +121,7 @@ export function AddFromGitHub({ onClose }: { onClose: () => void }) {
           if (!detail) void check();
         }}
       >
-        <label className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
+        <label className="grid grid-cols-[minmax(0,1fr)] gap-2">
           <span className="text-body text-ink-2">A link to a repository with skills, agents, commands or plugins</span>
           <input
             ref={input}
@@ -164,7 +164,7 @@ export function AddFromGitHub({ onClose }: { onClose: () => void }) {
                 </p>
                 <ul className="grid max-h-48 grid-cols-[minmax(0,1fr)] gap-1 overflow-y-auto">
                   {shaped.plugins.map((p) => (
-                    <li key={p.name} className="min-w-0 rounded-control bg-raised px-3 py-1.5">
+                    <li key={p.name} className="min-w-0 rounded-control bg-raised px-3 py-2">
                       <div title={p.name} className="truncate text-body font-medium text-ink">
                         {p.name}
                       </div>

@@ -17,7 +17,7 @@ export function SetupSkeleton() {
       {/* The type tiles: the same grid, row height and icon size as TypeTiles. */}
       <div className="grid auto-rows-[72px] grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3">
         {Array.from({ length: 12 }, (_, i) => (
-          <div key={i} className="flex items-center gap-3 rounded-card border border-line bg-surface px-3.5">
+          <div key={i} className="flex items-center gap-3 rounded-card border border-line bg-surface px-3">
             <span className="skeleton size-11 rounded-control" />
             <span className="flex-1">
               <Bar w="24%" h={16} />

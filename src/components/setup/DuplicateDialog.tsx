@@ -54,7 +54,7 @@ export function DuplicateDialog({ item, taken, onClose }: { item: SetupItem; tak
         </>
       }
     >
-      <label htmlFor="dup-name" className="mb-1.5 block text-body text-ink-2">
+      <label htmlFor="dup-name" className="mb-2 block text-body text-ink-2">
         Name of the copy
       </label>
       <input

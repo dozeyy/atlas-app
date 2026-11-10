@@ -97,7 +97,7 @@ function FileView({ token, item, onBack }: { token: string; item: InnerItem; onB
       {text && (
         <>
           <div ref={host} className="h-[min(360px,45vh)] overflow-hidden rounded-card border border-line bg-surface" />
-          {text.truncated && <p className="mt-1.5 text-caption text-ink-2">Only the first part of this file is shown.</p>}
+          {text.truncated && <p className="mt-2 text-caption text-ink-2">Only the first part of this file is shown.</p>}
         </>
       )}
     </div>
@@ -365,7 +365,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
                               type="button"
                               title={`Read ${i.name}`}
                               onClick={() => setFile(i)}
-                              className="row-btn items-center gap-2.5 rounded-control px-2 py-1.5 text-body text-ink"
+                              className="row-btn items-center gap-2 rounded-control px-2 py-2 text-body text-ink"
                             >
                               <KindIcon kind={i.kind} name={i.name} />
                               <span className="min-w-0 flex-1 truncate">{i.name}</span>

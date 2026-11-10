@@ -62,7 +62,7 @@ export function ModelChip({ model, effort, className = "" }: { model: string; ef
   return (
     <span
       title={effort ? `${model}, reasoning effort ${effort}` : model}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-bg px-2 text-caption text-ink-2 ${className}`}
+      className={`inline-flex shrink-0 items-center gap-2 rounded-full border border-line bg-bg px-2 text-caption text-ink-2 ${className}`}
     >
       <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: `var(--chart-${modelTone(model)})` }} />
       {modelWithEffort(model, effort)}
@@ -330,7 +330,7 @@ export const OUTCOMES: Record<Outcome, { label: string; color: string }> = {
 export function OutcomeMark({ outcome }: { outcome: Outcome }) {
   const o = OUTCOMES[outcome];
   return (
-    <span className="inline-flex flex-none items-baseline gap-1.5 whitespace-nowrap">
+    <span className="inline-flex flex-none items-baseline gap-2 whitespace-nowrap">
       <i aria-hidden="true" className="size-2 shrink-0 self-center rounded-full" style={{ background: o.color }} />
       {o.label}
     </span>
@@ -349,7 +349,7 @@ export function TokenFigure({ tokens, cost, id, note, className = "" }: { tokens
   return (
     // The unit sits beside the figure in body type, never inside the display size (the Dashboard
     // hero's pattern): "203k" large, "tokens" small on the same baseline.
-    <span className="inline-flex flex-wrap items-baseline gap-x-2.5 tabular-nums" title={note ? `${tokenHint(tokens, cost)}\n${note}` : tokenHint(tokens, cost)}>
+    <span className="inline-flex flex-wrap items-baseline gap-x-2 tabular-nums" title={note ? `${tokenHint(tokens, cost)}\n${note}` : tokenHint(tokens, cost)}>
       <CountUp value={tokens} id={id} format={(n) => compact(Math.round(n))} className={className} />
       <span className="text-lead font-semibold text-ink-2">tokens</span>
       {!v.none && <span className="sr-only">{`, about ${formatUsd(cost.usd ?? 0)} at API prices, estimated${v.partial ? ", incomplete" : ""}`}</span>}

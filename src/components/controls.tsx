@@ -195,7 +195,7 @@ export function Row({
       <div className="min-w-0">
         <div className="text-body font-medium text-ink">
           {/* The hover sits on the words and the mark together; the mark says there is more to read. */}
-          <span title={tip} className={tip ? "inline-flex items-center gap-1.5" : undefined}>
+          <span title={tip} className={tip ? "inline-flex items-center gap-2" : undefined}>
             {label}
             {tip && <Info size={14} aria-hidden="true" className="shrink-0 text-ink-2" />}
           </span>

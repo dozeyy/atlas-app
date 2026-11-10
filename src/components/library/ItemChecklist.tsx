@@ -26,7 +26,7 @@ export function ItemChecklist({
         return (
           <li key={key}>
             <label
-              className={`flex items-start gap-2.5 rounded-control px-2 py-1.5 text-body ${t ? "cursor-default opacity-70" : "cursor-pointer hover:bg-raised"}`}
+              className={`flex items-start gap-2 rounded-control px-2 py-2 text-body ${t ? "cursor-default opacity-70" : "cursor-pointer hover:bg-raised"}`}
             >
               <input type="checkbox" className="peer sr-only" checked={on} disabled={!!t} onChange={() => onToggle(key)} />
               <span
