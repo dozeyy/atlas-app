@@ -38,7 +38,6 @@ export function CollectionView({
   mac,
   onBack,
   onOpenItem,
-  onDelete,
   onCreate,
 }: {
   tile: TileId;
@@ -48,7 +47,6 @@ export function CollectionView({
   mac: boolean;
   onBack: () => void;
   onOpenItem: (id: string) => void;
-  onDelete: (item: SetupItem) => void;
   onCreate: (kind: CreateKind) => void;
 }) {
   const { show: showKeys } = useKeyHints();
@@ -192,7 +190,7 @@ export function CollectionView({
         ) : groups.length === 0 ? (
           <EmptyState variant="no-match" fill query={query.trim() || undefined} action={{ onClick: clearAll, label: "Clear search and filters" }} />
         ) : single ? (
-          <GroupBody group={groups[0]!} onOpenItem={onOpenItem} onDelete={onDelete} />
+          <GroupBody group={groups[0]!} onOpenItem={onOpenItem} canDelete />
         ) : (
           groups.map((g) => (
             <GroupSection
@@ -207,7 +205,7 @@ export function CollectionView({
                 })
               }
               onOpenItem={onOpenItem}
-              onDelete={onDelete}
+              canDelete
             />
           ))
         )}

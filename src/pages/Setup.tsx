@@ -171,7 +171,6 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
           mac={mac}
           onBack={closeTile}
           onOpenItem={setSelectedId}
-          onDelete={setPendingDelete}
           onCreate={setCreating}
         />
       ) : (

@@ -1928,6 +1928,16 @@ html[data-input="keyboard"] .x-del:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
+/*
+ * A Toolkit card asking "Delete name?": the card's own box on the danger wash (over its surface,
+ * the wash alone is see-through), holding still until it has its answer.
+ */
+.item-ask {
+  background:
+    linear-gradient(var(--danger-tint), var(--danger-tint)),
+    var(--surface);
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+}
 
 .row-caret {
   opacity: 0;
