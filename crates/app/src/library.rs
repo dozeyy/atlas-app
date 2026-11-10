@@ -11,7 +11,7 @@
 //! The page never sends a path: it names a staged check by a token this service made, and an item
 //! by kind and name from that check.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -130,10 +130,40 @@ impl Env {
 // The catalog
 // ---------------------------------------------------------------------------
 
+/// A catalog row with only what a row draws and filters on (no source: that is read from the
+/// saved catalog when a plugin is looked at or installed). About a third of the full entry.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlimEntry {
+    plugin_id: String,
+    name: String,
+    description: String,
+    marketplace: String,
+    version: String,
+    /// Installing it runs a command: the row says Atlas does not offer it.
+    by_command: bool,
+}
+
+impl From<catalog::Entry> for SlimEntry {
+    fn from(e: catalog::Entry) -> Self {
+        SlimEntry { by_command: matches!(e.source, catalog::Source::Command), plugin_id: e.plugin_id, name: e.name, description: e.description, marketplace: e.marketplace, version: e.version }
+    }
+}
+
+/// How many rows the first answer carries: a screen and a bit. The rest comes from
+/// `library_catalog_all` once the first rows are painted.
+const FIRST_PAGE: usize = 60;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogView {
-    entries: Vec<catalog::Entry>,
+    /// Every entry, or (when `partial`) the first page in the list's order.
+    entries: Vec<SlimEntry>,
+    /// How many entries the whole catalog holds, and how many per marketplace (the source rail).
+    total: usize,
+    counts: BTreeMap<String, usize>,
+    /// `entries` is only the first page: `library_catalog_all` has the rest.
+    partial: bool,
     /// When the cache was made (None: there is no cache yet).
     fetched_ms: Option<u64>,
     now_ms: u64,
@@ -144,6 +174,14 @@ pub struct CatalogView {
     marketplaces: Vec<ledger::Marketplace>,
     /// The cache is older than six hours (or missing): the page should refresh in the background.
     stale: bool,
+}
+
+/// The whole catalog, slim, for the filter (sent after the first rows are on screen).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogAll {
+    fetched_ms: Option<u64>,
+    entries: Vec<SlimEntry>,
 }
 
 /// One catalog entry: from the saved catalog, or (before there is one) from the marketplace files
@@ -177,22 +215,38 @@ fn entry_fields_key(r: &Result<serde_json::Value, String>) -> String {
     }
 }
 
-fn view(st: &AppState, env: &Env) -> CatalogView {
-    let cache = catalog::read_cache(&env.data);
-    let now = now_ms();
-    let stale = cache.as_ref().is_none_or(|c| now.saturating_sub(c.fetched_ms) > STALE_SECS * 1000);
+/// The saved catalog, or (before there is one) what Claude Code already keeps on disk.
+fn load_entries(env: &Env) -> (Vec<catalog::Entry>, Option<u64>, Vec<ledger::Marketplace>) {
     let marketplaces = ledger::marketplaces(&env.root.dir);
-    let (entries, fetched_ms) = match cache {
-        Some(c) => (c.entries, Some(c.fetched_ms)),
+    match catalog::read_cache(&env.data) {
+        Some(c) => (c.entries, Some(c.fetched_ms), marketplaces),
         // The very first visit: show what Claude Code already keeps on disk instead of an empty
         // tab while the real list is fetched (the page still refreshes, because `stale` is set).
         None => {
             let places: Vec<(String, PathBuf)> = marketplaces.iter().filter_map(|m| m.install_location.clone().map(|l| (m.name.clone(), PathBuf::from(l)))).collect();
-            (catalog::read_local(&places), None)
+            (catalog::read_local(&places), None, marketplaces)
         }
-    };
+    }
+}
+
+/// `first_page_only`: the first `FIRST_PAGE` rows in the list's order (name, then marketplace),
+/// with the counts of the whole catalog; else every entry.
+fn view(st: &AppState, env: &Env, first_page_only: bool) -> CatalogView {
+    let (mut entries, fetched_ms, marketplaces) = load_entries(env);
+    let now = now_ms();
+    let stale = fetched_ms.is_none_or(|f| now.saturating_sub(f) > STALE_SECS * 1000);
+    let total = entries.len();
+    let mut counts = BTreeMap::new();
+    for e in &entries {
+        *counts.entry(e.marketplace.clone()).or_insert(0) += 1;
+    }
+    let partial = first_page_only && total > FIRST_PAGE;
+    if partial {
+        entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.marketplace.cmp(&b.marketplace)));
+        entries.truncate(FIRST_PAGE);
+    }
     let sandbox = st.history_root().is_none();
-    CatalogView { entries, fetched_ms, now_ms: now, cli: CliChoice::Auto.found(), sandbox, marketplaces, stale }
+    CatalogView { entries: entries.into_iter().map(SlimEntry::from).collect(), total, counts, partial, fetched_ms, now_ms: now, cli: CliChoice::Auto.found(), sandbox, marketplaces, stale }
 }
 
 /// The cached catalog and what Claude Code knows (read only, no network).
@@ -204,9 +258,21 @@ pub async fn library_catalog(state: Info<'_>) -> Result<CatalogView, String> {
         let env = Env::of(&st)?;
         // Staged repositories nobody opened for a week go.
         archive::prune(&env.fetch_dir(), KEEP_STAGED);
-        let v = view(&st, &env);
-        eprintln!("[atlas] library: catalog {} entries read in {} ms", v.entries.len(), t.elapsed().as_millis());
+        let v = view(&st, &env, true);
+        eprintln!("[atlas] library: catalog {} entries ({} sent) read in {} ms", v.total, v.entries.len(), t.elapsed().as_millis());
         Ok(v)
+    })
+    .await
+}
+
+/// Every entry, slim: what the page filters over once the first rows are painted.
+#[tauri::command]
+pub async fn library_catalog_all(state: Info<'_>) -> Result<CatalogAll, String> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let env = Env::of(&st)?;
+        let (entries, fetched_ms, _) = load_entries(&env);
+        Ok(CatalogAll { fetched_ms, entries: entries.into_iter().map(SlimEntry::from).collect() })
     })
     .await
 }
@@ -255,7 +321,7 @@ fn refresh_now(st: &AppState, marketplace: Option<&str>) -> Result<CatalogView, 
     }
     catalog::write_cache(&env.data, entries, now_ms()).map_err(|_| "Atlas could not save the catalog.".to_string())?;
     eprintln!("[atlas] library: catalog refreshed in {} ms", t.elapsed().as_millis());
-    Ok(view(st, &env))
+    Ok(view(st, &env, false))
 }
 
 /// What is installed: Claude Code's plugins and the items the Library copied.
@@ -668,7 +734,7 @@ pub async fn library_add_marketplace(state: Info<'_>, lib: Lib<'_>, token: Strin
         let env = Env::of(&st)?;
         let source = lib.with(&token, |s| s.market_source.clone().ok_or_else(|| "That link is not a marketplace.".to_string()))?;
         let out = install::add_marketplace(&env.ctx(), &env.runner()?, &source)?;
-        let catalog = refresh_now(&st, None).or_else(|_| Ok::<_, String>(view(&st, &env)))?;
+        let catalog = refresh_now(&st, None).or_else(|_| Ok::<_, String>(view(&st, &env, false)))?;
         Ok(Added { name: out.name, backup_id: out.backup_id, catalog })
     })
     .await

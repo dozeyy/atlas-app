@@ -51,7 +51,7 @@ export function LibraryTab() {
 
   const query = useDeferredValue(lib.query);
   const rows = useMemo(() => buildRows({ idx: lib.idx, installed: lib.installed, source: lib.source, query }), [lib.idx, lib.installed, lib.source, query]);
-  const options = useMemo(() => sourceOptions(lib.view?.entries ?? [], lib.view?.marketplaces ?? [], lib.installed.length), [lib.view, lib.installed.length]);
+  const options = useMemo(() => sourceOptions(lib.view?.total ?? 0, lib.view?.counts ?? {}, lib.view?.marketplaces ?? [], lib.installed.length), [lib.view, lib.installed.length]);
   const cli = lib.view?.cli ?? true;
 
   const index = selectedKey ? rows.findIndex((r) => r.key === selectedKey) : -1;
@@ -136,7 +136,9 @@ export function LibraryTab() {
   };
 
   const loading = lib.status !== "ready";
-  const noCatalog = !loading && (lib.view?.entries.length ?? 0) === 0;
+  const noCatalog = !loading && (lib.view?.total ?? 0) === 0;
+  // Only the first rows are here yet: a filter that finds nothing waits for the rest instead of saying so.
+  const partial = !!lib.view?.partial;
   const updated = lib.refreshing ? "Updating..." : updatedWords(lib.view?.fetchedMs ?? null, now);
 
   let body;
@@ -163,6 +165,8 @@ export function LibraryTab() {
         </Button>
       </EmptyState>
     );
+  } else if (rows.length === 0 && partial && lib.source !== "installed") {
+    body = <div role="status" aria-label="Searching the catalog" className="skeleton min-h-0 flex-1 rounded-card" />;
   } else if (rows.length === 0) {
     body = (
       <EmptyState

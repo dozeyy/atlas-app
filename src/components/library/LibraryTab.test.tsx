@@ -73,6 +73,24 @@ describe("Library tab: opening", () => {
     await waitFor(() => expect(lib().perf).toHaveLength(1));
   });
 
+  it("paints the first page at once, counts the whole catalog, and filters over all of it once the rest arrives", async () => {
+    mount((b) => {
+      b.library.firstPage = 3;
+    });
+    await openLibraryTab();
+    // A name that is not among the first three alphabetically: it arrives with the rest.
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search plugins and skills" }), "pdf");
+    expect(await row("pdf-tools")).toBeInTheDocument();
+    expect(lib().calls.filter((c) => c === "catalog")).toHaveLength(1);
+    expect(lib().calls.filter((c) => c === "catalog-all")).toHaveLength(1);
+    // The first answer carries three rows but the whole catalog's size and per-source counts.
+    const first = await lib().libraryCatalog();
+    expect(first.entries).toHaveLength(3);
+    expect(first.partial).toBe(true);
+    expect(first.total).toBe(lib().entries.length);
+    expect(Object.values(first.counts).reduce((a, b) => a + b, 0)).toBe(first.total);
+  });
+
   it("remembers the tab, and Left and Right switch tabs from the tab row", async () => {
     mount();
     await openLibraryTab();

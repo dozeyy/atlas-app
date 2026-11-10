@@ -289,6 +289,7 @@ export class MockBackend {
   // ---- Library: the stand-in lives in mockLibrary.ts ----
   readonly library = new MockLibrary();
   libraryCatalog: Backend["libraryCatalog"] = () => this.library.libraryCatalog();
+  libraryCatalogAll: Backend["libraryCatalogAll"] = () => this.library.libraryCatalogAll();
   libraryRefresh: Backend["libraryRefresh"] = (m) => this.library.libraryRefresh(m);
   libraryInstalled: Backend["libraryInstalled"] = () => this.library.libraryInstalled();
   libraryInspectPlugin: Backend["libraryInspectPlugin"] = (id) => this.library.libraryInspectPlugin(id);

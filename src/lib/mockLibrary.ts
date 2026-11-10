@@ -6,6 +6,7 @@
 // Nothing here touches a disk or the network.
 
 import type {
+  CatalogAll,
   CatalogEntry,
   CatalogView,
   FileText,
@@ -17,6 +18,7 @@ import type {
   MarketAdded,
   Pick,
   PluginOutcome,
+  PluginSource,
   SafetyReport,
   UndoDone,
   Shaped,
@@ -24,16 +26,20 @@ import type {
 
 const DIR = "anthropic-plugin-directory";
 
-const seed = (name: string, description: string, marketplace = DIR, source: CatalogEntry["source"] | null = null): CatalogEntry => ({
+/** What the backend keeps per plugin: the slim entry plus its source (the page only gets the slim part). */
+export type MockEntry = CatalogEntry & { source: PluginSource };
+
+const seed = (name: string, description: string, marketplace = DIR, source: PluginSource | null = null): MockEntry => ({
   pluginId: `${name}@${marketplace}`,
   name,
   description,
   marketplace,
   version: "1.0.0",
+  byCommand: source?.kind === "command",
   source: source ?? { kind: "github", repo: `example/${name}`, sha: null, path: null },
 });
 
-export const SEED_CATALOG: CatalogEntry[] = [
+export const SEED_CATALOG: MockEntry[] = [
   seed("frontend-design", "Create distinctive, production-grade frontend interfaces with high design quality."),
   seed("code-review", "Review a pull request for bugs, regressions and style."),
   seed("pdf-tools", "Read, merge, split and fill PDF files."),
@@ -92,7 +98,7 @@ const fromUrl = () => {
 };
 
 export class MockLibrary {
-  entries: CatalogEntry[] = SEED_CATALOG.slice();
+  entries: MockEntry[] = SEED_CATALOG.slice();
   cli: boolean;
   offline: boolean;
   /** Every plugin check finds something. */
@@ -101,6 +107,8 @@ export class MockLibrary {
   installed: InstalledRow[] = [];
   /** Milliseconds each slow step takes (a test sets 0). */
   delay = 120;
+  /** Rows in the first catalog answer; more entries than this and the rest comes from libraryCatalogAll. */
+  firstPage = Number.POSITIVE_INFINITY;
   /** A test reads what was asked. */
   calls: string[] = [];
   perf: number[] = [];
@@ -124,8 +132,14 @@ export class MockLibrary {
   }
 
   private view(): CatalogView {
+    const slim = this.entries.map(({ source: _source, ...e }) => e);
+    const counts: Record<string, number> = {};
+    for (const e of slim) counts[e.marketplace] = (counts[e.marketplace] ?? 0) + 1;
     return {
-      entries: this.entries,
+      entries: slim,
+      total: slim.length,
+      counts,
+      partial: false,
       fetchedMs: this.fetchedMs,
       nowMs: Date.now(),
       cli: this.cli,
@@ -139,8 +153,19 @@ export class MockLibrary {
     this.log("catalog");
     // The first look is the saved copy: nothing fetched yet unless an earlier refresh ran.
     if (this.fetchedMs === null && !this.offline) this.fetchedMs = Date.now() - 20 * 60_000;
-    if (this.offline && this.fetchedMs === null) return { ...this.view(), entries: [] };
-    return this.view();
+    if (this.offline && this.fetchedMs === null) return { ...this.view(), entries: [], total: 0, counts: {} };
+    const v = this.view();
+    // Like the real backend: past one page, the first call carries only the first rows.
+    if (v.entries.length > this.firstPage) {
+      const first = v.entries.slice().sort((a, b) => a.name.localeCompare(b.name)).slice(0, this.firstPage);
+      return { ...v, entries: first, partial: true };
+    }
+    return v;
+  }
+
+  async libraryCatalogAll(): Promise<CatalogAll> {
+    this.log("catalog-all");
+    return { fetchedMs: this.fetchedMs, entries: this.view().entries };
   }
 
   async libraryRefresh(marketplace?: string): Promise<CatalogView> {

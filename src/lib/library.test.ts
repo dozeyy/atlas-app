@@ -34,7 +34,7 @@ function fixture(): CatalogEntry[] {
     description: typeof e.description === "string" ? e.description : "",
     marketplace: String(e.marketplaceName),
     version: typeof e.version === "string" ? e.version : "",
-    source: { kind: "command" as const },
+    byCommand: true,
   }));
 }
 
@@ -44,7 +44,7 @@ const entry = (name: string, description = "", marketplace = DIRECTORY): Catalog
   description,
   marketplace,
   version: "1.0.0",
-  source: { kind: "github", repo: `o/${name}` },
+  byCommand: false,
 });
 
 describe("Library search", () => {
@@ -108,7 +108,7 @@ describe("Library rows and sources", () => {
   const item: InstalledRow = { kind: "item", id: "skill:tidy", name: "tidy", itemKind: "skill", enabled: null, version: null, path: "C:/x/skills/tidy", repo: "o/r", backupId: "b2", changed: false };
 
   it("counts the rail: All, Installed, the directory, then each added marketplace", () => {
-    const o = sourceOptions([a, b], [{ name: "empty-one", source: "", installLocation: null }], 2);
+    const o = sourceOptions(2, { [DIRECTORY]: 1, community: 1 }, [{ name: "empty-one", source: "", installLocation: null }], 2);
     expect(o.map((x) => [x.id, x.label, x.count])).toEqual([
       [ALL, "All", 2],
       [INSTALLED, "Installed", 2],
@@ -131,7 +131,7 @@ describe("Library rows and sources", () => {
   });
 
   it("says why a plugin cannot be installed", () => {
-    expect(installBlock({ ...a, source: { kind: "command" } }, true)).toBe(COMMAND_SOURCE);
+    expect(installBlock({ ...a, byCommand: true }, true)).toBe(COMMAND_SOURCE);
     expect(installBlock(a, false)).toBe(NO_CLI);
     expect(installBlock(a, true)).toBeNull();
   });
@@ -145,7 +145,7 @@ describe("Library words", () => {
     expect(updatedWords(now - 3 * 60_000, now)).toBe("Updated 3 min ago");
     expect(updatedWords(now - 2 * 3600_000, now)).toBe("Updated 2 h ago");
     expect(updatedWords(now - 4 * 24 * 3600_000, now)).toBe("Updated 4 days ago");
-    const view = (fetchedMs: number | null) => ({ entries: [], fetchedMs, nowMs: now, cli: true, sandbox: false, marketplaces: [], stale: false });
+    const view = (fetchedMs: number | null) => ({ entries: [], total: 0, counts: {}, partial: false, fetchedMs, nowMs: now, cli: true, sandbox: false, marketplaces: [], stale: false });
     expect(isStale(view(now - 5 * 3600_000), now)).toBe(false);
     expect(isStale(view(now - 7 * 3600_000), now)).toBe(true);
     expect(isStale(view(null), now)).toBe(true);

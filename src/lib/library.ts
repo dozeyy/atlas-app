@@ -91,14 +91,13 @@ export interface SourceOption {
 }
 
 /** The rail: All, Installed, the directory, then each marketplace the user added. */
-export function sourceOptions(entries: CatalogEntry[], marketplaces: MarketplaceInfo[], installedCount: number): SourceOption[] {
-  const counts = new Map<string, number>();
-  for (const e of entries) counts.set(e.marketplace, (counts.get(e.marketplace) ?? 0) + 1);
+export function sourceOptions(total: number, perMarketplace: Record<string, number>, marketplaces: MarketplaceInfo[], installedCount: number): SourceOption[] {
+  const counts = new Map<string, number>(Object.entries(perMarketplace));
   const names = new Set<string>([...counts.keys(), ...marketplaces.map((m) => m.name)]);
   names.delete(DIRECTORY);
   const rest = [...names].sort((a, b) => a.localeCompare(b));
   const out: SourceOption[] = [
-    { id: ALL, label: "All", count: entries.length },
+    { id: ALL, label: "All", count: total },
     { id: INSTALLED, label: "Installed", count: installedCount },
     { id: mpId(DIRECTORY), label: sourceCaption(DIRECTORY), count: counts.get(DIRECTORY) ?? 0 },
   ];
@@ -284,7 +283,7 @@ export function toolkitIdFor(items: { id: string; path: string | null }[], path:
 
 /** Can Atlas install this entry at all, and if not, why (a sentence for the row). */
 export function installBlock(entry: CatalogEntry, cli: boolean): string | null {
-  if (entry.source.kind === "command") return COMMAND_SOURCE;
+  if (entry.byCommand) return COMMAND_SOURCE;
   if (!cli) return NO_CLI;
   return null;
 }

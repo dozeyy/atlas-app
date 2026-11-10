@@ -56,6 +56,30 @@ function set(next: Partial<LibraryState>) {
 
 function setView(view: CatalogView) {
   set({ view, idx: indexEntries(view.entries), error: null });
+  if (view.partial) void loadRest(view);
+}
+
+/**
+ * The first answer carries only the first rows. Once they are painted, fetch every entry and
+ * index it, so the filter covers the whole catalog (a typed word waits on this, a few ms).
+ * Ignored when a fresh full view replaced the page in the meantime.
+ */
+function loadRest(first: CatalogView): void {
+  const go = () =>
+    void getBackend()
+      .libraryCatalogAll()
+      .then((all) => {
+        if (state.view !== first) return;
+        const view = { ...first, entries: all.entries, partial: false };
+        set({ view, idx: indexEntries(all.entries) });
+      })
+      .catch(() => {
+        // Keep the first rows; a refresh will bring the full list.
+        if (state.view === first) void refreshLibrary();
+      });
+  // After the first frame with rows, not before: the first paint is the number that matters.
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => setTimeout(go, 0));
+  else setTimeout(go, 0);
 }
 
 // ---- opening -----------------------------------------------------------------------------------
@@ -71,7 +95,7 @@ export function openLibrary(): void {
       setView(view);
       set({ status: "ready", installed });
       // A missing or old copy is refreshed in the background; the list is already on screen.
-      if (view.stale || view.entries.length === 0) void refreshLibrary();
+      if (view.stale || view.total === 0) void refreshLibrary();
     })
     .catch((e) => {
       set({ status: "ready", error: errorText(e, OFFLINE) });
@@ -105,7 +129,7 @@ export async function refreshLibrary(marketplace?: string): Promise<void> {
   } catch (e) {
     const words = errorText(e, OFFLINE);
     // With a list on screen the old copy stays and one toast says why; with none the page says it.
-    if (state.view && state.view.entries.length) pushToast({ message: words, tone: "error" });
+    if (state.view && state.view.total) pushToast({ message: words, tone: "error" });
     else set({ error: words });
   } finally {
     set({ refreshing: false });

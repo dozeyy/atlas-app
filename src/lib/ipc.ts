@@ -54,6 +54,7 @@ import type {
 import type { NowFinished, NowSnapshot } from "./nowTypes";
 import type { UpdateInfo, UpdateProgress } from "./updateTypes";
 import type {
+  CatalogAll,
   CatalogView,
   FileText,
   InstalledRow,
@@ -261,6 +262,7 @@ export interface Backend {
   // token, never a path.
   /** The saved catalog and what Claude Code knows. Reads the cache only. */
   libraryCatalog(): Promise<CatalogView>;
+  libraryCatalogAll(): Promise<CatalogAll>;
   /** Ask Claude Code for the catalog again (one marketplace first when named). Rejects with one sentence. */
   libraryRefresh(marketplace?: string): Promise<CatalogView>;
   /** Plugins Claude Code has installed and items the Library copied. */
@@ -379,6 +381,7 @@ const tauriBackend: Backend = {
   },
   onUpdateProgress: (cb) => listen<UpdateProgress>(UPDATE_PROGRESS_EVENT, (e) => cb(e.payload)),
   libraryCatalog: () => invoke<CatalogView>("library_catalog"),
+  libraryCatalogAll: () => invoke<CatalogAll>("library_catalog_all"),
   libraryRefresh: (marketplace) => invoke<CatalogView>("library_refresh", { marketplace: marketplace ?? null }),
   libraryInstalled: () => invoke<InstalledRow[]>("library_installed"),
   libraryInspectPlugin: (pluginId) => invoke<LibraryDetail>("library_inspect_plugin", { pluginId }),

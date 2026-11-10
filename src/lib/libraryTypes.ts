@@ -14,7 +14,14 @@ export interface CatalogEntry {
   description: string;
   marketplace: string;
   version: string;
-  source: PluginSource;
+  /** Installing it runs a command: Atlas does not offer it. (The full source stays in Rust.) */
+  byCommand: boolean;
+}
+
+/** Every entry, slim: sent after the first rows are painted. */
+export interface CatalogAll {
+  fetchedMs: number | null;
+  entries: CatalogEntry[];
 }
 
 export interface MarketplaceInfo {
@@ -25,7 +32,13 @@ export interface MarketplaceInfo {
 }
 
 export interface CatalogView {
+  /** Every entry, or (when `partial`) the first page in the list's order. */
   entries: CatalogEntry[];
+  /** The whole catalog's size and its size per marketplace (the source rail). */
+  total: number;
+  counts: Record<string, number>;
+  /** `entries` is only the first page; `libraryCatalogAll` has the rest. */
+  partial: boolean;
   /** When the cache was made; null until the first refresh. */
   fetchedMs: number | null;
   nowMs: number;

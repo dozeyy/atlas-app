@@ -174,6 +174,7 @@ fn main() {
             setup_service::setup_create,
             setup_service::setup_validate_draft,
             library::library_catalog,
+            library::library_catalog_all,
             library::library_perf,
             library::library_refresh,
             library::library_installed,
