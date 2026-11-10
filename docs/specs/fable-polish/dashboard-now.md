@@ -83,6 +83,34 @@ Marks: FIX (polish, done in this pass), SUGGEST (for Will), LEAVE (why).
    for a scrollbar inside the column). The room now sits outside the column, so every right
    edge lines up. `now-run1/before-light-1180x780` against `now-run1/after-light-1180x780`.
 
+## Redesigns (after Will widened the scope, 2026-11-09)
+
+Each is its own commit. Pictures are in `docs/shots/fable-pass/` (local only).
+
+1. BUILT. Dashboard, narrow window (sidebar open at 900 wide): Today and On a roll share a
+   row under the hero instead of two full-width cards. Principle: density and proximity (a
+   full-width card held one ring and two numbers; the two "how am I doing today" cards now
+   read together). Scroll 769 to 653 px. Nothing changes at the other widths (399 px at 900
+   with the sidebar closed, 0 at 1180x780, measured again).
+   `dashboard/r1-before-*-900x600-expanded` against `dashboard/r1-after-*-900x600-expanded`.
+2. BUILT. Now: a long file path keeps its file name. Principle: the last part of a path is
+   the part that tells you what is happening; it was the part being cut.
+   `now-run1/r2-before-*-stress` against `now-run1/r2-after-*-stress` (also `now-run3`).
+   One test line changed (`Now.test.tsx`): the path is two spans now, so the test reads the
+   whole line's text.
+3. BUILT (a fix, not a redesign). Dashboard at 1600 wide: Recent sessions drew two columns
+   inside the narrow right column and cut the titles; one column now.
+   `dashboard/after-dark-1600x1000`.
+4. LEFT. Recent sessions across the full width under everything, at every size. Tried on
+   paper: at the default window it brings back about 250 px of scrolling where there is none
+   now, and leaves a hole under On a roll.
+5. LEFT. Getting Models and Projects onto the first screen at 900x600. They need 135 px more
+   than the window has after the hero and Activity rows; the first screen already answers
+   this week, today, the trend and the streak. Shrinking the chart to fit would cost the
+   chart more than it gains.
+6. LEFT. The crowded second line of a Recent sessions row in the narrow column: the row is
+   the Sessions page's component and its order is Will's (2026-11-08). Shared request.
+
 ## Suggestions for Will
 
 1. Recent sessions on the Dashboard: in the narrow right column the second line of each row
@@ -90,7 +118,6 @@ Marks: FIX (polish, done in this pass), SUGGEST (for Will), LEAVE (why).
    full width under the cards at every size.
 2. One wording for the first read: the banner and the skeleton line say the same thing in
    two ways. Keep the skeleton line, drop "This happens once." from the banner.
-3. Now: a long file path under "Editing" is cut at its end, which hides the file name.
-   Cutting the start instead ("...widgets/ActivityHeatmap.tsx") would say more.
+3. Built: see Redesigns 2.
 4. The engine lists top projects and models by cost while the page shows tokens. The page
    now sorts what it gets, but the top four by cost are not always the top four by tokens.
