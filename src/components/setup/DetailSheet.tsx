@@ -754,7 +754,8 @@ export function DetailSheet({
         <SourceSection item={item} loads={loads} fileRows={fileRows} />
           </>
         )}
-        <div className="h-6 shrink-0" />
+        {/* Never takes a click: in a short window a long editor runs under this gap, and Save sits there. */}
+        <div className="pointer-events-none h-6 shrink-0" />
       </div>
       {duplicating && <DuplicateDialog item={item} taken={taken} onClose={() => setDuplicating(false)} />}
       {discard && (
