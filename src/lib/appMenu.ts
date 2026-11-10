@@ -39,6 +39,7 @@ export const modName = (platform: Platform) => (platform === "macos" ? "Cmd" : "
 /** Every keyboard shortcut Atlas has, for the Keyboard shortcuts sheet and the tests. */
 export function shortcutGroups(platform: Platform): { title: string; rows: { keys: string; does: string }[] }[] {
   const mod = modName(platform);
+  const alt = platform === "macos" ? "Option" : "Alt";
   return [
     {
       title: "Anywhere",
@@ -53,6 +54,13 @@ export function shortcutGroups(platform: Platform): { title: string; rows: { key
             ]
           : []),
         { keys: platform === "macos" ? "F10" : "Alt or F10", does: "Open the menu; arrow keys move, Enter picks, Escape closes" },
+      ],
+    },
+    {
+      title: "Sessions",
+      rows: [
+        { keys: `Escape or ${alt}+Left`, does: "Go back to the list from an open chat" },
+        { keys: `${alt}+Up / ${alt}+Down`, does: "Open the previous or next chat" },
       ],
     },
     {
