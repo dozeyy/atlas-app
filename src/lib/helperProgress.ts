@@ -6,7 +6,7 @@
 // runs (About 60% of a typical run); else nothing to compare (docs/specs/agent-scorecard.md D43).
 
 import { helperName, typeName } from "./helperName";
-import { formatDuration, modelWithEffort } from "./usage";
+import { effortWords, formatDuration, modelWithEffort } from "./usage";
 import type { NowHelper } from "./nowTypes";
 
 /** No new line for this long (and no call open) reads as "no progress". One constant for the page. */
@@ -31,13 +31,13 @@ export interface Progress {
 export { typeName };
 
 /**
- * "Opus 5.5 (dot) high": the exact model and the effort the transcript says, through the app's one
+ * "Opus 5.5, high effort": the exact model and the effort the transcript says, through the app's one
  * label rule (`modelWithEffort`, as on Sessions, Session Detail and the chat cards). Either part that the lines do not say is left out, never
  * guessed; with neither there is nothing to show.
  */
 export function modelEffort(h: Pick<NowHelper, "model" | "effort">): string | null {
   if (h.model) return modelWithEffort(h.model, h.effort);
-  return h.effort || null;
+  return h.effort ? effortWords(h.effort) : null;
 }
 
 export function progressOf(h: NowHelper): Progress {

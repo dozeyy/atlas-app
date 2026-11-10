@@ -1,6 +1,6 @@
 // Pure helpers for the Team tab: what the cards and themes say, in plain words. No React here.
 
-import { addDays, exact, formatDuration, localDay, modelLabel, plural } from "./usage";
+import { addDays, exact, formatDuration, localDay, modelWithEffort, plural } from "./usage";
 import type { BarDatum } from "../components/charts/shared";
 import type { EndCounts, ReviewCounts, ReviewTheme, RunRow, ScorecardArgs, StartedFrom, TypeCard, VerdictCounts } from "./teamTypes";
 
@@ -143,14 +143,8 @@ export function endRows(e: EndCounts): { key: string; label: string; n: number }
   ].filter((r) => r.n > 0);
 }
 
-/**
- * The model a helper mostly ran on, with how hard it was asked to think: "Sonnet 5.5, high effort".
- * The bare word ("high") says nothing on its own.
- */
-export function modelLine(model: string, effort: string | null | undefined): string {
-  const name = modelLabel(model);
-  return effort ? `${name}, ${effort} effort` : name;
-}
+/** The model a helper mostly ran on, with how hard it was asked to think: the app's one rule. */
+export const modelLine = modelWithEffort;
 
 /** What the small bars on every card plot, said once under the cards. */
 export function weeklyLegend(weeks: number): string {

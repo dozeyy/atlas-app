@@ -112,13 +112,13 @@ describe("progress words", () => {
 
 describe("model and effort", () => {
   it("reads as the exact model and the effort the transcript says", () => {
-    expect(modelEffort({ model: "claude-opus-5-5", effort: "high" })).toBe("Opus 5.5 · high");
-    expect(modelEffort({ model: "claude-sonnet-5-5", effort: "medium" })).toBe("Sonnet 5.5 · medium");
+    expect(modelEffort({ model: "claude-opus-5-5", effort: "high" })).toBe("Opus 5.5, high effort");
+    expect(modelEffort({ model: "claude-sonnet-5-5", effort: "medium" })).toBe("Sonnet 5.5, medium effort");
   });
 
   it("leaves out what the lines do not say, and shows nothing when they say neither", () => {
     expect(modelEffort({ model: "claude-opus-5-5", effort: null })).toBe("Opus 5.5");
-    expect(modelEffort({ model: null, effort: "high" })).toBe("high");
+    expect(modelEffort({ model: null, effort: "high" })).toBe("high effort");
     expect(modelEffort({ model: null, effort: null })).toBeNull();
   });
 
@@ -131,7 +131,7 @@ describe("model and effort", () => {
 
   it("shows on the row, with the raw id on hover", () => {
     render(<HelperTracker chats={[chat([helper()])]} />);
-    const m = screen.getByText("Opus 5.5 · high", { selector: ".ht-model" });
+    const m = screen.getByText("Opus 5.5, high effort", { selector: ".ht-model" });
     expect(m).toHaveAttribute("title", "claude-opus-5-5");
   });
 
@@ -195,7 +195,7 @@ describe("the list", () => {
     const li = screen.getByRole("listitem");
     expect(li).not.toHaveAttribute("aria-label");
     expect(li).not.toHaveAttribute("aria-labelledby");
-    for (const text of ["About 60% of a typical run", "12 tool calls", "Reading", "Opus 5.5 · high"]) {
+    for (const text of ["About 60% of a typical run", "12 tool calls", "Reading", "Opus 5.5, high effort"]) {
       expect(li.textContent).toContain(text);
     }
     // The decorative trail stays out of the reading order.

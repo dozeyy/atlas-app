@@ -279,7 +279,8 @@ describe("effort", () => {
   });
 
   it("puts the effort after the full model name, or leaves it off", () => {
-    expect(modelWithEffort("claude-opus-5-5", "high")).toBe("Opus 5.5 · high");
+    expect(modelWithEffort("claude-opus-5-5", "high")).toBe("Opus 5.5, high effort");
+    expect(modelWithEffort("claude-opus-5-5", "xhigh")).toBe("Opus 5.5, extra high effort");
     expect(modelWithEffort("claude-opus-5-5", null)).toBe("Opus 5.5");
     expect(modelWithEffort("claude-fable-5-2", undefined)).toBe("Fable 5.2");
   });

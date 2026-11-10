@@ -104,7 +104,7 @@ function effortTitle(row: SessionRow): string {
  *             hover)  >  whether helpers ran (accent-colored text, no chip)  >  when it happened
  *             (the time alone, "16:42", under a day band that already names the day; the
  *             whole date is then in its hover)
- *             >  the main model with its most used reasoning effort ("Opus 5.5 · high"; the
+ *             >  the main model with its most used reasoning effort ("Opus 5.5, high effort"; the
  *             full mix is in its hover; no effort recorded shows the model alone)
  *           A removed file adds "File removed" after the date, as plain text.
  *   line 3  only when a message search found words inside this chat: one line of it, matches bold

@@ -32,7 +32,7 @@ export function modelTone(model: string): number {
 }
 
 /**
- * "Opus 5.5 · high + Haiku 5.5": the models a session used under their full names (never a
+ * "Opus 5.5, high effort + Haiku 5.5": the models a session used under their full names (never a
  * family alone), each with its colour dot, on one quiet inline run. `effort` goes on `main`.
  */
 export function ModelDots({ models, main, effort, hint }: { models: string[]; main?: string; effort?: string | null; /** The hover, when it says more than the ids. */ hint?: string }) {

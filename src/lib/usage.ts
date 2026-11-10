@@ -190,10 +190,21 @@ export function effortMix(efforts: EffortUse[] | null | undefined): string {
     .join(", ");
 }
 
-/** "Opus 5.5 \u00b7 high", or just "Opus 5.5" when the effort is unknown. */
+/**
+ * How hard a model was asked to think, in words that stand on their own: "high effort". The bare
+ * setting ("high", "xhigh") says nothing by itself.
+ */
+export function effortWords(effort: string): string {
+  return `${effort === "xhigh" ? "extra high" : effort} effort`;
+}
+
+/**
+ * The one way a model and its effort are written, on every page: "Opus 5.5, high effort", or just
+ * "Opus 5.5" when no effort was recorded (never a guess).
+ */
 export function modelWithEffort(model: string, effort: string | null | undefined): string {
   const name = modelLabel(model);
-  return effort ? `${name} \u00b7 ${effort}` : name;
+  return effort ? `${name}, ${effortWords(effort)}` : name;
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {

@@ -35,7 +35,7 @@ describe("receipt: every list adds up to the chat", () => {
     const r = (await receipts()).find((x) => x.models.length > 0)!;
     const first = r.models[0].model;
     const lines = byModel(r, (m) => (m === first ? "high" : null));
-    expect(lines[0].label).toMatch(/^[A-Z][a-z]+ \d+(\.\d+)? · high$/);
+    expect(lines[0].label).toMatch(/^[A-Z][a-z]+ \d+(\.\d+)?, high effort$/);
     expect(byModel(r)[0].label).not.toContain("·");
   });
 

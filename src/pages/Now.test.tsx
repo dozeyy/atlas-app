@@ -180,7 +180,7 @@ describe("Now", () => {
     expect(within(waitRow).getByText("48k")).toBeInTheDocument();
     expect(within(waitRow).getByText("4 min")).toBeInTheDocument();
     // Same model chip as the running and finished cards.
-    expect(within(waitRow).getByText("Opus 5.5 · high")).toHaveClass("chip");
+    expect(within(waitRow).getByText("Opus 5.5, high effort")).toHaveClass("chip");
 
     // What waits for you leads the page, with a sign and words beside the colour.
     expect(wait.compareDocumentPosition(running) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

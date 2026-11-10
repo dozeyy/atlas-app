@@ -91,7 +91,7 @@ export function whatItUsed(r: Receipt): SpendLine[] {
 /** Cache reads, listed apart from the total (they are re-reads of what is already stored). */
 export const cacheReads = (r: Receipt): { tokens: number; usd: number } => ({ tokens: r.tokenKinds.cacheRead, usd: r.kinds.cacheRead });
 
-/** One line per model: "Opus 5.5 \u00b7 high" when `effortOf` knows the model's most used effort. */
+/** One line per model: "Opus 5.5, high effort" when `effortOf` knows the model's most used effort. */
 export function byModel(r: Receipt, effortOf?: (model: string) => string | null | undefined): SpendLine[] {
   const lines: SpendLine[] = r.models.map((m) => ({
     key: m.model,
