@@ -48,9 +48,11 @@ export function IndexProgress({
         className="mb-6 flex items-start gap-3 rounded-card border border-line bg-danger-tint px-5 py-4"
       >
         <WarningCircle size={20} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0 text-danger" />
-        <div className="min-w-0 flex-1">
+        {/* A band over a page that still has something to show. The engine's own words stay behind
+            a hover; a page with nothing else uses EmptyState's error variant instead. */}
+        <div className="min-w-0 flex-1" title={status.error ?? undefined}>
           <div className="text-body font-medium text-ink">Atlas could not read your usage</div>
-          <p className="mt-0.5 text-body text-ink-2">{status.error ?? "The usage cache could not be opened."}</p>
+          <p className="mt-0.5 text-body text-ink-2">What you see here may be out of date.</p>
         </div>
         {onRetry && <Button onClick={onRetry}>Try again</Button>}
       </div>

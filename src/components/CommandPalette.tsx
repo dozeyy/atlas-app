@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ComponentType, KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ChatsCircle, FolderSimple, MagnifyingGlass, Package, type IconProps } from "@phosphor-icons/react";
+import { EmptyState } from "./EmptyState";
 import { NAV } from "./Sidebar";
 import { AgentAvatar } from "./usage/helperKit";
 import { KIND_BY_ID } from "../lib/setup-model";
@@ -241,11 +242,24 @@ function Palette() {
           />
           {showKeys && <kbd className="qj-key">Esc</kbd>}
         </div>
-        {shown.length === 0 ? (
+        {shown.length === 0 && searching ? (
           // While the words are still being searched the row stays, empty, so nothing jumps.
-          <p className="qj-none" role="status" aria-busy={searching}>
-            {searching ? " " : "Nothing matches"}
+          <p className="qj-none" role="status" aria-busy="true">
+            {" "}
           </p>
+        ) : shown.length === 0 ? (
+          // The field keeps the keyboard (Tab stays in it), so Clear is for the mouse: it empties the field and hands it back.
+          <EmptyState
+            compact
+            variant="no-match"
+            query={query}
+            action={{
+              onClick: () => {
+                type("");
+                input.current?.focus();
+              },
+            }}
+          />
         ) : (
           <ul ref={list} id={listId} role="listbox" aria-label="Results" className="qj-list">
             {shown.map((item, i) => {

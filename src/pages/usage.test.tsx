@@ -125,9 +125,12 @@ describe("Dashboard", () => {
 
   it("explains an engine error and recovers on retry", async () => {
     const backend = mount("error");
-    const alerts = await screen.findAllByRole("alert");
-    expect(alerts.length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/could not be opened/).length).toBeGreaterThan(0);
+    // One calm message takes the page: a plain sentence, with the engine's own words behind Details.
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Atlas could not read your usage");
+    expect(screen.queryByText(/could not be opened/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(screen.getByText(/could not be opened/)).toBeInTheDocument();
     backend.usage.setScenario("data");
     await userEvent.click(screen.getAllByRole("button", { name: "Try again" })[0]);
     await screen.findByText("Last 7 days");

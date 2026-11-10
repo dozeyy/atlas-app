@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, FolderSimple, Info, SquaresFour } from "@phosphor-icons/react";
+import { ArrowRight, FolderSimple, Info } from "@phosphor-icons/react";
 import { Button, Card, PageTitle } from "../components/controls";
 import { CountUp } from "../components/CountUp";
 import { EmptyState } from "../components/EmptyState";
@@ -14,7 +14,7 @@ import type { StackItem } from "../components/charts/StackBar";
 import { ActivityCard } from "../components/usage/ActivityCard";
 
 import { SessionGrid, SessionLine } from "../components/usage/SessionList";
-import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
+import { SectionTitle, Skeleton } from "../components/usage/StateBlocks";
 import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
 import { openSessionNext } from "../lib/nav";
@@ -180,6 +180,8 @@ function modelItems(data: DashboardData): StackItem[] {
 }
 
 /** The Dashboard fits a 1280x800 window without scrolling; the Sessions tab has the full list. */
+/** An empty or failed Dashboard takes the page: at least a card's height, and the window's when it is taller. */
+const STATE_HEIGHT = "min-h-[max(320px,calc(var(--app-h)-9rem))]";
 const RECENT_SHOWN = 3;
 /** The Projects card lists this many, whatever the engine sends (the rest are on the Sessions tab). */
 const PROJECTS_SHOWN = 4;
@@ -261,13 +263,15 @@ export function Dashboard() {
     return { rows, count: series ? active : null };
   }, [data, projectSeries.data]);
 
+  const reindex = () => void backend.usageReindex("changed").catch(() => {});
   const weekTokens = data ? headline(data.week.tokens) : 0;
   const updated = updatedText(dash.at, now);
 
   return (
     <div className="@container">
       <PageTitle title="Dashboard" />
-      <IndexProgress status={status} progress={progress} onRetry={() => void backend.usageReindex("changed").catch(() => {})} />
+      {/* With nothing to show under it, a failed engine is the page's one calm message, not a band over a blank page. */}
+      {!(engineDown && !data) && <IndexProgress status={status} progress={progress} onRetry={reindex} />}
 
       {cfg === null ? (
         <p role="status" className="rounded-card border border-line bg-surface px-5 py-4 text-body text-ink-2">
@@ -276,16 +280,30 @@ export function Dashboard() {
             : "Waiting for your Claude folder. Your usage appears here as soon as it is ready."}
         </p>
       ) : dash.error && !cacheNotReady(status) && !engineDown ? (
-        <ErrorBlock title="Could not load your usage" message={dash.error} onRetry={() => dash.reload(false)} />
-      ) : engineDown && !data ? null : !data || (nothing && firstIndex) ? (
+        <EmptyState
+          variant="error"
+          className={STATE_HEIGHT}
+          title="Could not load your usage"
+          reason={dash.error}
+          action={{ onClick: () => dash.reload(false) }}
+        />
+      ) : engineDown && !data ? (
+        <EmptyState
+          variant="error"
+          className={STATE_HEIGHT}
+          title="Atlas could not read your usage"
+          body="Nothing in your Claude folder was changed."
+          reason={status?.error}
+          action={{ onClick: reindex }}
+        />
+      ) : !data || (nothing && firstIndex) ? (
         <DashboardSkeleton />
       ) : nothing ? (
         <EmptyState
-          icon={SquaresFour}
           seed={7}
-          className="min-h-[max(320px,calc(var(--app-h)-20rem))]"
+          className={STATE_HEIGHT}
           title="No Claude Code usage found yet"
-          body="Atlas reads the conversations Claude Code saves in your Claude folder. Use Claude Code once and the numbers show up here on their own."
+          body="Use Claude Code once and your numbers show up here on their own."
         />
       ) : (
         <div className={`${PAGE_GRID} @[900px]:items-start`}>
