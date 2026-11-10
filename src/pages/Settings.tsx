@@ -404,12 +404,7 @@ export function Settings() {
               price.data.error ? (
                 <span className="text-danger">{price.data.error}</span>
               ) : (
-                <>
-                  Updated {price.data.table.updated}
-                  <div className="mt-1 text-caption">
-                    <Path>{price.data.path}</Path>
-                  </div>
-                </>
+                <span title={price.data.path}>Updated {price.data.table.updated}</span>
               )
             ) : (
               "Loading"
@@ -418,7 +413,8 @@ export function Settings() {
         >
           <Button onClick={() => void backend.pricingReveal().catch(() => {})}>Show file</Button>
         </Row>
-        <Row label="Atlas data" hint={<Path>{info.dataDir}</Path>}>
+        {/* No raw path on the surface in this section: a plain line, the path in its hover, the folder behind the button. */}
+        <Row label="Atlas data" hint={<span title={info.dataDir}>Its settings, cache and backups</span>}>
           <Button onClick={() => void openDataDir()}>Open folder</Button>
         </Row>
       </>

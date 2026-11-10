@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { ArrowLeft, ArrowSquareOut, Copy, FloppyDisk } from "@phosphor-icons/react";
 import { getBackend } from "../../lib/ipc";
 import { useFetched } from "../../lib/useUsage";
@@ -104,21 +104,13 @@ export function Detail({ event, onBack }: { event: HistoryEvent; onBack?: () => 
       <header className="flex items-start gap-3">
         <KindTile kind={setupKind(event.item.kind)} size={44} />
         <div className="min-w-0 flex-1">
-          {/* The detail is where a long name and its path can be read in full: both wrap, the path at a slash first. */}
-          <h2 className="d d-figure wrap-anywhere text-ink">{event.item.name}</h2>
+          {/* A long name is read in full here (it wraps); where the file is waits in the name's hover. */}
+          <h2 className="d d-figure wrap-anywhere text-ink" title={event.item.path || undefined}>
+            {event.item.name}
+          </h2>
           <p className="wrap-anywhere text-body text-ink-2">
             {whatHappened(event)}, {agoText(event.at)}. {scopeText(event.item)}.
           </p>
-          {event.item.path && (
-            <p className="selectable mt-0.5 wrap-anywhere font-mono text-caption text-ink-2">
-              {(event.item.path.match(/[^\\/]*[\\/]?/g) ?? []).filter(Boolean).map((part, i) => (
-                <Fragment key={i}>
-                  {part}
-                  <wbr />
-                </Fragment>
-              ))}
-            </p>
-          )}
         </div>
       </header>
 
