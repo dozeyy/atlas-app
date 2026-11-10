@@ -109,6 +109,42 @@ describe("TipLayer", () => {
     expect(btn.getAttribute("title")).toMatch(/^117k tokens/);
   });
 
+  it("Esc on a focus tip is used up by the tip, so the page behind does not also act on it", () => {
+    mount(
+      <div role="dialog">
+        <button title="In a sheet">Inside</button>
+      </div>,
+    );
+    const seen: boolean[] = [];
+    const page = (e: KeyboardEvent) => seen.push(e.defaultPrevented);
+    window.addEventListener("keydown", page);
+    const btn = screen.getByRole("button", { name: "Open" });
+    act(() => btn.focus());
+    expect(tipBox()).toHaveAttribute("data-open");
+    // First press: the tip goes and the key is spent. Second press: nothing is open, the page gets it.
+    fireEvent.keyDown(btn, { key: "Escape" });
+    fireEvent.keyDown(btn, { key: "Escape" });
+    expect(seen).toEqual([true, false]);
+
+    // A hover tip never holds the key back.
+    act(() => btn.blur());
+    fireEvent.pointerOver(screen.getByText("plain"));
+    act(() => void vi.advanceTimersByTime(500));
+    expect(tipBox()).toHaveAttribute("data-open");
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(tipBox()).not.toHaveAttribute("data-open");
+    expect(seen[2]).toBe(false);
+
+    // Inside a dialog the key stays the dialog's: one press closes it, tip and all.
+    const inside = screen.getByRole("button", { name: "Inside" });
+    act(() => inside.focus());
+    expect(tipBox()).toHaveAttribute("data-open");
+    fireEvent.keyDown(inside, { key: "Escape" });
+    expect(tipBox()).not.toHaveAttribute("data-open");
+    expect(seen[3]).toBe(false);
+    window.removeEventListener("keydown", page);
+  });
+
   it("a click puts the tip away and the focus it causes does not bring it back", () => {
     mount();
     const btn = screen.getByRole("button", { name: "Open" });

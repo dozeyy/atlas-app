@@ -18,6 +18,8 @@ const WARM_MS = 400; // moving from one tip straight to the next skips the pause
 const POLL_MS = 400; // while open, notice a target that was removed from the page
 
 const SELECTOR = "[title], [data-tip]";
+/** Anything that closes on Escape itself: a tip inside one never takes the key from it. */
+const ESC_OWNER = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
 function textOf(el: Element): string {
   return el.getAttribute("title") || el.getAttribute("data-tip") || "";
@@ -219,9 +221,15 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
 
     // Esc puts the tip away; the title stays parked until the pointer or focus leaves.
     // A shortcut (Ctrl+7 and the like) is the person doing something else: the tip goes with it.
+    // A tip that keyboard focus asked for takes that Esc for itself, so one press does one thing: it
+    // does not also step back a page. A tip inside a dialog, sheet or menu leaves the key to its
+    // owner (closing that takes the tip with it), and a hover tip never holds a key back.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && open) hide();
-      else if ((e.ctrlKey || e.metaKey || e.altKey) && !["Control", "Meta", "Alt"].includes(e.key) && (open || timer)) quiet();
+      if (e.key === "Escape" && open) {
+        const byKeyboard = !!target && target === document.activeElement && keyboardFocused(target);
+        if (byKeyboard && !target!.closest(ESC_OWNER)) e.preventDefault();
+        hide();
+      } else if ((e.ctrlKey || e.metaKey || e.altKey) && !["Control", "Meta", "Alt"].includes(e.key) && (open || timer)) quiet();
     };
 
     // A press is a choice made: the tip does not come back for this target, even when focus lands on it.
