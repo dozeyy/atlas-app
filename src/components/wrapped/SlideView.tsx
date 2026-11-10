@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { prefersReducedMotion } from "../../lib/motion";
 import { slideLayout } from "../../lib/wrappedModel";
 import type { Slide, SlideLayout } from "../../lib/wrappedModel";
@@ -26,6 +27,8 @@ function figureBox(layout: SlideLayout, text: string): { max: number; avail: num
 }
 
 const MIN_FIGURE_PX = 56;
+/** A name too long for one line at the floor goes on two lines, no smaller than this, then "...". */
+const LONG_FIGURE_PX = 40;
 const COUNT_MS = 800;
 const COUNT_DELAY_MS = 140;
 
@@ -65,7 +68,9 @@ export function figureLabel(s: Pick<Slide, "figure" | "unit" | "hint">): string 
 /**
  * The hero: Recursive, as big as its box allows. A long name shrinks to fit (one proportional
  * step: width is linear in font size), and a number counts up inside a box that is already its
- * final size, so nothing around it moves.
+ * final size, so nothing around it moves. A name that is still too wide at the floor (a 60 letter
+ * folder, a raw id) wraps onto two lines and ends in "..." (summit.css), with the whole name as
+ * its hover: it never runs off the sheet.
  */
 function Figure({
   slide,
@@ -79,14 +84,27 @@ function Figure({
   const el = useRef<HTMLDivElement>(null);
   const { max, avail } = figureBox(layout, slide.figure);
   const live = useCountUp(slide.figure, animate);
+  const [long, setLong] = useState(false);
 
   useLayoutEffect(() => {
     const node = el.current;
     if (!node) return;
     const fit = () => {
+      // Measured as one line at full size (the box is as wide as its text: summit.css).
+      node.removeAttribute("data-long");
       node.style.fontSize = `${max}px`;
       const w = node.offsetWidth;
-      if (w > avail) node.style.fontSize = `${Math.max(MIN_FIGURE_PX, Math.floor((max * avail) / w))}px`;
+      if (w <= avail) return setLong(false);
+      const oneLine = Math.floor((max * avail) / w);
+      if (oneLine >= MIN_FIGURE_PX) {
+        node.style.fontSize = `${oneLine}px`;
+        return setLong(false);
+      }
+      // Two lines, with a little slack because a wrapped line never fills to the last pixel.
+      const twoLines = Math.floor((max * avail * 2 * 0.9) / w);
+      node.style.fontSize = `${Math.max(LONG_FIGURE_PX, Math.min(MIN_FIGURE_PX, twoLines))}px`;
+      node.setAttribute("data-long", "");
+      setLong(true);
     };
     fit();
     // The face loads after the first paint on a cold start: measure again once it is in.
@@ -102,9 +120,12 @@ function Figure({
       ref={el}
       className="sm-fig"
       data-layout={layout}
+      data-long={long ? "" : undefined}
+      style={{ "--sm-avail": `${avail}px` } as CSSProperties}
+      title={long ? (slide.hint ?? slide.figure) : undefined}
     >
       <span className="sm-fig-num">
-        <span className="sm-fig-text" aria-hidden={slide.hint ? true : undefined}>
+        <span className="sm-fig-text" aria-hidden={slide.hint && !long ? true : undefined}>
           {live === null ? (
             slide.figure
           ) : (
@@ -119,7 +140,7 @@ function Figure({
         {/* The hover is a box the size of the figure's line and nothing more: a huge glyph's text area
             reaches up over the kicker, so the text takes no pointer (summit.css) and this does. A
             keyboard or screen reader person gets the exact count from the label. */}
-        {slide.hint && (
+        {slide.hint && !long && (
           <span
             className="sm-fig-hit"
             role="img"

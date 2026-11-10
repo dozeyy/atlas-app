@@ -1,12 +1,13 @@
 // Wrapped's end card, drawn to a canvas. The canvas on the page is the picture that gets saved, so
-// what Will sees is what leaves the app. It is drawn at 2x the size it is shown (452 x 420 px on
-// the page) from the app's own tokens at the moment of drawing, so it matches the theme you see, and
+// what Will sees is what leaves the app. It is laid out on a 452 x 420 grid and drawn at 3x
+// (1356 x 1260), so the preview stays sharp on a 2x screen at the size the sheet shows it. It is
+// drawn from the app's own tokens at the moment of drawing, so it matches the theme you see, and
 // from the numbers and names a ShareCard carries; it never sees a chat name or a prompt.
 // (A canvas cannot set the CASL axis, so the figures use Recursive's default softness here.)
 
 import type { ShareCard } from "./wrappedModel";
 
-const S = 2;
+const S = 3;
 export const CARD_W = 452 * S;
 export const CARD_H = 420 * S;
 
@@ -137,7 +138,9 @@ export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boole
   card.facts.slice(0, 4).forEach((f, i) => {
     const x = PAD_X + (i % COLS) * (colW + COL_GAP);
     const y = factsTop + Math.floor(i / COLS) * (48 * S + 20 * S);
-    const px = fit(ctx, f.value, display(720), 26 * S, 16 * S, colW);
+    // A long name steps down a little, then is cut with "...": it never shrinks to small print
+    // beside a full-size number.
+    const px = fit(ctx, f.value, display(720), 26 * S, 20 * S, colW);
     ctx.font = display(720)(px);
     ctx.fillStyle = p.ink;
     ctx.fillText(clip(ctx, f.value, colW), x, y + 24 * S);

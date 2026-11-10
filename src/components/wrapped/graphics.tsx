@@ -67,8 +67,9 @@ function HeatArt({ g }: { g: Extract<SlideGraphic, { kind: "heat" }> }) {
   const n = g.values.length;
   // The first column is padded at the top so today is the bottom-right cell (heatLayout).
   const weeks = Math.max(1, Math.ceil(n / 7));
-  // Biggest cell that lets every week fit the width (26 px steps in the mockup at 18 weeks).
-  const step = Math.max(10, Math.min(26, Math.floor(HEAT_W / weeks)));
+  // Biggest cell that lets every week fit the width (26 px steps in the mockup at 18 weeks). A short
+  // history gets larger cells, up to 34 px, so a few weeks do not sit as a small patch in the corner.
+  const step = Math.max(10, Math.min(34, Math.floor(HEAT_W / weeks)));
   const gap = Math.max(3, Math.round(step * 0.23));
   const cell = step - gap;
   const lay = heatLayout(g.values, cell, gap, 0);

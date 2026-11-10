@@ -22,6 +22,8 @@ export function Trail({ slides, at, onGo }: { slides: Slide[]; at: number; onGo:
           data-done={k < at ? "" : undefined}
           data-now={k === at ? "" : undefined}
           style={{ "--at": frac(k) } as CSSProperties}
+          // The dots carry no words, so the hover names the stop (the label says the same, with its place).
+          title={s.kicker}
           aria-label={`Slide ${k + 1} of ${slides.length}: ${s.kicker}`}
           aria-current={k === at || undefined}
           onClick={() => onGo(k)}

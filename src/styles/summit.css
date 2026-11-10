@@ -27,7 +27,7 @@
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: var(--r-sheet);
   isolation: isolate;
 }
 
@@ -94,11 +94,67 @@
   }
 }
 
+/* Three columns, so the count sits in the middle whatever the buttons beside it say
+   (Start, Next and Replay are different widths; with space-between it slid about). */
 .sm-foot {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr minmax(0, auto) 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
+}
+
+.sm-foot > :first-child {
+  justify-self: start;
+}
+
+.sm-foot > :last-child {
+  justify-self: end;
+}
+
+.sm-foot-mid {
+  min-width: 0;
+  text-align: center;
+}
+
+.sm-foot-at {
+  font-variant-numeric: tabular-nums;
+}
+
+/* On the recap card: Replay, then the primary button where Next was on every slide before it. */
+.sm-foot-end {
+  display: flex;
+  gap: 8px;
+}
+
+/* What Save image has to say takes the place of the count, and all the room between the buttons:
+   a path is long. One line; the whole path is its hover. */
+.sm-foot[data-note] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.sm-foot-note {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 12px/18px var(--font-ui);
+  color: var(--ink-2);
+}
+
+.sm-foot-note:empty {
+  display: none;
+}
+
+.sm-foot-note[data-bad] {
+  color: var(--danger);
+}
+
+/* The sheet's place while the story is being read (Wrapped.tsx): same box, same corners. */
+.sm-skel {
+  flex: 1;
+  min-height: 160px;
+  border-radius: var(--r-sheet);
+  background: var(--raised);
 }
 
 /* ---- the trail ---- */
@@ -252,9 +308,12 @@
   transform: translateY(-50%);
 }
 
+/* The small print never drops under a readable size on screen: the frame is scaled by --sm-k
+   (Story.tsx), so at a small window these grow in frame pixels by exactly what the scale takes away. */
 .sm-kicker {
   margin: 0;
-  font: 600 16px/22px var(--font-ui);
+  font: 600 16px/1.375 var(--font-ui);
+  font-size: max(16px, calc(12.5px / var(--sm-k, 1)));
   color: var(--ink-2);
 }
 
@@ -269,6 +328,28 @@
   letter-spacing: -0.035em;
   white-space: nowrap;
   color: var(--ink);
+  /* As wide as its text, in every layout: SlideView measures this box to size the figure. */
+  width: max-content;
+}
+
+/* A name that does not fit one line even at the smallest size: two lines, then "...". The whole
+   name is the hover (SlideView). Room under the last line keeps a descender out of the clip. */
+.sm-fig[data-long] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  width: var(--sm-avail);
+  padding-bottom: 0.1em;
+  overflow: hidden;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.sm-fig[data-long] .sm-fig-num {
+  display: inline;
+  position: static;
 }
 
 .sm-fig-num {
@@ -352,13 +433,15 @@
 
 .sm-range {
   margin: 12px 0 0;
-  font: 400 20px/28px var(--font-ui);
+  font: 400 20px/1.4 var(--font-ui);
+  font-size: max(20px, calc(13px / var(--sm-k, 1)));
   color: var(--ink-2);
 }
 
 /* ---- the graphics ---- */
 .sm-cap {
   font: 600 12px/16px var(--font-ui);
+  font-size: max(12px, calc(10px / var(--sm-k, 1)));
   fill: var(--ink-2);
 }
 
@@ -456,40 +539,20 @@
   position: absolute;
   inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 28px;
 }
 
+/* The canvas is 1356 x 1260. The card is the only thing on its sheet, so the preview is that picture
+   as tall as the frame allows with a 36 px margin above and below. */
 .sm-card {
   display: block;
-  width: 452px;
-  height: 420px;
+  flex: none;
+  width: auto;
+  height: 553px;
+  aspect-ratio: 452 / 420;
   border: 1px solid var(--line);
-  border-radius: 18px;
-}
-
-.sm-card-save {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  max-width: 560px;
-}
-
-.sm-card-status {
-  min-height: 18px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 400 12px/18px var(--font-ui);
-  color: var(--ink-2);
-}
-
-.sm-card-status[data-bad] {
-  color: var(--danger-text, var(--ink));
+  border-radius: var(--r-sheet);
 }
 
 /* ---- motion that is only a fade, or nothing ---- */

@@ -455,10 +455,12 @@ export function spikeGraphic(d: Pick<WrappedData, "from" | "dayTokens">, busyDay
 /**
  * The name a slide shows for each skill or helper: a plugin's own prefix ("design:design-critique")
  * is dropped, because it only makes the name longer than the slide can print. Two names that would
- * then read the same keep their prefix, so they stay apart.
+ * then read the same keep their prefix, so they stay apart. A connector's tool
+ * ("mcp__server__read_page") is shown by the tool's own name for the same reason.
  */
 export function plainNames(ids: string[]): string[] {
-  const plain = ids.map((id) => id.slice(id.lastIndexOf(":") + 1) || id);
+  const own = (id: string) => (id.startsWith("mcp__") ? id.slice(id.lastIndexOf("__") + 2) : id.slice(id.lastIndexOf(":") + 1));
+  const plain = ids.map((id) => own(id) || id);
   return ids.map((id, i) => (plain.filter((p) => p === plain[i]).length > 1 ? id : plain[i]));
 }
 
@@ -487,10 +489,13 @@ function itemSlide(id: string, kicker: string, verb: string, list: ItemUse[]): S
   if (list.length === 0) return null;
   const top = list[0];
   const times = plural(top.uses, "time");
+  const name = plainNames(list.map((i) => i.id))[0];
   return {
     id,
     kicker,
-    figure: plainNames(list.map((i) => i.id))[0],
+    figure: name,
+    // A shortened name keeps its exact one a hover away.
+    ...(name !== top.id ? { hint: top.id } : {}),
     line: `${verb} ${times} in ${plural(top.sessions, "session")}.`,
     strong: times,
   };
