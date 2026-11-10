@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MockBackend } from "./mock";
-import { byModel, fitColumn, flagText, itemDetail, itemTitle, lineTitle, whatItUsed, whoUsed } from "./receiptView";
+import { byModel, fitColumn, flagText, itemDetail, itemTitle, lineTitle, tailSplit, whatItUsed, whoUsed } from "./receiptView";
 import { layoutMap } from "./helperMap";
 import type { Receipt, ReceiptFlag, ReceiptItem } from "./types";
 
@@ -120,6 +120,16 @@ describe("receipt: wording", () => {
     expect(itemDetail(read)).toBe("14 times");
     expect(itemTitle(bash)).toBe("One Bash output");
     expect(itemDetail(bash)).toBe("");
+  });
+
+  it("splits a line at its file name, so a deep path can shorten its folders and keep the name", () => {
+    expect(tailSplit("Read src/deep/folder/Pane.tsx", "src/deep/folder/Pane.tsx")).toEqual(["Read src/deep/folder/", "Pane.tsx"]);
+    expect(tailSplit("C:\\work\\notes.md", "C:\\work\\notes.md")).toEqual(["C:\\work\\", "notes.md"]);
+    // Nothing to shorten: a bare name, a folder, no path, or a line that does not end in the path.
+    expect(tailSplit("Read notes.md", "notes.md")).toBeNull();
+    expect(tailSplit("Read src/", "src/")).toBeNull();
+    expect(tailSplit("One Bash output", null)).toBeNull();
+    expect(tailSplit("Grep output", "src/a.ts")).toBeNull();
   });
 
   it("writes each flag from its fields", () => {

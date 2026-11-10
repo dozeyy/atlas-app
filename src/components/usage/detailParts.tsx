@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Card } from "../controls";
 import { CostText } from "./CostText";
@@ -16,6 +17,38 @@ export function Stat({ label, children, sub, icon }: { label: string; children: 
       <div className="d d-stat mt-1 text-ink">{children}</div>
       {sub && <div className="mt-1 text-caption text-ink-2">{sub}</div>}
     </Card>
+  );
+}
+
+/**
+ * Long text cut to a few lines with a plain way to the rest. The whole text stays in the page (it
+ * can be found and read out); the button shows only when something is actually cut.
+ */
+export function ClampText({ text, lines = 3, className = "" }: { text: string; lines?: number; className?: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [open, setOpen] = useState(false);
+  const [cut, setCut] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || open) return;
+    const read = () => setCut(el.scrollHeight > el.clientHeight + 1);
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text, open, lines]);
+  return (
+    <div className="min-w-0 flex-1">
+      <p ref={ref} className={`${className}${open ? "" : " clamp-lines"}`} style={open ? undefined : { WebkitLineClamp: lines }}>
+        {text}
+      </p>
+      {(cut || open) && (
+        <button type="button" className="clamp-more" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <span className="text-caption font-semibold text-accent-text">{open ? "Show less" : "Show all"}</span>
+        </button>
+      )}
+    </div>
   );
 }
 

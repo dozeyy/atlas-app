@@ -906,6 +906,19 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   line-height: 16px;
   color: var(--ink-2);
 }
+.pick-main > .pick-meta {
+  display: flex;
+  align-items: baseline;
+}
+.pick-meta > * {
+  flex: none;
+}
+.pick-meta > .pick-proj {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .pick-meta > i {
   margin: 0 6px;
   font-style: normal;
@@ -985,6 +998,42 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
 }
 .session-grid > li {
   border-bottom: 1px solid var(--line);
+}
+/* A row's quiet line. Each row measures itself, so the same row works in a wide list and in the
+   Dashboard's narrow column. Two parts on a line that wraps and shows its first line only: the facts
+   (project, tokens, helpers, date) and the model. When both do not fit, the model wraps out of view
+   whole, never cut to a stub; then the project name shortens, down to a few letters at least. */
+.session-grid > li {
+  container: srow / inline-size;
+}
+.sl-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  align-content: flex-start;
+  height: var(--text-caption--line-height);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.sl-main {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 100%;
+}
+.sl-proj {
+  flex: 0 1 auto;
+  min-width: 56px; /* the dot and about five letters */
+  max-width: 224px;
+}
+/* A narrow column has room for the project, the tokens and the date: the helpers drop out whole,
+   and a removed file's note takes the date's place. */
+@container srow (max-width: 400px) {
+  .sl-helpers,
+  .sl-drop {
+    display: none;
+  }
 }
 @container (min-width: 1280px) {
   .session-grid {
@@ -1762,11 +1811,19 @@ html[data-input="keyboard"] .x-del:focus-visible {
 
 /* Helpers that were started by another helper hang off a rail, so the nesting reads as a tree. */
 .helper-kids {
-  margin: 12px 0 0 20px;
+  margin: 8px 0 0 20px;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 12px;
+  /* The one column may shrink under a long name: the row shortens the name, never runs off the pane. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+/* A helper's avatar. A helper started by another helper wears the same tile hollow: an outline in
+   its own colour, nothing filled, so the two levels tell apart without reading. */
+.helper-av.nested {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentColor;
 }
 .helper-kid {
   position: relative;
@@ -1776,9 +1833,9 @@ html[data-input="keyboard"] .x-del:focus-visible {
   content: "";
   position: absolute;
   left: -12px;
-  top: -12px;
+  top: -8px;
   width: 12px;
-  height: 48px;
+  height: 40px;
   border-left: 1.5px solid var(--line-strong);
   border-bottom: 1.5px solid var(--line-strong);
   border-bottom-left-radius: 8px;
@@ -1788,8 +1845,8 @@ html[data-input="keyboard"] .x-del:focus-visible {
   content: "";
   position: absolute;
   left: -12px;
-  top: 36px;
-  bottom: -12px;
+  top: 32px;
+  bottom: -8px;
   border-left: 1.5px solid var(--line-strong);
   pointer-events: none;
 }
@@ -1932,6 +1989,31 @@ html.reduced .nav-item:active .nav-face {
   overflow-x: hidden;
   overflow-y: auto;
 }
+/* When the tab row is tight, "Copy resume" and "Open folder" keep their icons and drop their words
+   (still read out, still in the hover), so the row stays one line and the two buttons stay in the
+   same place whichever tab is open. */
+@container (max-width: 960px) {
+  .sd-act-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .sd-act .btn-face {
+    width: 34px;
+    padding: 0;
+  }
+}
+/* Tighter still (a small window with the sidebar open): a tab's own switches take a second line
+   under the tabs, so the buttons on the right never jump between lines from tab to tab. */
+@container (max-width: 740px) {
+  .sd-sub {
+    order: 1;
+    flex-basis: 100%;
+  }
+}
 
 /* The receipt: plain lines, a hairline and a total, nothing boxed. */
 .rcpt-head {
@@ -2036,19 +2118,57 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
     border-left: 1px solid var(--line);
   }
 }
-.slice-dot {
-  flex-shrink: 0;
-  width: 10px;
-  height: 10px;
-  margin-top: 7px;
-  border-radius: 50%;
-}
 .slice-facts {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
   margin-top: 10px;
+}
+/* "Where it went": the kinds and the biggest lines wait behind one row, closed until asked. */
+.slice-more {
+  text-align: left;
+}
+.slice-more > svg {
+  flex-shrink: 0;
+  transition: rotate var(--dur-fast) var(--ease-out);
+}
+.slice-more[aria-expanded="true"] > svg {
+  rotate: 180deg;
+}
+.slice-more-body {
+  margin-top: 4px;
+}
+/* Long text cut to a few lines (ClampText); the button under it shows the rest. */
+.clamp-lines {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.clamp-more {
+  margin-top: 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.clamp-more:hover {
+  text-decoration: underline;
+}
+html[data-input="keyboard"] .clamp-more:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* The helper page: three small facts beside the figure, under it when the window is narrow. */
+.helper-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, max-content));
+  gap: 12px 32px;
+}
+@container (min-width: 42rem) {
+  .helper-facts {
+    grid-template-columns: minmax(0, max-content);
+    padding-left: 32px;
+    border-left: 1px solid var(--line);
+  }
 }
 .details-grid {
   display: grid;
@@ -2108,7 +2228,8 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 .map-hit {
   fill: transparent;
 }
-/* A bubble wears the colour of how the helper ended; its icon is its model. */
+/* A helper is the same tile as its avatar in the list: its kind's icon (--c) on its kind's fill
+   (--cb), hollow when another helper started it. The dot on its corner (--o) is how it ended. */
 .map-body {
   transform-box: fill-box;
   transform-origin: center;
@@ -2129,27 +2250,40 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 .map-node.sel .map-dot {
   fill: color-mix(in srgb, var(--c) 34%, var(--surface));
 }
-.map-glyph {
-  fill: none;
-  stroke: var(--c, var(--ink-2));
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  pointer-events: none;
-}
 .map-icon {
   color: var(--c, var(--ink-2));
   pointer-events: none;
 }
-.map-glyph-fill {
-  fill: var(--c, var(--ink-2));
-  stroke: none;
+.map-back {
+  fill: var(--bg);
+}
+.map-tile {
+  fill: var(--cb);
+  stroke: color-mix(in srgb, var(--c) 28%, transparent);
+  stroke-width: 1;
+  transition: stroke var(--dur-fast) var(--ease-out);
+}
+.map-node.nested .map-tile {
+  fill: transparent;
+  stroke: var(--c);
+  stroke-width: 1.5;
+}
+.map-node:hover .map-tile,
+.map-node:focus-visible .map-tile,
+.map-node.sel .map-tile {
+  stroke: var(--c);
+}
+.map-outcome {
+  fill: var(--o);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+.map-node.root .map-icon {
+  color: var(--on-accent);
 }
 .map-node.root .map-dot {
   fill: var(--accent);
   stroke: var(--accent);
-}
-.map-node.root .map-glyph {
-  stroke: var(--on-accent);
 }
 .map-node.more .map-dot {
   stroke-dasharray: 3 3;
@@ -2184,6 +2318,26 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 }
 .map-node.sel .map-name {
   fill: var(--ink);
+}
+/* A name at rest beside the biggest helpers; the plate takes over while its node is pointed at. */
+.map-rest {
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.map-rest .map-name {
+  fill: var(--ink);
+}
+.map-rest-detail {
+  font-size: 11px;
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.map-node:hover .map-rest,
+.map-node:focus-visible .map-rest {
+  opacity: 0;
 }
 /* The name plate: shown for the bubble pointed at or focused, placed clear of every other one. */
 .map-plate {
@@ -2227,9 +2381,6 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-}
-.map-legend-glyph .map-glyph {
-  stroke: var(--ink-2);
 }
 /* Enter: the lines draw out from the middle, then the dots pop in ring by ring. */
 .intro .map-link {

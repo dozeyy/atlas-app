@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { fold, layoutMap, MAIN_ID, MAP_LIMIT, MIN_ZOOM, NODE_GAP, pathTo, placePlate, plateSize, rectHitsCircle, startedBy, wrapName, zoomFor, type MapLayout } from "./helperMap";
+import {
+  fold,
+  layoutMap,
+  MAIN_ID,
+  MAP_LIMIT,
+  MIN_ZOOM,
+  NODE_GAP,
+  pathTo,
+  placePlate,
+  plateSize,
+  rectHitsCircle,
+  REST_LIMIT,
+  REST_NAME_MAX,
+  restBox,
+  restLabels,
+  shortName,
+  startedBy,
+  wrapName,
+  zoomFor,
+  type MapLayout,
+} from "./helperMap";
 import { modelFamily } from "./modelFamily";
 import type { ReceiptThread } from "./types";
 
@@ -238,6 +258,48 @@ describe("helper map: names", () => {
         }
       }
     }
+  });
+
+  it("shortens a long name to one short line and leaves a short one alone", () => {
+    expect(shortName("Find the config")).toBe("Find the config");
+    const cut = shortName("Review the migration of the usage cache schema");
+    expect(cut.length).toBeLessThanOrEqual(REST_NAME_MAX);
+    expect(cut.endsWith("...")).toBe(true);
+    expect(cut).not.toMatch(/\s\.\.\.$/);
+  });
+
+  it("names the biggest helpers at rest, beside them, covering no node and no other name", () => {
+    const named = (ts: ReceiptThread[]) => ts.map((t, i) => (i % 3 === 0 ? { ...t, name: `${t.name} - read the whole usage module and report what it does` } : t));
+    const hit = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+      a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    for (const ts of [nested(), many(1), many(6), named(many(12)), named(many(30)), named(many(90))]) {
+      for (const size of [{ width: 520, height: 360 }, { width: 900, height: 560 }, { width: 1280, height: 640 }]) {
+        const m: MapLayout = layoutMap(ts, size, undefined, "tokens");
+        const zoom = zoomFor(m, size);
+        const labels = restLabels(m, () => "12.4M tokens", zoom);
+        expect(labels.length).toBeLessThanOrEqual(REST_LIMIT);
+        expect(new Set(labels.map((l) => l.id)).size).toBe(labels.length);
+        const boxes = labels.map((l) => {
+          const n = m.nodes.find((x) => x.id === l.id)!;
+          expect(n.kind).toBe("helper");
+          expect(l.name.length).toBeLessThanOrEqual(REST_NAME_MAX);
+          const box = restBox(l, n.y, zoom);
+          for (const o of m.nodes) if (o.id !== n.id) expect(rectHitsCircle(box, o)).toBe(false);
+          expect(box.x).toBeGreaterThanOrEqual(0);
+          expect(box.x + box.w).toBeLessThanOrEqual(m.width);
+          // On the side it says: clear of its own node too.
+          expect(l.anchor === "start" ? box.x >= n.x + n.r : box.x + box.w <= n.x - n.r).toBe(true);
+          return box;
+        });
+        for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) expect(hit(boxes[i], boxes[j])).toBe(false);
+      }
+    }
+    // One helper in a roomy pane always gets its name, and it is the helper that used the most that is named first.
+    const one = layoutMap(many(1), { width: 900, height: 560 }, undefined, "tokens");
+    expect(restLabels(one, () => "1k tokens")).toHaveLength(1);
+    const six = layoutMap(many(6), { width: 1280, height: 640 }, undefined, "tokens");
+    const top = [...six.nodes].filter((n) => n.kind === "helper").sort((a, b) => b.tokens - a.tokens)[0];
+    expect(restLabels(six, () => "1k tokens", 1, 1).map((l) => l.id)).toEqual([top.id]);
   });
 });
 

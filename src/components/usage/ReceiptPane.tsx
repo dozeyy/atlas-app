@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Warning } from "@phosphor-icons/react";
 import { Button } from "../controls";
+import { EndLine } from "./EndLine";
 import { Skeleton } from "./StateBlocks";
 import { modelTone } from "./helperKit";
 import { useIntro } from "../../lib/motion";
@@ -187,9 +188,7 @@ export function ReceiptPane({
                       <Warning size={14} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
                       <div className="min-w-0">
                         <div className="text-caption text-warning">{t.kicker}</div>
-                        <div className="truncate text-body text-ink" title={t.title}>
-                          {t.name}
-                        </div>
+                        <EndLine text={t.name} path={f.kind === "repeat_read" ? f.label : null} className="text-body text-ink" title={t.title} />
                         <div className="truncate text-caption text-ink-2" title={t.title}>
                           {t.detail}
                         </div>
@@ -213,9 +212,7 @@ export function ReceiptPane({
               {items.map((i, n) => (
                 <li key={`${i.kind}:${i.tool}:${i.path ?? ""}:${i.thread ?? ""}:${n}`} className="rcpt-item" title={itemTitleFull(i)}>
                   <div className="min-w-0">
-                    <div className="truncate text-body text-ink" title={itemTitle(i)}>
-                      {itemTitle(i)}
-                    </div>
+                    <EndLine text={itemTitle(i)} path={i.path} className="text-body text-ink" title={itemTitle(i)} />
                     <div className="truncate text-caption text-ink-2">{[itemDetail(i), i.thread].filter(Boolean).join(", ")}</div>
                   </div>
                   <span className="shrink-0 text-body tabular-nums text-ink">{`~${compact(i.tokens)}`}</span>

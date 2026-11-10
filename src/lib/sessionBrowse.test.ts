@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayLabel, groupByDay, projectTone, resumeCommand, shareOfMax } from "./sessionBrowse";
+import { clockOf, dayLabel, groupByDay, projectTone, resumeCommand, shareOfMax } from "./sessionBrowse";
 import type { SessionRow } from "./types";
 
 const NOW = new Date(2026, 10, 8, 14, 30); // Sunday 8 Nov 2026
@@ -45,6 +45,13 @@ describe("grouping by day", () => {
 
   it("is empty for no rows", () => {
     expect(groupByDay([], NOW)).toEqual([]);
+  });
+});
+
+describe("time of day", () => {
+  it("is the local hour and minute, two digits each", () => {
+    expect(clockOf(new Date(2026, 10, 3, 9, 5).getTime())).toBe("09:05");
+    expect(clockOf(new Date(2026, 10, 3, 16, 42).getTime())).toBe("16:42");
   });
 });
 

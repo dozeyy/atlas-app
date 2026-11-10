@@ -21,6 +21,8 @@ export function SelectField({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        // A long choice is cut by the field's width: the hover says it whole.
+        title={options.find((o) => o.value === value)?.label}
         className={`h-8 cursor-pointer ${wide ? "w-full" : "max-w-[220px]"}  appearance-none rounded-control border border-line-strong bg-surface py-0 pl-3 pr-8 text-body text-ink hover:bg-raised`}
       >
         {options.map((o) => (

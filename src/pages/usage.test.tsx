@@ -172,7 +172,7 @@ describe("Sessions", () => {
     await screen.findAllByRole("button", { name: /tokens/ });
     await userEvent.type(screen.getByRole("searchbox", { name: "Search chats" }), "zzzz-nothing");
     expect(await screen.findByText("No chats match")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ }).length).toBeGreaterThan(0));
   });
 

@@ -30,6 +30,12 @@ export function dayLabel(day: string, now: Date): string {
   return y === now.getFullYear() ? text : `${text}, ${y}`;
 }
 
+/** The time of day alone, "16:42": what a row says when the band above it already names the day. */
+export function clockOf(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 /** Cuts a list that is already in time order into runs of one local day. */
 export function groupByDay(rows: SessionRow[], now: Date): DayGroup[] {
   const groups: DayGroup[] = [];

@@ -90,18 +90,35 @@ describe("Chat receipt and helper map", () => {
     const slice = screen.getByRole("complementary", { name: `Slice: ${target.name}` });
     expect(within(slice).getByRole("button", { name: /Open helper/ })).toBeInTheDocument();
     expect(within(slice).getByText(/of the chat/)).toBeInTheDocument();
+    // The slice wears the helper's own avatar, and where the tokens went waits behind one row.
+    expect(within(slice).getByRole("img", { name: /helper$/i })).toBeInTheDocument();
+    expect(within(slice).queryByRole("region", { name: "What it used" })).toBeNull();
+    const more = within(slice).getByRole("button", { name: "Where it went" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(within(slice).getByRole("region", { name: "What it used" })).toBeInTheDocument();
   });
 
-  it("shows a name only on a plate when a bubble is pointed at or focused, never inside the bubble", async () => {
+  it("names the biggest helpers beside them in a few words, never inside a node; the whole name is on the plate", async () => {
     const backend = sessionsBackend();
     const { row, detail } = await chatWithHelpers(backend);
     mountDetail(backend, row.sessionId);
     await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
     const map = await screen.findByRole("group", { name: /^Helper map/ });
-    // Nothing but the main chat's label is written on the picture until a bubble is pointed at.
+    // At rest: the main chat's caption and, beside a helper, one short name over its tokens. No plate yet.
     expect(map.querySelector(".map-plate")).toBeNull();
-    const writing = Array.from(map.querySelectorAll("text")).map((t) => t.textContent);
-    expect(writing.filter((t) => t && !/^\+\d+$/.test(t))).toEqual(["Main chat"]);
+    expect(Array.from(map.querySelectorAll(".map-body text")).every((t) => /^\+\d+$/.test(t.textContent ?? ""))).toBe(true);
+    const rest = Array.from(map.querySelectorAll(".map-rest"));
+    expect(rest.length).toBeGreaterThan(0);
+    expect(rest.length).toBeLessThanOrEqual(8);
+    for (const r of rest) {
+      const [name, tokens] = Array.from(r.querySelectorAll("text")).map((t) => t.textContent ?? "");
+      expect(name.length).toBeLessThanOrEqual(22);
+      expect(tokens).toMatch(/^\S+ tokens$/);
+    }
+    const writing = Array.from(map.querySelectorAll("text")).filter((t) => !t.closest(".map-rest") && !t.closest(".map-body"));
+    expect(writing.map((t) => t.textContent)).toEqual(["Main chat"]);
 
     const a = detail.agents[0];
     const node = within(map).getByRole("button", { name: new RegExp(`^${esc(a.name)}, `) });
@@ -112,8 +129,11 @@ describe("Chat receipt and helper map", () => {
     expect(plate).not.toBeNull();
     expect((plate?.textContent ?? "").replace(/\s+/g, "")).toContain(a.name.replace(/\s+/g, ""));
     expect(plate?.querySelector(".map-plate-detail")?.textContent).toMatch(/ tokens/);
+    // The plate replaces that node's short name: the two never sit on top of each other.
+    expect(node.querySelector(".map-rest")).toBeNull();
     await userEvent.unhover(node);
     expect(map.querySelector(".map-plate")).toBeNull();
+    expect(map.querySelectorAll(".map-rest").length).toBe(rest.length);
     // The keyboard gets the same plate.
     act(() => node.focus());
     expect(map.querySelector(".map-plate")).not.toBeNull();
