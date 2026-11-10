@@ -162,8 +162,8 @@ emoji, ASCII strings, one icon family.
    get replaced on the first open.
 3. **"Update available."** The data has no such state; with a version check the Installed
    rail could carry a small dot and the row an "Update" button.
-4. **Plain words on Team:** "headless" -> "without a chat window", "Work" -> "Effort",
-   and "Ui builder" -> "UI builder" (a short list of known acronyms in the backend).
+4. **Plain words on Team:** built in round two (R6). Left for the backend: "Ui builder"
+   -> "UI builder" (a short list of known acronyms).
 5. **A clear X in Team's "Find a helper" box**, like the Library's search box has (the
    shared `SearchField` belongs to another page's owner).
 
@@ -193,15 +193,80 @@ framed the same, Dark and Light, 900x600 and 1180x780.
   `library/rbefore-*-stress.png` -> `library/r3-after-*-stress.png` (the rail shows at
   1180x780; at 900x600 it is the dropdown).
 
-Looked at again and left, with the reason:
+## Redesigns, round two (2026-11-09)
 
-- **Row layout and the Install button on the right:** the conventional place, aligned in
-  one column, and the row already reads name, what it is, where from, action.
-- **The Package tile on every row:** it matches the Toolkit's kind tiles (another page's
-  component); a per-plugin monogram would be decoration without data behind it.
-- **The source caption when one marketplace is picked:** dropping it saves little and
-  makes rows jump between sources.
-- **Team scorecards:** the name, the main figure and the counts already read in two
-  seconds; a rework had no principle to name.
-- **The install sheet and safety check:** calm zone; after the overflow fixes the order
-  (what it is, what it can do, what was found, the one button) is already right.
+Round one left five things as they were (the Package tile, the source caption, the
+scorecards, the install sheet, the row layout). Side by side the pages looked the same
+before and after, so all five were taken up again as design problems. Each is its own
+commit. "After" pictures are `r4-*` in every stop; Library "before" is `after-*` /
+`final-*` / `r3-after-*-stress`, Team "before" is `b2-*`.
+
+- **R4 (`cda15c3`). Library list: what you have first, tiles that show state, the source
+  only where it says something.**
+  - Before, 16 of 19 rows ended in the same "Claude plugin directory" and "1.0.0". The
+    source is now a section heading ("Installed", then each marketplace, the directory
+    first) under All with nothing typed, and is back on the row only where plugins from
+    several places mix (a search under All, the Installed source). The version moved to
+    the sheet and the name's tooltip.
+  - The freed width goes to the description. **Rows do not say what is inside**: the
+    list data (`CatalogEntry`) has no contents, only the sheet does after it inspects the
+    plugin, and nothing is invented. See Shared requests.
+  - The tile says a true thing: a green check when installed, a grey check when installed
+    but switched off, an amber warning when it changed since it was checked, and a quiet
+    grey package when it is not installed (so the names lead). An installed row is
+    recognisable from the tile, not only from the button.
+  - Installing lifts the row under "Installed"; the selection follows it.
+  - Headings carry no counts (the rail already has them).
+  - Principle: scanning order and proximity (group by the fact, say it once), and
+    visibility of state.
+  - `library/after-*.png` -> `library/r4-*.png`, stress `library/r3-after-*-stress.png`
+    -> `library/r4-*-stress.png`, `library-search/`, `library-installed/` likewise.
+- **R5 (`7f733fb`). Install sheet: what it is, what is inside, is it safe, Install.**
+  The verdict is a tinted band with a 22 px icon and the sentence in the lead size, the
+  strongest thing after the name, and it sits directly above the Install button. The
+  commit id is a quiet aside ("Version 1.0.0, commit a1b2c3d", the whole id on hover).
+  Items inside carry their kind icon and a caret. Findings clamp to two lines until
+  opened. No motion added (calm zone). The check itself and the 1-click / 2-click rule
+  are untouched. Principle: hierarchy and reading order.
+  `library-sheet/final-*.png` -> `library-sheet/r4-*.png`, `library-flagged/` likewise.
+- **R6 (`528a958`). Team scorecards: one figure, one result, two quiet lines.**
+  - The card leads with the helper's avatar (the same one as on Now and Sessions, from
+    `helperKit`) and its run count as a Recursive figure, beside twelve labelled weekly
+    bars ("Per week, last 12 weeks", exact counts on hover, the latest week in clay).
+  - Then the one result: "Its work in review" (or "Verdicts it gave" for a reviewer),
+    with the meter only when there is a rate.
+  - "Too few runs for a typical time yet" is said once for the card, not on three rows.
+  - Plain words: "headless" is "outside a chat" (the Claude Code word is in the hover),
+    reviewers read "Reviews other helpers' work", the "Work" and "Ended" row labels are
+    gone ("Usually 9 min and 38 tool calls", "86% finished").
+  - The agent sheet carries the avatar in its header. Its run rows do not: every row is
+    the helper already pictured above them.
+  - Principle: hierarchy (one lead figure) and consistency (one avatar per helper kind).
+  - `team/b2-*.png` -> `team/r4-*.png`, `team-agent/` likewise.
+- **R7 (`f9a01bc`). Caught in review: helpers as avatars, every line short.** A theme
+  shows who it was found in as avatars on the closed row and as avatar + name + count
+  when open; long theme names, projects and examples clamp to two lines with the whole
+  text on hover; the rule sheet clamps its subtitle and truncates paths with a hover.
+  Principle: scanning order (who, at a glance) and density.
+  `team-review-open/b2-*.png` -> `team-review-open/r4-*.png`, `team-rule/` likewise.
+
+Still left, with the reason:
+
+- **The Install button on the right of the row:** the conventional place, aligned in one
+  column.
+- **The toast over a list row at 900x600:** the shell's.
+
+Clips (1180x780, Dark), in `docs/shots/fable-pass/for-will/`: `library-install-dark.mp4`
+(search, a clean plugin's sheet, Install, Undo, then a flagged one and its second click)
+and `team-walk-dark.mp4` (scorecards, one helper's sheet, Caught in review, Make this a
+rule).
+
+## Shared requests
+
+- **Backend: what is inside, per catalog entry** (counts by kind), so a list row can lead
+  with "3 skills, 1 command". Today only the sheet knows.
+- **helperKit: General purpose and UI builder get the same avatar.** The mapping belongs
+  to the Sessions pages; Team only imports it.
+- **Backend: "Ui builder"** (`humanize_type`) should read "UI builder".
+- **Shared `SearchField`: a clear X**, so Team's "Find a helper" box matches the
+  Library's.
