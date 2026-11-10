@@ -217,6 +217,10 @@ function HoursArt({ g }: { g: Extract<SlideGraphic, { kind: "hours" }> }) {
           {t}
         </text>
       ))}
+      {/* The axis is named to its end: the last bar is the 11 PM hour, its label ends where the bar does. */}
+      <text className="sm-cap" x={12 + 23 * (w + gap) + w} y={base + 24} textAnchor="end">
+        {hourLabel(23)}
+      </text>
     </svg>
   );
 }

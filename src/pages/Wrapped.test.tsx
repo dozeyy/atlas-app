@@ -214,7 +214,7 @@ describe("Wrapped", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save image" }));
     // The line is the folder and the name; the whole path is its hover.
     const said = await screen.findByText("Saved to Pictures/Atlas Wrapped 2026-11-08.png");
-    expect(said).toHaveAttribute("title", "C:/Users/me/Pictures/Atlas Wrapped 2026-11-08.png");
+    expect(said.closest('[role="status"]')).toHaveAttribute("title", "C:/Users/me/Pictures/Atlas Wrapped 2026-11-08.png");
     backend.wrappedSaveCard = async () => {
       throw "The image could not be saved: disk full";
     };

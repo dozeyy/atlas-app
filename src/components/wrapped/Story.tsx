@@ -5,6 +5,7 @@ import {
   ArrowRight,
   ArrowCounterClockwise,
   DownloadSimple,
+  WarningCircle,
 } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { prefersReducedMotion } from "../../lib/motion";
@@ -280,7 +281,9 @@ export function Story({
               data-bad={saving.bad ? "" : undefined}
               title={saving.path}
             >
-              {saving.note}
+              {/* A failure is told by a mark and words at body size, never by colour alone. */}
+              {saving.bad && saving.note && <WarningCircle size={16} weight="fill" aria-hidden="true" className="sm-foot-mark" />}
+              {saving.note && <span className="sm-foot-words">{saving.note}</span>}
             </span>
           )}
         </div>
