@@ -87,8 +87,16 @@ const WRAP_AT = 26;
  * so the canvas no longer reserves a whole plate on every side: that left a three-helper tree
  * zoomed out to 0.75 in the middle of an empty pane at 1180 wide (design review, 2026-11-10).
  */
-const MARGIN_X = 22 * 6.6 + 8 + 16; // REST_NAME_MAX * REST_CHAR_W + REST_GAP, and a little air
-const MARGIN_Y = 30 / 2 + 16; // REST_H / 2, and a little air
+/** A resting name is one short line: longer ones end in "...". */
+export const REST_NAME_MAX = 22;
+/** At most this many helpers are named at rest, so a crowded map stays a picture, not a page. */
+export const REST_LIMIT = 8;
+const REST_CHAR_W = 6.6; // one 12 px semibold character, a little generous
+const REST_H = 30; // two lines: name and detail
+const REST_LINE = 15; // one more line when the name takes two
+const REST_GAP = 8; // between a node and its name
+const MARGIN_X = REST_NAME_MAX * REST_CHAR_W + REST_GAP + 16; // a resting name, and a little air
+const MARGIN_Y = REST_H / 2 + 16; // half a name, and a little air
 /** A few helpers are spread out to use the pane, but never past this stretch. */
 const MAX_SCALE = 1.6;
 const MAX_ASPECT = 1.6;
@@ -488,15 +496,6 @@ export interface RestLabel {
   name2?: string;
   detail: string;
 }
-
-/** A resting name is one short line: longer ones end in "...". */
-export const REST_NAME_MAX = 22;
-/** At most this many helpers are named at rest, so a crowded map stays a picture, not a page. */
-export const REST_LIMIT = 8;
-const REST_CHAR_W = 6.6; // one 12 px semibold character, a little generous
-const REST_H = 30; // two lines: name and detail
-const REST_LINE = 15; // one more line when the name takes two
-const REST_GAP = 8; // between a node and its name
 
 /** Cut a name to one short line. Never mid-air: no trailing space before the dots. */
 export function shortName(name: string, max = REST_NAME_MAX): string {
