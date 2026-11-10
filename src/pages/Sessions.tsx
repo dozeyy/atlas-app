@@ -17,7 +17,7 @@ import { useChatSearch, useDebounced } from "../lib/useChatSearch";
 import type { ChatSearch } from "../lib/useChatSearch";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
 import { groupByDay, shareOfMax } from "../lib/sessionBrowse";
-import { addDays, compact, exact, localDay, modelLabel, plural } from "../lib/usage";
+import { addDays, compact, exact, localDay, modelChoices, plural } from "../lib/usage";
 import type { SessionPage, SessionQuery, SessionRow } from "../lib/types";
 
 const PAGE = 50;
@@ -38,6 +38,9 @@ const SORT_CHOICES = (Object.keys(SORTS) as SortKey[]).map((value) => ({ value, 
  * bands over a page sorted by tokens repeat the same day, and rows get left behind.
  */
 const pageShape = new WeakMap<SessionPage, { sort: SortKey; search: boolean }>();
+
+/** Joins the ids behind one model choice in the filter's value; no model id holds a line break. */
+const MODEL_SEP = "\n";
 
 const SPANS = [
   { value: "all", label: "All time", days: 0 },
@@ -104,7 +107,7 @@ export function Sessions() {
       // Chats whose messages match are listed too, whatever their title says.
       alsoIds: chat.ids,
       projects: project ? [project] : [],
-      models: model ? [model] : [],
+      models: model ? model.split(MODEL_SEP) : [],
       from: days > 0 ? addDays(localDay(new Date()), -days) : null,
       to: null,
       includeMissing: true,
@@ -244,7 +247,8 @@ export function Sessions() {
                 onChange={setModel}
                 options={[
                   { value: "", label: "All models" },
-                  ...(options.data?.models ?? []).map((m) => ({ value: m.model, label: modelLabel(m.model) })),
+                  // One choice per model name: the ids that read the same are asked for together.
+                  ...modelChoices((options.data?.models ?? []).map((m) => m.model)).map((c) => ({ value: c.models.join(MODEL_SEP), label: c.label })),
                 ]}
               />
             </OptionField>

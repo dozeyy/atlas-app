@@ -2,7 +2,7 @@ import { createContext, useContext, useLayoutEffect, useRef, useState } from "re
 import type { HTMLAttributes, ReactNode } from "react";
 import { Card } from "../controls";
 import { CostText } from "./CostText";
-import { compact, effortMix, exact, headline, modelLabel, plural } from "../../lib/usage";
+import { compact, effortMix, exact, headline, mergeModelRows, plural } from "../../lib/usage";
 import type { Cost, Tokens } from "../../lib/types";
 import type { EffortUse } from "../../lib/usageTypes";
 
@@ -138,11 +138,11 @@ export function ModelSplit({ rows }: { rows: { model: string; tokens: Tokens; co
           </tr>
         </thead>
         <tbody className="tabular-nums">
-          {rows.map((r) => (
-            <tr key={r.model} className="border-b border-line last:border-b-0">
-              <th scope="row" className="px-5 py-2 text-left font-normal text-ink" title={r.model}>
-                {modelLabel(r.model)}
-                {(r.known === undefined ? r.cost.usd === null : !r.known) && <span className="ml-2 text-caption text-ink-2">not priced</span>}
+          {mergeModelRows(rows).map((r) => (
+            <tr key={r.label} className="border-b border-line last:border-b-0">
+              <th scope="row" className="px-5 py-2 text-left font-normal text-ink" title={r.models.join("\n")}>
+                {r.label}
+                {!r.known && <span className="ml-2 text-caption text-ink-2">not priced</span>}
                 {effortMix(r.efforts) && <span className="block text-caption text-ink-2">{`Effort ${effortMix(r.efforts)}`}</span>}
               </th>
               <td className="px-3 py-2 text-right" title={exact(headline(r.tokens))}>{compact(headline(r.tokens))}</td>
