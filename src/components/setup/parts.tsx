@@ -41,9 +41,9 @@ export function Chip({ tone = "muted", icon: Icon, children, title }: { tone?: T
 }
 
 /** A plain outlined chip for tags such as "stdio" or "PreToolUse". */
-export function TagChip({ children }: { children: ReactNode }) {
+export function TagChip({ children, title }: { children: ReactNode; title?: string }) {
   return (
-    <span className={`${CHIP} border border-line text-ink-2`}>
+    <span title={title} className={`${CHIP} border border-line text-ink-2`}>
       <span className="truncate">{children}</span>
     </span>
   );

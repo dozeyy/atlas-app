@@ -25,6 +25,7 @@ import {
   TextAa,
 } from "@phosphor-icons/react";
 import type { ItemKind, ScopeKind, SetupItem, SetupProject } from "./setup-types";
+import { modelLabel } from "./usage";
 
 export interface KindMeta {
   kind: ItemKind;
@@ -269,6 +270,27 @@ function oneOf(tag: string): string {
 export function displayChips(i: SetupItem): string[] {
   if (i.kind === "hook" || i.kind === "mcpServer" || i.kind === "permission" || i.kind === "statusLine") return [];
   return i.kind === "plugin" ? i.chips.map(oneOf) : i.chips;
+}
+
+const MODEL_FAMILY: Record<string, string> = { opus: "Opus", sonnet: "Sonnet", haiku: "Haiku", fable: "Fable" };
+
+/**
+ * A tag as a person reads it; the word the file or the scan uses stays in the hover.
+ * - An agent's tag is its model as its file writes it: a full id reads the way models read
+ *   everywhere else ("Opus 5.5"), a family alias ("opus": whichever Opus is current) as the
+ *   family's name. No version is made up for an alias.
+ * - "local" (a settings file kept out of the project's shared files) reads in words.
+ */
+export function chipWords(i: SetupItem, chip: string): { label: string; title?: string } {
+  const raw = chip.trim();
+  const low = raw.toLowerCase();
+  if (i.kind === "agent") {
+    const label = low === "inherit" ? "Session's model" : (MODEL_FAMILY[low] ?? modelLabel(raw));
+    if (label !== raw) return { label, title: `Model, as its file writes it: ${raw}` };
+  }
+  if (low === "local") return { label: "This computer only", title: "A local file: yours alone, not shared with the project." };
+  if (low === "backup copy") return { label: "Backup copy" };
+  return { label: chip };
 }
 
 /**

@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { mockSetupSnapshot } from "./setup-mock";
 import {
   applyKind,
+  chipWords,
   connectionWords,
   countByKind,
   countByScope,
@@ -244,6 +245,19 @@ describe("the settings file's own words stay off the surface", () => {
     expect(displayChips({ ...of("plugin"), chips: ["1 MCP servers", "1 output styles", "11 skills"] })).toEqual(["1 MCP server", "1 output style", "11 skills"]);
     const agent = of("agent");
     expect(displayChips(agent)).toEqual(agent.chips);
+  });
+
+  it("writes a tag the way the rest of the app does, with the file's own word on hover", () => {
+    const agent = of("agent");
+    // A bare family name gets no version: Atlas does not make one up.
+    expect(chipWords(agent, "opus")).toEqual({ label: "Opus", title: "Model, as its file writes it: opus" });
+    expect(chipWords(agent, "claude-opus-5-5")).toEqual({ label: "Opus 5.5", title: "Model, as its file writes it: claude-opus-5-5" });
+    expect(chipWords(agent, "inherit").label).toBe("Session's model");
+    // Only an agent's tag is a model: a skill tagged "opus" keeps its tag.
+    expect(chipWords(of("skill"), "opus")).toEqual({ label: "opus" });
+    expect(chipWords(of("skill"), "local").label).toBe("This computer only");
+    expect(chipWords(of("skill"), "backup copy")).toEqual({ label: "Backup copy" });
+    expect(chipWords(of("rule"), "src/**/*.ts")).toEqual({ label: "src/**/*.ts" });
   });
 
   it("says what the status line runs, with no type tag", () => {

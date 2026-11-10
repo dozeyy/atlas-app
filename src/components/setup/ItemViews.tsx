@@ -4,7 +4,7 @@ import { Button, Card } from "../controls";
 import { pushToast } from "../../state/toastStore";
 import type { KeyboardEvent } from "react";
 import { deleteItem, errorText, whatGetsRemoved } from "../../lib/setup-actions";
-import { displayChips, displayDescription, displayName, KIND_BY_ID, relativeTime } from "../../lib/setup-model";
+import { chipWords, displayChips, displayDescription, displayName, KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import type { SetupItem } from "../../lib/setup-types";
 import { removedPath } from "./ConfirmDelete";
 import { ConflictChip, copyText, formatDate, ItemIcon, ScopeChip, SecretsChip, StateChip, TagChip, WarningMark } from "./parts";
@@ -231,9 +231,14 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, canDelete }: Item
           )}
           <span className="mt-auto flex flex-wrap items-center gap-1.5 pt-0.5">
             <ScopeChip scope={item.scope} label={item.scopeLabel} />
-            {shown.map((c) => (
-              <TagChip key={c}>{c}</TagChip>
-            ))}
+            {shown.map((c) => {
+              const { label, title } = chipWords(item, c);
+              return (
+                <TagChip key={c} title={title}>
+                  {label}
+                </TagChip>
+              );
+            })}
             {more > 0 && <TagChip>+{more}</TagChip>}
             {item.conflict && <ConflictChip conflict={item.conflict} />}
             {item.hasSecrets && <SecretsChip />}

@@ -12,7 +12,8 @@ import { pushToast } from "../../state/toastStore";
 import { Preview } from "./Preview";
 import { getBackend } from "../../lib/ipc";
 import { splitFrontmatter } from "../../lib/markdown";
-import { connectionWords, displayChips, displayDescription, displayName, KIND_BY_ID, relativeTime, splitSummary, toolsWords } from "../../lib/setup-model";
+import { sourceCaption } from "../../lib/library";
+import { chipWords, connectionWords, displayChips, displayDescription, displayName, KIND_BY_ID, relativeTime, splitSummary, toolsWords } from "../../lib/setup-model";
 import { isPerCall, rowFor, usdHover } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
 import type { CostReport, CostRow, MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
@@ -343,8 +344,15 @@ function sheetChips(item: SetupItem): string[] {
       .filter((v): v is string => Boolean(v))
       .map((v) => v.toLowerCase()),
   );
-  // displayChips drops the tags the title and the lead line already say in words.
-  return displayChips(item).filter((c) => !said.has(c.toLowerCase()));
+  // displayChips drops the tags the title and the lead line already say in words. A backup's own
+  // chip ("Backup copy") is drawn beside these, so the scan's tag for it is not said twice.
+  return displayChips(item).filter((c) => !said.has(c.toLowerCase()) && !(item.backup && c.toLowerCase() === "backup copy"));
+}
+
+/** "name@marketplace" as a person reads it: the plugin's name, then where it came from. */
+function pluginWords(id: string): string {
+  const at = id.lastIndexOf("@");
+  return at > 0 ? `${id.slice(0, at)}, from ${sourceCaption(id.slice(at + 1))}` : id;
 }
 
 function SourceSection({ item, loads, fileRows }: { item: SetupItem; loads: number; fileRows: FactRow[] }) {
@@ -561,7 +569,8 @@ export function DetailSheet({
   ];
   // What the item is, in the few short facts that are its own.
   const rows: FactRow[] = [
-    ...(item.plugin ? [{ label: "Plugin", value: item.plugin }] : []),
+    // A plugin is stored as "name@marketplace": it reads as its name and where it came from; the id as stored is in the hover.
+    ...(item.plugin ? [{ label: "Plugin", value: <span title={item.plugin}>{pluginWords(item.plugin)}</span> }] : []),
     ...(item.usedBy !== null ? [{ label: "Used by", value: item.usedBy === 0 ? "No hook uses this script" : `${item.usedBy} ${item.usedBy === 1 ? "hook" : "hooks"}` }] : []),
     // Raw header keys (lowercase: name, model, ...) are shown once, under "Settings in the file's header".
     // A permission's list and tool are the settings file's own words; its heading and title say both.
@@ -605,9 +614,14 @@ export function DetailSheet({
               <StateChip enabled={item.enabled} />
               {item.backup && <Chip tone="muted">Backup copy</Chip>}
               {item.worktree && <Chip tone="muted">Agent worktree</Chip>}
-              {sheetChips(item).map((c) => (
-                <TagChip key={c}>{c}</TagChip>
-              ))}
+              {sheetChips(item).map((c) => {
+                const { label, title } = chipWords(item, c);
+                return (
+                  <TagChip key={c} title={title}>
+                    {label}
+                  </TagChip>
+                );
+              })}
             </div>
           </div>
           <button

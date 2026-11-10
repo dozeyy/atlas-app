@@ -297,9 +297,12 @@ describe("Team: Caught in review", () => {
     expect(within(after).getByText("- Brand new rule text.")).toBeInTheDocument();
     expect(within(now).queryByText("- Brand new rule text.")).not.toBeInTheDocument();
     // A new rule file has no preview: the whole file is the editor.
-    // It is named in words; the file name the engine made is in the path under it.
+    // It is named in words, and so is where it goes; the file name the engine made (a slug it cuts
+    // short) is on the hover, never on the surface.
     const own = within(sheet).getByRole("radio", { name: /A new rule file of its own/ });
-    expect(own.closest("label")).toHaveTextContent(/~\/\.claude\/rules\/.+\.md/);
+    const row = own.closest("label") as HTMLElement;
+    expect(row).not.toHaveTextContent(/\.md/);
+    expect(within(row).getByText("In the rules folder of your Claude folder").getAttribute("title")).toMatch(/~\/\.claude\/rules\/.+\.md/);
     await userEvent.click(own);
     expect(within(sheet).queryByRole("figure", { name: "After saving" })).not.toBeInTheDocument();
   });
