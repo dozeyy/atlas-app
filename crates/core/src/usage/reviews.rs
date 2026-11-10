@@ -566,7 +566,7 @@ enum Label {
     Findings,
     /// Any other heading or all-caps label: the section (if any) ends.
     Other,
-    NotALabel,
+    Plain,
 }
 
 fn has_section_word(s: &str) -> bool {
@@ -603,7 +603,7 @@ fn classify_label(line: &str) -> Label {
         if after.is_empty() && bare.chars().count() <= 60 && has_section_word(bare) && (bold || ends_colon) {
             return Label::Findings;
         }
-        return Label::NotALabel;
+        return Label::Plain;
     }
     if bare.chars().count() <= 60 && has_section_word(bare) && (bold || all_caps_label(bare)) {
         return Label::Findings;
@@ -611,7 +611,7 @@ fn classify_label(line: &str) -> Label {
     if all_caps_label(bare) {
         return Label::Other;
     }
-    Label::NotALabel
+    Label::Plain
 }
 
 /// A leading severity word (bare, bracketed, bold or followed by a colon or dash), with the rest.
@@ -916,7 +916,7 @@ pub fn finding_lines(text: &str) -> Vec<Finding> {
                     heading_sev = None;
                     continue;
                 }
-                Label::NotALabel => {}
+                Label::Plain => {}
             }
         } else if item_section_label(body) {
             in_section = true;

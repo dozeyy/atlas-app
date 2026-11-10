@@ -88,7 +88,10 @@ fn models_n(fx: &Fx, agent: &str) -> i64 {
         .unwrap()
 }
 
-fn row_of(fx: &Fx, agent: &str) -> (i64, i64, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<String>, Option<String>) {
+/// active_ms, resumes, seg_start, first_ts, last_ts, last_stop, end_status, end_source
+type RunRow = (i64, i64, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<String>, Option<String>);
+
+fn row_of(fx: &Fx, agent: &str) -> RunRow {
     fx.db()
         .query_row(
             "SELECT active_ms, resumes, seg_start, first_ts, last_ts, last_stop, end_status, end_source FROM agent_runs WHERE agent_id = ?1",

@@ -342,6 +342,9 @@ impl RunRec {
     }
 }
 
+/// `(model id, effort or "", messages)` per (chat, helper id).
+type ModelMix = HashMap<(String, String), Vec<(String, String, u32)>>;
+
 /// Every run, the reviewer types (D7) and every chat's review ties (D10), computed once per query.
 struct Ledger {
     runs: Vec<RunRec>,
@@ -351,7 +354,7 @@ struct Ledger {
     /// `per_worker` per (chat, helper id).
     worker: HashMap<(String, String), WorkerReviews>,
     /// `(model id, effort or "", messages)` per (chat, helper id).
-    models: HashMap<(String, String), Vec<(String, String, u32)>>,
+    models: ModelMix,
 }
 
 fn load_ledger(conn: &Connection) -> rusqlite::Result<Ledger> {
@@ -443,7 +446,7 @@ fn load_ledger(conn: &Connection) -> rusqlite::Result<Ledger> {
         }
         ties.insert(sid.to_string(), t);
     }
-    let mut models: HashMap<(String, String), Vec<(String, String, u32)>> = HashMap::new();
+    let mut models: ModelMix = HashMap::new();
     {
         let mut st = conn.prepare_cached("SELECT session_id, agent_id, model, effort, n FROM agent_run_models")?;
         for row in st.query_map([], |r| {

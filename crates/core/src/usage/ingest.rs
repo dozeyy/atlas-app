@@ -250,7 +250,8 @@ fn helpers_dir(task: &FileTask) -> PathBuf {
 
 /// The helper folders read so far, by path, with the folder's modified time then. A folder that has
 /// not changed is not listed again, and a changed one only has its new files read.
-static KNOWN: std::sync::OnceLock<std::sync::Mutex<HashMap<PathBuf, (Option<std::time::SystemTime>, std::sync::Arc<Known>)>>> =
+type KnownFolders = HashMap<PathBuf, (Option<std::time::SystemTime>, std::sync::Arc<Known>)>;
+static KNOWN: std::sync::OnceLock<std::sync::Mutex<KnownFolders>> =
     std::sync::OnceLock::new();
 const KNOWN_FOLDERS: usize = 64;
 
@@ -1269,6 +1270,7 @@ fn apply_ledger(tx: &rusqlite::Transaction, task: &FileTask, b: &Batch, file_age
         tx.execute("DELETE FROM agent_run_models WHERE file_id = ?1", [task.file_id])?;
         tx.execute("DELETE FROM agent_link_pending WHERE file_id = ?1", [task.file_id])?;
         // The notices this chat file wrote go with it; the runs they ended are recomputed.
+        #[allow(clippy::let_and_return)] // `v` lets the statement's borrow of `st` end first
         let gone: Vec<(String, String)> = {
             let mut st = tx.prepare_cached("SELECT session_id, agent_id FROM agent_notices WHERE file_id = ?1")?;
             let v = st.query_map([task.file_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
