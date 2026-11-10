@@ -85,9 +85,9 @@ Marks: **FIX** (done in this pass), **SUGGEST** (for Will, not built), **LEAVE**
   sit on the row, in the room the row keeps for them.
 - **L10 LEAVE. Installed rows keep their source column a little left of the others**
   (`library-installed/before-dark-900x600.png`): the room goes to the chip, switch and X.
-- **L11 SUGGEST. Without Claude Code's command every row repeats the same amber sentence**
-  (`library/before-nocli-dark-900x600.png`) and loses its description; the note above the
-  list already says it. A test pins the per-row sentence, so this is Will's call.
+- **L11 BUILT as redesign R1. Without Claude Code's command every row repeated the same
+  amber sentence** (`library/before-nocli-dark-900x600.png`) and lost its description; the
+  note above the list already said it. See Redesigns.
 
 ### The install sheet (calm zone: layout and words only)
 
@@ -162,7 +162,46 @@ emoji, ASCII strings, one icon family.
    get replaced on the first open.
 3. **"Update available."** The data has no such state; with a version check the Installed
    rail could carry a small dot and the row an "Update" button.
-4. **No command installed:** say it once above the list and keep each row's description.
-5. **Plain words on Team:** "headless" -> "without a chat window", "Work" -> "Effort",
+4. **Plain words on Team:** "headless" -> "without a chat window", "Work" -> "Effort",
    and "Ui builder" -> "UI builder" (a short list of known acronyms in the backend).
-6. **A dot on "Installed" in the rail** when a plugin changed since it was checked.
+5. **A clear X in Team's "Find a helper" box**, like the Library's search box has (the
+   shared `SearchField` belongs to another page's owner).
+
+## Redesigns (after Will widened the scope, 2026-11-09)
+
+Each is its own commit. Pictures are in `docs/shots/fable-pass/<stop>/`, before and after
+framed the same, Dark and Light, 900x600 and 1180x780.
+
+- **R1 (`2c2270f`). No Claude Code command: said once, rows keep their descriptions.**
+  Before, all 19 rows swapped their description for the same amber sentence, so the list
+  said one thing 19 times and nothing about any plugin. Now one warning-tint notice with
+  its icon sits above the list, each row says what the plugin is, and the greyed Install
+  button gives the reason on hover. Principle: hierarchy and scanning order (one message,
+  once; the row's job is to describe the row). Install stays disabled exactly as before.
+  `library/rbefore-nocli-*.png` -> `library/r1-after-nocli-*.png`.
+- **R2 (`994df54`). A search that finds nothing offers "Clear search" in the empty state**,
+  on Library and on Team (Team's box has no clear X at all). Principle: affordance and
+  feedback (the next step is offered at the dead end, not back up in the toolbar).
+  `library-nomatch/rbefore-*.png` -> `library-nomatch/r2-after-*.png`,
+  `team-nomatch/rbefore-*.png` -> `team-nomatch/r2-after-*.png`.
+- **R3 (`d16b9b9`). The Installed source says "1 changed"** in the warning colour when an
+  installed plugin changed since it was checked (the whole sentence on hover; the narrow
+  window's source list reads "Installed (4, 1 changed)"). Before, only the row itself
+  said so, and in All that row can be far down. Principle: visibility of state. Words,
+  not a bare dot, so it reads without colour; contrast on the selected, resting and
+  hovered rail row is 5.1 to 8.5 in the three themes (computed).
+  `library/rbefore-*-stress.png` -> `library/r3-after-*-stress.png` (the rail shows at
+  1180x780; at 900x600 it is the dropdown).
+
+Looked at again and left, with the reason:
+
+- **Row layout and the Install button on the right:** the conventional place, aligned in
+  one column, and the row already reads name, what it is, where from, action.
+- **The Package tile on every row:** it matches the Toolkit's kind tiles (another page's
+  component); a per-plugin monogram would be decoration without data behind it.
+- **The source caption when one marketplace is picked:** dropping it saves little and
+  makes rows jump between sources.
+- **Team scorecards:** the name, the main figure and the counts already read in two
+  seconds; a rework had no principle to name.
+- **The install sheet and safety check:** calm zone; after the overflow fixes the order
+  (what it is, what it can do, what was found, the one button) is already right.
