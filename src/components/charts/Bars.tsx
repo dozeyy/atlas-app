@@ -68,9 +68,10 @@ export function Bars({
   }, [data]);
   const peak = useMemo(() => clearPeak(data.map((d) => d.value)), [data]);
 
-  // Four or five labels across the axis (three when narrow), stepping by a count that reads well
-  // (every 6 hours, every 6 days, every 3 weeks), never by 5.
-  const labelEvery = labelStep(n, Math.min(5, Math.max(3, Math.floor(plotW / 150))));
+  // Four or five labels across the axis (three when narrow: one per ~100 px of plot, so a 480 px
+  // Dashboard chart gets four, not three), stepping by a count that reads well (every 6 hours,
+  // every 6 days, every 3 weeks), never by 5.
+  const labelEvery = labelStep(n, Math.min(5, Math.max(3, Math.floor(plotW / 100))));
   // A range with nothing in it shows its baseline and no ticks: "2 / 1 / 0" on an empty day was
   // a made-up scale.
   const empty = !data.some((d) => d.value > 0);
@@ -172,7 +173,8 @@ export function Bars({
         <span
           aria-hidden="true"
           className="spark summit"
-          style={{ position: "absolute", left: cx(peak) - 9, top: Math.max(0, yOf(data[peak].value) - 28), pointerEvents: "none" }}
+          // The 18 px spark floats 12 px above the busiest bar's top.
+          style={{ position: "absolute", left: cx(peak) - 9, top: Math.max(0, yOf(data[peak].value) - 30), pointerEvents: "none" }}
         />
       )}
       <ChartTooltip tip={tip} width={width} />
