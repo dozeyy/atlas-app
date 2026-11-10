@@ -107,6 +107,10 @@ describe("helper avatar", () => {
     expect(helper.style.borderRadius).not.toBe("50%");
     expect(helper.classList.contains("nested")).toBe(false);
     expect(nested.classList.contains("nested")).toBe(true);
+    // Hollow: the helper's tile has a fill class, its helper's tile has none (as on the map).
+    expect([...helper.classList].some((c) => c.startsWith("bg-"))).toBe(true);
+    expect([...nested.classList].some((c) => c.startsWith("bg-"))).toBe(false);
+    expect([...nested.classList].some((c) => c.startsWith("text-"))).toBe(true);
     expect(main.getAttribute("aria-label")).toBe("Main chat");
   });
 

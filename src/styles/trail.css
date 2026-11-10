@@ -1786,6 +1786,8 @@ html[data-input="keyboard"] .x-del:focus-visible {
   padding: 0;
   list-style: none;
   display: grid;
+  /* The one column may shrink under a long name: the row shortens the name, never runs off the pane. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 /* A helper's avatar. A helper started by another helper wears the same tile hollow: an outline in

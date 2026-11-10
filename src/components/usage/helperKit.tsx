@@ -210,11 +210,14 @@ export function AgentAvatar({
   const { Icon, tone } = agentLook(type);
   const name = avatarName(type, level);
   const Glyph = level === "main" ? MainChatIcon : Icon;
+  // Hollow means no fill at all: the colour class stays, the background class goes (a utility
+  // would win over .helper-av.nested, and the list would not match the map).
+  const paint = level === "main" ? "bg-accent text-on-accent" : level === "nested" ? `${tone.replace(/\bbg-\S+\s*/g, "")} nested` : tone;
   return (
     <span
       {...(quiet ? { "aria-hidden": true } : { role: "img", "aria-label": name, title: name })}
       style={{ width: size, height: size, borderRadius: level === "main" ? "50%" : Math.round(size * 0.3) }}
-      className={`helper-av flex shrink-0 items-center justify-center ${level === "main" ? "bg-accent text-on-accent" : tone}${level === "nested" ? " nested" : ""}`}
+      className={`helper-av flex shrink-0 items-center justify-center ${paint}`}
     >
       <Glyph size={avatarIconSize(size)} weight="duotone" />
     </span>
