@@ -69,6 +69,15 @@ describe("grouping by folder", () => {
     expect(groups[0].latest).toBe(new Date(2026, 10, 8, 13).getTime());
   });
 
+  it("names a folder that has a path but no name after the path's last segment, never No folder", () => {
+    const groups = groupByFolder([
+      inFolder("a", new Date(2026, 10, 8), 1, "", "C:\\work\\Desktop Apps\\atlas\\"),
+      inFolder("b", new Date(2026, 10, 7), 1, "", "/home/dad/code/site"),
+      inFolder("c", new Date(2026, 10, 6), 1, "", ""),
+    ]);
+    expect(groups.map((g) => g.name)).toEqual(["atlas", "site", NO_FOLDER]);
+  });
+
   it("adds a page of older rows to the groups that exist and never moves one", () => {
     const first = [inFolder("a", new Date(2026, 10, 8), 1, "site", "C:/s"), inFolder("b", new Date(2026, 10, 7), 1, "atlas", "C:/a")];
     const more = [inFolder("c", new Date(2026, 10, 6), 1, "atlas", "C:/a"), inFolder("d", new Date(2026, 10, 5), 1, "notes", "C:/n")];
