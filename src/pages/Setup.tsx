@@ -20,6 +20,7 @@ import { clearPendingToolkitItem, clearPendingToolkitTab, onNavRequest, peekPend
 import type { CreateKind, SetupItem, SetupProject, SetupSnapshot } from "../lib/setup-types";
 import { reloadSetup, startSetup, useSetup } from "../state/setupStore";
 import { useAtlas } from "../state/AtlasProvider";
+import { dismissPageToasts } from "../state/toastStore";
 import { guardLeave } from "../state/unsavedStore";
 import { Team } from "./Team";
 
@@ -253,6 +254,17 @@ export function Setup() {
       // the choice just is not remembered
     }
   }, []);
+
+  // A tab is a page of its own: a toast that belongs to the one just left ("Installed x. Undo",
+  // raised in the Library) does not follow onto Team or Your setup.
+  const firstTabRender = useRef(true);
+  useEffect(() => {
+    if (firstTabRender.current) {
+      firstTabRender.current = false;
+      return;
+    }
+    dismissPageToasts();
+  }, [tab]);
 
   // Ctrl+K, or "Open in Toolkit" on a copied item, asks for a tab while the page is already open.
   useEffect(

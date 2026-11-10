@@ -10,7 +10,7 @@ import { reloadSetup, resetSetupStore } from "../state/setupStore";
 import { CHECKLIST_FOLDED_KEY } from "../components/setup/Checklist";
 import { FILE_DETAILS_KEY } from "../components/setup/DetailSheet";
 import { CELEBRATE_MS, CHECKLIST_DONE_KEY } from "../components/setup/TopSlot";
-import { resetToasts } from "../state/toastStore";
+import { pushToast, resetToasts } from "../state/toastStore";
 import { resetUnsaved } from "../state/unsavedStore";
 import { clearPendingToolkitItem, openToolkitItemNext, peekPendingToolkitItem } from "../lib/nav";
 import type { SetupSnapshot } from "../lib/setup-types";
@@ -214,6 +214,19 @@ describe("Setup page: main view", () => {
     const { reloadSetup } = await import("../state/setupStore");
     await act(async () => reloadSetup());
     await waitFor(() => expect(screen.queryByText("commit-helper")).not.toBeInTheDocument());
+  });
+
+  it("leaves a tab's own toast behind on the way to another tab, and keeps one that is the only Undo", async () => {
+    await open(backend);
+    await openTilesReady();
+    act(() => {
+      pushToast({ message: "Installed demo.", action: { label: "Undo", onClick: () => {} }, leavesWithPage: true });
+      pushToast({ message: "Deleted my-skill.", action: { label: "Undo", onClick: () => {} } });
+    });
+    expect(screen.getByText("Installed demo.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "Team" }));
+    expect(screen.queryByText("Installed demo.")).not.toBeInTheDocument();
+    expect(screen.getByText("Deleted my-skill.")).toBeInTheDocument();
   });
 });
 
