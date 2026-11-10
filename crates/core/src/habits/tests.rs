@@ -422,10 +422,15 @@ fn bad_input_gets_one_plain_sentence() {
 fn the_second_call_with_no_new_rows_answers_from_memory() {
     let b = build();
     let h = Habits::new(b.index.clone(), b.data.clone()).with_tz(Tz::Fixed(0));
-    h.find(&FindArgs::default(), now()).unwrap();
+    // Timed against the first call, not a fixed limit, so a busy machine can't fail it: a
+    // cache miss costs about as much as the first call did.
     let t = Instant::now();
     h.find(&FindArgs::default(), now()).unwrap();
-    assert!(t.elapsed() < Duration::from_millis(50), "{:?}", t.elapsed());
+    let first = t.elapsed();
+    let t = Instant::now();
+    h.find(&FindArgs::default(), now()).unwrap();
+    let second = t.elapsed();
+    assert!(second < Duration::from_millis(50).max(first / 4), "first {first:?}, second {second:?}");
     // New rows invalidate it.
     let e = start(&b);
     let mut line = serde_json::to_string(&json!({"type":"user","uuid":"late-1","sessionId":"habit-s1","timestamp":"2026-10-31T09:00:00.000Z","cwd":"C:\\fx\\notes","fixtureText":true,

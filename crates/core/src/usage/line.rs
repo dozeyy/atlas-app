@@ -20,6 +20,8 @@ pub enum LineEvent {
     AgentName { session_id: Option<String>, name: String },
     Relocated { session_id: Option<String>, cwd: String },
     CostState { session_id: Option<String>, usd: f64 },
+    /// `{"type":"agent-setting","agentSetting":"<type>"}`: this chat itself runs as that agent.
+    AgentSetting { session_id: Option<String>, name: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -90,6 +92,93 @@ pub struct ToolLine {
     pub uses: Vec<ToolUse>,
 }
 
+/// One `Agent`/`Task` dispatch or `SendMessage` of an assistant line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallFacts {
+    pub send: bool,
+    pub tool_use_id: String,
+    /// Dispatch: the helper type asked for.
+    pub subagent_type: Option<String>,
+    /// Dispatch: the prompt (matched for helper ids by the caller, never kept).
+    pub prompt: Option<String>,
+    /// Message: the recipient (`to`, else `recipient`) when it is a string.
+    pub to: Option<String>,
+}
+
+/// What the run ledger reads from one assistant line (see `Prefilter::assistant_facts`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AssistantFacts {
+    pub ts_ms: Option<i64>,
+    pub stop_reason: Option<String>,
+    pub api_error: bool,
+    pub text: Option<String>,
+    pub calls: Vec<CallFacts>,
+}
+
+/// A string, or anything else (ignored): a tolerant field.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StrOrAny<'a> {
+    Str(#[serde(borrow)] Cow<'a, str>),
+    Other(serde::de::IgnoredAny),
+}
+
+impl StrOrAny<'_> {
+    fn into_str(self) -> Option<String> {
+        match self {
+            StrOrAny::Str(s) => Some(s.into_owned()),
+            StrOrAny::Other(_) => None,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FactsLine<'a> {
+    #[serde(rename = "type", borrow)]
+    ty: Cow<'a, str>,
+    #[serde(borrow, default)]
+    timestamp: Option<Cow<'a, str>>,
+    #[serde(rename = "isApiErrorMessage", default)]
+    api_error: Option<bool>,
+    #[serde(borrow, default)]
+    message: Option<FactsMsg<'a>>,
+}
+
+#[derive(Deserialize)]
+struct FactsMsg<'a> {
+    #[serde(borrow, default)]
+    stop_reason: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    content: Option<Vec<FactsBlock<'a>>>,
+}
+
+#[derive(Deserialize)]
+struct FactsBlock<'a> {
+    #[serde(rename = "type", borrow, default)]
+    ty: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    id: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    name: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    text: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    input: Option<FactsInput<'a>>,
+}
+
+#[derive(Deserialize)]
+struct FactsInput<'a> {
+    #[serde(borrow, default)]
+    prompt: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    subagent_type: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    to: Option<StrOrAny<'a>>,
+    #[serde(borrow, default)]
+    recipient: Option<StrOrAny<'a>>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RawToolLine<'a> {
@@ -130,7 +219,12 @@ struct RawToolInput<'a> {
 pub struct Prefilter {
     assistant: Finder<'static>,
     tool_use: Finder<'static>,
-    others: [Finder<'static>; 4],
+    others: [Finder<'static>; 5],
+    text_block: Finder<'static>,
+    timestamp: Finder<'static>,
+    link_names: [Finder<'static>; 3],
+    interrupted: [Finder<'static>; 2],
+    user: Finder<'static>,
 }
 
 impl Default for Prefilter {
@@ -150,7 +244,13 @@ impl Prefilter {
                 f(r#""type":"agent-name""#),
                 f(r#""type":"relocated""#),
                 f(r#""type":"cost-state""#),
+                f(r#""type":"agent-setting""#),
             ],
+            text_block: f(r#""type":"text""#),
+            timestamp: f(r#""timestamp":""#),
+            link_names: [f(r#""name":"Agent""#), f(r#""name":"Task""#), f(r#""name":"SendMessage""#)],
+            interrupted: [f(r#""text":"[Request interrupted by user"#), f(r#""content":"[Request interrupted by user"#)],
+            user: f(r#""type":"user""#),
         }
     }
 
@@ -186,6 +286,100 @@ impl Prefilter {
             return None;
         }
         Some(ToolLine { session_id: raw.session_id.map(Cow::into_owned), ts_ms, uses })
+    }
+
+    /// The time of a line (its first top-level `timestamp`), without parsing the JSON.
+    pub fn line_ts(&self, line: &[u8]) -> Option<i64> {
+        let at = self.timestamp.find(line)? + 13;
+        let window = line.get(at..)?;
+        let window = &window[..window.len().min(40)];
+        let end = memchr::memchr(b'"', window)?;
+        parse_iso_ms(std::str::from_utf8(&window[..end]).ok()?)
+    }
+
+    /// An assistant line that carries a text block or a tool call: the lines a run's end and final
+    /// report are read from.
+    pub fn is_report_or_call(&self, line: &[u8]) -> bool {
+        self.assistant.find(line).is_some() && (self.text_block.find(line).is_some() || self.tool_use.find(line).is_some())
+    }
+
+    /// An assistant line with a text block (the run's report is the last such line).
+    pub fn is_assistant_text(&self, line: &[u8]) -> bool {
+        self.assistant.find(line).is_some() && self.text_block.find(line).is_some()
+    }
+
+    /// An assistant line with a tool call.
+    pub fn is_assistant_call(&self, line: &[u8]) -> bool {
+        self.assistant.find(line).is_some() && self.tool_use.find(line).is_some()
+    }
+
+    /// An assistant line that starts a helper (`Agent`/`Task`) or messages one (`SendMessage`).
+    pub fn is_link_call(&self, line: &[u8]) -> bool {
+        self.tool_use.find(line).is_some() && self.link_names.iter().any(|f| f.find(line).is_some())
+    }
+
+    /// Claude Code's own "[Request interrupted by user" marker on a user line.
+    pub fn is_interrupt(&self, line: &[u8]) -> bool {
+        self.user.find(line).is_some() && self.interrupted.iter().any(|f| f.find(line).is_some())
+    }
+
+    /// What the run ledger reads from one assistant line: its time, how it stopped, its text (the
+    /// final report is the last such text) and the helper dispatches and messages it makes. The
+    /// dispatch prompt is returned so the caller can match ids in it and drop it; nothing here keeps
+    /// text. Anything unreadable yields None.
+    pub fn assistant_facts(&self, line: &[u8], want_text: bool) -> Option<AssistantFacts> {
+        let raw: FactsLine = serde_json::from_slice(trim_ws(line)).ok()?;
+        if raw.ty != "assistant" {
+            return None;
+        }
+        let ts_ms = raw.timestamp.as_deref().and_then(parse_iso_ms);
+        let msg = raw.message?;
+        let mut text: Option<String> = None;
+        let mut calls = Vec::new();
+        for b in msg.content.unwrap_or_default() {
+            match b.ty.as_deref() {
+                Some("text") if want_text => {
+                    if let Some(t) = b.text {
+                        match &mut text {
+                            Some(s) => {
+                                s.push('\n');
+                                s.push_str(&t);
+                            }
+                            None => text = Some(t.into_owned()),
+                        }
+                    }
+                }
+                Some("tool_use") => {
+                    let (Some(name), Some(id)) = (b.name, b.id) else { continue };
+                    let input = b.input;
+                    match name.as_ref() {
+                        "Agent" | "Task" => calls.push(CallFacts {
+                            send: false,
+                            tool_use_id: id.into_owned(),
+                            subagent_type: input.as_ref().and_then(|i| i.subagent_type.as_deref()).map(str::to_string),
+                            prompt: input.and_then(|i| i.prompt).map(Cow::into_owned),
+                            to: None,
+                        }),
+                        "SendMessage" => calls.push(CallFacts {
+                            send: true,
+                            tool_use_id: id.into_owned(),
+                            subagent_type: None,
+                            prompt: None,
+                            to: input.and_then(|i| i.to.or(i.recipient)).and_then(StrOrAny::into_str),
+                        }),
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        Some(AssistantFacts {
+            ts_ms,
+            stop_reason: msg.stop_reason.map(Cow::into_owned),
+            api_error: raw.api_error == Some(true),
+            text,
+            calls,
+        })
     }
 
     fn wanted(&self, line: &[u8]) -> bool {
@@ -235,6 +429,13 @@ impl Prefilter {
                     None => Err(Skip::Ignored),
                 }
             }
+            "agent-setting" => match raw.agent_setting {
+                Some(t) if !t.trim().is_empty() => Ok(LineEvent::AgentSetting {
+                    session_id: raw.session_id.map(Cow::into_owned),
+                    name: t.trim().to_string(),
+                }),
+                _ => Err(Skip::Ignored),
+            },
             "cost-state" => match raw.total_cost_usd {
                 Some(usd) if usd.is_finite() => Ok(LineEvent::CostState {
                     session_id: raw.session_id.map(Cow::into_owned),
@@ -380,6 +581,8 @@ struct Raw<'a> {
     relocated: Option<RawReloc<'a>>,
     #[serde(rename = "totalCostUSD", default)]
     total_cost_usd: Option<f64>,
+    #[serde(borrow, default)]
+    agent_setting: Option<Cow<'a, str>>,
 }
 
 #[derive(Deserialize)]
