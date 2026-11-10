@@ -188,6 +188,32 @@ pub fn same_commit(a: &str, b: &str) -> bool {
 /// Said when the catalog (or the marketplace's entry) changed between the check and the click.
 pub const LISTING_MOVED: &str = "This plugin was updated in the catalog since you checked it. Check it again first.";
 
+/// Said when a plugin's own folder inside its marketplace is not the one that was checked.
+pub const LOCAL_MOVED: &str = "This plugin's files changed since you checked them. Check it again first.";
+
+/// Why a plugin is never installed from its row in one click (security review): the catalog names
+/// a branch or nothing, not one exact commit, so what installs could be newer than what Atlas
+/// looked at. The detail sheet says this and asks for the second click. `None` = one click is fine.
+pub fn confirm_note(source: &Source) -> Option<&'static str> {
+    match source {
+        Source::Github { sha: None, .. } => Some("This plugin follows a branch, not one exact version, so what installs could be newer than what Atlas looked at. Read the list above, then press Install."),
+        _ => None,
+    }
+}
+
+/// A plugin inside its marketplace's folder is installed from that folder, which can change
+/// between the check and the click: hash it again right before the install and refuse if it is
+/// not the one that was checked. Other sources pass (they are pinned or compared after landing).
+fn local_unchanged(ctx: &Ctx, id: &str, source: &Source, checked: &Checked) -> Result<(), String> {
+    let Source::Local { path } = source else { return Ok(()) };
+    let marketplace = id.rsplit_once('@').map(|(_, m)| m).unwrap_or_default();
+    let base = local_base(&ctx.root.dir, marketplace, path)?;
+    if checked.tree_hash.is_empty() || check::tree_hash(&base) != checked.tree_hash {
+        return Err(LOCAL_MOVED.into());
+    }
+    Ok(())
+}
+
 /// What was checked has to be what the catalog lists now (review finding 3): a refresh between the
 /// look and the click can point the plugin at another commit, branch or place, and Claude Code
 /// would install that unchecked one. Differing listings are refused, never installed.
@@ -234,6 +260,7 @@ pub fn install_plugin_locked(ctx: &Ctx, runner: &Runner, id: &str, source: &Sour
     if ledger::user_install(&ctx.root.dir, id).is_some() {
         return Err("That plugin is already installed.".into());
     }
+    local_unchanged(ctx, id, source, checked)?;
     let name = id.split('@').next().unwrap_or(id).to_string();
     let (backup_id, result, changed_files) = with_snapshot(ctx, &format!("install-plugin-{name}"), "plugin", id, || {
         let out = runner.install(id).map_err(cli_words)?;
@@ -739,6 +766,16 @@ mod tests {
         check::tree_hash(t.path())
     }
 
+    /// A marketplace folder `name` that Claude Code lists, holding the plugin folder `sub`.
+    fn local_marketplace(e: &Env, name: &str, sub: &str, files: &[(&str, &str)]) {
+        let mk = e.dir.join("plugins").join("marketplaces").join(name);
+        for (rel, text) in files {
+            put(&mk, &format!("{sub}/{rel}"), text.as_bytes());
+        }
+        let loc = serde_json::to_string(&mk.to_string_lossy()).unwrap();
+        fs::write(e.dir.join("plugins/known_marketplaces.json"), format!(r#"{{"{name}":{{"source":{{"source":"directory","path":"x"}},"installLocation":{loc}}}}}"#)).unwrap();
+    }
+
     #[test]
     fn a_plugin_install_is_backed_up_read_back_and_noted() {
         let before = real_snapshot();
@@ -774,7 +811,7 @@ mod tests {
         let e = env();
         let fake = fake_claude(e.dir.clone(), TREE);
         let runner = Runner::with_exec("claude".into(), &e.root, fake);
-        let o = install_plugin(&e.ctx(), &runner, "fd@mk", &Source::Local { path: "./x".into() }, &Checked { repo: "o/r", sha: "abc", tree_hash: "not-the-same-hash" }).unwrap();
+        let o = install_plugin(&e.ctx(), &runner, "fd@mk", &Source::Github { repo: "o/r".into(), sha: Some("abc".into()), path: None, git_ref: None }, &Checked { repo: "o/r", sha: "abc", tree_hash: "not-the-same-hash" }).unwrap();
         assert!(o.changed);
         let rows = ledger::installed_rows(&e.dir, &e.root.claude_json, &e.data);
         assert!(rows[0].changed, "the row says Changed since you checked it");
@@ -788,6 +825,7 @@ mod tests {
         const LF: &[(&str, &str)] = &[(".claude-plugin/plugin.json", "{\n\"name\":\"fd\"\n}\n"), ("skills/fd/SKILL.md", "---\nname: fd\n---\nbody\n"), ("hooks/check.py", "import sys\nprint(1)\n")];
         const CRLF: &[(&str, &str)] = &[(".claude-plugin/plugin.json", "{\r\n\"name\":\"fd\"\r\n}\r\n"), ("skills/fd/SKILL.md", "---\r\nname: fd\r\n---\r\nbody\r\n"), ("hooks/check.py", "import sys\r\nprint(1)\r\n")];
         let e = env();
+        local_marketplace(&e, "mk", "x", LF);
         let fake = fake_claude(e.dir.clone(), CRLF);
         let runner = Runner::with_exec("claude".into(), &e.root, fake);
         let good = tree_hash_of(LF);
@@ -1081,20 +1119,52 @@ mod tests {
         assert!(ledger::read(&e.data).entries.is_empty(), "nothing is recorded as installed");
     }
 
+    const OTHER: &[(&str, &str)] = &[(".claude-plugin/plugin.json", r#"{"name":"fd"}"#), ("skills/fd/SKILL.md", "---\nname: fd\n---\nsomething else\n")];
+
     #[test]
     fn files_that_differ_with_no_commit_to_pin_them_to_are_taken_out_again() {
         let e = env();
-        let fake = fake_claude(e.dir.clone(), TREE);
-        let runner = Runner::with_exec("claude".into(), &e.root, fake);
-        // A plugin inside a marketplace folder: no commit, and the files are not the ones checked.
+        local_marketplace(&e, "mk", "fd", TREE);
+        // A plugin inside a marketplace folder: no commit, and what lands is not what was checked
+        // (the folder changed after the last look, before Claude Code copied it).
+        let runner = Runner::with_exec("claude".into(), &e.root, fake_claude(e.dir.clone(), OTHER));
         let local = Source::Local { path: "./fd".into() };
-        let err = install_plugin(&e.ctx(), &runner, "fd@mk", &local, &Checked { repo: "", sha: "", tree_hash: "not-what-landed" }).unwrap_err();
+        let good = tree_hash_of(TREE);
+        let err = install_plugin(&e.ctx(), &runner, "fd@mk", &local, &Checked { repo: "", sha: "", tree_hash: &good }).unwrap_err();
         assert!(err.contains("took it out again") && err.contains("not the ones Atlas checked"), "{err}");
         assert!(ledger::user_install(&e.dir, "fd@mk").is_none());
         assert!(ledger::read(&e.data).entries.is_empty());
         // The same files as checked stay.
-        let good = tree_hash_of(TREE);
+        let runner = Runner::with_exec("claude".into(), &e.root, fake_claude(e.dir.clone(), TREE));
         assert!(install_plugin(&e.ctx(), &runner, "fd@mk", &local, &Checked { repo: "", sha: "", tree_hash: &good }).is_ok());
+    }
+
+    #[test]
+    fn a_marketplace_folder_that_changed_after_the_check_is_refused_before_anything_runs() {
+        // Security review: a local plugin was only compared after Claude Code had installed it.
+        let e = env();
+        local_marketplace(&e, "mk", "fd", OTHER);
+        let fake = fake_claude(e.dir.clone(), TREE);
+        let runner = Runner::with_exec("claude".into(), &e.root, fake.clone());
+        let local = Source::Local { path: "./fd".into() };
+        let checked = tree_hash_of(TREE);
+        let err = install_plugin(&e.ctx(), &runner, "fd@mk", &local, &Checked { repo: "", sha: "", tree_hash: &checked }).unwrap_err();
+        assert_eq!(err, LOCAL_MOVED);
+        // Nothing checked at all is not a check either; neither is a marketplace Atlas can't find.
+        assert_eq!(install_plugin(&e.ctx(), &runner, "fd@mk", &local, &Checked { repo: "", sha: "", tree_hash: "" }).unwrap_err(), LOCAL_MOVED);
+        assert!(install_plugin(&e.ctx(), &runner, "fd@gone", &local, &Checked { repo: "", sha: "", tree_hash: &checked }).is_err());
+        assert_eq!(runner.spawns(), 0, "Claude Code was never asked to install it");
+        assert!(fs::read_dir(&e.backups).unwrap().next().is_none(), "no backup, nothing changed");
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_none());
+    }
+
+    #[test]
+    fn a_plugin_that_follows_a_branch_is_never_installed_in_one_click() {
+        let gh_at = |sha: Option<&str>, git_ref: Option<&str>| Source::Github { repo: "o/r".into(), sha: sha.map(Into::into), path: None, git_ref: git_ref.map(Into::into) };
+        assert!(confirm_note(&gh_at(None, Some("main"))).is_some());
+        assert!(confirm_note(&gh_at(None, None)).is_some());
+        assert!(confirm_note(&gh_at(Some("abc1234"), None)).is_none());
+        assert!(confirm_note(&Source::Local { path: "./x".into() }).is_none());
     }
 
     #[test]

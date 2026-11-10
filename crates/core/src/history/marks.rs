@@ -104,12 +104,26 @@ impl Marks {
     }
 
     /// The plain sentence of the Library install or removal that left this exact version of a
-    /// file at `at_ms` (the file's modified time): the backup made last before that moment. A
-    /// version that came back later gets the sentence of the change that brought it back.
+    /// file at `at_ms` (the file's modified time): the backup made last before that moment, and
+    /// no more than half an hour earlier (the same window as a plugin's own rows: a later edit
+    /// that happens to leave the same contents is not the Library's doing). A version that came
+    /// back later gets the sentence of the change that brought it back.
     pub fn label(&self, key: &str, sha: &str, at_ms: i64) -> Option<&str> {
         // The backup is made first and the file written after it; a little slack covers clocks.
         const SLACK_MS: i64 = 500;
-        self.labels.get(&format!("{key}|{sha}"))?.iter().filter(|(made, _)| *made <= at_ms + SLACK_MS).max_by_key(|(made, _)| *made).map(|(_, l)| l.as_str())
+        const WITHIN_MS: i64 = 30 * 60 * 1000;
+        self.labels
+            .get(&format!("{key}|{sha}"))?
+            .iter()
+            .filter(|(made, _)| *made <= at_ms + SLACK_MS && at_ms - *made <= WITHIN_MS)
+            .max_by_key(|(made, _)| *made)
+            .map(|(_, l)| l.as_str())
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_label(mut self, key: &str, sha: &str, made_ms: i64, label: &str) -> Marks {
+        self.labels.entry(format!("{key}|{sha}")).or_default().push((made_ms, label.into()));
+        self
     }
 
     #[cfg(test)]
@@ -174,6 +188,9 @@ mod tests {
         // A row from before any tagged change, or other contents, gets none.
         assert_eq!(m.label(k, "A", 100), None);
         assert_eq!(m.label(k, "other", 2_000), None);
+        // The same contents again hours later (a hand edit that landed on them) are not the Library's.
+        assert_eq!(m.label(k, "B", 5_000 + 31 * 60 * 1000), None);
+        assert_eq!(m.label(k, "B", 5_000 + 29 * 60 * 1000), Some("Uninstalled fd from the Library"));
     }
 
     #[test]

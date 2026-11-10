@@ -533,4 +533,33 @@ mod tests {
         assert_eq!(rows[3].1, "atlas_snapshot", "a row long after the install is not part of it");
         assert_eq!(relabel(&store, &marks, now).unwrap(), 0, "a second look changes nothing");
     }
+
+    #[test]
+    fn a_changed_row_far_from_the_library_backup_is_not_relabelled() {
+        // Security review: the "changed" match had no lower time bound, so a hand edit that left a
+        // file with the same contents hours later took the Library's sentence.
+        let t = tempfile::tempdir().unwrap();
+        let store = Store::open(t.path()).unwrap();
+        let k = "f:C:/c/settings.json";
+        let now = 3 * 60 * 60 * 1000;
+        store
+            .tx(|tx| {
+                store::upsert_item(tx, k, "settings", "user", None, "settings", "C:/c/settings.json", 1)?;
+                let v = store::add_version(tx, &NewVersion { item_key: k, sha: Some("SHA-A"), bytes: 1, captured_at: 1, observed_mtime: 1, source: source::SNAPSHOT, origin_ref: None, session_id: None, agent_id: None })?;
+                store::add_event(tx, &NewEvent { item_key: k, at: 61_000, kind: "changed", from_version: None, to_version: v, source: source::SNAPSHOT, summary: "Changed." })?;
+                store::add_event(tx, &NewEvent { item_key: k, at: 2 * 60 * 60 * 1000, kind: "changed", from_version: None, to_version: v, source: source::SNAPSHOT, summary: "Changed." })?;
+                Ok(())
+            })
+            .unwrap();
+        let marks = Marks::default().with_label(k, "SHA-A", 60_000, "Installed fd from the Library");
+        assert_eq!(relabel(&store, &marks, now).unwrap(), 1, "only the row right after the backup");
+        let sums: Vec<String> = store
+            .with(|c| {
+                let mut st = c.prepare("SELECT summary FROM events ORDER BY event_id")?;
+                let it = st.query_map([], |r| r.get(0))?;
+                it.collect::<rusqlite::Result<_>>()
+            })
+            .unwrap();
+        assert_eq!(sums, ["Installed fd from the Library", "Changed."]);
+    }
 }

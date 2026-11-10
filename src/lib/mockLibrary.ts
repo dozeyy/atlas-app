@@ -36,7 +36,7 @@ const seed = (name: string, description: string, marketplace = DIR, source: Plug
   marketplace,
   version: "1.0.0",
   byCommand: source?.kind === "command",
-  source: source ?? { kind: "github", repo: `example/${name}`, sha: null, path: null },
+  source: source ?? { kind: "github", repo: `example/${name}`, sha: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0", path: null },
 });
 
 export const SEED_CATALOG: MockEntry[] = [
@@ -183,7 +183,7 @@ export class MockLibrary {
 
   private detail(repo: string, shaped: Shaped, flagged: boolean, marketSource: string | null = null): LibraryDetail {
     const inspected: Inspected = { shaped, check: flagged ? FLAGGED : GOOD };
-    const d: LibraryDetail = { token: `tok-${++this.n}`, repo, sha: "a1b2c3d4e5f6", subpath: null, inspected, taken: [], marketSource };
+    const d: LibraryDetail = { token: `tok-${++this.n}`, repo, sha: "a1b2c3d4e5f6", subpath: null, inspected, taken: [], marketSource, confirmNote: null };
     this.tokens.set(d.token, d);
     return d;
   }
@@ -209,7 +209,10 @@ export class MockLibrary {
     await this.wait();
     if (this.offline) throw new Error(OFFLINE_ERR);
     const repo = e.source.kind === "github" ? e.source.repo : "";
-    return this.detail(repo, this.pluginShape(e), this.flagged);
+    const d = this.detail(repo, this.pluginShape(e), this.flagged);
+    // Like the backend: a plugin that follows a branch (no pinned commit) needs the second click.
+    if (e.source.kind === "github" && !e.source.sha) d.confirmNote = "This plugin follows a branch, not one exact version, so what installs could be newer than what Atlas looked at. Read the list above, then press Install.";
+    return d;
   }
 
   async libraryInspectInstalled(id: string): Promise<LibraryDetail> {

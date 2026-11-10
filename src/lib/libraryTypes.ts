@@ -133,6 +133,11 @@ export interface LibraryDetail {
   taken: Taken[];
   /** The folder is a marketplace that can be added (its `owner/repo`). */
   marketSource: string | null;
+  /**
+   * Set when the plugin follows a branch instead of one exact commit: it is never installed from
+   * its row in one click, and the sheet says why before its own Install (the second click).
+   */
+  confirmNote: string | null;
 }
 
 export interface FileText {

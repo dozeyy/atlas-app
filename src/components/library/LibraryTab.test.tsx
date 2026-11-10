@@ -153,6 +153,22 @@ describe("Library tab: installing (D20, D24, D19 words)", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument(); // 1 click, no sheet
   });
 
+  it("a plugin that follows a branch, not one exact version, is never installed from the row in one click", async () => {
+    mount((b) => {
+      b.library.entries = b.library.entries.map((e) => (e.name === "code-review" ? { ...e, source: { kind: "github" as const, repo: "example/code-review", sha: null, path: null } } : e));
+    });
+    await openLibraryTab();
+    await userEvent.click(await installBtn("code-review"));
+    // The row checked it (clean), but then opened the sheet and said why instead of installing.
+    const sheet = await screen.findByRole("dialog");
+    await within(sheet).findByText(/follows a branch, not one exact version/);
+    expect(lib().installed).toHaveLength(0);
+    expect(lib().calls.some((c) => c.startsWith("install:"))).toBe(false);
+    // The second click is the sheet's own Install.
+    await userEvent.click(within(sheet).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(lib().installed.map((r) => r.id)).toEqual(["code-review@anthropic-plugin-directory"]));
+  });
+
   it("a flagged plugin always takes the second, deliberate click in the sheet, after its flags", async () => {
     mount((b) => {
       b.library.flagged = true;

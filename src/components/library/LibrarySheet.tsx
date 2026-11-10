@@ -406,6 +406,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
           ) : (
             <div className="flex items-center justify-end gap-2">
               {detail && !isClean(detail.inspected) && <span className="mr-auto text-caption text-ink-2">Look over the list above first.</span>}
+              {detail && isClean(detail.inspected) && detail.confirmNote && <span className="mr-auto text-caption text-ink-2">{detail.confirmNote}</span>}
               <Button variant="primary" ref={installBtn} disabled={!canInstall} onClick={() => void doInstall()}>
                 {busy === "installing" ? "Installing..." : "Install"}
               </Button>

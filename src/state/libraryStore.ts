@@ -167,8 +167,9 @@ export function dropCheck(pluginId: string): void {
   if (cache.delete(pluginId)) set({ checks: state.checks + 1 });
 }
 
-/** D20: this plugin has a finished check with nothing flagged, so its row can install at once. */
-export const canInstallAtOnce = (pluginId: string): boolean => isClean(cache.get(pluginId)?.inspected);
+/** D20: this plugin has a finished check with nothing flagged (and one exact version), so its row can install at once. */
+const oneClickOk = (d: LibraryDetail | undefined): d is LibraryDetail => !!d && isClean(d.inspected) && !d.confirmNote;
+export const canInstallAtOnce = (pluginId: string): boolean => oneClickOk(cache.get(pluginId));
 
 // ---- doing -------------------------------------------------------------------------------------
 
@@ -204,8 +205,8 @@ export async function installPlugin(pluginId: string, name: string, token: strin
 
 /**
  * A row's Install (spec: 1 click when the check is clean). Runs the check if there is none yet; a
- * clean one installs right away (a toast with Undo), anything flagged or unreadable comes back as
- * "open" so the sheet shows the reasons and its Install is the second click.
+ * clean one installs right away (a toast with Undo), anything flagged, unreadable or not pinned to
+ * one exact version comes back as "open" so the sheet shows the reasons and its Install is the second click.
  */
 export async function checkThenInstall(pluginId: string, name: string): Promise<"done" | "open"> {
   if (state.busy[pluginId]) return "done";
@@ -221,7 +222,7 @@ export async function checkThenInstall(pluginId: string, name: string): Promise<
       mark(pluginId, null);
     }
   }
-  if (!isClean(d.inspected)) return "open";
+  if (!oneClickOk(d)) return "open";
   return (await installPlugin(pluginId, name, d.token)) ? "done" : "open";
 }
 

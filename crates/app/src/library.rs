@@ -197,20 +197,24 @@ fn entry_of(env: &Env, plugin_id: &str) -> Option<catalog::Entry> {
 
 /// What the marketplace's own entry for `entry` names (hooks, servers, commands...): read from the
 /// marketplace files Claude Code keeps, the same ones it installs from. `Err` is why it could not
-/// be read, which the check shows as "can't read", never as clean.
-fn entry_fields_of(env: &Env, entry: &catalog::Entry) -> Result<serde_json::Value, String> {
-    let loc = ledger::marketplaces(&env.root.dir)
-        .into_iter()
-        .find(|m| m.name == entry.marketplace)
-        .and_then(|m| m.install_location)
-        .ok_or_else(|| "Atlas could not find the marketplace's files, so it could not read the plugin's own entry".to_string())?;
-    catalog::entry_components(Path::new(&loc), &entry.name)
+/// be read, which the check shows as "can't read", never as clean. `Ok(None)`: the entry's source
+/// carries no such fields at all (the built-in plugin directory has no marketplace file on disk;
+/// its listing from `claude plugin list --available --json` names only id, name, description,
+/// version and where the plugin lives), so there is nothing to check beyond the plugin's own files.
+fn entry_fields_of(env: &Env, entry: &catalog::Entry) -> Result<Option<serde_json::Value>, String> {
+    let record = ledger::marketplaces(&env.root.dir).into_iter().find(|m| m.name == entry.marketplace);
+    match record.and_then(|m| m.install_location) {
+        Some(loc) => catalog::entry_components(Path::new(&loc), &entry.name).map(Some),
+        None if entry.marketplace == catalog::DIRECTORY => Ok(None),
+        None => Err("Atlas could not find the marketplace's files, so it could not read the plugin's own entry".to_string()),
+    }
 }
 
 /// The same look as a comparable string, kept with the token and compared again at install.
-fn entry_fields_key(r: &Result<serde_json::Value, String>) -> String {
+fn entry_fields_key(r: &Result<Option<serde_json::Value>, String>) -> String {
     match r {
-        Ok(v) => v.to_string(),
+        Ok(Some(v)) => v.to_string(),
+        Ok(None) => "none".to_string(),
         Err(e) => format!("!{e}"),
     }
 }
@@ -492,6 +496,8 @@ pub struct Detail {
     taken: Vec<Taken>,
     /// The folder is a marketplace that can be added (its `owner/repo`).
     market_source: Option<String>,
+    /// Why this one is never installed from the row in one click (a plain sentence), or None.
+    confirm_note: Option<String>,
 }
 
 fn takens(env: &Env, i: &install::Inspected) -> Vec<Taken> {
@@ -533,9 +539,9 @@ pub async fn library_inspect_plugin(app: AppHandle, state: Info<'_>, lib: Lib<'_
             let fields = fields.clone();
             blocking(move || {
                 let kind = match &fields {
-                    Some(Ok(v)) => atlas_core::library::check::EntryFields::Fields(v),
+                    Some(Ok(Some(v))) => atlas_core::library::check::EntryFields::Fields(v),
                     Some(Err(e)) => atlas_core::library::check::EntryFields::Unreadable(e),
-                    None => atlas_core::library::check::EntryFields::Absent,
+                    Some(Ok(None)) | None => atlas_core::library::check::EntryFields::Absent,
                 };
                 Ok(install::inspect_plugin_entry(&b2, &name, kind))
             })
@@ -561,6 +567,7 @@ pub async fn library_inspect_plugin(app: AppHandle, state: Info<'_>, lib: Lib<'_
         taken: Vec::new(),
         inspected,
         market_source: None,
+        confirm_note: install::confirm_note(&entry.source).map(str::to_string),
     };
     Ok(detail)
 }
@@ -585,7 +592,7 @@ pub async fn library_inspect_installed(state: Info<'_>, lib: Lib<'_>, id: String
         let repo = ledger::find(&env.data, "plugin", &id).map(|e| e.repo).unwrap_or_default();
         let sha = rec.git_sha.clone().unwrap_or_default();
         let token = lib.keep(Staged { base: Some(base), source: None, repo: repo.clone(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: Some(id), market_source: None, entry_fields: None });
-        Ok(Detail { token, repo, sha, subpath: None, taken: Vec::new(), inspected, market_source: None })
+        Ok(Detail { token, repo, sha, subpath: None, taken: Vec::new(), inspected, market_source: None, confirm_note: None })
     })
     .await
 }
@@ -606,7 +613,7 @@ pub async fn library_inspect_link(app: AppHandle, state: Info<'_>, lib: Lib<'_>,
     let market_source = (inspected.shaped.shape == "marketplace").then(|| l.slug());
     let sha = un.sha.clone().unwrap_or_default();
     let token = lib.keep(Staged { base: Some(base), source: None, repo: l.slug(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: None, market_source: market_source.clone(), entry_fields: None });
-    Ok(Detail { token, repo: l.slug(), sha, subpath: l.path.clone(), inspected, taken, market_source })
+    Ok(Detail { token, repo: l.slug(), sha, subpath: l.path.clone(), inspected, taken, market_source, confirm_note: None })
 }
 
 #[derive(Serialize)]
@@ -796,4 +803,43 @@ pub async fn library_remove_item(app: AppHandle, state: Info<'_>, hub: Hub<'_>, 
 #[tauri::command]
 pub async fn library_open_repo(repo: String) -> Result<(), String> {
     blocking(move || crate::commands::open_github(&repo)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atlas_core::paths::ConfigSource;
+
+    fn entry(marketplace: &str) -> catalog::Entry {
+        catalog::Entry {
+            plugin_id: format!("fd@{marketplace}"),
+            name: "fd".into(),
+            description: String::new(),
+            marketplace: marketplace.into(),
+            version: "1.0.0".into(),
+            source: catalog::Source::Github { repo: "o/r".into(), sha: Some("abc1234".into()), path: None, git_ref: None },
+        }
+    }
+
+    fn env_at(dir: &Path) -> Env {
+        let root = ConfigRoot { dir: dir.to_path_buf(), claude_json: dir.join(".claude.json"), projects_dir: dir.join("projects"), projects_read_only: false, source: ConfigSource::Flag };
+        Env { root, data: dir.join("data"), backups: dir.join("data").join("setup-backups") }
+    }
+
+    #[test]
+    fn the_built_in_directory_has_no_marketplace_file_and_that_is_not_a_failure() {
+        // Security review: the directory is not in known_marketplaces.json, so every one of its
+        // plugins got an "unreadable entry" flag and the one-click install never fired.
+        let t = tempfile::tempdir().unwrap();
+        let env = env_at(t.path());
+        std::fs::create_dir_all(t.path().join("plugins")).unwrap();
+        std::fs::write(t.path().join("plugins/known_marketplaces.json"), r#"{"claude-plugins-official":{"source":{"source":"github","repo":"a/b"},"installLocation":"C:/nowhere"}}"#).unwrap();
+        // The directory: the listing carries no component fields, so there is nothing to read.
+        assert_eq!(entry_fields_of(&env, &entry(catalog::DIRECTORY)), Ok(None));
+        assert_eq!(entry_fields_key(&Ok(None)), "none");
+        // Any other marketplace Atlas cannot find stays an honest failure (the entry may hold hooks).
+        let err = entry_fields_of(&env, &entry("some-other")).unwrap_err();
+        assert!(err.contains("could not find the marketplace"), "{err}");
+        assert!(entry_fields_key(&Err(err)).starts_with('!'));
+    }
 }
