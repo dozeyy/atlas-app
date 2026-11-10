@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Package } from "@phosphor-icons/react";
-import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, helperName, kindLook, MainChatIcon, shownName, type HelperKind } from "./helperKit";
+import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, helperName, kindLook, MainChatIcon, shownName, tileCorners, tilePath, type HelperKind } from "./helperKit";
 import { typeName } from "../../lib/helperProgress";
 import { typeLabel } from "../../pages/AgentDetail";
 import { KINDS as SETUP_KINDS } from "../../lib/setup-model";
@@ -69,13 +69,76 @@ describe("helper icons", () => {
     expect(helperKind("")).toBe("other");
   });
 
+  it("matches a short word as a word, never as letters inside a longer one", () => {
+    const expected: [string, HelperKind][] = [
+      // "spec" in "specialist", "doc" in "docker", "port" in "support" and "report".
+      ["security-specialist", "other"],
+      ["frontend-specialist", "design"],
+      ["docker-deployer", "ops"],
+      ["support-agent", "other"],
+      ["report-builder", "docs"],
+      // The same slip with the other short words.
+      ["information-gatherer", "other"],
+      ["explanation-writer", "docs"],
+      ["latest-news-fetcher", "explore"],
+      ["profile-manager", "other"],
+      ["reconciler", "other"],
+      ["model-router", "other"],
+      ["device-manager", "other"],
+      ["splinter-finder", "explore"],
+      // And the words still count where they are words.
+      ["spec-writer", "plan"],
+      ["specs", "plan"],
+      ["specification-author", "plan"],
+      ["docs", "docs"],
+      ["documentation-helper", "docs"],
+      ["mc-port-parity", "build"],
+      ["porter", "build"],
+      ["game-modder", "build"],
+      ["fabric-mod-dev", "build"],
+      ["web-developer", "build"],
+      ["code-formatter", "chore"],
+      ["lint-fixer", "chore"],
+      ["pytest-runner", "test"],
+      ["devops-engineer", "ops"],
+      ["sprint-planner", "plan"],
+      ["performance-tuner", "perf"],
+      ["recon", "explore"],
+    ];
+    for (const [type, kind] of expected) expect([type, helperKind(type)]).toEqual([type, kind]);
+  });
+
   it("keeps the shape other pages rely on: an icon, colour classes and a word", () => {
     const look = agentLook("code-reviewer");
     expect(look.Icon).toBeTruthy();
     expect(look.tone).toMatch(/^bg-\S+ text-\S+$/);
     expect(look.label).toBe("Review");
-    expect(look.fg).toMatch(/^var\(--/);
-    expect(look.bg).toMatch(/^var\(--/);
+    expect(look.fg).toMatch(/^var\(--chart-[1-4]\)$/);
+    expect(look.bg).toContain(look.fg);
+    expect(look.ink).toBe("var(--ink)");
+  });
+
+  it("tints a tile from the four chart colours only, and gives every family its own shape", () => {
+    const looks = HELPER_KINDS.map(kindLook);
+    for (const l of looks) {
+      expect([l.kind, l.tone]).toEqual([l.kind, expect.stringMatching(/^bg-chart-[1-4]\/30 text-ink$/)]);
+      expect([l.kind, l.bg]).toEqual([l.kind, expect.stringMatching(/^color-mix\(in srgb, var\(--chart-[1-4]\) 30%, transparent\)$/)]);
+    }
+    // One colour, one shape: the two say the same thing, so neither is needed alone.
+    const pairs = new Set(looks.map((l) => `${l.fg} ${l.shape}`));
+    expect(pairs.size).toBe(4);
+    expect(new Set(looks.map((l) => l.fg)).size).toBe(4);
+    expect(new Set(looks.map((l) => l.shape)).size).toBe(4);
+  });
+
+  it("draws the same tile in the list and on the map", () => {
+    expect(tileCorners("tile", 20)).toEqual([6, 6, 6, 6]);
+    expect(tileCorners("arch", 20)).toEqual([10, 10, 4, 4]);
+    expect(tileCorners("shield", 40)).toEqual([7, 7, 20, 20]);
+    expect(tileCorners("leaf", 40)).toEqual([20, 7, 20, 7]);
+    // A ring around a tile never has a corner wider than half its side.
+    expect(Math.max(...tileCorners("arch", 20, 5))).toBe(15);
+    expect(tilePath("tile", 20)).toBe("M-4 -10H4A6 6 0 0 1 10 -4V4A6 6 0 0 1 4 10H-4A6 6 0 0 1 -10 4V-4A6 6 0 0 1 -4 -10Z");
   });
 
   it("names an avatar by its kind and where it sits", () => {
@@ -146,6 +209,11 @@ describe("helper avatar", () => {
     expect([...helper.classList].some((c) => c.startsWith("bg-"))).toBe(true);
     expect([...nested.classList].some((c) => c.startsWith("bg-"))).toBe(false);
     expect([...nested.classList].some((c) => c.startsWith("text-"))).toBe(true);
+    // The second cue: the tile behind it, drawn from its family's colour (trail.css reads both).
+    expect(nested.style.getPropertyValue("--av")).toBe("var(--chart-3)");
+    expect(nested.style.getPropertyValue("--echo")).toBe("3px");
+    // Same family, same corners, whichever level.
+    expect(nested.style.borderRadius).toBe(helper.style.borderRadius);
     expect(main.getAttribute("aria-label")).toBe("Main chat");
   });
 

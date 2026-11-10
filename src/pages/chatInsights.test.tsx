@@ -43,7 +43,7 @@ async function chatWithHelpers(backend: MockBackend) {
 }
 
 describe("Chat receipt and helper map", () => {
-  it("opens a chat on its receipt with every list; dollars sit in hovers and are called an estimate there", async () => {
+  it("opens a chat on its receipt: one figure on top, the lists under it, the line items closed; dollars sit in hovers", async () => {
     const backend = sessionsBackend();
     const { row } = await chatWithHelpers(backend);
     mountDetail(backend, row.sessionId);
@@ -51,14 +51,23 @@ describe("Chat receipt and helper map", () => {
     expect(screen.getByRole("region", { name: "What it used" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Biggest line items" })).toBeInTheDocument();
     expect(screen.queryAllByText(/All figures are estimates/)).toHaveLength(0);
-    // A list of shares ends in a total, so the sum is visible; each of its lines wears the avatar the map gives that thread.
+    // The sum is the one figure at the top of the page, so no list repeats it as a total row.
+    // Each line of "Who used it" wears the avatar the map gives that thread.
+    expect(document.querySelectorAll(".d-hero")).toHaveLength(1);
+    expect(document.querySelector(".d-hero")?.textContent).toMatch(/tokens$/);
+    expect(screen.queryByText("Total")).toBeNull();
     const who = screen.getByRole("region", { name: "Who used it" });
-    expect(within(who).getByText("Total")).toBeInTheDocument();
     expect(within(who).getByRole("img", { name: "Main chat" })).toBeInTheDocument();
     expect(within(who).getAllByRole("img", { name: /helper$/i }).length).toBeGreaterThan(0);
-    // The line items are rough sizes, not shares: no total under them, one note that says what "~" is.
+    // The line items wait behind one row, closed until asked; opening it is remembered.
     const big = screen.getByRole("region", { name: "Biggest line items" });
-    expect(within(big).queryByText("Total")).toBeNull();
+    const more = within(big).getByRole("button", { name: "Biggest line items" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    expect(within(big).queryByText(/^~ is a rough size/)).toBeNull();
+    await userEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(localStorage.getItem("atlas.chat.lineItems")).toBe("1");
+    // They are rough sizes, not shares: no total under them, one note that says what "~" is.
     expect(within(big).queryByText("Everything else")).toBeNull();
     expect(within(big).getByText(/^~ is a rough size/)).toBeInTheDocument();
     // Tokens are the figure everywhere; dollars live only in hover text.
@@ -67,9 +76,23 @@ describe("Chat receipt and helper map", () => {
       expect(region.textContent).not.toMatch(/\$/);
       expect(region.textContent).toMatch(/\d(k|M|B)?\b/);
     }
-    expect(within(screen.getByRole("region", { name: "Who used it" })).getByText(/tokens$/)).toBeInTheDocument();
     const titled = Array.from(document.querySelectorAll("[title]")).map((e) => e.getAttribute("title") ?? "");
     expect(titled.some((t) => /an estimate of about \$/.test(t))).toBe(true);
+  });
+
+  it("opens the line items by itself when they were left open, and says token kinds in plain words", async () => {
+    const backend = sessionsBackend();
+    localStorage.setItem("atlas.chat.lineItems", "1");
+    const { row } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    const big = await screen.findByRole("region", { name: "Biggest line items" });
+    expect(within(big).getByRole("button", { name: "Biggest line items" })).toHaveAttribute("aria-expanded", "true");
+    // Plain words on the surface; the exact term is the first words of the hover.
+    const used = screen.getByRole("region", { name: "What it used" });
+    expect(used.textContent).not.toMatch(/cache/i);
+    const saved = within(used).getByText("Saved for reuse");
+    expect(saved.closest("[title]")?.getAttribute("title")).toMatch(/^Cache writes: /);
+    expect(within(used).getByText(/^plus .+ reused$/).getAttribute("title")).toMatch(/^Cache reads: /);
   });
 
   it("offers the Helpers tab only when helpers ran", async () => {
@@ -223,7 +246,7 @@ describe("Chat receipt and helper map", () => {
     const { row, detail } = await chatWithHelpers(backend);
     mountDetail(backend, row.sessionId);
     await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
-    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Show as a list" }));
     const a = detail.agents[0];
     await userEvent.click(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) })[0]);
     expect(await screen.findByRole("heading", { level: 2, name: a.name })).toBeInTheDocument();
@@ -271,10 +294,31 @@ describe("Chat receipt and helper map", () => {
     expect(screen.queryByRole("region", { name: "Spend as it ran" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Spend" })).toBeNull();
     await userEvent.click(screen.getByRole("radio", { name: "Helpers" }));
-    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Show as a list" }));
     const order = screen.getByRole("radiogroup", { name: "Order helpers by" });
-    expect(within(order).getByRole("radio", { name: "Tokens" })).toBeInTheDocument();
+    expect(within(order).getByRole("radio", { name: "Most tokens" })).toBeInTheDocument();
     expect(within(order).queryByRole("radio", { name: "Spend" })).toBeNull();
+  });
+
+  it("keeps ids and paths off the Details tab: a file is whose it is, a helper type is words, the exact value is the hover", async () => {
+    const backend = sessionsBackend();
+    const { row, detail } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    await userEvent.click(await screen.findByRole("radio", { name: "Details" }));
+    const files = await screen.findByRole("region", { name: "Files" });
+    expect(files.textContent).not.toMatch(/\.jsonl|projects\//);
+    expect(files.textContent).not.toContain(row.projectPath);
+    const main = within(files).getByText("Main chat");
+    expect(main.getAttribute("title")).toMatch(/\.jsonl$/);
+    expect(within(files).getAllByRole("button", { name: /^Copy the file path of / })).toHaveLength(detail.files.length);
+    // The chat's total is the page's one figure; the tile here is what sits apart from it.
+    expect(document.querySelectorAll(".d-hero")).toHaveLength(1);
+    expect(screen.getAllByText("Reused").length).toBe(2); // the tile and the breakdown's row
+    const tools = await screen.findByRole("region", { name: "Tools and skills" });
+    const types = [...new Set(detail.agents.map((a) => a.agentType).filter((t): t is string => !!t && /[-_]/.test(t)))];
+    expect(types.length).toBeGreaterThan(0);
+    for (const t of types) expect(within(tools).queryByText(t)).toBeNull();
+    expect(tools.querySelector(`[title="${types[0]}"]`)).not.toBeNull();
   });
 
   it("keeps the old helper cards behind a List view", async () => {
@@ -282,7 +326,7 @@ describe("Chat receipt and helper map", () => {
     const { row, detail } = await chatWithHelpers(backend);
     mountDetail(backend, row.sessionId);
     await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
-    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Show as a list" }));
     expect(screen.queryByRole("group", { name: /^Helper map/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: new RegExp(esc(detail.agents[0].name)) }).length).toBeGreaterThan(0);
   });

@@ -18,6 +18,8 @@ import {
   headline,
   localDay,
   effortMix,
+  mergeModelRows,
+  modelChoices,
   modelLabel,
   modelWithEffort,
   niceMax,
@@ -214,6 +216,48 @@ describe("models", () => {
     expect(modelLabel("some-vendor/unknown-model-2026")).toBe("some-vendor/unknown-model-2026");
     expect(modelLabel("anthropic.claude-v2")).toBe("anthropic.claude-v2");
     expect(modelLabel("")).toBe("");
+  });
+});
+
+describe("one row per model name", () => {
+  const tok = (n: number): Tokens => ({ input: n, output: n, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: n * 10, total: n * 2, webSearch: 0, webFetch: 0 });
+
+  it("lists a name once, with every id that reads as it", () => {
+    expect(modelChoices(["claude-sonnet-4-5", "claude-opus-5-5", "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "claude-sonnet-4-5-20250929[1m]", "claude-opus-5-5"])).toEqual([
+      { label: "Sonnet 4.5", models: ["claude-sonnet-4-5", "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "claude-sonnet-4-5-20250929[1m]"] },
+      { label: "Opus 5.5", models: ["claude-opus-5-5"] },
+    ]);
+    expect(modelChoices([])).toEqual([]);
+  });
+
+  it("adds rows with the same name together and leaves the rest alone", () => {
+    const rows = mergeModelRows([
+      { model: "claude-sonnet-4-5", tokens: tok(100), cost: { usd: 1, complete: true, unpricedTokens: 0 }, known: true, efforts: [{ effort: "high", replies: 2 }] },
+      { model: "claude-opus-5-5", tokens: tok(7), cost: { usd: 3, complete: true, unpricedTokens: 0 }, known: true },
+      { model: "claude-sonnet-4-5-20250929", tokens: tok(50), cost: { usd: 0.5, complete: true, unpricedTokens: 0 }, known: true, efforts: [{ effort: "low", replies: 5 }, { effort: "high", replies: 1 }] },
+    ]);
+    expect(rows.map((r) => r.label)).toEqual(["Sonnet 4.5", "Opus 5.5"]);
+    expect(rows[0].models).toEqual(["claude-sonnet-4-5", "claude-sonnet-4-5-20250929"]);
+    expect(rows[0].tokens).toEqual(tok(150));
+    expect(rows[0].cost).toEqual({ usd: 1.5, complete: true, unpricedTokens: 0 });
+    expect(rows[0].efforts).toEqual([{ effort: "low", replies: 5 }, { effort: "high", replies: 3 }]);
+    expect(rows[1].tokens).toEqual(tok(7));
+    expect(rows[1].efforts).toEqual([]);
+  });
+
+  it("a merged row is priced only when every part of it was, and never invents a cost", () => {
+    const [half] = mergeModelRows([
+      { model: "claude-nova-9-1", tokens: tok(10), cost: { usd: 2, complete: true, unpricedTokens: 0 }, known: true },
+      { model: "vendor/claude-nova-9-1", tokens: tok(4), cost: { usd: null, complete: false, unpricedTokens: 8 }, known: false },
+    ]);
+    expect(half.known).toBe(false);
+    expect(half.cost).toEqual({ usd: 2, complete: false, unpricedTokens: 8 });
+    const [none] = mergeModelRows([
+      { model: "claude-nova-9-1", tokens: tok(1), cost: { usd: null, complete: false, unpricedTokens: 2 } },
+      { model: "vendor/claude-nova-9-1", tokens: tok(1), cost: { usd: null, complete: false, unpricedTokens: 2 } },
+    ]);
+    expect(none.cost.usd).toBeNull();
+    expect(none.known).toBe(false);
   });
 });
 

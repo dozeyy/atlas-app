@@ -70,7 +70,7 @@ describe("Dashboard", () => {
     mount();
     await screen.findByRole("group", { name: /Tokens, last 30 days/ });
     const readout = screen.getByTestId("chart-readout");
-    expect(readout.getAttribute("title")).toMatch(/cache writes\.\nCache reads are listed apart\./);
+    expect(readout.getAttribute("title")).toMatch(/saved for reuse \(cache writes\)\.\nWhat it reused \(cache reads\) is listed apart\./);
     const card = screen.getByRole("region", { name: "Activity" });
     expect(within(card).queryByText(/Tokens count what you sent/)).not.toBeInTheDocument();
   });
@@ -200,7 +200,8 @@ describe("Sessions", () => {
     expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "Details" }));
     expect(await screen.findByText("Token breakdown")).toBeInTheDocument();
-    expect(screen.getByText("Cache reads")).toBeInTheDocument();
+    // Plain word on the surface, the exact term in its hover.
+    expect(within(screen.getByRole("region", { name: "Token breakdown" })).getByText("Reused").closest("th")).toHaveAttribute("title", expect.stringMatching(/^Cache reads/));
     expect(screen.queryByText(/Mock request number 1\./)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "Messages" }));
     await userEvent.click(screen.getByRole("button", { name: /Show conversation/ }));
@@ -301,7 +302,7 @@ describe("Helpers (subagents) inside a session", () => {
   /** The helper cards live behind the Helpers tab's List view. */
   async function openHelperList() {
     await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
-    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Show as a list" }));
   }
 
   it("opens a session on its receipt: the main chat and its helpers, and a card per helper in the list", async () => {
@@ -330,23 +331,30 @@ describe("Helpers (subagents) inside a session", () => {
     expect(screen.getByText("Tool calls")).toBeInTheDocument();
     expect(screen.getByText("Ran for")).toBeInTheDocument();
     const breakdown = screen.getByRole("region", { name: "Token breakdown" });
-    expect(within(breakdown).getByText("Cache reads")).toBeInTheDocument();
+    expect(within(breakdown).getByText("Reused").closest("th")).toHaveAttribute("title", expect.stringMatching(/^Cache reads/));
     expect(within(breakdown).getByText(a.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
+    // Its file is named by whose it is; the path is the hover and the copy button, never the surface.
+    const file = screen.getByRole("region", { name: "File" });
+    expect(file).not.toHaveTextContent(full.file!.path);
+    expect(within(file).getByText("This helper's saved chat")).toHaveAttribute("title", full.file!.path);
+    expect(within(file).getByRole("button", { name: "Copy the file path of This helper's saved chat" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^Back to / }));
     // Back lands on the same tab and view it left.
     expect(await screen.findByRole("radio", { name: "Started" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) }).length).toBeGreaterThan(0);
   });
 
-  it("switches the token breakdown between the main conversation and everything", async () => {
+  it("shows the main chat's token breakdown beside the whole chat's, with nothing to switch", async () => {
     const backend = sessionsBackend();
     const { row, detail } = await withHelpers(backend);
     mountDetail(backend, row.sessionId);
     await userEvent.click(await screen.findByRole("radio", { name: "Details" }));
     const section = await screen.findByRole("region", { name: "Token breakdown" });
+    expect(within(section).getByRole("columnheader", { name: "Main chat" })).toBeInTheDocument();
+    expect(within(section).getByRole("columnheader", { name: "With helpers" })).toBeInTheDocument();
     expect(within(section).getByText(row.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("radio", { name: "Main only" }));
     expect(within(section).getByText(detail.main.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Main only" })).toBeNull();
   });
 });
 

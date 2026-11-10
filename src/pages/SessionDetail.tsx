@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   ArrowBendDownRight,
   ArrowLeft,
+  ArrowsClockwise,
   CaretDown,
   CaretRight,
   CaretUp,
@@ -10,6 +11,8 @@ import {
   Copy,
   FolderOpen,
   Hash,
+  ListBullets,
+  TreeStructure,
   UsersThree,
   Wrench,
 } from "@phosphor-icons/react";
@@ -17,7 +20,7 @@ import { Button, Card, IconButton, SegmentedControl } from "../components/contro
 import { Bars } from "../components/charts/Bars";
 import { IconMotion } from "../components/IconMotion";
 import { TokenText } from "../components/usage/TokenText";
-import { Breakdown, ClampText, ModelSplit, Stat } from "../components/usage/detailParts";
+import { Breakdown, ClampList, ClampText, FileRow, ModelSplit, Stat } from "../components/usage/detailParts";
 import { HelperMap } from "../components/usage/HelperMap";
 import { HelperSlice } from "../components/usage/HelperSlice";
 import { AgentAvatar, ModelDots, OutcomeMark, sessionName, shownName, TokenFigure } from "../components/usage/helperKit";
@@ -31,6 +34,7 @@ import { clearPendingAgent, peekPendingAgent } from "../lib/nav";
 import { copyResume, openFolder } from "../lib/sessionActions";
 import { resumeCommand } from "../lib/sessionBrowse";
 import { useAtlas } from "../state/AtlasProvider";
+import { KIND_WORDS } from "../lib/receiptView";
 import { useKeyHints } from "../lib/keyHints";
 import { helperTree, type HelperNode } from "../lib/helperTree";
 import { MAIN_ID } from "../lib/helperMap";
@@ -50,6 +54,7 @@ function isTyping(el: Element | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   return el.isContentEditable || el.matches("input, textarea, select, [contenteditable='true'], [role='textbox']");
 }
+
 
 /** One helper as a card: who it was, what it spent, how much of the session that is. */
 function HelperCard({
@@ -298,7 +303,7 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
           ) : items.length === 0 && !busy ? (
             <p className="px-5 py-4 text-body text-ink-2">There are no readable messages in this session.</p>
           ) : (
-            <ol className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
+            <ClampList className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
               {items.map((m, i) => (
                 <li key={i} className="px-5 py-3">
                   <div className="flex items-baseline gap-3 text-caption text-ink-2">
@@ -313,7 +318,7 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
                   {m.truncated && <p className="mt-1 text-caption text-ink-2">Shortened. The full message is in the file.</p>}
                 </li>
               ))}
-            </ol>
+            </ClampList>
           )}
           {busy && (
             <div role="status" aria-label="Loading messages" className="px-5 py-3">
@@ -335,12 +340,10 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
 function DetailsTab({
   id,
   d,
-  scope,
   bins,
 }: {
   id: string;
   d: SessionDetail;
-  scope: "all" | "main";
   bins: BarDatum[];
 }) {
   const { row, byModel, agents, main, files } = d;
@@ -349,7 +352,7 @@ function DetailsTab({
   const groups = useSessionItems(id);
   const hasItems = groups.some((g) => g.items.length > 0);
 
-  const jumps: { key: string; label: string }[] = [{ key: "tokens", label: "Tokens" }];
+  const jumps: { key: string; label: string }[] = [{ key: "tokens", label: "Breakdown" }];
   if (bins.length > 0) jumps.push({ key: "timeline", label: "Timeline" });
   if (byModel.length > 1) jumps.push({ key: "models", label: "Models" });
   if (hasItems) jumps.push({ key: "tools", label: "Tools" });
@@ -370,9 +373,16 @@ function DetailsTab({
       )}
       <div className="details-grid">
         <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-4 @3xl:col-span-2">
-          <Stat label="Tokens" sub={total.cacheRead > 0 ? `plus ${compact(total.cacheRead)} cache reads` : undefined}>
-            <span title={exact(headline(total))}>{compact(headline(total))}</span>
-          </Stat>
+          {/* The chat's tokens are the figure at the top of the page; this tile is what sits apart from it. */}
+          {total.cacheRead > 0 ? (
+            <Stat label="Reused" icon={<ArrowsClockwise size={14} aria-hidden="true" />} sub={`not part of the ${compact(headline(total))}`}>
+              <span title={`${KIND_WORDS.cacheRead.term}: ${exact(total.cacheRead)} tokens\n${KIND_WORDS.cacheRead.about}`}>{compact(total.cacheRead)}</span>
+            </Stat>
+          ) : (
+            <Stat label="Tokens">
+              <span title={exact(headline(total))}>{compact(headline(total))}</span>
+            </Stat>
+          )}
           <Stat
             label="Messages"
             icon={<Hash size={14} aria-hidden="true" />}
@@ -390,7 +400,8 @@ function DetailsTab({
 
         <section id="sd-tokens" aria-label="Token breakdown" className="jump-target min-w-0">
           <h3 className="rcpt-head">Token breakdown</h3>
-          <Breakdown t={scope === "main" ? main.tokens : total} />
+          {/* With helpers, the main chat and the whole chat stand side by side: no switch to flip. */}
+          <Breakdown t={total} main={agents.length > 0 ? main.tokens : undefined} />
         </section>
 
         {/* The one chart of the run over time, in tokens; each bar's dollar estimate is in its hover.
@@ -419,19 +430,18 @@ function DetailsTab({
         )}
 
         <section id="sd-files" aria-label="Files" className="jump-target min-w-0 @3xl:col-span-2">
-          <h3 className="rcpt-head">{`Files (${files.length})`}</h3>
+          <h3 className="rcpt-head" title="The saved chat files these figures were read from">{`Files (${files.length})`}</h3>
+          {/* A row says whose file it is; the path is its hover and one press away on the clipboard.
+              (The project folder is the first fact on the page's line and behind "Open folder".) */}
           <Card>
-            <ul className="max-h-40 divide-y divide-line overflow-y-auto">
-              {files.map((f) => (
-                <li key={f.path} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
-                  <code className="selectable min-w-0 flex-1 break-all text-caption text-ink">{f.path}</code>
-                  {f.isSubagent && <span className="text-caption text-ink-2">helper</span>}
-                  {f.missing && <span className="text-caption text-warning">removed from disk</span>}
-                </li>
-              ))}
+            <ul className="max-h-52 divide-y divide-line overflow-y-auto">
+              {files.map((f) => {
+                const helper = f.isSubagent ? agents.find((a) => f.path.includes(`agent-${a.agentId}`)) : undefined;
+                const who = f.isSubagent ? (helper ? shownName(helper) : "A helper") : "Main chat";
+                return <FileRow key={f.path} who={who} path={f.path} missing={f.missing} />;
+              })}
             </ul>
           </Card>
-          <code className="selectable mt-2 block break-all text-caption text-ink-2">{row.projectPath}</code>
         </section>
       </div>
     </>
@@ -495,7 +505,6 @@ export function SessionDetailView({
   const [tab, setTab] = useState<Tab>("receipt");
   const [view, setView] = useState<"map" | "list">("map");
   const [order, setOrder] = useState<"started" | "tokens">("started");
-  const [scope, setScope] = useState<"all" | "main">("all");
   const [picked, setPicked] = useState<string>(MAIN_ID);
   const [visitedMessages, setVisitedMessages] = useState(false);
   const costSeen = useRef<number | null>(null);
@@ -506,7 +515,6 @@ export function SessionDetailView({
       agentChat.current = id;
       setAgentId(null);
     }
-    setScope("all");
     setTab("receipt");
     setView("map");
     setPicked(MAIN_ID);
@@ -587,6 +595,7 @@ export function SessionDetailView({
   // How each helper ended comes with the receipt (it reads the files); the list shows it once it is in.
   const outcomes = new Map((receipt.data?.threads ?? []).flatMap((t) => (t.agentId ? [[t.agentId, t.outcome] as const] : [])));
   const hasHelpers = agents.length > 0;
+  const mix = effortMix(row.efforts);
   const shownTab: Tab = tab === "helpers" && !hasHelpers ? "receipt" : tab;
 
   const choose = (next: Tab) => {
@@ -609,82 +618,62 @@ export function SessionDetailView({
 
   return (
     <div className="@container session-fit">
-      <div className="flex shrink-0 items-start gap-3">
+      {/* Top to bottom: which chat, the one figure, one line of plain facts, then the tabs. */}
+      <div className="flex shrink-0 items-center gap-3">
         {back}
-        <div className="min-w-0 flex-1">
-          <h2 className="d d-figure truncate text-ink" title={name}>
-            {name}
-          </h2>
-          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 text-body text-ink-2">
-            <span className="font-medium text-ink">{row.projectName}</span>
-            <span>{formatWhen(row.startedAt)}</span>
-            <span>{formatDuration(row.durationMs)}</span>
-            <ModelDots models={row.models} main={row.mainModel} effort={topEffort(row.efforts)} />
-            {(row.efforts?.length ?? 0) > 1 && (
-              <span title="Reasoning effort of the main chat's replies (helpers are on their own cards)">{`Effort ${effortMix(row.efforts)}`}</span>
-            )}
-            {hasHelpers && <span>{plural(agents.length, "helper")}</span>}
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
-          <TokenFigure
-            tokens={row.tokens.total}
-            cost={row.cost}
-            id={`session:${id}:tokens`}
-            note={claudeCodeCostUsd !== null ? `Claude Code showed ${formatUsd(claudeCodeCostUsd)}.` : undefined}
-            className="d d-stat text-ink"
-          />
-        </div>
+        <h2 className="d d-figure min-w-0 flex-1 truncate text-ink" title={name}>
+          {name}
+        </h2>
+      </div>
+      <div className="sd-hero">
+        <TokenFigure
+          tokens={row.tokens.total}
+          cost={row.cost}
+          id={`session:${id}:tokens`}
+          note={claudeCodeCostUsd !== null ? `Claude Code showed ${formatUsd(claudeCodeCostUsd)}.` : undefined}
+          className="d d-hero text-ink"
+        />
+        <p className="sd-line">
+          <span className="sd-line-where" title={row.projectPath || row.projectName}>
+            {row.projectName}
+          </span>
+          <span>{formatWhen(row.startedAt)}</span>
+          <span title="From the first message to the last">{formatDuration(row.durationMs)}</span>
+          {/* The effort mix is exact detail: it is the second line of the model's hover, not a fact on the line. */}
+          <span>
+            <ModelDots
+              models={row.models}
+              main={row.mainModel}
+              effort={topEffort(row.efforts)}
+              hint={mix ? `${row.models.join(" + ")}\nReasoning effort in the main chat: ${mix}` : undefined}
+            />
+          </span>
+          {hasHelpers && <span>{plural(agents.length, "helper")}</span>}
+        </p>
       </div>
 
-      <div className="mt-4 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2">
+      {/* One row of tabs. A tab's own switch is two small buttons beside them, or sits in its pane. */}
+      <div className="mt-3 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2">
         <SegmentedControl label="Session view" value={shownTab} onChange={choose} options={tabs} />
         {shownTab === "helpers" && (
-          <div className="sd-sub flex items-center gap-2">
-            {view === "list" && (
-              <SegmentedControl
-                label="Order helpers by"
-                value={order}
-                onChange={setOrder}
-                options={[
-                  { value: "started", label: "Started" },
-                  { value: "tokens", label: "Tokens" },
-                ]}
-              />
-            )}
-            <SegmentedControl
-              label="Show helpers as"
-              value={view}
-              onChange={setView}
-              options={[
-                { value: "map", label: "Map" },
-                { value: "list", label: "List" },
-              ]}
-            />
-          </div>
-        )}
-        {shownTab === "details" && hasHelpers && (
-          <div className="sd-sub">
-            <SegmentedControl
-              label="Count tokens for"
-              value={scope}
-              onChange={setScope}
-              options={[
-                { value: "all", label: "With helpers" },
-                { value: "main", label: "Main only" },
-              ]}
-            />
+          <div className="sd-view" role="group" aria-label="Show helpers as">
+            <IconButton aria-label="Show as a map" title="Show as a map" aria-pressed={view === "map"} onClick={() => setView("map")}>
+              <TreeStructure size={16} aria-hidden="true" />
+            </IconButton>
+            <IconButton aria-label="Show as a list" title="Show as a list" aria-pressed={view === "list"} onClick={() => setView("list")}>
+              <ListBullets size={16} aria-hidden="true" />
+            </IconButton>
           </div>
         )}
         <div className="ml-auto flex items-center gap-2">
           {resume && (
-            <Button className="sd-act" title="Copy the command that reopens this chat in a terminal" onClick={() => void copyResume(resume)}>
+            <Button className="sd-act" title={"Copy resume command\nPaste it in a terminal to reopen this chat."} onClick={() => void copyResume(resume)}>
               <Copy size={14} aria-hidden="true" />
               <span className="sd-act-label">Copy resume</span>
             </Button>
           )}
           {row.projectPath && (
-            <Button className="sd-act" title={`Open folder: ${row.projectPath}`} onClick={() => void openFolder(id)}>
+            <Button className="sd-act" title={`Open folder\n${row.projectPath}`} onClick={() => void openFolder(id)}>
               <FolderOpen size={14} aria-hidden="true" />
               <span className="sd-act-label">Open folder</span>
             </Button>
@@ -718,7 +707,22 @@ export function SessionDetailView({
 
         {shownTab === "helpers" &&
           (view === "list" ? (
-            <HelperList agents={agents} order={order} sessionId={id} sessionTokens={sessionTokens} names={names} outcomes={outcomes} onOpen={setAgentId} />
+            <>
+              {agents.length > 1 && (
+                <div className="mb-3 flex justify-end">
+                  <SegmentedControl
+                    label="Order helpers by"
+                    value={order}
+                    onChange={setOrder}
+                    options={[
+                      { value: "started", label: "Started" },
+                      { value: "tokens", label: "Most tokens" },
+                    ]}
+                  />
+                </div>
+              )}
+              <HelperList agents={agents} order={order} sessionId={id} sessionTokens={sessionTokens} names={names} outcomes={outcomes} onOpen={setAgentId} />
+            </>
           ) : receipt.data ? (
             <div className="map-grid">
               <HelperMap receipt={receipt.data} sessionId={id} selected={picked} onSelect={setPicked} types={helperTypes} />
@@ -747,7 +751,7 @@ export function SessionDetailView({
           </div>
         )}
 
-        {shownTab === "details" && <DetailsTab id={id} d={d.data} scope={scope} bins={bins} />}
+        {shownTab === "details" && <DetailsTab id={id} d={d.data} bins={bins} />}
       </div>
     </div>
   );

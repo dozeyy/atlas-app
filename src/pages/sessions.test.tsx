@@ -6,6 +6,7 @@ import { AtlasProvider } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
 import { MockBackend } from "../lib/mock";
 import type { SearchPage } from "../lib/searchTypes";
+import { hitParts } from "../components/usage/SessionList";
 
 function mount(setup?: (b: MockBackend) => void) {
   localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "sessions" }));
@@ -130,6 +131,34 @@ describe("Sessions: search inside chats", () => {
     // Clicking the row opens that session.
     await userEvent.click(screen.getByRole("button", { name: /tokens/ }));
     expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
+  });
+
+  it("marks the typed words where a title has them, and says what the row's bar is", async () => {
+    mount();
+    await screen.findAllByRole("button", { name: /tokens/ });
+    await userEvent.type(searchbox(), "EXPORT");
+    const marks = await waitFor(() => {
+      const found = document.querySelectorAll("mark.sl-hit");
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    });
+    for (const m of marks) expect(m.textContent!.toLowerCase()).toBe("export");
+    // The row is still named by its whole title: the mark does not split the name.
+    expect(marks[0].closest("button")).toHaveAccessibleName(/export/i);
+    const bar = document.querySelector(".tok-bar")!;
+    expect(bar.getAttribute("data-tip")).toMatch(/biggest chat in this list$/);
+  });
+
+  it("cuts a text at every typed word, whatever the case, and leaves it whole when nothing is typed", () => {
+    expect(hitParts("Add the Export button", "export BUT")).toEqual([
+      { text: "Add the ", hit: false },
+      { text: "Export", hit: true },
+      { text: " ", hit: false },
+      { text: "but", hit: true },
+      { text: "ton", hit: false },
+    ]);
+    expect(hitParts("Add the export button", "  ")).toEqual([{ text: "Add the export button", hit: false }]);
+    expect(hitParts("Add the export button", undefined)).toEqual([{ text: "Add the export button", hit: false }]);
   });
 
   it("asks the engine only for 2+ characters and lets the newest query win", async () => {

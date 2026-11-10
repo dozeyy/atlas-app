@@ -3,6 +3,7 @@ import { getBackend } from "../../lib/ipc";
 import { useFetched } from "../../lib/useUsage";
 import { shareOfMax } from "../../lib/sessionBrowse";
 import { exact } from "../../lib/usage";
+import { typeName } from "../../lib/helperName";
 import type { ItemKind, ItemUse } from "../../lib/types";
 
 export interface ItemGroup {
@@ -43,8 +44,9 @@ export function SessionTools({ groups }: { groups: ItemGroup[] }) {
               {g.items.slice(0, SHOWN).map((i) => (
                 <li key={i.id} className="min-w-0">
                   <div className="flex items-baseline gap-2 text-caption">
+                    {/* A kind of helper reads as words ("Code reviewer"); its exact type is the hover. */}
                     <span className="min-w-0 flex-1 truncate text-ink" title={i.id}>
-                      {i.id}
+                      {g.kind === "agent" ? typeName(i.id) : i.id}
                     </span>
                     <span className="shrink-0 tabular-nums text-ink-2">{exact(i.uses)}</span>
                   </div>

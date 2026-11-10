@@ -115,6 +115,60 @@ function plainModelLabel(id: string): string | null {
   return null;
 }
 
+/**
+ * Model ids grouped under the name people see. Several ids can share one name (a dated id and the
+ * plain one, a provider's wrapped id, a context suffix), and a list that shows the name must not
+ * show it twice: each name comes back once, in the order it first appeared, with every id behind it.
+ */
+export function modelChoices(ids: string[]): { label: string; models: string[] }[] {
+  const byName = new Map<string, string[]>();
+  for (const id of ids) {
+    const name = modelLabel(id);
+    const list = byName.get(name);
+    if (!list) byName.set(name, [id]);
+    else if (!list.includes(id)) list.push(id);
+  }
+  return [...byName].map(([label, models]) => ({ label, models }));
+}
+
+export interface ModelRow {
+  model: string;
+  tokens: Tokens;
+  cost: Cost;
+  known?: boolean;
+  efforts?: EffortUse[];
+}
+
+/**
+ * Usage rows with one row per model NAME: rows whose ids read as the same model are added
+ * together (tokens, cost, effort replies), so a table never has two "Sonnet 4.5" lines. `models`
+ * keeps every id that went in; the row is priced only when every part of it was.
+ */
+export function mergeModelRows(rows: ModelRow[]): (Required<Pick<ModelRow, "model" | "tokens" | "cost" | "known" | "efforts">> & { label: string; models: string[] })[] {
+  const priced = (r: ModelRow) => (r.known === undefined ? r.cost.usd !== null : r.known);
+  return modelChoices(rows.map((r) => r.model)).map(({ label, models }) => {
+    const parts = rows.filter((r) => modelLabel(r.model) === label);
+    const tokens = { ...parts[0].tokens };
+    for (const p of parts.slice(1)) for (const k of Object.keys(tokens) as (keyof Tokens)[]) tokens[k] += p.tokens[k];
+    const anyUsd = parts.some((p) => p.cost.usd !== null);
+    const efforts = new Map<string, number>();
+    for (const p of parts) for (const e of p.efforts ?? []) efforts.set(e.effort, (efforts.get(e.effort) ?? 0) + e.replies);
+    return {
+      model: models[0],
+      label,
+      models,
+      tokens,
+      cost: {
+        usd: anyUsd ? parts.reduce((a, p) => a + (p.cost.usd ?? 0), 0) : null,
+        complete: parts.every((p) => p.cost.complete),
+        unpricedTokens: parts.reduce((a, p) => a + p.cost.unpricedTokens, 0),
+      },
+      known: parts.every(priced),
+      efforts: [...efforts].map(([effort, replies]) => ({ effort, replies })).sort((a, b) => b.replies - a.replies),
+    };
+  });
+}
+
 /** The most used reasoning effort, or null when no reply recorded one (never a guess). */
 export function topEffort(efforts: EffortUse[] | null | undefined): string | null {
   return efforts && efforts.length > 0 ? efforts[0].effort : null;

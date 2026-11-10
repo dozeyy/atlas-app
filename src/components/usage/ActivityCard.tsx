@@ -23,7 +23,7 @@ import { ErrorBlock, Skeleton } from "./StateBlocks";
 
 const RANGE_NAME: Record<RangeKind, string> = { today: "Today", "30d": "Last 30 days", "12w": "Last 12 weeks" };
 /** What the total counts: it lives in the total's hover, not in a sentence on the card. */
-const TOKEN_MEANING = "Tokens count what you sent and what Claude wrote, plus cache writes.\nCache reads are listed apart.";
+const TOKEN_MEANING = "Tokens count what you sent, what Claude wrote and what it saved for reuse (cache writes).\nWhat it reused (cache reads) is listed apart.";
 
 /**
  * Tokens over time as activity bars, with a table twin for anyone who prefers numbers. Tokens only

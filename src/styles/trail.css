@@ -793,6 +793,23 @@ html.reduced .side-main {
 }
 
 /* ---- Sessions: the pick-up card, day bands, project dots, token hairlines ------------------- */
+/* The list pane. 8 px of side room so a keyboard ring on a row is not cut; the scrollbar's own
+   width (--sb, measured) goes into the page's gutter, so the card lines up with the toolbar. */
+.sessions-pane {
+  margin: 0 calc(-8px - var(--sb, 0px)) 0 -8px;
+  scrollbar-gutter: stable;
+}
+/* A typed word found in a chat's title: heavier and underlined in clay, nothing boxed.
+   A fill would show as a stray patch past the "..." when the word itself is cut off. */
+.sl-hit {
+  background: none;
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 .proj-dot {
   display: inline-block;
   width: 8px;
@@ -1930,7 +1947,11 @@ html[data-input="keyboard"] .x-del:focus-visible {
    its own colour, nothing filled, so the two levels tell apart without reading. */
 .helper-av.nested {
   background: transparent;
-  box-shadow: inset 0 0 0 1.5px currentColor;
+  /* The outline in its family's colour, and the corner of a second tile behind its top left:
+     "started by another helper" in two shape cues, not in fill against outline alone. */
+  box-shadow:
+    inset 0 0 0 1.5px var(--av, currentColor),
+    calc(-1 * var(--echo, 2px)) calc(-1 * var(--echo, 2px)) 0 0 color-mix(in srgb, var(--av, currentColor) 45%, transparent);
 }
 .helper-kid {
   position: relative;
@@ -2113,16 +2134,57 @@ html.reduced .nav-item:active .nav-face {
     padding: 0;
   }
 }
-/* Tighter still (a small window with the sidebar open): a tab's own switches take a second line
-   under the tabs, so the buttons on the right never jump between lines from tab to tab. */
-@container (max-width: 740px) {
-  .sd-sub {
-    order: 1;
-    flex-basis: 100%;
-  }
+/* Under the chat's name: the one figure, and one line of plain facts on its baseline (under it when
+   the two do not fit side by side). The line never wraps: the folder name gives way first, and its
+   hover has the whole path. */
+.sd-hero {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 16px;
+  min-width: 0;
+  margin-top: 4px;
+}
+.sd-line {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--text-body);
+  line-height: 20px;
+  color: var(--ink-2);
+}
+.sd-line > span {
+  flex: none;
+}
+.sd-line > span + span::before {
+  content: "\00b7";
+  margin: 0 8px;
+  opacity: 0.6;
+}
+.sd-line > .sd-line-where {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--ink);
+}
+/* Map or list: two small buttons beside the tabs, the one in use held down. */
+.sd-view {
+  display: flex;
+  gap: 2px;
+}
+.sd-view .btn-icon[aria-pressed="true"] .btn-face {
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
-/* The receipt: plain lines, a hairline and a total, nothing boxed. */
+/* The receipt: plain lines, nothing boxed. Its total is the figure at the top of the page. */
 .rcpt-head {
   margin-bottom: 6px;
   font-size: var(--text-caption);
@@ -2163,17 +2225,6 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 }
 .rcpt-bar > i {
   background: var(--bar, var(--accent));
-}
-.rcpt-total {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  font-size: var(--text-body);
-  line-height: 20px;
-  color: var(--ink-2);
 }
 .rcpt-item {
   display: flex;
@@ -2358,11 +2409,14 @@ html[data-input="keyboard"] .clamp-more:focus-visible {
   fill: color-mix(in srgb, var(--c) 34%, var(--surface));
 }
 .map-icon {
-  color: var(--c, var(--ink-2));
+  color: var(--ci, var(--c, var(--ink-2)));
   pointer-events: none;
 }
 .map-back {
   fill: var(--bg);
+}
+.map-echo {
+  fill: color-mix(in srgb, var(--c) 45%, transparent);
 }
 .map-tile {
   fill: var(--cb);

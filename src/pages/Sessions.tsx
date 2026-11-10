@@ -17,7 +17,7 @@ import { useChatSearch, useDebounced } from "../lib/useChatSearch";
 import type { ChatSearch } from "../lib/useChatSearch";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
 import { groupByDay, shareOfMax } from "../lib/sessionBrowse";
-import { addDays, compact, exact, localDay, modelLabel, plural } from "../lib/usage";
+import { addDays, compact, exact, localDay, modelChoices, plural } from "../lib/usage";
 import type { SessionPage, SessionQuery, SessionRow } from "../lib/types";
 
 const PAGE = 50;
@@ -38,6 +38,9 @@ const SORT_CHOICES = (Object.keys(SORTS) as SortKey[]).map((value) => ({ value, 
  * bands over a page sorted by tokens repeat the same day, and rows get left behind.
  */
 const pageShape = new WeakMap<SessionPage, { sort: SortKey; search: boolean }>();
+
+/** Joins the ids behind one model choice in the filter's value; no model id holds a line break. */
+const MODEL_SEP = "\n";
 
 const SPANS = [
   { value: "all", label: "All time", days: 0 },
@@ -68,6 +71,14 @@ export function Sessions() {
   useLayoutEffect(() => {
     if (selected === null && listPane.current) listPane.current.scrollTop = listTop.current;
   }, [selected]);
+  // The list's scrollbar sits in the page's gutter (the pane grows by the bar's width, whatever
+  // that is on this system), so the card is exactly as wide as the toolbar above it.
+  useLayoutEffect(() => {
+    const el = listPane.current;
+    if (!el || el.offsetWidth === 0) return;
+    const bar = `${el.offsetWidth - el.clientWidth}px`;
+    if (el.style.getPropertyValue("--sb") !== bar) el.style.setProperty("--sb", bar);
+  });
   const [text, setText] = useState("");
   const [project, setProject] = useState(() => peekPendingProject() ?? "");
   useEffect(() => {
@@ -104,7 +115,7 @@ export function Sessions() {
       // Chats whose messages match are listed too, whatever their title says.
       alsoIds: chat.ids,
       projects: project ? [project] : [],
-      models: model ? [model] : [],
+      models: model ? model.split(MODEL_SEP) : [],
       from: days > 0 ? addDays(localDay(new Date()), -days) : null,
       to: null,
       includeMissing: true,
@@ -195,6 +206,7 @@ export function Sessions() {
         onOpen={setSelected}
         index={i < PAGE ? i : 0}
         snippet={chat.snippets.get(r.sessionId)}
+        query={titleQ}
         barShare={shareOfMax(r.tokens.total, maxRow)}
         dayKnown={byTime}
       />
@@ -244,7 +256,8 @@ export function Sessions() {
                 onChange={setModel}
                 options={[
                   { value: "", label: "All models" },
-                  ...(options.data?.models ?? []).map((m) => ({ value: m.model, label: modelLabel(m.model) })),
+                  // One choice per model name: the ids that read the same are asked for together.
+                  ...modelChoices((options.data?.models ?? []).map((m) => m.model)).map((c) => ({ value: c.models.join(MODEL_SEP), label: c.label })),
                 ]}
               />
             </OptionField>
@@ -324,7 +337,7 @@ export function Sessions() {
             onScroll={(e) => {
               listTop.current = e.currentTarget.scrollTop;
             }}
-            className="-mx-2 min-h-0 flex-1 overflow-y-auto px-2 pb-1"
+            className="sessions-pane min-h-0 flex-1 overflow-y-auto px-2 pb-1"
             data-testid="sessions-scroll"
           >
           <Card>

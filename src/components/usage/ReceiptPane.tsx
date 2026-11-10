@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Stack, Warning } from "@phosphor-icons/react";
+import { CaretDown, Stack, Warning } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { EndLine } from "./EndLine";
 import { Skeleton } from "./StateBlocks";
 import { AgentAvatar, modelTone } from "./helperKit";
 import { useIntro } from "../../lib/motion";
-import { barWidth, byModel, cacheReads, fitColumn, flagText, guess, itemDetail, itemTitleFull, itemTitle, lineTitle, tokensText, whatItUsed, whoUsed, type SpendLine } from "../../lib/receiptView";
+import { KIND_WORDS, barWidth, byModel, cacheReads, fitColumn, flagText, itemDetail, itemTitleFull, itemTitle, kindTitle, lineTitle, tokensText, whatItUsed, whoUsed, type SpendLine } from "../../lib/receiptView";
 import { compact, percent, plural, share } from "../../lib/usage";
 import type { Receipt } from "../../lib/types";
 
@@ -104,15 +104,12 @@ function Lines({
   return (
     <section aria-label={label} className="min-w-0">
       <h3 className="rcpt-head">{label}</h3>
+      {/* No total row: every list adds up to the figure at the top of the page. */}
       <ul>
         {lines.map((l, i) => (
           <Line key={l.key} line={l} total={total} index={i} onOpen={onOpen} mark={mark} />
         ))}
       </ul>
-      <div className="rcpt-total">
-        <span>Total</span>
-        <span className="tabular-nums text-ink">{tokensText(total)}</span>
-      </div>
       {children}
     </section>
   );
@@ -140,12 +137,24 @@ export interface ReceiptState {
   reload: (silent?: boolean) => void;
 }
 
+/** Whether the line items were left open, remembered across chats and launches. */
+const ITEMS_KEY = "atlas.chat.lineItems";
+function readItemsOpen(): boolean {
+  try {
+    return localStorage.getItem(ITEMS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Where the chat's tokens went: who used them, what they were, which line items were biggest,
- * and anything worth a look. "Who used it", "What it used" and "By model" each add up to the
- * chat's tokens; what no line explains is "Everything else". Dollars are only estimates and show
- * up in the hover text. The items and flags are sizes read from the transcript, marked "about"
- * or "~": they are not shares of the total, so that list carries a note instead of a total.
+ * Where the chat's tokens went: who used them, what they were, and anything worth a look. The
+ * biggest line items wait behind one row, closed until asked (and left as they were last time).
+ * "Who used it", "What it used" and "By model" each add up to the figure at the top of the page;
+ * what no line explains is "Everything else". Kinds of token wear plain words, with the exact
+ * term in the hover. Dollars are only estimates and show up in the hover text. The items and
+ * flags are sizes read from the transcript, marked "about" or "~": they are not shares of the
+ * total, so that list carries a note instead of a total.
  */
 export function ReceiptPane({
   state,
@@ -164,6 +173,17 @@ export function ReceiptPane({
 }) {
   const intro = useIntro(`receipt:${sessionId}`);
   const [box, boxRef] = useBox();
+  const [itemsOpen, setItemsOpen] = useState(readItemsOpen);
+  const itemsId = useId();
+  const toggleItems = () => {
+    const next = !itemsOpen;
+    setItemsOpen(next);
+    try {
+      localStorage.setItem(ITEMS_KEY, next ? "1" : "0");
+    } catch {
+      // Not remembered this time; the row still opens.
+    }
+  };
   const r = state.data;
 
   if (state.error && !r) {
@@ -183,7 +203,7 @@ export function ReceiptPane({
   const reads = cacheReads(r);
   // Three columns side by side: size the third to the room it has so nothing needs a scrollbar.
   // Narrower, it sits under the others and the pane scrolls if it must.
-  const wide = box.w >= WIDE_PX && box.h > 0;
+  const wide = itemsOpen && box.w >= WIDE_PX && box.h > 0;
   const fit = wide ? fitColumn(box.h - FOOTER_PX, r.flags.length, Math.min(8, r.items.length)) : null;
   const flags = r.flags.slice(0, fit ? fit.flags : FLAGS_SHOWN);
   const itemLimit = fit ? fit.items : flags.length > 0 ? 6 : 8;
@@ -220,17 +240,17 @@ export function ReceiptPane({
         <div className="min-w-0 space-y-6">
           <Lines label="What it used" lines={whatItUsed(r)} total={total}>
             {reads.tokens > 0 && (
-              <p className="mt-1 text-caption text-ink-2" title={`Cache reads: ${tokensText(reads.tokens)}, ${guess(reads.usd)}. Counted apart from the total.`}>
-                {`${compact(reads.tokens)} cache reads`}
+              <p className="mt-1 text-caption text-ink-2" title={kindTitle("cacheRead", reads.tokens, reads.usd)}>
+                {`plus ${compact(reads.tokens)} ${KIND_WORDS.cacheRead.label}`}
               </p>
             )}
           </Lines>
           {r.models.length > 1 && <Lines label="By model" lines={byModel(r, effortOf)} total={total} />}
         </div>
 
-        <section aria-label="Biggest line items" className="min-w-0 @xl:col-span-2 @4xl:col-span-1">
+        <div className="min-w-0 @xl:col-span-2 @4xl:col-span-1">
           {flags.length > 0 && (
-            <div className="mb-5">
+            <section aria-label="Worth a look" className="mb-4">
               <h3 className="rcpt-head">Worth a look</h3>
               <ul className="space-y-2">
                 {flags.map((f, i) => {
@@ -250,37 +270,49 @@ export function ReceiptPane({
                 })}
               </ul>
               {r.flags.length > flags.length && <p className="mt-1 text-caption text-ink-2">{`${plural(r.flags.length - flags.length, "more flag")}`}</p>}
-            </div>
+            </section>
           )}
 
-          <h3 className="rcpt-head">Biggest line items</h3>
-          {!r.scanned ? (
-            <p className="text-body text-ink-2">The chat file is gone, so line items cannot be read.</p>
-          ) : items.length === 0 ? (
-            <p className="text-body text-ink-2">Nothing here stood out.</p>
-          ) : (
-            <>
-            <ul>
-              {items.map((i, n) => (
-                <li key={`${i.kind}:${i.tool}:${i.path ?? ""}:${i.thread ?? ""}:${n}`} className="rcpt-item" title={itemTitleFull(i)}>
-                  <div className="min-w-0">
-                    <EndLine text={itemTitle(i)} path={i.path} className="text-body text-ink" title={itemTitle(i)} />
-                    <div className="truncate text-caption text-ink-2">{[itemDetail(i), i.thread].filter(Boolean).join(", ")}</div>
-                  </div>
-                  <span className="shrink-0 text-body tabular-nums text-ink">{`~${compact(i.tokens)}`}</span>
-                </li>
-              ))}
-              {itemRest > 0 && (
-                <li className="rcpt-item">
-                  <span className="text-body text-ink-2">{plural(itemRest, "smaller item")}</span>
-                  <span className="shrink-0 text-body tabular-nums text-ink-2">{`~${compact(itemRestTokens)}`}</span>
-                </li>
-              )}
-            </ul>
-            <p className="mt-1 border-t border-line pt-2 text-caption text-ink-2">{ITEMS_NOTE}</p>
-            </>
-          )}
-        </section>
+          {/* The long list waits behind its own heading: one row, closed until asked. */}
+          <section aria-label="Biggest line items">
+            <h3>
+              <button type="button" className="rcpt-item rcpt-line-btn slice-more" aria-expanded={itemsOpen} aria-controls={itemsId} onClick={toggleItems}>
+                <span className="text-caption font-semibold text-ink-2">Biggest line items</span>
+                <CaretDown size={12} weight="bold" aria-hidden="true" className="text-ink-2" />
+              </button>
+            </h3>
+            {itemsOpen && (
+              <div id={itemsId} className="slice-more-body">
+                {!r.scanned ? (
+                  <p className="text-body text-ink-2">The chat file is gone, so line items cannot be read.</p>
+                ) : items.length === 0 ? (
+                  <p className="text-body text-ink-2">Nothing here stood out.</p>
+                ) : (
+                  <>
+                    <ul>
+                      {items.map((i, n) => (
+                        <li key={`${i.kind}:${i.tool}:${i.path ?? ""}:${i.thread ?? ""}:${n}`} className="rcpt-item" title={itemTitleFull(i)}>
+                          <div className="min-w-0">
+                            <EndLine text={itemTitle(i)} path={i.path} className="text-body text-ink" title={itemTitle(i)} />
+                            <div className="truncate text-caption text-ink-2">{[itemDetail(i), i.thread].filter(Boolean).join(", ")}</div>
+                          </div>
+                          <span className="shrink-0 text-body tabular-nums text-ink">{`~${compact(i.tokens)}`}</span>
+                        </li>
+                      ))}
+                      {itemRest > 0 && (
+                        <li className="rcpt-item">
+                          <span className="text-body text-ink-2">{plural(itemRest, "smaller item")}</span>
+                          <span className="shrink-0 text-body tabular-nums text-ink-2">{`~${compact(itemRestTokens)}`}</span>
+                        </li>
+                      )}
+                    </ul>
+                    <p className="mt-1 border-t border-line pt-2 text-caption text-ink-2">{ITEMS_NOTE}</p>
+                  </>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </div>
   );

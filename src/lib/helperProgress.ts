@@ -5,7 +5,7 @@
 // it has moved (Step 3 of 6); else tool calls so far against the median of that kind's finished
 // runs (About 60% of a typical run); else nothing to compare (docs/specs/agent-scorecard.md D43).
 
-import { helperName } from "../components/usage/helperKit";
+import { helperName, typeName } from "./helperName";
 import { formatDuration, modelWithEffort } from "./usage";
 import type { NowHelper } from "./nowTypes";
 
@@ -27,12 +27,8 @@ export interface Progress {
   hint?: string;
 }
 
-/** "code-reviewer" -> "Code reviewer", "general-purpose" -> "General purpose", "ui-builder" -> "UI builder". */
-export function typeName(t: string | null): string {
-  if (!t) return "Helper";
-  const s = t.replace(/[-_]+/g, " ").trim();
-  return s ? helperName(s.charAt(0).toUpperCase() + s.slice(1)) : "Helper";
-}
+// The type's name lives with the other name rules; call sites that import it from here keep working.
+export { typeName };
 
 /**
  * "Opus 5.5 (dot) high": the exact model and the effort the transcript says, through the app's one
