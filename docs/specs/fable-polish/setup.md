@@ -103,6 +103,30 @@ this way (`compareItems` in `src/lib/setup-model.ts`); nothing had to change, an
     `toolkit-error/before-dark-900x600.png`, `toolkit-nomatch/before-dark-900x600.png`,
     `toolkit-locked-item/before-light-900x600.png`.
 
+## What changed (every FIX above is done)
+
+| Item | Change | Where |
+|---|---|---|
+| 1 | Usage and cost panels side by side from a 720 px page column (22rem cost column, 24rem from 960 px); the usage panel's two halves go side by side only when it is 560 px wide inside | `TopSlot.tsx`, `UsagePanel.tsx` |
+| 2 | "Last 30 days"; the ring reads "1 of 8 used" | `UsagePanel.tsx` |
+| 3 | Heading in the same face and size as the panel titles | `Setup.tsx` |
+| 4 | The path wraps after slashes, nothing is cut | `Setup.tsx`, `parts.tsx` (`PathText`) |
+| 5 | Skeleton tiles are the real grid (72 px rows, 44 px icon); the card block is gone | `states.tsx` |
+| 9 | "Search MCP servers", "Search everything else" | `setup-model.ts` (`searchPlaceholder`), `CollectionView.tsx` |
+| 10 | Full name and description on hover for cards and rows | `ItemViews.tsx` |
+| 11 | One phrase: "Used by 1 hook" / "Not used by any hook" | `ItemViews.tsx` |
+| 12 | "Blocked 1", same as "Global 1" | `GroupSection.tsx` |
+| 13 | Back row gap 20 to 8 px, toolbar gap 24 to 16 px: the first card starts 20 px higher | `CollectionView.tsx`, `Toolbar.tsx` |
+| 14 | The app's empty state (contours, the type's icon, "No rules yet", what the type is, a New button) | `CollectionView.tsx` |
+| 15 | Hover on the time: "Last changed Nov 9, 2026, 8:58 PM" | `ItemViews.tsx` |
+| 19 | "Skill", "Backup copy", "Agent worktree" | `DetailSheet.tsx`, `parts.tsx` (`sentenceCase`) |
+| 20 | Paths break after a slash (sheet File / Linked to / files list, delete confirm, create "Goes in") | `DetailSheet.tsx`, `ConfirmDelete.tsx`, `CreateFlow.tsx` |
+| 21 | Hover on the project name | `DetailSheet.tsx` |
+| 22 | The editor box can shrink to 200 px (was 260) before the buttons leave the window | `TextEditor.tsx` |
+
+Test changed on purpose: `src/pages/Setup.test.tsx` looks for the two new search placeholders
+(item 9). No other test changed.
+
 ## Suggestions for Will (not built)
 
 - A. While the checklist is still open, hide the "Used and never used" and "What your setup
