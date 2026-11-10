@@ -154,8 +154,10 @@ impl PriceTable {
         Ok(())
     }
 
-    /// Exact id, or an id listed as an alias (D22).
+    /// Exact id, or an id listed as an alias (D22). A context suffix ("claude-opus-5-5[1m]") is
+    /// the same model: it is dropped before the lookup.
     pub fn model(&self, id: &str) -> Option<&ModelPrice> {
+        let id = super::naming::base_model_id(id);
         self.models.get(id).or_else(|| self.alias_index.get(id).and_then(|c| self.models.get(c)))
     }
 
@@ -193,7 +195,9 @@ impl PriceTable {
         }
         // "not_available" is what the API reports when the model has no geo control (28 % of the
         // rows on Will's PC): billed like global, as Claude Code does.
-        let geo = if b.geo.is_empty() || b.geo == "not_available" { "global" } else { b.geo };
+        // Compared lowercased and trimmed: a transcript saying "US" is the "us" rate, not unpriced.
+        let geo = b.geo.trim().to_ascii_lowercase();
+        let geo = if geo.is_empty() || geo == "not_available" { "global" } else { geo.as_str() };
         let geo_mult = *self.geo_multipliers.get(geo)?;
         let (mut pin, mut pout, mut w5, mut w1, mut pr) = if b.price_tier == 1 {
             match &m.long_context {
@@ -244,10 +248,102 @@ mod tests {
     #[test]
     fn seed_is_valid_and_sourced() {
         let t = PriceTable::seed();
-        assert_eq!(t.updated, "2026-11-08");
+        assert_eq!(t.updated, "2026-11-09", "prices as of");
         for (id, m) in &t.models {
             assert!(m.source.starts_with("https://"), "{id} has no source");
         }
+    }
+
+    /// Every row of the official table (platform.claude.com pricing page, read 2026-11-09):
+    /// input, output, 5m write, 1h write, cache read, then fast input/output when it has one.
+    #[test]
+    fn seed_matches_the_official_table() {
+        type Row = (&'static str, [f64; 5], Option<(f64, f64)>);
+        let rows: [Row; 20] = [
+            ("claude-fable-5-2", [8.0, 40.0, 10.0, 16.0, 0.2], Some((16.0, 80.0))),
+            ("claude-mythos-5-2", [8.0, 40.0, 10.0, 16.0, 0.2], Some((16.0, 80.0))),
+            ("claude-fable-5-1", [10.0, 50.0, 12.5, 20.0, 0.25], None),
+            ("claude-mythos-5-1", [10.0, 50.0, 12.5, 20.0, 0.25], None),
+            ("claude-fable-5", [10.0, 50.0, 12.5, 20.0, 1.0], None),
+            ("claude-mythos-5", [10.0, 50.0, 12.5, 20.0, 1.0], None),
+            ("claude-opus-5-5", [4.0, 20.0, 5.0, 8.0, 0.2], Some((8.0, 40.0))),
+            ("claude-opus-5", [5.0, 25.0, 6.25, 10.0, 0.5], Some((10.0, 50.0))),
+            ("claude-opus-4-8", [5.0, 25.0, 6.25, 10.0, 0.5], Some((10.0, 50.0))),
+            ("claude-opus-4-7", [5.0, 25.0, 6.25, 10.0, 0.5], None),
+            ("claude-opus-4-6", [5.0, 25.0, 6.25, 10.0, 0.5], None),
+            ("claude-opus-4-5-20251101", [5.0, 25.0, 6.25, 10.0, 0.5], None),
+            ("claude-opus-4-1-20250805", [15.0, 75.0, 18.75, 30.0, 1.5], None),
+            ("claude-opus-4-20250514", [15.0, 75.0, 18.75, 30.0, 1.5], None),
+            ("claude-sonnet-5-5", [2.0, 10.0, 2.5, 4.0, 0.1], None),
+            ("claude-sonnet-5", [2.0, 10.0, 2.5, 4.0, 0.2], None),
+            ("claude-sonnet-4-6", [3.0, 15.0, 3.75, 6.0, 0.3], None),
+            ("claude-sonnet-4-5-20250929", [3.0, 15.0, 3.75, 6.0, 0.3], None),
+            ("claude-haiku-5-5", [0.1, 0.5, 0.125, 0.2, 0.01], None),
+            ("claude-haiku-4-5-20251001", [1.0, 5.0, 1.25, 2.0, 0.1], None),
+        ];
+        assert_eq!(t_len(), rows.len(), "a model was added or dropped without updating this table");
+        let t = PriceTable::seed();
+        for (id, p, fast) in rows {
+            let b = basis(id, "standard", "global", "standard", 0);
+            let one = |x: Counts| t.cost(&b, &x).unwrap_or_else(|| panic!("{id} is not priced"));
+            let mtok = 1_000_000;
+            let got = [
+                one(Counts { input: mtok, ..Default::default() }),
+                one(Counts { output: mtok, ..Default::default() }),
+                one(Counts { cw5m: mtok, ..Default::default() }),
+                one(Counts { cw1h: mtok, ..Default::default() }),
+                one(Counts { cr: mtok, ..Default::default() }),
+            ];
+            for (g, w) in got.iter().zip(p) {
+                assert!((g - w).abs() < 1e-9, "{id}: {got:?} != {p:?}");
+            }
+            let fb = basis(id, "fast", "global", "standard", 0);
+            match fast {
+                Some((fi, fo)) => {
+                    assert!((t.cost(&fb, &c(mtok, 0)).unwrap() - fi).abs() < 1e-9, "{id} fast input");
+                    assert!((t.cost(&fb, &c(0, mtok)).unwrap() - fo).abs() < 1e-9, "{id} fast output");
+                }
+                None => assert!(t.cost(&fb, &c(1, 1)).is_none(), "{id} has no fast mode"),
+            }
+        }
+    }
+
+    fn t_len() -> usize {
+        PriceTable::seed().models.len()
+    }
+
+    #[test]
+    fn fable_5_2_fast_stacks_with_us_and_cache() {
+        let t = PriceTable::seed();
+        let b = basis("claude-fable-5-2", "fast", "us", "standard", 0);
+        // Fast doubles every category (16/80 over 8/40), then US adds 10 %.
+        let x = Counts { input: 1_000_000, output: 1_000_000, cw5m: 1_000_000, cr: 1_000_000, ..Default::default() };
+        let want = (16.0 + 80.0 + 20.0 + 0.4) * 1.1;
+        assert!((t.cost(&b, &x).unwrap() - want).abs() < 1e-9, "{:?}", t.cost(&b, &x));
+    }
+
+    #[test]
+    fn geo_is_matched_without_case_or_spaces() {
+        let t = PriceTable::seed();
+        let x = c(1000, 1000);
+        let us = t.cost(&basis("claude-opus-5-5", "standard", "us", "standard", 0), &x).unwrap();
+        for g in ["US", " Us ", "us"] {
+            assert_eq!(t.cost(&basis("claude-opus-5-5", "standard", g, "standard", 0), &x), Some(us), "{g:?}");
+        }
+        assert_eq!(t.cost(&basis("claude-opus-5-5", "standard", "NOT_AVAILABLE", "standard", 0), &x), t.cost(&basis("claude-opus-5-5", "standard", "", "standard", 0), &x));
+    }
+
+    #[test]
+    fn a_context_suffix_is_the_same_model() {
+        let t = PriceTable::seed();
+        assert!(t.is_known("claude-opus-5-5[1m]"));
+        assert!(t.is_known("claude-haiku-4-5-20251001[1m]"), "alias plus suffix");
+        let x = c(1000, 1000);
+        assert_eq!(
+            t.cost(&basis("claude-opus-5-5[1m]", "standard", "global", "standard", 0), &x),
+            t.cost(&basis("claude-opus-5-5", "standard", "global", "standard", 0), &x)
+        );
+        assert!(!t.is_known("[1m]"));
     }
 
     #[test]

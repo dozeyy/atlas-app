@@ -31,6 +31,14 @@ describe("receipt: every list adds up to the chat", () => {
     }
   });
 
+  it("names each model in full with its effort when one is known, and nothing when not", async () => {
+    const r = (await receipts()).find((x) => x.models.length > 0)!;
+    const first = r.models[0].model;
+    const lines = byModel(r, (m) => (m === first ? "high" : null));
+    expect(lines[0].label).toMatch(/^[A-Z][a-z]+ \d+(\.\d+)? · high$/);
+    expect(byModel(r)[0].label).not.toContain("·");
+  });
+
   it("lists cache reads apart: the kinds add up to the headline without them", async () => {
     for (const r of await receipts()) {
       const k = r.tokenKinds;

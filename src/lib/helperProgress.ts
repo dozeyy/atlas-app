@@ -5,7 +5,7 @@
 // it has moved (Step 3 of 6); else tool calls so far against the median of that kind's finished
 // runs (About 60% of a typical run); else nothing to compare (docs/specs/agent-scorecard.md D43).
 
-import { formatDuration, modelLabel } from "./usage";
+import { formatDuration, modelWithEffort } from "./usage";
 import type { NowHelper } from "./nowTypes";
 
 /** No new line for this long (and no call open) reads as "no progress". One constant for the page. */
@@ -34,13 +34,13 @@ export function typeName(t: string | null): string {
 }
 
 /**
- * "Opus 5.5 · high": the exact model (the app's one model-name helper, so its fixes apply here)
- * and the effort the transcript says. Either part that the lines do not say is left out, never
+ * "Opus 5.5 (dot) high": the exact model and the effort the transcript says, through the app's one
+ * label rule (`modelWithEffort`, as on Sessions, Session Detail and the chat cards). Either part that the lines do not say is left out, never
  * guessed; with neither there is nothing to show.
  */
 export function modelEffort(h: Pick<NowHelper, "model" | "effort">): string | null {
-  const parts = [h.model ? modelLabel(h.model) : null, h.effort].filter((p): p is string => !!p);
-  return parts.length > 0 ? parts.join(" · ") : null;
+  if (h.model) return modelWithEffort(h.model, h.effort);
+  return h.effort || null;
 }
 
 export function progressOf(h: NowHelper): Progress {

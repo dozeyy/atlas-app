@@ -304,7 +304,7 @@ impl AtlasServer {
 
     #[tool(
         name = "get_usage_summary",
-        description = "How much Claude Code the user has used: tokens, an estimated cost at API prices (not a bill), per model, the biggest projects and chats. Periods: today, yesterday, 7d, 30d, month, all. The first call may take a while while Atlas reads the chats. Read-only.",
+        description = "How much Claude Code the user has used: tokens, an estimated cost at API prices (not a bill), per model (with its name and reasoning-effort mix), the biggest projects and chats. Periods: today, yesterday, 7d, 30d, month, all. The first call may take a while while Atlas reads the chats. Read-only.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn get_usage_summary(&self, Parameters(a): Parameters<UsageArgs>) -> Result<CallToolResult, ErrorData> {

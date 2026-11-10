@@ -117,7 +117,18 @@ export interface ReceiptState {
  * "Everything else". Dollars are only estimates and show up in the hover text. The items and
  * flags are estimates read from the transcript, marked "about" or "~".
  */
-export function ReceiptPane({ state, sessionId, onOpenHelper }: { state: ReceiptState; sessionId: string; onOpenHelper: (agentId: string | null) => void }) {
+export function ReceiptPane({
+  state,
+  sessionId,
+  onOpenHelper,
+  effortOf,
+}: {
+  state: ReceiptState;
+  sessionId: string;
+  onOpenHelper: (agentId: string | null) => void;
+  /** A model's most used reasoning effort in this chat, when the transcripts recorded one. */
+  effortOf?: (model: string) => string | null | undefined;
+}) {
   const intro = useIntro(`receipt:${sessionId}`);
   const [box, boxRef] = useBox();
   const r = state.data;
@@ -161,7 +172,7 @@ export function ReceiptPane({ state, sessionId, onOpenHelper }: { state: Receipt
               </p>
             )}
           </Lines>
-          {r.models.length > 1 && <Lines label="By model" lines={byModel(r)} total={total} />}
+          {r.models.length > 1 && <Lines label="By model" lines={byModel(r, effortOf)} total={total} />}
         </div>
 
         <section aria-label="Biggest line items" className="min-w-0 @xl:col-span-2 @4xl:col-span-1">

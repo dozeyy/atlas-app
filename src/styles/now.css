@@ -201,6 +201,8 @@
   text-overflow: ellipsis;
 }
 .now-row-doing {
+  /* First on the line: what the chat is doing always shows; chips that don't fit drop out. */
+  order: -1;
   flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;

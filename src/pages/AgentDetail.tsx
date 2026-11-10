@@ -11,7 +11,7 @@ import { hasClearPeak, spendRidge, timelineBars } from "../components/usage/time
 import { getBackend } from "../lib/ipc";
 import { useIntro } from "../lib/motion";
 import { useFetched, useLiveReload } from "../lib/useUsage";
-import { compact, exact, formatDuration, formatWhen, headline, percent, share } from "../lib/usage";
+import { compact, effortMix, exact, formatDuration, formatWhen, headline, percent, share, topEffort } from "../lib/usage";
 
 /** "general-purpose" -> "General purpose". */
 export function typeLabel(t: string | null): string {
@@ -95,8 +95,9 @@ export function AgentDetailView({
             )}
             <span>{formatWhen(agent.startedAt)}</span>
             {agent.models.map((m) => (
-              <ModelChip key={m} model={m} />
+              <ModelChip key={m} model={m} effort={topEffort(byModel.find((b) => b.model === m)?.efforts)} />
             ))}
+            {(agent.efforts?.length ?? 0) > 1 && <span>{`Effort ${effortMix(agent.efforts)}`}</span>}
           </div>
         </div>
       </div>

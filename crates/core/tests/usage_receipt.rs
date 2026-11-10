@@ -418,7 +418,7 @@ fn the_cache_table_migrates_in_from_an_older_ledger() {
         let mut c = rusqlite::Connection::open(&db).unwrap();
         c.execute_batch("PRAGMA user_version = 0;").unwrap();
         atlas_core::cache::migrate::migrate(&mut c).unwrap();
-        c.execute_batch("DROP TABLE receipt_scan; PRAGMA user_version = 3;").unwrap();
+        c.execute_batch("DROP TABLE receipt_scan; ALTER TABLE messages DROP COLUMN effort; PRAGMA user_version = 3;").unwrap();
     }
     let opened = atlas_core::cache::open_writer(&db).unwrap();
     let n: i64 = opened.conn.query_row("SELECT COUNT(*) FROM receipt_scan", [], |r| r.get(0)).unwrap();

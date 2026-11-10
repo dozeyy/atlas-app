@@ -1,6 +1,7 @@
 // Pure helpers for showing usage: numbers, money, time, ranges. No React here.
 
 import type { Bucket, Cost, Tokens } from "./types";
+import type { EffortUse } from "./usageTypes";
 
 const EN = "en-US";
 
@@ -85,14 +86,49 @@ export function formatDuration(ms: number): string {
   return rh ? `${d} d ${rh} h` : `${d} d`;
 }
 
-/** "claude-sonnet-5-5" -> "Sonnet 5.5". Unknown ids stay as they are. */
-export function modelLabel(id: string): string {
+/**
+ * A model id as people say it, always with its full version: "claude-opus-5-5" -> "Opus 5.5",
+ * "claude-fable-5-2" -> "Fable 5.2", "claude-3-5-sonnet-20241022" -> "Sonnet 3.5". Any family
+ * works, so a model Atlas has never heard of still gets a name ("claude-nova-9-1" -> "Nova 9.1");
+ * whether it is priced is a separate question. Anything else (`<synthetic>`) stays as it is.
+ * Same rules as `model_label` in `crates/core/src/usage/naming.rs`.
+ */
+export function modelLabel(raw: string): string {
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-  let m = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
+  // A context suffix ("claude-opus-5-5[1m]") is the same model.
+  const id = raw.trim().replace(/(.)\s*\[[^\]]*\]$/, "$1");
+  let m = /^claude-([a-z]+)-(\d{1,3})(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
   if (m) return `${cap(m[1])} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
-  m = /^claude-(\d+)(?:-(\d{1,2}))?-(opus|sonnet|haiku|fable)(?:-\d{8})?$/.exec(id);
+  m = /^claude-(\d{1,3})(?:-(\d{1,2}))?-([a-z]+)(?:-\d{8})?$/.exec(id);
   if (m) return `${cap(m[3])} ${m[1]}${m[2] ? `.${m[2]}` : ""}`;
-  return id;
+  return raw;
+}
+
+/** The most used reasoning effort, or null when no reply recorded one (never a guess). */
+export function topEffort(efforts: EffortUse[] | null | undefined): string | null {
+  return efforts && efforts.length > 0 ? efforts[0].effort : null;
+}
+
+/**
+ * The effort mix in words: one effort is its name ("high"); a mix is each effort's share of the
+ * replies that had one, most used first ("high 93%, medium 7%"). "" when none was recorded.
+ */
+export function effortMix(efforts: EffortUse[] | null | undefined): string {
+  if (!efforts || efforts.length === 0) return "";
+  if (efforts.length === 1) return efforts[0].effort;
+  const total = efforts.reduce((a, e) => a + e.replies, 0) || 1;
+  return efforts
+    .map((e) => {
+      const p = (e.replies * 100) / total;
+      return `${e.effort} ${percent(p / 100)}`;
+    })
+    .join(", ");
+}
+
+/** "Opus 5.5 \u00b7 high", or just "Opus 5.5" when the effort is unknown. */
+export function modelWithEffort(model: string, effort: string | null | undefined): string {
+  const name = modelLabel(model);
+  return effort ? `${name} \u00b7 ${effort}` : name;
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {
@@ -191,9 +227,11 @@ export function share(part: number, whole: number): number {
   return whole > 0 ? part / whole : 0;
 }
 
+/** A share as people read it: a part that is there is never "0%", a part that is not the whole never "100%". */
 export function percent(frac: number): string {
   if (frac <= 0) return "0%";
   if (frac < 0.01) return "<1%";
+  if (frac > 0.99 && frac < 1) return ">99%";
   return `${Math.round(frac * 100)}%`;
 }
 

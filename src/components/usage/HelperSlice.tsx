@@ -18,11 +18,11 @@ function withKids(nodes: MapNode[], id: string): number {
   return walk(id);
 }
 
-function Facts({ t }: { t: ReceiptThread }) {
+function Facts({ t, effort }: { t: ReceiptThread; effort?: string | null }) {
   const bits = [plural(t.messages, "message"), plural(t.toolCalls, "call"), t.durationMs > 0 ? `ran ${formatDuration(t.durationMs)}` : ""].filter(Boolean);
   return (
     <div className="slice-facts">
-      <ModelChip model={t.model} />
+      <ModelChip model={t.model} effort={effort} />
       <span className="min-w-0 text-caption text-ink-2">{bits.join(", ")}</span>
     </div>
   );
@@ -35,10 +35,13 @@ export function HelperSlice({
   receipt,
   nodeId,
   onOpenHelper,
+  effortOf,
 }: {
   receipt: Receipt;
   nodeId: string;
   onOpenHelper: (agentId: string) => void;
+  /** The most used reasoning effort of a thread (null agentId = the main chat); none when unknown. */
+  effortOf?: (agentId: string | null) => string | null;
 }) {
   const nodes = useMemo(() => layoutMap(receipt.threads, { width: 640, height: 400 }, undefined, MAP_BY).nodes, [receipt.threads]);
   const node = nodes.find((n) => n.id === nodeId) ?? nodes.find((n) => n.id === MAIN_ID);
@@ -85,7 +88,7 @@ export function HelperSlice({
       </div>
       {subtotal - node.tokens >= 1 && <div className="text-caption tabular-nums text-ink-2">{`${tokensText(subtotal)} with the helpers it started`}</div>}
 
-      {t && <Facts t={t} />}
+      {t && <Facts t={t} effort={effortOf?.(t.agentId)} />}
 
       {node.kind === "more" && (
         <section aria-label="Folded helpers" className="mt-4">

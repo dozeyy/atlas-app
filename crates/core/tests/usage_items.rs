@@ -158,7 +158,7 @@ fn an_old_cache_is_upgraded_and_filled_by_one_re_read() {
     // Make the cache look like it was written before the item table existed.
     {
         let c = rusqlite::Connection::open(&cache).unwrap();
-        c.execute_batch("DROP TABLE item_use; PRAGMA user_version = 2; UPDATE meta SET value='2' WHERE key='parser_version';").unwrap();
+        c.execute_batch("DROP TABLE item_use; ALTER TABLE messages DROP COLUMN effort; PRAGMA user_version = 2; UPDATE meta SET value='2' WHERE key='parser_version';").unwrap();
     }
     let fx = start_in(&cfg, data, Tz::Fixed(0));
     assert_eq!(fx.one("PRAGMA user_version"), atlas_core::cache::SCHEMA_VERSION);

@@ -9,11 +9,11 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use atlas_core::usage::query::{ScopeReport, SessionDetail, SessionRow, TimelinePoint};
+use atlas_core::usage::query::{EffortUse, ScopeReport, SessionDetail, SessionRow, TimelinePoint, effort_rank};
 use atlas_core::usage::time::Tz;
 use chrono::{Duration, NaiveDate, NaiveDateTime, Timelike};
 
-use crate::fmt::{bar, cell, change, compact, dot, duration, heat, heat_band, heat_cuts, model, plain, summit, usd};
+use crate::fmt::{bar, cell, change, compact, dot, duration, effort_mix, heat, heat_band, heat_cuts, model, plain, summit, usd};
 use crate::scope::{BARS_DAYS, Span, short};
 
 const BAR: usize = 24;
@@ -100,8 +100,7 @@ fn pct(part: u64, whole: u64) -> String {
     if whole == 0 {
         return "0%".into();
     }
-    let p = part as f64 / whole as f64 * 100.0;
-    if p > 0.0 && p < 1.0 { "<1%".into() } else { format!("{p:.0}%") }
+    crate::fmt::share_text(part as f64 / whole as f64 * 100.0)
 }
 
 fn sessions(n: u64) -> String {
@@ -125,12 +124,40 @@ fn series(points: &[TimelinePoint], bucket: &str, today: NaiveDate) -> Vec<(Stri
 /// Models under the names the app shows. Ids that share a name (a dated and an undated id of
 /// the same model) are one row with their tokens added, biggest first; this runs before any
 /// row limit so the limit counts rows as displayed.
-fn by_label<'a>(items: impl Iterator<Item = (&'a str, u64)>) -> Vec<(String, u64)> {
-    let mut m: BTreeMap<String, u64> = BTreeMap::new();
-    for (id, tokens) in items.filter(|i| i.1 > 0) {
-        *m.entry(model(id)).or_default() += tokens;
+///
+/// Each row's label is the full model name, then its most used reasoning effort when the
+/// transcripts gave one ("Opus 5.5 · high"), then "(not priced)" for a model the price list
+/// does not know.
+fn by_label<'a>(items: impl Iterator<Item = (&'a str, u64, &'a [EffortUse], bool)>) -> Vec<(String, u64)> {
+    #[derive(Default)]
+    struct Row {
+        tokens: u64,
+        efforts: BTreeMap<String, u64>,
+        unpriced: bool,
     }
-    let mut rows: Vec<(String, u64)> = m.into_iter().collect();
+    let mut m: BTreeMap<String, Row> = BTreeMap::new();
+    for (id, tokens, efforts, priced) in items.filter(|i| i.1 > 0) {
+        let r = m.entry(model(id)).or_default();
+        r.tokens += tokens;
+        r.unpriced |= !priced;
+        for e in efforts {
+            *r.efforts.entry(e.effort.clone()).or_default() += e.replies;
+        }
+    }
+    let mut rows: Vec<(String, u64)> = m
+        .into_iter()
+        .map(|(name, r)| {
+            let top = r.efforts.iter().max_by(|a, b| a.1.cmp(b.1).then_with(|| effort_rank(b.0).cmp(&effort_rank(a.0)))).map(|e| e.0.clone());
+            let mut label = name;
+            if let Some(e) = top {
+                label = format!("{label}{}{e}", dot());
+            }
+            if r.unpriced {
+                label.push_str(" (not priced)");
+            }
+            (label, r.tokens)
+        })
+        .collect();
     rows.sort_by_key(|r| std::cmp::Reverse(r.1));
     rows
 }
@@ -211,7 +238,7 @@ pub fn range(v: &RangeView) -> String {
     }
 
     s.push_str("Models\n");
-    let rows: Vec<_> = by_label(r.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total)))
+    let rows: Vec<_> = by_label(r.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total, m.efforts.as_slice(), m.known)))
         .into_iter()
         .take(v.top)
         .map(|(label, tokens)| (label, tokens, pct(tokens, t.tokens.total)))
@@ -346,6 +373,10 @@ pub fn chat(d: &SessionDetail, note: Option<&str>, top: usize) -> String {
     if !r.project_name.is_empty() {
         meta.push(cell(&r.project_name, 40));
     }
+    if !r.main_model.is_empty() {
+        let mix = effort_mix(&r.efforts);
+        meta.push(if mix.is_empty() { model(&r.main_model) } else { format!("{}{}{}", model(&r.main_model), dot(), mix) });
+    }
     meta.push(duration(r.duration_ms));
     meta.push(format!("{} messages", r.messages));
     let helpers = d.agents.len();
@@ -369,7 +400,7 @@ pub fn chat(d: &SessionDetail, note: Option<&str>, top: usize) -> String {
         s.push('\n');
     }
 
-    let models = by_label(d.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total)));
+    let models = by_label(d.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total, m.efforts.as_slice(), m.known)));
     if !models.is_empty() {
         s.push_str("Models\n");
         let rows: Vec<_> = models.into_iter().take(top).map(|(label, tokens)| (label, tokens, pct(tokens, r.tokens.total))).collect();
@@ -380,14 +411,16 @@ pub fn chat(d: &SessionDetail, note: Option<&str>, top: usize) -> String {
     if helpers > 0 {
         let mut agents: Vec<_> = d.agents.iter().collect();
         agents.sort_by_key(|a| std::cmp::Reverse(a.tokens.total));
-        s.push_str("| Helper | Type | Model | Tokens |\n|---|---|---|--:|\n");
+        s.push_str("| Helper | Type | Model | Effort | Tokens |\n|---|---|---|---|--:|\n");
         for a in agents.iter().take(top) {
+            let mix = effort_mix(&a.efforts);
             let _ = writeln!(
                 s,
-                "| {} | {} | {} | {} |",
+                "| {} | {} | {} | {} | {} |",
                 cell(&a.name, 40),
                 cell(a.agent_type.as_deref().unwrap_or("-"), 24),
                 model(&a.model),
+                if mix.is_empty() { "-" } else { mix.as_str() },
                 compact(a.tokens.total)
             );
         }
@@ -532,7 +565,7 @@ mod tests {
     }
 
     fn model_use(id: &str, total: u64) -> ModelUse {
-        ModelUse { model: id.into(), known: true, tokens: tok(total, 0), cost: Cost::default() }
+        ModelUse { model: id.into(), known: true, tokens: tok(total, 0), cost: Cost::default(), efforts: Vec::new() }
     }
 
     fn project_use(name: &str, total: u64, sessions: u64) -> ProjectUse {
@@ -552,6 +585,8 @@ mod tests {
             ended_at: 0,
             duration_ms: 90_000,
             models: Vec::new(),
+            main_model: String::new(),
+            efforts: Vec::new(),
             messages: 12,
             subagent_messages: 0,
             tokens: tok(total, 0),
@@ -720,6 +755,7 @@ mod tests {
             spawn_depth: 1,
             model: SONNET.into(),
             models: vec![SONNET.into()],
+            efforts: Vec::new(),
             messages: 4,
             tokens: tok(total, 0),
             cost: priced(0.5),
@@ -732,7 +768,7 @@ mod tests {
     }
 
     fn by_model(id: &str, total: u64) -> ByModel {
-        ByModel { model: id.into(), tokens: tok(total, 0), cost: priced(0.5) }
+        ByModel { model: id.into(), known: true, tokens: tok(total, 0), cost: priced(0.5), efforts: Vec::new() }
     }
 
     fn message(ts: i64, total: u64) -> MessagePoint {
@@ -763,9 +799,42 @@ mod tests {
         assert!(out.lines().any(|l| l.starts_with("Helpers (1)") && l.ends_with("300  30%")), "{out}");
         assert_eq!(out.matches("Sonnet 4.5").count(), 2, "one model row, one helper row: {out}");
         assert!(out.lines().any(|l| l.starts_with("Sonnet 4.5") && l.contains("800") && l.ends_with("80%")), "{out}");
-        assert!(out.contains("| Helper | Type | Model | Tokens |\n|---|---|---|--:|\n| scout x | Explore | Sonnet 4.5 | 300 |\n"), "pipes never break a table: {out}");
+        assert!(
+            out.contains("| Helper | Type | Model | Effort | Tokens |\n|---|---|---|---|--:|\n| scout x | Explore | Sonnet 4.5 | - | 300 |\n"),
+            "pipes never break a table; no effort recorded shows a dash, not a guess: {out}"
+        );
         assert!(out.contains("Activity\n```text\n"), "three hours: {out}");
         assert!(out.ends_with("_Estimated at API prices: $1.00. Not a bill._"), "{out}");
+    }
+
+    #[test]
+    fn chat_names_the_model_with_its_effort_and_flags_unpriced_models() {
+        let _g = glyph_lock();
+        let e = |effort: &str, replies| EffortUse { effort: effort.into(), replies };
+        let mut dt = detail("x", "p", "scout");
+        dt.row.main_model = "claude-opus-5-5".into();
+        dt.row.efforts = vec![e("high", 9), e("medium", 1)];
+        dt.by_model[0].efforts = vec![e("medium", 2)];
+        dt.by_model[1].efforts = vec![e("high", 5)]; // the dated id: same row, mixes merge
+        dt.by_model.push(ByModel { model: "claude-nova-9-1".into(), known: false, tokens: tok(50, 0), cost: Cost::default(), efforts: Vec::new() });
+        dt.agents[0].efforts = vec![e("xhigh", 4)];
+        let out = chat(&dt, None, 5);
+        assert!(out.contains("\"x\" \u{00B7} p \u{00B7} Opus 5.5 \u{00B7} high 90%, medium 10% \u{00B7} "), "{out}");
+        assert!(out.lines().any(|l| l.starts_with("Sonnet 4.5 \u{00B7} high ")), "merged mix picks high: {out}");
+        assert!(out.lines().any(|l| l.starts_with("Opus 5.5 ") && !l.contains("\u{00B7} ")), "no effort, no suffix: {out}");
+        assert!(out.lines().any(|l| l.starts_with("Nova 9.1 (not priced)")), "{out}");
+        assert!(out.contains("| scout | Explore | Sonnet 4.5 | xhigh | 300 |"), "{out}");
+    }
+
+    #[test]
+    fn a_known_model_with_an_unpriced_reply_keeps_its_name() {
+        let _g = glyph_lock();
+        let mut dt = detail("x", "p", "scout");
+        // e.g. Opus 4.7 in fast mode: known to the price list, no rate for that speed.
+        dt.by_model.push(ByModel { model: "claude-opus-4-7".into(), known: true, tokens: tok(50, 0), cost: Cost::default(), efforts: Vec::new() });
+        let out = chat(&dt, None, 5);
+        assert!(out.lines().any(|l| l.starts_with("Opus 4.7 ")), "{out}");
+        assert!(!out.contains("Opus 4.7 (not priced)"), "{out}");
     }
 
     /// Switches ASCII mode on and puts it back even when an assert fails.

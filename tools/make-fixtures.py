@@ -458,6 +458,61 @@ def usage_fx():
     put(u, f"{P}/-fx-sub/{sa}/subagents/agent-fixturesub.jsonl", jl(sub))
 
 
+def accuracy_fx():
+    """fixtures/claude-accuracy: the shapes the recount found on a real machine (2026-11-09).
+
+    Streamed copies of one reply (output grows), a reply Claude Code rewrote later in the
+    same file with zeroed top-level counts (its cache_creation breakdown is still filled in),
+    reasoning effort as `perTurnEffort` (2.1.3xx), as `effort` only (older lines) and absent,
+    a helper on a sidechain, and model ids that are new (Fable 5.2, Mythos 5.2) or unknown.
+
+    Expected (tools/recount.py agrees): 7 replies; input 220, output 570, 5m writes 1000,
+    cache reads 13000. Main thread effort: high 2, low 1, medium 1, xhigh 1; the helper: max 1.
+    """
+    a = os.path.join(ROOT, "claude-accuracy")
+    s = "acc00001-eeee-4eee-8eee-000000000001"
+    cwd = "/fixture/accuracy"
+    P = f"projects/-fixture-accuracy"
+
+    def line(n, ts, mid, model, usg, **extra):
+        return assistant(s, f"acc-a-{n}", f"acc-u-{n}", ts, mid, "req_" + mid[4:], model, usg, cwd, **extra)
+
+    def eff(per_turn=None, plain=None):
+        e = {"version": "2.1.321"}
+        if per_turn is not None:
+            e["perTurnEffort"] = per_turn
+        if plain is not None:
+            e["effort"] = plain
+        return e
+
+    replay = usage(0, 0, 0, 0, w5=1000, w1=0)  # zeroed counts, breakdown left behind
+    put(a, f"{P}/{s}.jsonl", jl(
+        {"type": "custom-title", "customTitle": "Accuracy fixture", "sessionId": s},
+        user(s, "acc-u-1", None, "2026-11-06T10:00:00.000Z", cwd),
+        # Three streamed copies of one reply: only the last (fullest) one counts.
+        line(1, "2026-11-06T10:00:01.000Z", "msg_ST", "claude-fable-5-2", usage(100, 5, 1000, 5000), **eff("high", "high")),
+        line(2, "2026-11-06T10:00:02.000Z", "msg_ST", "claude-fable-5-2", usage(100, 40, 1000, 5000), **eff("high", "high")),
+        line(3, "2026-11-06T10:00:03.000Z", "msg_ST", "claude-fable-5-2", usage(100, 120, 1000, 5000), **eff("high", "high")),
+        line(4, "2026-11-06T10:01:00.000Z", "msg_ST2", "claude-fable-5-2", usage(10, 20), **eff("high", "high")),
+        # Older line shape: `effort` only.
+        line(5, "2026-11-06T10:02:00.000Z", "msg_Z", "claude-opus-5-5", usage(50, 300, 0, 8000), effort="xhigh"),
+        line(6, "2026-11-06T10:03:00.000Z", "msg_NOEFF", "claude-sonnet-5-5", usage(10, 20)),
+        line(7, "2026-11-06T10:04:00.000Z", "msg_MY", "claude-mythos-5-2", usage(10, 20), **eff("medium")),
+        line(8, "2026-11-06T10:05:00.000Z", "msg_NV", "claude-nova-9-1", usage(10, 20), **eff("low")),
+        # The rewrite of msg_Z, much later in the same file, with zeroed counts.
+        line(9, "2026-11-06T10:30:00.000Z", "msg_Z", "claude-opus-5-5", replay, effort="xhigh"),
+    ))
+    sub = []
+    for n, o in ((1, 7), (2, 70)):
+        x = line(20 + n, f"2026-11-06T10:02:3{n}.000Z", "msg_SUBA", "claude-haiku-5-5", usage(30, o), **eff("max", "high"))
+        x["isSidechain"] = True
+        x["agentId"] = "accsub"
+        sub.append(x)
+    put(a, f"{P}/{s}/subagents/agent-accsub.jsonl", jl(*sub))
+    put(a, f"{P}/{s}/subagents/agent-accsub.meta.json",
+        json.dumps({"agentType": "Explore", "description": "Accuracy helper"}))
+
+
 def md(front, body="[fixture body]\n"):
     """A markdown file: `front` is a dict (written as simple YAML), a raw string, or None."""
     if front is None:
@@ -649,11 +704,15 @@ def setup():
 
 
 def main():
-    if os.path.isdir(ROOT):
-        # Remove only files we generate, never a recursive delete of unknown content.
-        for base, _dirs, files in os.walk(ROOT, topdown=False):
-            for name in files:
-                os.remove(os.path.join(base, name))
+    # Clear only the folders this script writes: claude-agents, claude-items and the
+    # setup-*-wire-keys.json files beside them are hand-made and must survive a regenerate.
+    for name in ("claude-basic", "claude-edge", "claude-usage", "claude-accuracy", "claude-habits", "claude-setup"):
+        folder = os.path.join(ROOT, name)
+        if not os.path.isdir(folder):
+            continue
+        for base, _dirs, files in os.walk(folder, topdown=False):
+            for fname in files:
+                os.remove(os.path.join(base, fname))
             for d in _dirs:
                 p = os.path.join(base, d)
                 if not os.listdir(p):
@@ -661,6 +720,7 @@ def main():
     basic()
     edge()
     usage_fx()
+    accuracy_fx()
     habits()
     setup()
     n = sum(len(f) for _, _, f in os.walk(ROOT))

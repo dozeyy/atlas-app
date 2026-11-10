@@ -36,7 +36,7 @@ import { helperTree, type HelperNode } from "../lib/helperTree";
 import { MAIN_ID } from "../lib/helperMap";
 import { useIntro } from "../lib/motion";
 import { useFetched, useLiveReload } from "../lib/useUsage";
-import { compact, exact, formatDuration, formatUsd, formatWhen, headline, percent, plural, share } from "../lib/usage";
+import { compact, effortMix, exact, formatDuration, formatUsd, formatWhen, headline, percent, plural, share, topEffort } from "../lib/usage";
 import { AgentDetailView, typeLabel } from "./AgentDetail";
 import type { AgentSummary, SessionDetail, TranscriptItem } from "../lib/types";
 
@@ -90,7 +90,7 @@ function HelperCard({
         <div className="mt-1 text-caption text-ink-2">{`${percent(frac)} of the session`}</div>
       </div>
       <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-ink-2">
-        <ModelChip model={agent.model} />
+        <ModelChip model={agent.model} effort={topEffort(agent.efforts)} />
         <span className="inline-flex items-center gap-1">
           <Clock size={12} aria-hidden="true" />
           {formatDuration(agent.durationMs)}
@@ -554,7 +554,10 @@ export function SessionDetailView({
             <span className="font-medium text-ink">{row.projectName}</span>
             <span>{formatWhen(row.startedAt)}</span>
             <span>{formatDuration(row.durationMs)}</span>
-            <ModelDots models={row.models} />
+            <ModelDots models={row.models} main={row.mainModel} effort={topEffort(row.efforts)} />
+            {(row.efforts?.length ?? 0) > 1 && (
+              <span title="Reasoning effort of the main chat's replies (helpers are on their own cards)">{`Effort ${effortMix(row.efforts)}`}</span>
+            )}
             {hasHelpers && <span>{plural(agents.length, "helper")}</span>}
           </div>
         </div>
@@ -638,7 +641,12 @@ export function SessionDetailView({
       </div>
 
       <div className="session-pane @container">
-        {shownTab === "receipt" && <ReceiptPane state={receipt} sessionId={id} onOpenHelper={showOnMap} />}
+        {shownTab === "receipt" && <ReceiptPane
+            state={receipt}
+            sessionId={id}
+            onOpenHelper={showOnMap}
+            effortOf={(m) => topEffort(d.data?.byModel.find((b) => b.model === m)?.efforts)}
+          />}
 
         {shownTab === "helpers" &&
           (view === "list" ? (
@@ -646,7 +654,12 @@ export function SessionDetailView({
           ) : receipt.data ? (
             <div className="map-grid">
               <HelperMap receipt={receipt.data} sessionId={id} selected={picked} onSelect={setPicked} types={helperTypes} />
-              <HelperSlice receipt={receipt.data} nodeId={picked} onOpenHelper={setAgentId} />
+              <HelperSlice
+                receipt={receipt.data}
+                nodeId={picked}
+                onOpenHelper={setAgentId}
+                effortOf={(a) => topEffort(a ? agents.find((x) => x.agentId === a)?.efforts : row.efforts)}
+              />
             </div>
           ) : receipt.error ? (
             <div role="alert" className="flex items-center gap-3 text-body text-ink-2">

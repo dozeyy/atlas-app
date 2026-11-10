@@ -155,6 +155,7 @@ mod tests {
             title: Some("Chat a".into()),
             project: "atlas".into(),
             model: None,
+            effort: None,
             state: state.into(),
             started_ms: None,
             worked_ms: Some(1_000),

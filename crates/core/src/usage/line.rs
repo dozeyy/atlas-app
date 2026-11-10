@@ -52,6 +52,10 @@ pub struct MsgEvent {
     pub mcp_tool: Option<String>,
     pub entrypoint: Option<String>,
     pub version: Option<String>,
+    /// The reasoning effort the reply ran at: `perTurnEffort`, else `effort` (`low`, `medium`,
+    /// `high`, `xhigh`, `max`, or whatever a newer Claude Code writes). None when the line has
+    /// neither (older Claude Code, models without effort): never guessed.
+    pub effort: Option<String>,
 }
 
 /// Why a line produced no event. Counted in diagnostics, never stored.
@@ -301,7 +305,9 @@ fn message(raw: Raw) -> Result<LineEvent, Skip> {
         cwd: raw.cwd.filter(|c| !c.is_empty()).map(Cow::into_owned),
         agent_id: raw.agent_id.filter(|c| !c.is_empty()).map(Cow::into_owned),
         is_sidechain: raw.is_sidechain.unwrap_or(false),
-        model: model.into_owned(),
+        // Stored without a context suffix ("claude-opus-5-5[1m]" -> "claude-opus-5-5"): one model
+        // is one row in every by-model list, and the label and price are the same anyway.
+        model: crate::usage::naming::base_model_id(&model).to_string(),
         ts_ms: ts,
         input,
         output,
@@ -321,7 +327,14 @@ fn message(raw: Raw) -> Result<LineEvent, Skip> {
         mcp_tool: raw.attribution_mcp_tool.map(Cow::into_owned),
         entrypoint: raw.entrypoint.map(Cow::into_owned),
         version: raw.version.map(Cow::into_owned),
+        effort: effort_of(raw.per_turn_effort.as_deref()).or_else(|| effort_of(raw.effort.as_deref())),
     })))
+}
+
+/// A usable effort word: trimmed, lower case, short, letters only. Anything else is no effort.
+pub fn effort_of(v: Option<&str>) -> Option<String> {
+    let v = v?.trim();
+    (!v.is_empty() && v.len() <= 16 && v.bytes().all(|b| b.is_ascii_alphabetic())).then(|| v.to_ascii_lowercase())
 }
 
 #[derive(Deserialize)]
@@ -345,6 +358,10 @@ struct Raw<'a> {
     entrypoint: Option<Cow<'a, str>>,
     #[serde(borrow, default)]
     version: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    effort: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    per_turn_effort: Option<Cow<'a, str>>,
     #[serde(borrow, default)]
     attribution_skill: Option<Cow<'a, str>>,
     #[serde(borrow, default)]
@@ -478,6 +495,31 @@ mod tests {
         assert_eq!(p.parse(b"not json"), Err(Skip::Malformed));
         assert_eq!(p.parse(br#"{"type":"assistant","message":{"id":"m"#), Err(Skip::Malformed));
         assert_eq!(p.parse(br#"{"type":"assistant"}"#), Err(Skip::Malformed));
+    }
+
+    #[test]
+    fn effort_prefers_the_per_turn_value_and_never_guesses() {
+        let p = Prefilter::new();
+        let u = r#"{"input_tokens":1,"output_tokens":1}"#;
+        let get = |extra: &str| {
+            let LineEvent::Message(m) = p.parse(a(u, extra).as_bytes()).unwrap() else { panic!() };
+            m.effort
+        };
+        assert_eq!(get(r#","effort":"high","perTurnEffort":"high""#).as_deref(), Some("high"));
+        assert_eq!(get(r#","effort":"high","perTurnEffort":"xhigh""#).as_deref(), Some("xhigh"));
+        assert_eq!(get(r#","effort":"Medium""#).as_deref(), Some("medium"));
+        assert_eq!(get(r#","perTurnEffort":"low""#).as_deref(), Some("low"));
+        assert_eq!(get(""), None);
+        assert_eq!(get(r#","effort":"""#), None);
+        assert_eq!(get(r#","effort":"<b>""#), None);
+    }
+
+    #[test]
+    fn a_context_suffix_is_stored_as_the_base_model() {
+        let p = Prefilter::new();
+        let line = a(r#"{"input_tokens":1,"output_tokens":1}"#, "").replace("claude-opus-5-5", "claude-opus-5-5[1m]");
+        let LineEvent::Message(m) = p.parse(line.as_bytes()).unwrap() else { panic!() };
+        assert_eq!(m.model, "claude-opus-5-5");
     }
 
     #[test]

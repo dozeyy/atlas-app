@@ -393,11 +393,19 @@ fn apply_batch(
     tx.execute_batch("DELETE FROM th; DELETE FROM ts;")?;
     let mut touched = Touched::default();
 
-    // Last line per key within this batch wins (D12).
+    // One line per key within this batch: the one with the most output, the later on a tie (D12).
+    // Streamed lines of a reply only grow, so this is the last one; a reply Claude Code writes
+    // again later with its counts zeroed (seen after a rewind) cannot replace the real one.
     let mut last: HashMap<&str, usize> = HashMap::new();
     for (i, (ev, _)) in b.events.iter().enumerate() {
         if let LineEvent::Message(m) = ev {
-            last.insert(m.key.as_str(), i);
+            let keep = match last.get(m.key.as_str()) {
+                Some(&j) => matches!(&b.events[j].0, LineEvent::Message(o) if m.output >= o.output),
+                None => true,
+            };
+            if keep {
+                last.insert(m.key.as_str(), i);
+            }
         }
     }
 
@@ -413,8 +421,8 @@ fn apply_batch(
             "INSERT OR REPLACE INTO messages(msg_key, session_id, file_id, line_offset, agent_id,
                is_sidechain, model, ts_utc_ms, hour_local, input, output, cw5m, cw1h, cr,
                cw_assumed, cw_mismatch, web_search, web_fetch, thinking, speed, geo, service_tier,
-               price_tier, skill, mcp_server, mcp_tool)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26)",
+               price_tier, skill, mcp_server, mcp_tool, effort)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27)",
         )?;
         let mut dup = tx.prepare_cached("INSERT OR IGNORE INTO dupes(msg_key) VALUES(?1)")?;
         let mut th = tx.prepare_cached("INSERT OR IGNORE INTO th(h) VALUES(?1)")?;
@@ -443,6 +451,8 @@ fn apply_batch(
                             if (m.output as i64) <= *out {
                                 continue; // a tie or less keeps the existing row (D12)
                             }
+                        } else if (m.output as i64) < *out {
+                            continue; // same file, a later batch: less output is a replay, not the reply
                         }
                         th.execute([hour])?;
                         ts.execute([old_sid])?;
@@ -487,6 +497,7 @@ fn apply_batch(
                         m.skill,
                         m.mcp_server,
                         m.mcp_tool,
+                        m.effort,
                     ])?;
                     th.execute([&hour])?;
                     ts.execute([&sid])?;

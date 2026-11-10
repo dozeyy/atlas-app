@@ -25,7 +25,7 @@ import { ago, clock, groupChats, nowCost } from "../lib/nowFormat";
 import type { NowChat, NowLast, NowStep } from "../lib/nowTypes";
 import { useClimb, useClock, useNowSnapshot } from "../lib/useNow";
 import { CALM_MS, useSteadyDoing } from "../lib/useSteadyDoing";
-import { compact, formatDuration, modelLabel, plural, tokenHint } from "../lib/usage";
+import { compact, formatDuration, modelWithEffort, plural, tokenHint } from "../lib/usage";
 import "../styles/now.css";
 
 /** More running chats than this and the cards turn into a compact grid that scrolls. */
@@ -155,6 +155,7 @@ function WaitRow({ chat, now }: { chat: NowChat; now: number }) {
         </h3>
         <p className="now-row-sub">
           {chat.title && <span className="chip">{chat.project}</span>}
+          {chat.model && <span className="chip">{modelWithEffort(chat.model, chat.effort)}</span>}
           <span className="now-row-doing" title={line}>
             {line}
           </span>
@@ -180,7 +181,7 @@ function DoneRow({ last, now }: { last: NowLast; now: number }) {
         </h3>
         <p className="now-row-sub">
           {last.title && <span className="chip">{last.project}</span>}
-          {last.model && <span className="chip">{modelLabel(last.model)}</span>}
+          {last.model && <span className="chip">{modelWithEffort(last.model, last.effort)}</span>}
         </p>
       </div>
       {last.tokens !== null ? (
@@ -239,7 +240,7 @@ function ChatCard({ chat }: { chat: NowChat }) {
           </h3>
           <div className="now-chips">
             {chat.title && <span className="chip">{chat.project}</span>}
-            {chat.model && <span className="chip">{modelLabel(chat.model)}</span>}
+            {chat.model && <span className="chip">{modelWithEffort(chat.model, chat.effort)}</span>}
             {out > 0 && (
               <span
                 className="chip chip-clay nc-helpers-chip"

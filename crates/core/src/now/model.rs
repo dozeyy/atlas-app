@@ -69,6 +69,10 @@ pub struct OpenCall {
 pub struct NowHelper {
     pub id: String,
     pub name: String,
+    /// The model id its newest lines name (`claude-opus-5-5`); the page turns it into "Opus 5.5".
+    pub model: Option<String>,
+    /// The effort level its newest line says (`high`). None when no line says one.
+    pub effort: Option<String>,
     pub doing: Option<Doing>,
     pub tokens: u64,
     pub cost_usd: Option<f64>,
@@ -91,10 +95,6 @@ pub struct NowHelper {
     pub last_line_ms: Option<i64>,
     /// The call it is waiting on, if one is open.
     pub open_call: Option<OpenCall>,
-    /// The model id its newest lines name (`claude-opus-5-5`); the page turns it into "Opus 5.5".
-    pub model: Option<String>,
-    /// The effort level its newest line says (`high`). None when no line says one.
-    pub effort: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -114,6 +114,8 @@ pub struct NowChat {
     pub project: String,
     /// The model id as the transcript says it.
     pub model: Option<String>,
+    /// The reasoning effort of the chat's newest reply (`high`, ...). None when it has none.
+    pub effort: Option<String>,
     /// `working` while it has something to do, `waiting` once it is the user's turn.
     pub state: String,
     /// When the current stretch of work began (the last prompt), epoch ms.
@@ -143,6 +145,7 @@ pub struct NowLast {
     pub title: Option<String>,
     pub project: String,
     pub model: Option<String>,
+    pub effort: Option<String>,
     pub ended_ms: i64,
     /// Everything the chat used while Atlas followed it. None for a chat that was already
     /// over when Atlas started (only the end of its transcript is read, so a total would lie).

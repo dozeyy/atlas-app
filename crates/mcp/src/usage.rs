@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use atlas_core::usage::query::{Cost, ScopeArgs, Tokens};
+use atlas_core::usage::naming::model_label;
+use atlas_core::usage::query::{Cost, EffortUse, ModelUse, ScopeArgs, SessionRow, Tokens};
 use atlas_core::usage::{Event, EventSink, UsageConfig, UsageEngine, time};
 use serde_json::{Value, json};
 
@@ -93,9 +94,9 @@ impl Usage {
             "estimatedCostUsd": cost_usd(&report.total.cost),
             "costIsComplete": report.total.cost.complete,
             "costNote": "An estimate at API prices, not a bill. Subscription plans are not billed per token.",
-            "byModel": report.by_model.iter().take(6).map(|m| json!({"model": m.model, "tokens": m.tokens.total, "estimatedCostUsd": cost_usd(&m.cost)})).collect::<Vec<_>>(),
+            "byModel": report.by_model.iter().take(6).map(model_json).collect::<Vec<_>>(),
             "topProjects": report.projects.iter().take(5).map(|p| json!({"name": p.name, "tokens": p.tokens.total, "estimatedCostUsd": cost_usd(&p.cost), "chats": p.sessions})).collect::<Vec<_>>(),
-            "topChats": report.chats.iter().take(5).map(|c| json!({"name": c.name.clone().unwrap_or_else(|| format!("Chat in {}", c.project_name)), "project": c.project_name, "tokens": c.tokens.total, "estimatedCostUsd": cost_usd(&c.cost)})).collect::<Vec<_>>(),
+            "topChats": report.chats.iter().take(5).map(chat_json).collect::<Vec<_>>(),
         }))
     }
 }
@@ -112,6 +113,34 @@ fn tokens(t: &Tokens) -> Value {
     json!({"total": t.total, "input": t.input, "output": t.output, "cacheWrite": t.cache_write5m + t.cache_write1h, "cacheRead": t.cache_read})
 }
 
+/// One model: its id, the name people use ("Opus 5.5"), whether the price list knows it, and
+/// its replies per reasoning effort (empty when the transcripts gave none; never guessed).
+fn model_json(m: &ModelUse) -> Value {
+    json!({
+        "model": m.model,
+        "name": model_label(&m.model),
+        "priced": m.known,
+        "tokens": m.tokens.total,
+        "estimatedCostUsd": cost_usd(&m.cost),
+        "efforts": efforts_json(&m.efforts),
+    })
+}
+
+fn chat_json(c: &SessionRow) -> Value {
+    json!({
+        "name": c.name.clone().unwrap_or_else(|| format!("Chat in {}", c.project_name)),
+        "project": c.project_name,
+        "model": (!c.main_model.is_empty()).then(|| model_label(&c.main_model)),
+        "efforts": efforts_json(&c.efforts),
+        "tokens": c.tokens.total,
+        "estimatedCostUsd": cost_usd(&c.cost),
+    })
+}
+
+fn efforts_json(e: &[EffortUse]) -> Value {
+    Value::Array(e.iter().map(|x| json!({"effort": x.effort, "replies": x.replies})).collect())
+}
+
 fn cost_usd(c: &Cost) -> Option<f64> {
     c.usd.map(|v| (v * 100.0).round() / 100.0)
 }
@@ -122,5 +151,30 @@ fn copy_pricing(app_dir: &Path, cache_dir: &Path) {
         if src.is_file() {
             let _ = std::fs::copy(&src, cache_dir.join(name));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn models_carry_their_name_price_state_and_effort_mix() {
+        let m = ModelUse {
+            model: "claude-fable-5-2".into(),
+            known: true,
+            tokens: Tokens { total: 10, ..Default::default() },
+            cost: Cost::default(),
+            efforts: vec![EffortUse { effort: "high".into(), replies: 3 }],
+        };
+        let v = model_json(&m);
+        assert_eq!(v["name"], "Fable 5.2");
+        assert_eq!(v["priced"], true);
+        assert_eq!(v["efforts"][0]["effort"], "high");
+        assert_eq!(v["efforts"][0]["replies"], 3);
+        let unknown = model_json(&ModelUse { model: "claude-nova-9-1".into(), known: false, efforts: Vec::new(), ..m });
+        assert_eq!(unknown["name"], "Nova 9.1");
+        assert_eq!(unknown["priced"], false);
+        assert_eq!(unknown["efforts"], json!([]), "absent effort stays empty");
     }
 }

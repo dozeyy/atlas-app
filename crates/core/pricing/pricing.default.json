@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-11-08",
+  "updated": "2026-11-09",
   "currency": "USD",
   "unit": "per million tokens",
   "source": "https://platform.claude.com/docs/en/about-claude/pricing",
@@ -14,6 +14,34 @@
     "standard"
   ],
   "models": {
+    "claude-fable-5-2": {
+      "input": 8,
+      "output": 40,
+      "cacheWrite5m": 10,
+      "cacheWrite1h": 16,
+      "cacheRead": 0.2,
+      "fast": {
+        "input": 16,
+        "output": 80
+      },
+      "aliases": [],
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing",
+      "note": "cache read 0.025x; logged by Claude Code 2.1.321"
+    },
+    "claude-mythos-5-2": {
+      "input": 8,
+      "output": 40,
+      "cacheWrite5m": 10,
+      "cacheWrite1h": 16,
+      "cacheRead": 0.2,
+      "fast": {
+        "input": 16,
+        "output": 80
+      },
+      "aliases": [],
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing",
+      "note": "limited availability; cache read 0.025x"
+    },
     "claude-fable-5-1": {
       "input": 10,
       "output": 50,
@@ -24,6 +52,16 @@
       "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing",
       "note": "cache read 0.025x"
     },
+    "claude-mythos-5-1": {
+      "input": 10,
+      "output": 50,
+      "cacheWrite5m": 12.5,
+      "cacheWrite1h": 20,
+      "cacheRead": 0.25,
+      "aliases": [],
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing",
+      "note": "limited availability; cache read 0.025x"
+    },
     "claude-fable-5": {
       "input": 10,
       "output": 50,
@@ -31,8 +69,17 @@
       "cacheWrite1h": 20,
       "cacheRead": 1.0,
       "aliases": [],
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing"
+    },
+    "claude-mythos-5": {
+      "input": 10,
+      "output": 50,
+      "cacheWrite5m": 12.5,
+      "cacheWrite1h": 20,
+      "cacheRead": 1.0,
+      "aliases": [],
       "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing",
-      "note": "seen on Will's PC"
+      "note": "limited availability"
     },
     "claude-opus-5-5": {
       "input": 4,
@@ -93,6 +140,41 @@
       "aliases": [],
       "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing"
     },
+    "claude-opus-4-5": {
+      "input": 5,
+      "output": 25,
+      "cacheWrite5m": 6.25,
+      "cacheWrite1h": 10,
+      "cacheRead": 0.5,
+      "aliases": [
+        "claude-opus-4-5-20251101"
+      ],
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing"
+    },
+    "claude-opus-4-1": {
+      "input": 15,
+      "output": 75,
+      "cacheWrite5m": 18.75,
+      "cacheWrite1h": 30,
+      "cacheRead": 1.5,
+      "aliases": [
+        "claude-opus-4-1-20250805"
+      ],
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing",
+      "note": "retired"
+    },
+    "claude-opus-4": {
+      "input": 15,
+      "output": 75,
+      "cacheWrite5m": 18.75,
+      "cacheWrite1h": 30,
+      "cacheRead": 1.5,
+      "aliases": [
+        "claude-opus-4-20250514"
+      ],
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing",
+      "note": "retired"
+    },
     "claude-sonnet-5-5": {
       "input": 2,
       "output": 10,
@@ -122,6 +204,17 @@
       "aliases": [],
       "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing"
     },
+    "claude-sonnet-4-5": {
+      "input": 3,
+      "output": 15,
+      "cacheWrite5m": 3.75,
+      "cacheWrite1h": 6,
+      "cacheRead": 0.3,
+      "aliases": [
+        "claude-sonnet-4-5-20250929"
+      ],
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing"
+    },
     "claude-haiku-5-5": {
       "input": 0.1,
       "output": 0.5,
@@ -145,7 +238,9 @@
       "cacheWrite5m": 1.25,
       "cacheWrite1h": 2,
       "cacheRead": 0.1,
-      "aliases": ["claude-haiku-4-5-20251001"],
+      "aliases": [
+        "claude-haiku-4-5-20251001"
+      ],
       "source": "https://platform.claude.com/docs/en/about-claude/pricing#model-pricing"
     }
   }
