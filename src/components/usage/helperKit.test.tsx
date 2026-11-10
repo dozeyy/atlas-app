@@ -104,6 +104,12 @@ describe("helper icons", () => {
       ["sprint-planner", "plan"],
       ["performance-tuner", "perf"],
       ["recon", "explore"],
+      // A word after "_" or inside a compound is still that word (these fell to "other" once).
+      ["playtest-triage", "test"],
+      ["unit_tester", "test"],
+      ["codebase-analyzer", "build"],
+      ["codebase-locator", "build"],
+      ["code_reviewer", "review"],
     ];
     for (const [type, kind] of expected) expect([type, helperKind(type)]).toEqual([type, kind]);
   });

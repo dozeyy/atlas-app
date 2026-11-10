@@ -188,12 +188,13 @@ export const HELPER_KINDS = Object.keys(KINDS) as HelperKind[];
  * A short word is matched as a word, never as letters inside a longer one: "spec" is not in
  * "specialist", "doc" not in "docker", "port" not in "support" or "report", "format" not in
  * "information", "plan" not in "explanation", "test" not in "latest". (`\b` sits at a hyphen, so a
- * word inside "a-b-c" still counts as a word.)
+ * word inside "a-b-c" still counts as a word. It does not sit at "_", so "unit_tester" is read as
+ * "unit-tester"; a compound that hides its word, "playtest" or "codebase", is listed whole.)
  */
 const RULES: [RegExp, HelperKind][] = [
   [/bug|crash|debug|diagnos|troubleshoot|\bhunt|investigat/, "debug"],
   [/\bperf(ormance)?\b|profil(er|ing)|optimi[sz]|benchmark/, "perf"],
-  [/\btest|pytest|unittest|verif|\bqa\b|\bvalidat/, "test"],
+  [/\btest|playtest|pytest|unittest|verif|\bqa\b|\bvalidat/, "test"],
   [/review|audit|\bcriti(c|que)/, "review"],
   [/explor|search|research|\bfind|\bfetch|lookup|look-up|\bscout|\brecon\b/, "explore"],
   [/\bspec(s|ification\w*)?\b/, "plan"],
@@ -203,11 +204,11 @@ const RULES: [RegExp, HelperKind][] = [
   [/design|\bui\b|\bux\b|\bstyl|\bbrand|\bassets?\b|visual|frontend/, "design"],
   [/\bchores?\b|mechanic|clean-?up|\btidy|\bformat|\blint|\brenam|housekeep/, "chore"],
   [/\bgeneral/, "general"],
-  [/\bcod(e|er|ing)\b|build|\bdev(s|elop\w*)?\b|engineer|implement|refactor|\bprogram|\bmod(s|der|ding)?\b|\bport(s|er|ing)?\b/, "build"],
+  [/\bcod(e(base)?|er|ing)\b|build|\bdev(s|elop\w*)?\b|engineer|implement|refactor|\bprogram|\bmod(s|der|ding)?\b|\bport(s|er|ing)?\b/, "build"],
 ];
 
 export function helperKind(type: string | null): HelperKind {
-  const t = (type ?? "").toLowerCase();
+  const t = (type ?? "").toLowerCase().replace(/_/g, "-");
   for (const [re, kind] of RULES) if (re.test(t)) return kind;
   return "other";
 }
