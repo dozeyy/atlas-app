@@ -1,0 +1,22 @@
+Ran: 54m
+Helpers: 14 (coder 6, code-reviewer 3, verifier 2, 3 more types): 11 finished, 1 errored, 1 stopped, 1 no end seen.
+Models: Sonnet 5.5 high (11), Fable 5.2 (1), Opus 5.5 medium (1), and 1 more
+Reviews: 3 passed, 3 asked for changes, 1 worker sent back
+Tokens: 2.94k
+Biggest: the chat itself, 39% of the tokens (1.14k)
+Open: 1 with no end seen (still running, or it stopped writing): coder
+Changed: 1 worktree branch: worktree-agent-w4branch
+- coder "fixture coder 01": finished, 120 tokens, 1m, Sonnet 5.5 high
+- code-reviewer "fixture code-reviewer 02": finished, passed, 120 tokens, 1m, Sonnet 5.5 high
+- coder "fixture coder 03": finished, 120 tokens, 1m, Opus 5.5 medium
+- verifier "fixture verifier 04": finished, passed, 120 tokens, 55s, Sonnet 5.5 high
+- coder "fixture coder 05": finished, 120 tokens, 2m, Fable 5.2
+- coder "fixture coder 06": finished, 120 tokens, 2m, Sonnet 5.5 high
+- code-reviewer "fixture code-reviewer 07": finished, asked for changes (FIX-REQUIRED), 120 tokens, 45s, Sonnet 5.5 high
+- design-reviewer "fixture design-reviewer 08": finished, passed, 120 tokens, 55s, Sonnet 5.5 high
+- Explore "fixture Explore 09": stopped, 120 tokens, 1m, Sonnet 5.5 high
+- general-purpose: errored, 120 tokens, 40s, Sonnet 5.5
+- coder "fixture coder 0b": no end seen, 120 tokens, 50s, Sonnet 5.5 high
+- coder "fixture coder 0c": finished, partial, 240 tokens, 10m, Sonnet 5.5 high
+- verifier "fixture verifier 0d": finished, asked for changes (FAIL), 120 tokens, 1m, Sonnet 5.5 high
+- code-reviewer "fixture code-reviewer 0e": finished, asked for changes (FIX-REQUIRED), 120 tokens, 1m, Sonnet 5.5 high

@@ -948,6 +948,10 @@ pub struct DebriefHelper {
     pub verdict_word: Option<String>,
     pub tokens: u64,
     pub model: Option<ModelUse>,
+    /// What whoever dispatched it called the job (the sidecar's description), secret-masked and cut to
+    /// `GOAL_CHARS`; None when there is none.
+    pub goal: Option<String>,
+    pub worktree_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -993,6 +997,20 @@ pub struct RunDebrief {
     pub caught: Vec<Theme>,
 }
 
+/// Longest goal kept, in characters.
+pub const GOAL_CHARS: usize = 80;
+
+/// The first line of a dispatcher's job description: one line, secret-masked (a description the mask
+/// would change is dropped whole, like a finding line) and cut to `GOAL_CHARS`.
+fn goal_of(text: &str) -> Option<String> {
+    let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let flat: String = line.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    if crate::search::mask::mask_secrets(&flat).as_ref() != flat {
+        return None;
+    }
+    Some(if flat.chars().count() > GOAL_CHARS { flat.chars().take(GOAL_CHARS - 3).collect::<String>() + "..." } else { flat })
+}
+
 pub fn run_debrief(conn: &Connection, ctx: &QueryCtx, a: &DebriefArgs) -> rusqlite::Result<Option<RunDebrief>> {
     let sid = a.session_id.as_str();
     let chat: Option<(i64, i64)> = conn
@@ -1021,6 +1039,16 @@ pub fn run_debrief(conn: &Connection, ctx: &QueryCtx, a: &DebriefArgs) -> rusqli
 
     let ledger = load_ledger(conn)?;
     let runs: Vec<&RunRec> = ledger.runs.iter().filter(|r| r.session_id == sid && !r.agent_id.is_empty() && r.first_ts >= from).collect();
+    let mut goals: HashMap<String, String> = HashMap::new();
+    {
+        let mut st = conn.prepare_cached("SELECT agent_id, description FROM agents WHERE session_id = ?1 AND description IS NOT NULL")?;
+        for row in st.query_map([sid], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+            let (agent, text) = row?;
+            if let Some(g) = goal_of(&text) {
+                goals.insert(agent, g);
+            }
+        }
+    }
     let helper_of = |r: &RunRec| DebriefHelper {
         agent_id: r.agent_id.clone(),
         agent_type: r.agent_type.clone(),
@@ -1032,6 +1060,8 @@ pub fn run_debrief(conn: &Connection, ctx: &QueryCtx, a: &DebriefArgs) -> rusqli
         verdict_word: r.verdict_word.clone(),
         tokens: usage.get(&r.agent_id).map_or(0, |g| sum_groups(g).0.total),
         model: ledger.models.get(&(r.session_id.clone(), r.agent_id.clone())).and_then(|m| top_of(m)),
+        goal: goals.get(&r.agent_id).cloned(),
+        worktree_branch: r.worktree_branch.clone(),
     };
     let helpers: Vec<DebriefHelper> = {
         let mut v: Vec<DebriefHelper> = runs.iter().map(|r| helper_of(r)).collect();

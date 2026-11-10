@@ -11,7 +11,7 @@
 # checksums.txt next to this script (pinned when the plugin was released). Nothing the release
 # itself says is trusted. No pinned line = no download.
 # Exit code 3 = the launcher itself failed (one plain line on stderr); 4 = the program found is too old
-# for repeats / offer-note.
+# for repeats / offer-note / debrief.
 # Test aid: ATLAS_USAGE_TEST_SOURCE = a local folder, or an http://127.0.0.1 / localhost
 # address, that stands in for the release (the pinned hash still applies).
 # ATLAS_USAGE_LAUNCHER_VERBOSE=1 names the copy used.
@@ -59,6 +59,12 @@ run_bin() {
     repeats | offer-note)
       if ! "$rb" repeats --help 2>/dev/null | grep -q 'offer-note'; then
         printf 'atlas-usage: this copy of atlas-usage is too old for repeated requests. Update the Atlas plugin or the Atlas app.\n' >&2
+        exit 4
+      fi
+      ;;
+    debrief)
+      if ! "$rb" debrief --help 2>/dev/null | grep -q 'helpers did'; then
+        printf 'atlas-usage: this copy of atlas-usage is too old for the debrief. Update the Atlas plugin or the Atlas app.\n' >&2
         exit 4
       fi
       ;;
