@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { CaretDown } from "@phosphor-icons/react";
 import { KindTile } from "../setup/parts";
+import { AgentAvatar } from "../usage/helperKit";
 import { Button } from "../controls";
 import type { HistoryEvent } from "../../lib/historyTypes";
 import { dotTone, libraryLabel, setupKind, shortDate, splitName, timeText, whatHappened } from "../../lib/historyModel";
@@ -56,7 +57,8 @@ function Row({
       >
         <span className="hx-dot" data-tone={dotTone(head.kind)} aria-hidden="true" />
         <span className="hx-row-face">
-          <KindTile kind={setupKind(head.item.kind)} size={32} />
+          {/* An agent wears the avatar it has everywhere else (helperKit); the row's hover says the rest. */}
+          {head.item.kind === "agent" ? <AgentAvatar type={head.item.name} size={32} quiet /> : <KindTile kind={setupKind(head.item.kind)} size={32} />}
           <span className="min-w-0 flex-1">
             {/* The name gives way first. A cut name always keeps a letter, its dots and its whole
                 ending; past that the label gives way. The space is for screen readers and tests. */}

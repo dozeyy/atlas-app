@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowSquareOut, Copy, FloppyDisk } from "@phosphor-icons/rea
 import { getBackend } from "../../lib/ipc";
 import { useFetched } from "../../lib/useUsage";
 import { Button } from "../controls";
-import { KindTile } from "../setup/parts";
+import { ItemIcon } from "../setup/parts";
 import { ErrorBlock, Skeleton } from "../usage/StateBlocks";
 import { DiffView, TextPreview, diffNote } from "./DiffView";
 import type { HistoryEvent, VersionRow } from "../../lib/historyTypes";
@@ -102,7 +102,7 @@ export function Detail({ event, onBack }: { event: HistoryEvent; onBack?: () => 
       )}
 
       <header className="flex items-start gap-3">
-        <KindTile kind={setupKind(event.item.kind)} size={44} />
+        <ItemIcon item={{ kind: setupKind(event.item.kind), name: event.item.name }} size={44} />
         <div className="min-w-0 flex-1">
           {/* A long name is read in full here (it wraps); where the file is waits in the name's hover. */}
           <h2 className="d d-figure wrap-anywhere text-ink" title={event.item.path || undefined}>

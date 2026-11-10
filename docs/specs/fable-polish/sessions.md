@@ -104,7 +104,7 @@ The type name is lower-cased and the first rule that matches wins.
 | 6 | spec (at a word start) | MapTrifold | amber | Plan |
 | 7 | doc, writ, guide, changelog, readme | PencilLine | slate | Writing |
 | 8 | plan, architect, advis, strateg | MapTrifold | amber | Plan |
-| 9 | releas, deploy, packag, publish, ops, infra | Package | green | Release |
+| 9 | releas, deploy, packag, publish, ops, infra | RocketLaunch (was Package, the Library's own icon; changed at integration) | green | Release |
 | 10 | design, ui, ux, styl, brand, asset, visual, frontend | Palette | blue | Design |
 | 11 | chore, mechanic, cleanup, tidy, format, lint, rename, housekeep | Broom | plain | Chores |
 | 12 | general | Shapes | clay | General |

@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { ArrowSquareOut, CaretRight, Package, X } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { Chip } from "../setup/parts";
+import { AgentAvatar } from "../usage/helperKit";
 import { KIND_BY_ID } from "../../lib/setup-model";
 import { PluginTile, tileState } from "./LibraryList";
 import { SafetyCheck } from "./SafetyCheck";
@@ -36,8 +37,9 @@ function Section({ title, aside, className = "", children }: { title: string; as
   );
 }
 
-/** The kind of thing an item is, as the Toolkit draws it. */
-function KindIcon({ kind }: { kind: string }) {
+/** The kind of thing an item is, as the Toolkit draws it: an agent wears its avatar, the rest their kind's icon. */
+function KindIcon({ kind, name }: { kind: string; name: string }) {
+  if (kind === "agent") return <AgentAvatar type={name} size={20} quiet />;
   const Icon = kind in KIND_BY_ID ? KIND_BY_ID[kind as keyof typeof KIND_BY_ID].icon : Package;
   return <Icon size={16} aria-hidden="true" className="shrink-0 text-ink-2" />;
 }
@@ -358,7 +360,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
                               onClick={() => setFile(i)}
                               className="row-btn items-center gap-2.5 rounded-control px-2 py-1.5 text-body text-ink"
                             >
-                              <KindIcon kind={i.kind} />
+                              <KindIcon kind={i.kind} name={i.name} />
                               <span className="min-w-0 flex-1 truncate">{i.name}</span>
                               <span className="shrink-0 text-caption text-ink-2">{itemWord(i.kind)}</span>
                               <CaretRight size={12} weight="bold" aria-hidden="true" className="shrink-0 text-ink-2" />

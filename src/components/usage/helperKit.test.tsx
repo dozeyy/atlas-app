@@ -1,5 +1,6 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { Package } from "@phosphor-icons/react";
 import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, kindLook, MainChatIcon, type HelperKind } from "./helperKit";
 import { KINDS as SETUP_KINDS } from "../../lib/setup-model";
 
@@ -17,8 +18,8 @@ describe("helper icons", () => {
     expect(new Set(HELPER_KINDS.map((k) => kindLook(k).label)).size).toBe(HELPER_KINDS.length);
   });
 
-  it("shares no icon with a kind of setup item in the Toolkit", () => {
-    const taken = new Set<unknown>(SETUP_KINDS.map((k) => k.icon));
+  it("shares no icon with a kind of setup item in the Toolkit, nor with the Library's package", () => {
+    const taken = new Set<unknown>([...SETUP_KINDS.map((k) => k.icon), Package]);
     for (const k of HELPER_KINDS) expect([k, taken.has(kindLook(k).Icon)]).toEqual([k, false]);
     expect(taken.has(MainChatIcon)).toBe(false);
   });
@@ -44,7 +45,7 @@ describe("helper icons", () => {
       ["architect", "plan"],
       ["general-purpose", "general"],
       ["release-packager", "ops"],
-      ["origin-deployer", "ops"],
+      ["site-deployer", "ops"],
       ["chore-runner", "chore"],
       ["spec-writer", "plan"],
       ["impeccable-documenter", "docs"],

@@ -3,7 +3,7 @@
 // (tokens.css); nothing here invents a value.
 
 import type { ComponentType } from "react";
-import { Broom, Bug, ChatCircleText, Compass, Eye, Flask, Gauge, Hammer, HeadCircuit, MapTrifold, Package, Palette, PencilLine, Shapes } from "@phosphor-icons/react";
+import { Broom, Bug, ChatCircleText, Compass, Eye, Flask, Gauge, Hammer, HeadCircuit, MapTrifold, Palette, PencilLine, RocketLaunch, Shapes } from "@phosphor-icons/react";
 import type { IconProps } from "@phosphor-icons/react";
 import { CountUp } from "../CountUp";
 import { compact, costView, formatUsd, modelLabel, modelWithEffort, tokenHint } from "../../lib/usage";
@@ -111,7 +111,8 @@ const TONES = {
 /**
  * Each kind's icon, colour and name. Thirteen kinds, thirteen different icons, and none is an icon
  * the Toolkit already uses for a kind of setup item (the lightning bolt is Skills, the robot is
- * Agents, the paint brush is Themes). A test holds both.
+ * Agents, the paint brush is Themes) or the one the Library uses for what it installs (the package).
+ * A test holds both.
  */
 const KINDS: Record<HelperKind, { Icon: ComponentType<IconProps>; label: string; tone: keyof typeof TONES }> = {
   explore: { Icon: Compass, label: "Explore", tone: "slate" },
@@ -122,7 +123,7 @@ const KINDS: Record<HelperKind, { Icon: ComponentType<IconProps>; label: string;
   design: { Icon: Palette, label: "Design", tone: "blue" },
   debug: { Icon: Bug, label: "Debug", tone: "amber" },
   docs: { Icon: PencilLine, label: "Writing", tone: "slate" },
-  ops: { Icon: Package, label: "Release", tone: "green" },
+  ops: { Icon: RocketLaunch, label: "Release", tone: "green" },
   chore: { Icon: Broom, label: "Chores", tone: "plain" },
   perf: { Icon: Gauge, label: "Speed", tone: "blue" },
   general: { Icon: Shapes, label: "General", tone: "clay" },

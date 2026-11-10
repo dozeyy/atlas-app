@@ -159,7 +159,7 @@ export function ItemIcon({ item, size = 36 }: { item: Pick<SetupItem, "kind" | "
   if (item.kind === "agent") {
     return (
       <span title={agentTip(item.name)} className="flex shrink-0 self-start">
-        <AgentAvatar type={item.name} size={size} />
+        <AgentAvatar type={item.name} size={size} quiet />
       </span>
     );
   }
@@ -171,7 +171,7 @@ export function MiniKind({ kind, name }: { kind: string; name: string }) {
   if (kind === "agent") {
     return (
       <span title={agentTip(name)} className="flex shrink-0 self-center">
-        <AgentAvatar type={name} size={20} />
+        <AgentAvatar type={name} size={20} quiet />
       </span>
     );
   }

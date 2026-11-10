@@ -1,8 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ComponentType, KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChatsCircle, FolderSimple, MagnifyingGlass, Package, Robot, Sparkle, TerminalWindow, type IconProps } from "@phosphor-icons/react";
+import { ChatsCircle, FolderSimple, MagnifyingGlass, Package, type IconProps } from "@phosphor-icons/react";
 import { NAV } from "./Sidebar";
+import { AgentAvatar } from "./usage/helperKit";
+import { KIND_BY_ID } from "../lib/setup-model";
 import { useAtlas } from "../state/AtlasProvider";
 import { closePalette, usePaletteOpen } from "../state/paletteStore";
 import { guardLeave } from "../state/unsavedStore";
@@ -16,13 +18,17 @@ import { CHAT_SEARCH_MIN_CHARS, useChatSearch, useDebounced } from "../lib/useCh
 import { usePaletteData } from "../lib/usePaletteData";
 import type { SessionRow } from "../lib/types";
 
-const KIND_ICON: Record<Exclude<PaletteKind, "page">, ComponentType<IconProps>> = {
+/**
+ * A skill and a command wear the icon they have in the Toolkit (one mapping, in setup-model). An
+ * agent is not in this table: its row wears the avatar it has on Now, Sessions, Team and in the
+ * Toolkit (helperKit), so the same helper looks the same wherever it is found.
+ */
+const KIND_ICON: Record<Exclude<PaletteKind, "page" | "agent">, ComponentType<IconProps>> = {
   library: Package,
   session: ChatsCircle,
   project: FolderSimple,
-  skill: Sparkle,
-  agent: Robot,
-  command: TerminalWindow,
+  skill: KIND_BY_ID.skill.icon,
+  command: KIND_BY_ID.command.icon,
 };
 
 /** The most rows the list draws. More than this is a longer search, not a longer list. */
@@ -243,7 +249,7 @@ function Palette() {
         ) : (
           <ul ref={list} id={listId} role="listbox" aria-label="Results" className="qj-list">
             {shown.map((item, i) => {
-              const Icon = item.kind === "page" ? NAV.find((n) => `page:${n.view}` === item.id)?.icon : KIND_ICON[item.kind];
+              const Icon = item.kind === "page" ? NAV.find((n) => `page:${n.view}` === item.id)?.icon : item.kind === "agent" ? undefined : KIND_ICON[item.kind];
               return (
                 <li
                   key={item.id}
@@ -254,9 +260,13 @@ function Palette() {
                   onPointerMove={() => i !== at && setPicked(i)}
                   onClick={() => go(item)}
                 >
-                  <span className="qj-icon" data-kind={item.kind}>
-                    {Icon && <Icon size={16} aria-hidden="true" />}
-                  </span>
+                  {item.kind === "agent" ? (
+                    <AgentAvatar type={item.title} size={28} quiet />
+                  ) : (
+                    <span className="qj-icon" data-kind={item.kind}>
+                      {Icon && <Icon size={16} aria-hidden="true" />}
+                    </span>
+                  )}
                   <span className="qj-text">
                     {/* Names people wrote (chats, projects, skills) can be longer than the row: the whole of it is in the hover. Pages are short and get none. */}
                     <span className="qj-title" title={item.kind === "page" ? undefined : item.title}>

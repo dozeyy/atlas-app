@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle, Package, WarningCircle, X } from "@phosphor-icons/react";
 import { Button, IconButton, Toggle } from "../controls";
 import { Chip, KindTile } from "../setup/parts";
+import { AgentAvatar } from "../usage/helperKit";
 import { KIND_BY_ID } from "../../lib/setup-model";
 import { DIRECTORY, HEAD_H, INSTALLED_HEAD, NO_CLI, ROW_H, installBlock, itemWord, sourceCaption, type LibraryRow, type ListHead } from "../../lib/library";
 import type { InstalledRow, ItemKind } from "../../lib/libraryTypes";
@@ -220,7 +221,14 @@ function Row({
         className={`row-btn h-full items-center gap-3 pl-3 ${confirm ? CONFIRM_ROOM : ""}`}
         style={confirm ? undefined : { paddingRight: reserve }}
       >
-        {kind ? <KindTile kind={kind} icon={kind === "more" ? Package : undefined} size={32} /> : <PluginTile state={state} />}
+        {/* A copied agent wears the avatar it has in the Toolkit and on Team (helperKit). */}
+        {kind === "agent" ? (
+          <AgentAvatar type={name} size={32} quiet />
+        ) : kind ? (
+          <KindTile kind={kind} icon={kind === "more" ? Package : undefined} size={32} />
+        ) : (
+          <PluginTile state={state} />
+        )}
         {/* Long names: one line, cut with "...", the whole text on hover. */}
         <span className="min-w-0 flex-1">
           <span title={about} className="block truncate text-body font-semibold text-ink">
