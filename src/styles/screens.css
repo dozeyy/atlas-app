@@ -66,14 +66,30 @@
   height: 11px;
   margin-top: -5.5px;
   border-radius: var(--r-pill);
+  /* A quiet dot for every change: clay marks only the one that is open. */
+  background: var(--chart-4);
+  box-shadow: 0 0 0 3px var(--bg);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+/* A date from before Atlas was watching: hollow, it has no copy behind it. */
+.hx-dot[data-tone="before"] {
+  background: var(--bg);
+  box-shadow:
+    inset 0 0 0 1.5px var(--chart-4),
+    0 0 0 3px var(--bg);
+}
+.hx-dot[data-picked="true"] {
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--bg);
 }
-.hx-dot[data-tone="sand"] {
-  background: var(--chart-3);
-}
-.hx-dot[data-tone="quiet"] {
-  background: var(--ink-2);
+/* The two panes scroll on their own. What runs past the bottom fades out, so a cut list or a cut
+   file reads as "there is more"; the padding lets the last line scroll clear of the fade. */
+.hx-pane {
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 24px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
 }
 .hx-sub {
   position: relative;
@@ -142,7 +158,8 @@
 }
 
 /* ---- History: the 30-day ribbon ------------------------------------------------------------ */
-.hx-ribbon {
+.hx-ribbon,
+.hx-ribbon-ends {
   display: grid;
   grid-template-columns: repeat(30, minmax(0, 1fr));
   align-items: center;
@@ -163,7 +180,8 @@
 .hx-ribbon-dot {
   display: block;
   border-radius: var(--r-pill);
-  background: var(--accent);
+  /* Past days are quiet; today is the one clay dot. */
+  background: var(--chart-4);
   /* Calm page: the dot grows on a plain ease, no spring. */
   transition:
     background-color var(--dur-fast) var(--ease-out),
@@ -175,6 +193,9 @@
 }
 .hx-ribbon-hit[data-today="true"] .hx-ribbon-dot {
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent);
+}
+.hx-ribbon-hit[data-today="true"]:not([data-empty="true"]) .hx-ribbon-dot {
+  background: var(--accent);
 }
 .hx-ribbon-hit:not(:disabled):hover .hx-ribbon-dot {
   scale: 1.25;
@@ -222,22 +243,39 @@
   border: 1px solid var(--line);
   border-radius: var(--r-control);
   background: var(--surface);
-  overflow-x: auto;
+  overflow: hidden;
 }
+/* A file that is gone, shown whole: a little air, so a one-line file is not a sliver. */
+.hx-diff.hx-preview {
+  padding: 6px 0;
+}
+/* A long line wraps inside the pane: nothing is hidden off the right edge behind a scrollbar that
+   only shows at the bottom of a long file. */
 .hx-line {
   display: grid;
   grid-template-columns: 40px 40px 16px minmax(0, 1fr);
-  min-width: max-content;
   width: 100%;
 }
 .hx-line > span {
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.hx-line > .selectable {
+  padding-right: 10px;
 }
 .hx-no {
   padding: 0 8px;
   text-align: right;
   color: var(--ink-2);
   user-select: none;
+}
+.hx-line > .hx-no {
+  white-space: nowrap;
+}
+/* One number column when there is nothing to compare with. */
+.hx-preview .hx-line {
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: 8px;
 }
 .hx-sign {
   color: var(--ink-2);

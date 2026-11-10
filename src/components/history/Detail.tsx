@@ -144,7 +144,9 @@ export function Detail({ event, onBack }: { event: HistoryEvent; onBack?: () => 
 
           {removed && lastCopy.data !== null && (
             <section aria-label="Last copy">
-              <p className="mb-2 text-body text-ink-2">This is the last copy Atlas kept before it was removed.</p>
+              <p className="mb-2 text-body text-ink-2">
+                {lastCopy.data.trim() === "" ? "Atlas kept the last copy from before it was removed." : "This is the last copy Atlas kept before it was removed."}
+              </p>
               <TextPreview text={lastCopy.data} />
             </section>
           )}
