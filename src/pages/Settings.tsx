@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Minus, Plus } from "@phosphor-icons/react";
 import { Button, Card, IconButton, PageTitle, Row, Toggle } from "../components/controls";
@@ -30,8 +30,29 @@ const SECTIONS = [
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
+/** A path that breaks at a slash first, and inside a word only when one piece is wider than the row. */
 function Path({ children }: { children: string }) {
-  return <code className="selectable break-all text-ink">{children}</code>;
+  return (
+    <code className="selectable wrap-anywhere text-ink">
+      {(children.match(/[^\\/]*[\\/]?/g) ?? []).filter(Boolean).map((part, i) => (
+        <Fragment key={i}>
+          {part}
+          <wbr />
+        </Fragment>
+      ))}
+    </code>
+  );
+}
+
+// The section last looked at, so Settings reopens where you left it (kept like the Toolkit tab).
+const SECTION_KEY = "atlas.settings.section";
+function savedSection(): SectionId {
+  try {
+    const saved = window.localStorage.getItem(SECTION_KEY);
+    return SECTIONS.find((s) => s.id === saved)?.id ?? "appearance";
+  } catch {
+    return "appearance";
+  }
 }
 
 /** Fewer / more with the number between. Steps of ten, never outside the range. */
@@ -209,7 +230,15 @@ export function Settings() {
           : (updateNote ?? undefined);
 
   const ov = overview.data;
-  const [active, setActive] = useState<SectionId>("appearance");
+  const [active, setActiveState] = useState<SectionId>(savedSection);
+  const setActive = (id: SectionId) => {
+    setActiveState(id);
+    try {
+      window.localStorage.setItem(SECTION_KEY, id);
+    } catch {
+      // the section just is not remembered
+    }
+  };
   const [confirmRebuild, setConfirmRebuild] = useState(false);
   const [busy, setBusy] = useState<"changed" | "full" | null>(null);
 
@@ -291,7 +320,7 @@ export function Settings() {
         {cfg && <Row label="Claude Code settings" hint={ov?.claudeSettingsFile ? <Path>{ov.claudeSettingsFile}</Path> : "No settings file yet"} />}
         {cfg && <Row label="Account and projects file" hint={<Path>{cfg.claudeJson}</Path>} />}
         <Row label="Conversation logs" hint={cleanup} />
-        <Row label="Work on a copy" tip="Atlas copies your Claude folder to a temporary place and only touches the copy. Your real files are never changed.">
+        <Row label="Work on a copy" hint="Sandbox mode" tip="Atlas copies your Claude folder to a temporary place and only touches the copy. Your real files are never changed.">
           <Toggle label="Sandbox mode" checked={sb.enabled} onChange={(v) => void setSandbox(v)} />
         </Row>
         {sb.enabled && (

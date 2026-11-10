@@ -1069,6 +1069,12 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
 .side-collapsed [role="status"] {
   justify-content: center;
   padding-inline: 0;
+  gap: 0;
+}
+/* The hidden words leave the row, so the dot sits in the middle of the folded chip. */
+.side-collapsed [role="status"] .nav-label {
+  position: absolute;
+  pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .side,
@@ -1159,10 +1165,15 @@ html[data-platform="macos"] .side {
 }
 .theme-card {
   border-radius: var(--r-card);
+  /* Settings is a calm page: a theme card answers with its border and press, it does not lift. */
+  --lift: 0px;
 }
 .theme-card-face {
   display: block;
   padding: 10px;
+}
+.theme-card:hover .theme-card-face {
+  box-shadow: none;
 }
 .theme-card[aria-checked="true"] .theme-card-face {
   border-color: var(--accent);
