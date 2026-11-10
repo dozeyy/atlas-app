@@ -129,11 +129,11 @@ describe("Settings", () => {
     expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").historyKeepVersions).toBe(60);
   });
 
-  it("asks before rebuilding from scratch, and reads logs again straight away", async () => {
+  it("asks before rebuilding from scratch, and reads sessions again straight away", async () => {
     const backend = mount();
     const reindex = vi.spyOn(backend, "usageReindex");
     await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Your data" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Read logs again" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Read sessions again" }));
     expect(reindex).toHaveBeenCalledWith("changed");
 
     await userEvent.click(screen.getByRole("button", { name: "Rebuild from scratch" }));
@@ -147,7 +147,7 @@ describe("Settings", () => {
     expect(reindex).toHaveBeenLastCalledWith("full");
   });
 
-  it("shows how long Claude Code keeps its logs", async () => {
+  it("shows how long Claude Code keeps its sessions", async () => {
     mount();
     await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude folder" }));
     expect(await screen.findByText(/Claude Code keeps sessions for/)).toBeInTheDocument();

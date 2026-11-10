@@ -123,7 +123,7 @@ export interface DiffArgs {
 /** Facts the Settings page shows that are not settings. */
 export interface SettingsOverview {
   claudeSettingsFile: string | null;
-  /** How many days Claude Code keeps its chat logs (its own setting), when it says. */
+  /** How many days Claude Code keeps its session files (its own setting), when it says. */
   cleanupDays: number | null;
   historyBytes: number;
   historyVersions: number;

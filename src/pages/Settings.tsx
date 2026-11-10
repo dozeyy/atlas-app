@@ -249,9 +249,9 @@ export function Settings() {
     setBusy(scope);
     try {
       await backend.usageReindex(scope);
-      pushToast({ message: scope === "full" ? "Rebuilding from scratch. Numbers fill in as the files are read." : "Reading your logs again.", tone: "info" });
+      pushToast({ message: scope === "full" ? "Rebuilding from scratch. Numbers fill in as the files are read." : "Reading your sessions again.", tone: "info" });
     } catch (e) {
-      pushToast({ message: e instanceof Error ? e.message : "Could not start reading the logs.", tone: "error" });
+      pushToast({ message: e instanceof Error ? e.message : "Could not start reading your sessions.", tone: "error" });
     } finally {
       setBusy(null);
     }
@@ -397,7 +397,7 @@ export function Settings() {
         >
           <div className="flex flex-wrap justify-end gap-2">
             <Button onClick={() => void reindex("changed")} disabled={indexing || busy !== null}>
-              Read logs again
+              Read sessions again
             </Button>
             <Button onClick={() => setConfirmRebuild(true)} disabled={indexing || busy !== null}>
               Rebuild from scratch
