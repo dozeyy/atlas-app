@@ -323,7 +323,10 @@
   --ease-launch: cubic-bezier(0.16, 1, 0.3, 1); /* the app landing after the launch splash */
 
   /* Layout */
-  --sidebar-w: 188px; /* fits the longest label and the streak; was 232 */
+  /* Open: the four corner buttons sit evenly across the top row (Will, 2026-11-10: slimmer, four
+     icons, even spacing): inset 4 + 32 + 8 + 32 + 8 + 32 + 8 + 32 + inset 4 = 160. The longest
+     nav label (Dashboard, 69 px) has 73 px of room; was 188, before that 232. */
+  --sidebar-w: 160px;
   /* The page fills the window; only its gutters scale (no fixed content width). */
   --gutter: clamp(20px, calc(var(--app-w) * 0.032), 64px);
   --gutter-y: clamp(20px, calc(var(--app-w) * 0.024), 44px);
@@ -331,7 +334,8 @@
   /* The shell's corner buttons (32 px): the same distance from every edge of their column as the
      title bar leaves above them ((40 - 32) / 2), and one gap between neighbours. */
   --shell-inset: 4px;
-  --shell-gap: 4px;
+  --shell-gap: 4px; /* inside the folded 2 x 2 square */
+  --shell-row-gap: 8px; /* between the four in the open row (sets --sidebar-w above) */
   --sidebar-w-collapsed: 76px; /* a 2 x 2 square of 32 px buttons: 4 + 32 + 4 + 32 + 4 */
   /* Same numbers as MIN_WIDTH / MIN_HEIGHT in crates/app/src/main.rs. */
   --window-min-w: 900px;
