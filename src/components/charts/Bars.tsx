@@ -29,6 +29,7 @@ export function Bars({
   formatTick,
   height: fixedHeight,
   highlight,
+  calm = false,
 }: {
   /** Intro id: the entrance animation plays once per id per launch. */
   id: string;
@@ -38,11 +39,14 @@ export function Bars({
   height?: number;
   /** Which bar wears the accent (default: the last, "now"). -1 for none. */
   highlight?: number;
+  /** A calm zone (a sheet): no entrance animation and no summit spark. */
+  calm?: boolean;
 }) {
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   // Unless told a height, the chart grows with its room: 184 px at narrow, up to 300 px when wide.
   const height = fixedHeight ?? Math.round(Math.min(300, Math.max(184, width * 0.2)));
-  const intro = useIntro(id);
+  const introId = useIntro(id);
+  const intro = introId && !calm;
   const [active, setActive] = useState<number | null>(null);
   const n = data.length;
   const max = niceMax(Math.max(0, ...data.map((d) => d.value)));
@@ -147,7 +151,7 @@ export function Bars({
         })}
       </svg>
 
-      {busiest >= 0 && (
+      {busiest >= 0 && !calm && (
         <span
           aria-hidden="true"
           className="spark summit"

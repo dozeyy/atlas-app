@@ -1462,6 +1462,97 @@ pub fn apply_save(plan: &SavePlan, text: &str, expected_stamp: &str, force: bool
     outcome
 }
 
+/// What a file looked like when a sheet opened, for the "did it change?" check of
+/// `apply_append`: the same stamp `apply_save` uses, or `review_rule::MISSING_STAMP` when the
+/// file is not there yet.
+pub fn file_stamp(file: &Path) -> String {
+    match fs::read(file) {
+        Ok(b) => stamp_of(&b),
+        Err(_) => crate::review_rule::MISSING_STAMP.to_string(),
+    }
+}
+
+/// Add `text` under `heading` at the end of a Markdown file (the heading is added when missing)
+/// without touching any other byte: the BOM, line endings and every other section stay exactly
+/// as they were. `expected_stamp` is the stamp read when the user opened the sheet; a file that
+/// moved since gives `Conflict` and nothing is written. A file that does not exist yet (stamp
+/// `missing`) is created holding just the heading and the text. Backs the old bytes up first,
+/// looks again right before the swap, writes atomically, reads back, and tags the backup so
+/// History shows it and Undo (`restore_any`) puts the file back byte for byte (or removes a
+/// file this made).
+#[allow(clippy::too_many_arguments)]
+pub fn apply_append(file: &Path, kind: &str, name: &str, heading: &str, text: &str, expected_stamp: &str, summary: &str, backups: &Path) -> Res<SaveOutcome> {
+    check_write_allowed(file)?;
+    if text.trim().is_empty() {
+        return refuse("There is nothing to add.");
+    }
+    let before = match fs::read(file) {
+        Ok(b) => Some(b),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(_) => return refuse("The file can't be read."),
+    };
+    if let Some(b) = &before {
+        if b.len() as u64 > EDIT_CAP {
+            return refuse("This file is too large to edit here.");
+        }
+        if b.iter().take(8192).any(|&c| c == 0) {
+            return refuse("This is a binary file.");
+        }
+    }
+    let now = match &before {
+        Some(b) => stamp_of(b),
+        None => crate::review_rule::MISSING_STAMP.to_string(),
+    };
+    if now != expected_stamp {
+        return Err(WriteError::Conflict);
+    }
+    let sig = file_sig(file);
+    let after = match &before {
+        Some(b) => crate::review_rule::append_under_heading(b, heading, text),
+        None => crate::review_rule::new_instructions_text(text).into_bytes(),
+    };
+    let (id, dir) = new_backup(backups, &format!("save-{name}"))?;
+    let outcome = (|| -> Res<SaveOutcome> {
+        if let Some(b) = &before {
+            fs::write(dir.join("file-before"), b)?;
+        }
+        write_manifest(
+            &dir,
+            &Manifest {
+                version: 1,
+                backup_id: id.clone(),
+                created_ms: now_ms(),
+                action: if before.is_some() { "save" } else { "create" }.into(),
+                kind: kind.into(),
+                name: name.into(),
+                unit: "path".into(),
+                path: Some(file.to_string_lossy().into_owned()),
+                is_dir: Some(false),
+                has_file_before: Some(before.is_some()),
+                ..Default::default()
+            },
+        )?;
+        // Last look: the backup must be of exactly what is replaced.
+        if file_sig(file) != sig || fs::read(file).ok() != before {
+            return Err(WriteError::Conflict);
+        }
+        atomic_write(file, &after)?;
+        let back = fs::read(file)?;
+        if back != after {
+            return refuse("The file on disk is not what Atlas just wrote. Something else changed it at the same time.");
+        }
+        Ok(SaveOutcome { backup_id: Some(id.clone()), stamp: stamp_of(&back), note: None })
+    })();
+    match &outcome {
+        Ok(_) => tag_backup(backups, &id, "user", summary),
+        // Nothing was changed on failure; the half-made backup is only clutter.
+        Err(_) => {
+            let _ = fs::remove_dir_all(&dir);
+        }
+    }
+    outcome
+}
+
 fn save_manifest(id: &str, plan: &SavePlan, file: &Path) -> Manifest {
     Manifest {
         version: 1,

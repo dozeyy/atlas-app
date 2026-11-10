@@ -12,6 +12,7 @@ mod mcp_service;
 mod now;
 mod search;
 mod setup_service;
+mod team;
 mod state;
 mod tour;
 mod tray;
@@ -158,6 +159,11 @@ fn main() {
             mcp_service::mcp_status,
             mcp_service::mcp_connect,
             mcp_service::mcp_disconnect,
+            team::team_scorecard,
+            team::team_themes,
+            team::rule_sheet,
+            team::rule_save,
+            team::rule_forget,
             setup_service::setup_snapshot,
             setup_service::setup_cost,
             setup_service::setup_read_source,

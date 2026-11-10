@@ -11,7 +11,7 @@ export type PaletteKind = "page" | "library" | "session" | "project" | "skill" |
 export interface PaletteTarget {
   view: View;
   /** Open the Toolkit on this tab. */
-  toolkitTab?: "setup" | "library";
+  toolkitTab?: "setup" | "library" | "team";
   /** Open this chat in Sessions. */
   session?: string;
   /** Show this project's chats in Sessions (a project key, as the filter uses it). */

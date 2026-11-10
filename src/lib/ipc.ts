@@ -28,6 +28,7 @@ import type {
   UsageStatus,
   View,
 } from "./types";
+import type { RuleReply, RuleSave, RuleSheetData, Scorecard, ScorecardArgs, ThemeArgs, Themes } from "./teamTypes";
 import type {
   CostReport,
   CreateKind,
@@ -226,7 +227,7 @@ export interface Backend {
   setupDuplicate(id: string, name: string): Promise<DuplicateOutcome>;
   /** Back up the whole item, then delete it. */
   setupDelete(id: string): Promise<DeleteOutcome>;
-  /** Put a deleted item back exactly as it was. */
+  /** Put a change back exactly as it was: a delete is restored, a rule Atlas added is taken out again. */
   setupUndo(backupId: string): Promise<UndoOutcome>;
   /** A starting text for something new; nothing is written yet. */
   setupCreateDraft(kind: CreateKind, name: string, event?: string): Promise<Draft>;
@@ -234,6 +235,16 @@ export interface Backend {
   setupCreate(kind: CreateKind, name: string, event: string | undefined, text: string): Promise<DeleteOutcome>;
   /** What is wrong with `text` as a new item's content (nothing is written). */
   setupValidateDraft(kind: CreateKind, name: string, event: string | undefined, text: string): Promise<Problem[]>;
+
+  // Team: the helper scorecard and the review themes (read from the usage cache), and "Make this a rule".
+  teamScorecard(args: ScorecardArgs): Promise<Scorecard>;
+  teamThemes(args: ThemeArgs): Promise<Themes>;
+  /** The places a rule can go, each with the stamp of its file as it is now. Nothing is written. */
+  ruleSheet(label: string, projects: string[]): Promise<RuleSheetData>;
+  /** Backup, append (or create), read back. `conflict` when the file changed since the sheet opened. */
+  ruleSave(args: RuleSave): Promise<RuleReply>;
+  /** After Undo: the theme offers "Make this a rule" again. */
+  ruleForget(themeId: string): Promise<void>;
 
   // History: Atlas's own record of how the setup changed. Read-only here; copies are masked.
   /** Totals, the 30-day ribbon and the project list. null while History is paused (Sandbox Mode). */
@@ -356,6 +367,11 @@ const tauriBackend: Backend = {
   setupDuplicate: (id, name) => invoke<DuplicateOutcome>("setup_duplicate", { id, name }),
   setupDelete: (id) => invoke<DeleteOutcome>("setup_delete", { id }),
   setupUndo: (backupId) => invoke<UndoOutcome>("setup_undo", { backupId }),
+  teamScorecard: (args) => invoke<Scorecard>("team_scorecard", { args }),
+  teamThemes: (args) => invoke<Themes>("team_themes", { args }),
+  ruleSheet: (label, projects) => invoke<RuleSheetData>("rule_sheet", { label, projects }),
+  ruleSave: (args) => invoke<RuleReply>("rule_save", { args }),
+  ruleForget: (themeId) => invoke<void>("rule_forget", { themeId }),
   setupCreateDraft: (kind, name, event) => invoke<Draft>("setup_create_draft", { kind, name, event }),
   setupValidateDraft: (kind, name, event, text) => invoke<Problem[]>("setup_validate_draft", { kind, name, event, text }),
   setupCreate: (kind, name, event, text) => invoke<DeleteOutcome>("setup_create", { kind, name, event, text }),

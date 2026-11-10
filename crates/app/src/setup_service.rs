@@ -164,13 +164,13 @@ pub async fn setup_reveal(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: Str
 
 use atlas_core::setup_write::{self as sw, CreateCtx, Draft, Problem, RawEdit, WriteError};
 
-fn backups_dir(state: &AppState) -> std::path::PathBuf {
+pub(crate) fn backups_dir(state: &AppState) -> std::path::PathBuf {
     state.data_dir.join("setup-backups")
 }
 
 /// One change at a time, also against the Atlas MCP server (a separate process that changes the
 /// same files through the same write path). Held until the change is done.
-fn write_lock(state: &AppState) -> Result<atlas_core::writelock::WriteGuard, String> {
+pub(crate) fn write_lock(state: &AppState) -> Result<atlas_core::writelock::WriteGuard, String> {
     atlas_core::writelock::acquire(&state.data_dir, std::time::Duration::from_secs(15)).map_err(|e| e.to_string())
 }
 
@@ -312,7 +312,8 @@ pub async fn setup_delete(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: Str
     .await
 }
 
-/// Put a deleted item back exactly as it was.
+/// Put a change back exactly as it was: a delete is restored, a save or create (a rule Atlas added)
+/// is reverted while the file is still what that change left.
 #[tauri::command]
 pub async fn setup_undo(app: AppHandle, state: Info<'_>, hub: Hub<'_>, backup_id: String) -> Result<sw::UndoOutcome, String> {
     let (st, hub) = (state.inner().clone(), hub.inner().clone());
@@ -321,7 +322,7 @@ pub async fn setup_undo(app: AppHandle, state: Info<'_>, hub: Hub<'_>, backup_id
         let d = hub.current(&app, &st)?;
         let i = st.setup_inputs(false).ok_or_else(|| "Your Claude folder is not ready yet.".to_string())?;
         let confine = sw::Confine::from_discovery(&i.root.dir, &i.root.claude_json, &d);
-        let out = sw::restore(&backups_dir(&st), &backup_id, &confine).map_err(|e| e.message())?;
+        let out = sw::restore_any(&backups_dir(&st), &backup_id, &confine).map_err(|e| e.message())?;
         hub.refresh(&app, &st);
         Ok(out)
     })

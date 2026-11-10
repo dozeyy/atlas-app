@@ -20,6 +20,7 @@ import type {
 import { MockSetupWorld, mockSetupReveal, mockSetupSource } from "./setup-mock";
 import { mockCostReport } from "./setup-cost-mock";
 import { MockUsage } from "./mockUsage";
+import { MockTeam } from "./mockTeam";
 import { MockSearch } from "./mockSearch";
 import { MockHistory } from "./mockHistory";
 import { MockLibrary } from "./mockLibrary";
@@ -250,6 +251,13 @@ export class MockBackend {
   sessionReceipt: Backend["sessionReceipt"] = (id) => this.usage.sessionReceipt(id);
   usageByItem: Backend["usageByItem"] = (q) => this.usage.usageByItem(q);
   usageWrappedHabits: Backend["usageWrappedHabits"] = (a) => this.usage.usageWrappedHabits(a);
+  /** The Team tab's stand-in lives in mockTeam.ts. */
+  readonly team = new MockTeam();
+  teamScorecard: Backend["teamScorecard"] = (a) => this.team.teamScorecard(a);
+  teamThemes: Backend["teamThemes"] = (a) => this.team.teamThemes(a);
+  ruleSheet: Backend["ruleSheet"] = (l, p) => this.team.ruleSheet(l, p);
+  ruleSave: Backend["ruleSave"] = (a) => this.team.ruleSave(a);
+  ruleForget: Backend["ruleForget"] = (id) => this.team.ruleForget(id);
   /** No file picker in a browser: pretend it was cancelled, and remember the bytes for tests. */
   lastCard: { bytes: number; day: string } | null = null;
   wrappedSaveCard: Backend["wrappedSaveCard"] = async (png, day) => {
@@ -379,6 +387,8 @@ export class MockBackend {
   }
 
   async setupUndo(backupId: string): Promise<UndoOutcome> {
+    // A rule made from the Team tab: taking it out again.
+    if (this.team.owns(backupId)) return { name: "CLAUDE.md", kind: "instructions", backupId: null };
     return this.world.undo(backupId);
   }
 

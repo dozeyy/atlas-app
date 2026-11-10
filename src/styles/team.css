@@ -1,0 +1,41 @@
+/* Team (a tab of the Toolkit, in the one tab row with Your setup and Library). Tokens only; no hex
+   colors in this file. */
+
+/* The scorecard: cards of a steady width that fill the row. */
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.team-pane {
+  padding-bottom: var(--gutter-y);
+}
+
+/* A share of a total, as a thin meter. Always has the number beside it. */
+.team-meter {
+  display: block;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  overflow: hidden;
+}
+.team-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--slate);
+}
+
+.team-caret {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.team-caret-open {
+  transform: rotate(90deg);
+}
+
+.team-draft {
+  line-height: 20px;
+}
+.team-draft:disabled {
+  opacity: 0.5;
+}
