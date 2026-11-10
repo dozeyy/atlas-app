@@ -216,7 +216,8 @@ percent; and a short, honest end-of-run debrief inside the report Claude already
 - D11. Worker card numbers: **Passed review** (tied reviews with `pass`), **Sent back** (D10),
   **Not tied to a review** (its runs with no tied review). A rate sentence ("Passed 9 of 12
   reviews") only with at least 5 tied reviews; below that, counts only.
-- D12. Cache schema v5 (migration `m0005`) and a `PARSER_VERSION` bump: the corpus is re-read
+- D12. Cache schema v7 (migrations `m0006` ledger tables and `m0007` later columns and tables;
+  `m0005` is main's `messages.effort`) and a `PARSER_VERSION` bump: the corpus is re-read
   once in the background with the existing progress UI (release full index measured 14.7 s on
   5.5 GB, MEMORY 2026-11-08).
 - D13. **Started from**: `entrypoint` starting `sdk-` -> "Headless" (covers `claude -p`, seen as

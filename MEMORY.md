@@ -434,3 +434,9 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - `load_known` (ingest.rs): a sidecar that fails to parse and is under 5 s old is not added to `names`, so the next scan reads it again (test `a_half_written_sidecar_is_read_again`).
 - Real corpus (read-only, release, first pass 64.3 s on a busy machine): code-reviewer pass 155 / findings 84 / partial 1 / none 29, 0 of 84 findings-verdicts with 0 findings; verifier pass 71 / findings 1 / partial 65 / other 1 / none 51 (was 49, two borderline STATUS leads now unread by design); design-reviewer none 24. 2359 findings stored, themes 64 ms, 2 themes.
 - Merge note: the schema migration (m0006) must be renumbered after the accuracy branch takes the next migration number.
+
+## 2026-11-09 - Unit 1 rebased onto main (accuracy merged)
+- Migrations after main's `m0005_effort` (messages.effort): `m0006` = ledger tables, `m0007` = later ledger columns and tables; SCHEMA_VERSION 7. PARSER_VERSION "9" (main "4" + my bumps). The 4 -> latest upgrade test now drops messages.effort too and checks both paths.
+- Dropped my byte-scanning `effort_of` in line.rs (main's parser already puts `effort` on the message): the ledger reads `m.effort`. Per-run models keep "" for no effort recorded.
+- make-fixtures.py keeps main's "clear only what we write" list plus `claude-ledger`; the `ledger` argument still writes only that fixture.
+- Flaky under load: `habits::tests::the_second_call_with_no_new_rows_answers_from_memory` (a timing assert, 93 ms) failed while vitest ran alongside; passes alone and in a quiet full lib run.

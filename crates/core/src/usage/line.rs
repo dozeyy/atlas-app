@@ -233,27 +233,6 @@ impl Default for Prefilter {
     }
 }
 
-/// The effort level an assistant line was produced at (`perTurnEffort`, else `effort`, both
-/// top-level keys written after the `message` object), read without parsing the JSON. None when
-/// the line has neither: "no effort recorded", never a guess. A key only counts after the last
-/// `"usage":` so a tool input that happens to contain the word is never read as the level.
-pub fn effort_of(line: &[u8]) -> Option<String> {
-    let usage = memchr::memmem::rfind(line, br#""usage":"#)?;
-    for key in [&br#""perTurnEffort":""#[..], &br#""effort":""#[..]] {
-        let Some(at) = memchr::memmem::rfind(line, key) else { continue };
-        if at < usage {
-            continue;
-        }
-        let rest = &line[at + key.len()..];
-        let Some(end) = memchr::memchr(b'"', &rest[..rest.len().min(24)]) else { continue };
-        let v = &rest[..end];
-        if !v.is_empty() && v.iter().all(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-') {
-            return std::str::from_utf8(v).ok().map(|s| s.to_ascii_lowercase());
-        }
-    }
-    None
-}
-
 impl Prefilter {
     pub fn new() -> Self {
         let f = |s: &'static str| Finder::new(s.as_bytes()).into_owned();

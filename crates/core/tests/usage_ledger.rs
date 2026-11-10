@@ -110,7 +110,8 @@ fn the_cache_never_holds_a_prompt_or_a_key() {
     assert!(has("Retry loop in net.rs"));
 }
 
-// Criterion 5: a version-4 cache gains the ledger on the next start and equals a fresh index.
+// Criterion 5: a version-4 cache gains the effort column (m0005) and the ledger (m0006, m0007) on the
+// next start and equals a fresh index.
 #[test]
 fn a_version_4_cache_migrates_and_matches_a_fresh_index() {
     let first = fx();
@@ -130,6 +131,7 @@ fn a_version_4_cache_migrates_and_matches_a_fresh_index() {
         c.execute_batch(
             "DROP TABLE agent_runs; DROP TABLE agent_links; DROP TABLE review_findings; DROP TABLE agent_notices; DROP TABLE agent_run_models;
              ALTER TABLE sessions DROP COLUMN agent_setting;
+             ALTER TABLE messages DROP COLUMN effort;
              UPDATE meta SET value='3' WHERE key='parser_version';
              PRAGMA user_version = 4;",
         )
@@ -138,7 +140,8 @@ fn a_version_4_cache_migrates_and_matches_a_fresh_index() {
     let again = start_in(&config, data, Tz::Fixed(0));
     assert_eq!(again.one("PRAGMA user_version"), atlas_core::cache::SCHEMA_VERSION);
     assert_eq!(totals(&again), fresh);
-    // The 4 -> 6 path creates every column and table the ledger writes (m0005 then m0006).
+    // The 4 -> latest path creates main's messages.effort and every column and table the ledger writes.
+    assert_eq!(again.one("SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name='effort'"), 1);
     for (table, col) in [("agent_runs", "last_msg_key"), ("agent_runs", "active_ms"), ("agent_runs", "seg_start"), ("agent_notices", "file_id")] {
         assert_eq!(again.one(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name='{col}'")), 1, "{table}.{col}");
     }
@@ -284,20 +287,6 @@ fn runs_carry_their_model_and_effort() {
     fx.full_reread();
     let again = fx.engine.agent_scorecard(&ScorecardArgs::default()).unwrap();
     assert_eq!(card(&again, "coder").mix, coder.mix);
-}
-
-#[test]
-fn effort_is_read_from_the_top_level_keys_only() {
-    use atlas_core::usage::line::effort_of;
-    let line = |content: &str, tail: &str| format!(r#"{{"type":"assistant","message":{{"model":"m","content":[{content}],"usage":{{"input_tokens":1}}}}{tail}}}"#);
-    assert_eq!(effort_of(line("", r#","effort":"high","perTurnEffort":"medium","userType":"external""#).as_bytes()).as_deref(), Some("medium"));
-    assert_eq!(effort_of(line("", r#","effort":"XHigh","userType":"external""#).as_bytes()).as_deref(), Some("xhigh"));
-    // None recorded is None, never a guess.
-    assert_eq!(effort_of(line("", r#","userType":"external""#).as_bytes()), None);
-    // A tool input that happens to hold the key is not the level.
-    let inner = r#"{"type":"tool_use","input":{"effort":"max","perTurnEffort":"max"}}"#;
-    assert_eq!(effort_of(line(inner, r#","userType":"external""#).as_bytes()), None);
-    assert_eq!(effort_of(b"{}"), None);
 }
 
 #[test]

@@ -587,7 +587,7 @@ fn worker(
                             && (task.is_subagent || rs.setting_seen)
                             && rs.msg_seen.insert(m.key.clone())
                         {
-                            let effort = super::line::effort_of(l).unwrap_or_default();
+                            let effort = m.effort.clone().unwrap_or_default();
                             if !rs.first_msg_done {
                                 rs.first_msg_done = true;
                                 batch.run.first_msg = Some((m.key.clone(), m.model.clone(), effort.clone()));
