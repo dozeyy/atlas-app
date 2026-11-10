@@ -239,11 +239,12 @@ describe("helper avatar", () => {
     expect(main.getAttribute("aria-label")).toBe("Main session");
   });
 
-  it("stays silent when the words already stand beside it", () => {
+  it("drops its hover, not its name, when the words already stand beside it", () => {
     const { container } = render(<AgentAvatar type="verifier" quiet />);
     const av = container.querySelector(".helper-av")!;
-    expect(av.getAttribute("aria-hidden")).toBe("true");
     expect(av.hasAttribute("title")).toBe(false);
+    expect(av.getAttribute("role")).toBe("img");
+    expect(av.getAttribute("aria-label")).toBe("Test helper");
   });
 });
 

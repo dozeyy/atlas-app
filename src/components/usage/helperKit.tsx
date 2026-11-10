@@ -282,7 +282,8 @@ export const MainChatIcon = ChatCircleText;
  * sits is told by shape too: the main chat is a solid clay circle, a helper a tinted tile, and a
  * helper started by another helper the same tile hollow with a second tile showing behind its top
  * left (two cues, so it never rests on fill against outline alone). It names itself in its hover
- * and to a screen reader unless `quiet` (when the same words already stand beside it).
+ * and to a screen reader; `quiet` (the same words already stand beside it) drops only the hover,
+ * never the name a screen reader gets.
  */
 export function AgentAvatar({
   type,
@@ -305,7 +306,9 @@ export function AgentAvatar({
   const corners = level === "main" ? "50%" : tileCorners(shape, size).map((r) => `${r}px`).join(" ");
   return (
     <span
-      {...(quiet ? { "aria-hidden": true } : { role: "img", "aria-label": name, title: name })}
+      role="img"
+      aria-label={name}
+      {...(quiet ? {} : { title: name })}
       style={{ width: size, height: size, borderRadius: corners, ["--av" as string]: fg, ["--echo" as string]: `${echoOffset(size)}px` }}
       className={`helper-av flex shrink-0 items-center justify-center ${paint}`}
     >
