@@ -543,7 +543,7 @@
   justify-content: center;
 }
 
-/* The canvas is 904 x 840. The card is the only thing on its sheet, so the preview is that picture
+/* The canvas is 1356 x 1260. The card is the only thing on its sheet, so the preview is that picture
    as tall as the frame allows with a 36 px margin above and below. */
 .sm-card {
   display: block;
