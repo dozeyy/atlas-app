@@ -185,19 +185,83 @@ export function rangeFor(kind: RangeKind, today: string): { from: string; to: st
   }
 }
 
+// ---- the time of day and the day, said one way on every page --------------------
+
+const clocks = new Map<string, boolean>();
+
+/**
+ * Does this computer show the time on a 24 hour clock? Asked of the system's own formatter once
+ * (1 pm reads "13" or it does not; nothing is forced either way). A test passes a locale.
+ */
+export function uses24Hour(locale?: string): boolean {
+  const key = locale ?? "";
+  let v = clocks.get(key);
+  if (v === undefined) {
+    try {
+      v = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", numberingSystem: "latn" }).format(new Date(2020, 0, 1, 13, 0)).includes("13");
+    } catch {
+      v = false;
+    }
+    clocks.set(key, v);
+  }
+  return v;
+}
+
+/**
+ * The time of day, the one way the app writes it: "4:42 PM" where the computer uses a 12 hour
+ * clock, "16:42" where it uses 24. Every clock time on every page comes from here (a running
+ * clock, "2:06", is a length of time and is `clock` in nowFormat).
+ */
+export function clockTime(ms: number, opts: { seconds?: boolean; locale?: string } = {}): string {
+  const d = new Date(ms);
+  const h = d.getHours();
+  const tail = `:${pad(d.getMinutes())}${opts.seconds ? `:${pad(d.getSeconds())}` : ""}`;
+  return uses24Hour(opts.locale) ? `${pad(h)}${tail}` : `${h % 12 || 12}${tail} ${h < 12 ? "AM" : "PM"}`;
+}
+
+/** An hour of the day on its own, on a chart's axis or as a figure: "2 PM" or "14:00". */
+export function hourName(hour: number, locale?: string): string {
+  const h = ((Math.floor(hour) % 24) + 24) % 24;
+  return uses24Hour(locale) ? `${pad(h)}:00` : `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
+}
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "Nov 3", with the year when it is not this one ("Nov 3, 2025"). */
+export function shortDate(ms: number, now = Date.now()): string {
+  const d = new Date(ms);
+  const base = `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  return d.getFullYear() === new Date(now).getFullYear() ? base : `${base}, ${d.getFullYear()}`;
+}
+
+/**
+ * The day, the one way the app says it: "Today", "Yesterday", then the date ("Nov 3"). A heading
+ * that stands over a day's rows asks for `weekdays`: the rest of the week is then "Wednesday".
+ */
+export function dayWord(ms: number, now = Date.now(), weekdays = false): string {
+  const d = new Date(ms);
+  const day = localDay(d);
+  const today = localDay(new Date(now));
+  if (day === today) return "Today";
+  if (day === addDays(today, -1)) return "Yesterday";
+  if (weekdays && day < today && day >= addDays(today, -6)) return WEEKDAYS[d.getDay()];
+  return shortDate(ms, now);
+}
+
 /** Short axis label for a bucket start. */
-export function axisLabel(start: string, bucket: Bucket): string {
-  if (bucket === "hour") return `${start.slice(11, 13)}:00`;
+export function axisLabel(start: string, bucket: Bucket, locale?: string): string {
+  if (bucket === "hour") return hourName(Number(start.slice(11, 13)), locale);
   const d = parseDay(start.slice(0, 10));
   if (bucket === "month") return d.toLocaleDateString(EN, { month: "short", year: "2-digit" });
   return d.toLocaleDateString(EN, { month: "short", day: "numeric" });
 }
 
 /** Full tooltip heading for a bucket start. */
-export function bucketTitle(start: string, bucket: Bucket): string {
+export function bucketTitle(start: string, bucket: Bucket, locale?: string): string {
   if (bucket === "hour") {
     const h = Number(start.slice(11, 13));
-    return `${parseDay(start.slice(0, 10)).toLocaleDateString(EN, { month: "short", day: "numeric" })}, ${pad(h)}:00-${pad((h + 1) % 24)}:00`;
+    return `${parseDay(start.slice(0, 10)).toLocaleDateString(EN, { month: "short", day: "numeric" })}, ${hourName(h, locale)} to ${hourName(h + 1, locale)}`;
   }
   const d = parseDay(start.slice(0, 10));
   if (bucket === "week") return `Week of ${d.toLocaleDateString(EN, { month: "short", day: "numeric" })}`;
@@ -205,15 +269,9 @@ export function bucketTitle(start: string, bucket: Bucket): string {
   return d.toLocaleDateString(EN, { weekday: "short", month: "short", day: "numeric" });
 }
 
-/** Local date and time of a message or session start, "Nov 8, 14:05". */
-export function formatWhen(ms: number, now = Date.now()): string {
-  const d = new Date(ms);
-  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  if (localDay(d) === localDay(new Date(now))) return `Today, ${time}`;
-  if (localDay(d) === addDays(localDay(new Date(now)), -1)) return `Yesterday, ${time}`;
-  const sameYear = d.getFullYear() === new Date(now).getFullYear();
-  const date = d.toLocaleDateString(EN, sameYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
-  return `${date}, ${time}`;
+/** The local day and time of a message, a run or a change: "Today, 4:42 PM", "Nov 8, 14:05". */
+export function formatWhen(ms: number, now = Date.now(), locale?: string): string {
+  return `${dayWord(ms, now)}, ${clockTime(ms, { locale })}`;
 }
 
 // ---- charts ------------------------------------------------------------------

@@ -212,14 +212,7 @@ function HoursArt({ g }: { g: Extract<SlideGraphic, { kind: "hours" }> }) {
         y1={base + 0.5}
         y2={base + 0.5}
       />
-      {(
-        [
-          ["12 AM", 0],
-          ["6 AM", 6],
-          ["12 PM", 12],
-          ["6 PM", 18],
-        ] as const
-      ).map(([t, i]) => (
+      {[0, 6, 12, 18].map((i) => [hourLabel(i), i] as const).map(([t, i]) => (
         <text key={t} className="sm-cap" x={12 + i * (w + gap)} y={base + 24}>
           {t}
         </text>

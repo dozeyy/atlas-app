@@ -1,15 +1,12 @@
-import { binEvenly, compact, formatUsd, formatWhen, headline, plural } from "../../lib/usage";
+import { binEvenly, clockTime, compact, formatUsd, formatWhen, headline, plural, shortDate } from "../../lib/usage";
 import type { MessagePoint } from "../../lib/types";
 import type { BarDatum } from "../charts/shared";
 
 function axisFor(first: number, durationMs: number): string {
   const longRun = durationMs > 24 * 3_600_000;
   const withSeconds = durationMs < 10 * 60_000; // a short run needs seconds or neighbouring bars share a label
-  if (longRun) return new Date(first).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return new Date(first).toLocaleTimeString(
-    "en-US",
-    withSeconds ? { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false } : { hour: "2-digit", minute: "2-digit", hour12: false },
-  );
+  if (longRun) return shortDate(first, first);
+  return clockTime(first, { seconds: withSeconds });
 }
 
 /** The bars of "tokens through the session": at most 48, each a run of nearby messages. */

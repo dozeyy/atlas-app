@@ -690,9 +690,10 @@ describe("hours", () => {
   });
 
   it("names hours on a 12 hour clock", () => {
-    expect(hourLabel(0)).toBe("12 AM");
-    expect(hourLabel(12)).toBe("12 PM");
-    expect(hourLabel(22)).toBe("10 PM");
+    expect(hourLabel(0, "en-US")).toBe("12 AM");
+    expect(hourLabel(12, "en-US")).toBe("12 PM");
+    expect(hourLabel(22, "en-US")).toBe("10 PM");
+    expect(hourLabel(22, "en-GB")).toBe("22:00");
     expect(peakHour(new Array(24).fill(0))).toBeNull();
   });
 

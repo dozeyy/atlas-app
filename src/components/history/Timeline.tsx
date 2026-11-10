@@ -5,7 +5,8 @@ import { KindTile } from "../setup/parts";
 import { AgentAvatar } from "../usage/helperKit";
 import { Button } from "../controls";
 import type { HistoryEvent } from "../../lib/historyTypes";
-import { dotTone, libraryLabel, setupKind, shortDate, splitName, timeText, whatHappened } from "../../lib/historyModel";
+import { dotTone, libraryLabel, setupKind, splitName, whatHappened } from "../../lib/historyModel";
+import { clockTime, shortDate } from "../../lib/usage";
 import type { DaySection, RowGroup } from "../../lib/historyModel";
 
 interface Props {
@@ -73,7 +74,7 @@ function Row({
             </span>
             {second && <span className="block truncate text-body text-ink-2">{second}</span>}
           </span>
-          {!dated && <span className="shrink-0 text-caption text-ink-2">{timeText(head.at)}</span>}
+          {!dated && <span className="shrink-0 text-caption text-ink-2">{clockTime(head.at)}</span>}
         </span>
       </button>
       {many > 1 && (
@@ -102,7 +103,7 @@ function Row({
                     onClick={() => onSelect(e)}
                   >
                     <span className="hx-sub-face" title={e.summary}>
-                      <span className="shrink-0 text-caption text-ink-2">{timeText(e.at)}</span>
+                      <span className="shrink-0 text-caption text-ink-2">{clockTime(e.at)}</span>
                       <span className="min-w-0 truncate text-body text-ink">{e.summary}</span>
                     </span>
                   </button>

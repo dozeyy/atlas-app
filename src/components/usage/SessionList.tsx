@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { clockOf, projectTone } from "../../lib/sessionBrowse";
-import { effortMix, formatWhen, modelWithEffort, plural, topEffort } from "../../lib/usage";
+import { projectTone } from "../../lib/sessionBrowse";
+import { clockTime, effortMix, formatWhen, modelWithEffort, plural, topEffort } from "../../lib/usage";
 import type { SessionRow } from "../../lib/types";
 import type { SnippetPart } from "../../lib/searchTypes";
 import { sessionName } from "./helperKit";
@@ -130,7 +130,7 @@ export function SessionLine({
             {/* A removed file's note matters more than the date when there is room for only one of them. */}
             <span className={`flex-none ${row.missing ? "sl-drop" : ""}`}>
               {DOT}
-              {dayKnown ? <span title={formatWhen(row.startedAt)}>{clockOf(row.startedAt)}</span> : formatWhen(row.startedAt)}
+              {dayKnown ? <span title={formatWhen(row.startedAt)}>{clockTime(row.startedAt)}</span> : formatWhen(row.startedAt)}
             </span>
             {row.missing && (
               <span className="flex-none">

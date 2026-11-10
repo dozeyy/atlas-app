@@ -1,11 +1,8 @@
 // Pure rules for browsing sessions: which day a row belongs to, how a day is named and summed,
 // which colour a project wears, and the command that picks a chat back up. No React, no DOM.
 
-import { addDays, localDay } from "./usage";
+import { dayWord, localDay } from "./usage";
 import type { Platform, SessionRow } from "./types";
-
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export interface DayGroup {
   /** Local day, YYYY-MM-DD. */
@@ -16,24 +13,13 @@ export interface DayGroup {
   tokens: number;
 }
 
-/** "Today", "Yesterday", the weekday for the rest of the week, then "Nov 3" (with the year when it is not this one). */
+/**
+ * "Today", "Yesterday", the weekday for the rest of the week, then "Nov 3" (with the year when it
+ * is not this one): the app's one day rule (`dayWord`), for a local day written YYYY-MM-DD.
+ */
 export function dayLabel(day: string, now: Date): string {
-  const today = localDay(now);
-  if (day === today) return "Today";
-  if (day === addDays(today, -1)) return "Yesterday";
   const [y, m, d] = day.split("-").map(Number);
-  const date = new Date(y, m - 1, d);
-  for (let back = 2; back <= 6; back++) {
-    if (day === addDays(today, -back)) return WEEKDAYS[date.getDay()];
-  }
-  const text = `${MONTHS[m - 1]} ${d}`;
-  return y === now.getFullYear() ? text : `${text}, ${y}`;
-}
-
-/** The time of day alone, "16:42": what a row says when the band above it already names the day. */
-export function clockOf(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return dayWord(new Date(y, m - 1, d, 12).getTime(), now.getTime(), true);
 }
 
 /** Cuts a list that is already in time order into runs of one local day. */

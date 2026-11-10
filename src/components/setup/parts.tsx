@@ -15,6 +15,7 @@ import {
 import { IconMotion, type Motion } from "../IconMotion";
 import { AgentAvatar, agentLook } from "../usage/helperKit";
 import { displayName, enabledTone, KIND_BY_ID, type Tone } from "../../lib/setup-model";
+import { clockTime, shortDate } from "../../lib/usage";
 import type { Conflict, Enabled, ItemKind, ScopeKind, SetupItem } from "../../lib/setup-types";
 
 type Icon = ComponentType<IconProps>;
@@ -215,13 +216,10 @@ export function formatSize(n: number | null): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/** "Nov 9, 8:58 PM" (the year when it is not this one): the app's one date and one clock. */
 export function formatDate(ms: number | null): string {
   if (!ms) return "";
-  try {
-    return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-  } catch {
-    return "";
-  }
+  return `${shortDate(ms)}, ${clockTime(ms)}`;
 }
 
 export async function copyText(text: string): Promise<boolean> {

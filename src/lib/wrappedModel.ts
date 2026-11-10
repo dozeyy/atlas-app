@@ -4,7 +4,7 @@
 // slide, one hero figure or graphic, one short line, and no fact on two slides (the end card
 // recaps them on purpose: it is the picture you save).
 
-import { addDays, compact, exact, formatDuration, headline, plural } from "./usage";
+import { addDays, compact, exact, formatDuration, headline, hourName, plural } from "./usage";
 import type { ItemUse, SessionRow, TimelinePoint, WrappedHabits } from "./usageTypes";
 
 /** Stated conversion for the novels line: an estimate, never a measurement. */
@@ -141,10 +141,9 @@ export function hourTotals(points: TimelinePoint[]): number[] {
   return out;
 }
 
-export function hourLabel(h: number): string {
-  const suffix = h < 12 ? "AM" : "PM";
-  const twelve = h % 12 === 0 ? 12 : h % 12;
-  return `${twelve} ${suffix}`;
+/** An hour as the rest of the app writes it: "10 PM", or "22:00" on a 24 hour computer. */
+export function hourLabel(h: number, locale?: string): string {
+  return hourName(h, locale);
 }
 
 export function peakHour(hours: number[]): number | null {

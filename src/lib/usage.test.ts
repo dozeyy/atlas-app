@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   addDays,
   axisLabel,
+  clockTime,
+  dayWord,
+  formatWhen,
+  hourName,
+  shortDate,
+  uses24Hour,
   binEvenly,
   bucketTitle,
   compact,
@@ -122,11 +128,50 @@ describe("time", () => {
   });
 
   it("labels buckets", () => {
-    expect(axisLabel("2026-11-08T14", "hour")).toBe("14:00");
+    expect(axisLabel("2026-11-08T14", "hour", "en-GB")).toBe("14:00");
+    expect(axisLabel("2026-11-08T14", "hour", "en-US")).toBe("2 PM");
     expect(axisLabel("2026-11-08", "day")).toBe("Nov 8");
     expect(bucketTitle("2026-11-02", "week")).toBe("Week of Nov 2");
     expect(bucketTitle("2026-11-01", "month")).toBe("November 2026");
-    expect(bucketTitle("2026-11-08T14", "hour")).toBe("Nov 8, 14:00-15:00");
+    expect(bucketTitle("2026-11-08T14", "hour", "en-GB")).toBe("Nov 8, 14:00 to 15:00");
+    expect(bucketTitle("2026-11-08T14", "hour", "en-US")).toBe("Nov 8, 2 PM to 3 PM");
+  });
+
+  it("writes the time of day the way the computer's clock is set, 12 or 24 hour", () => {
+    const morning = new Date(2026, 10, 3, 9, 5, 7).getTime();
+    const afternoon = new Date(2026, 10, 3, 16, 42).getTime();
+    const midnight = new Date(2026, 10, 3, 0, 8).getTime();
+    expect(uses24Hour("en-US")).toBe(false);
+    expect(uses24Hour("en-GB")).toBe(true);
+    expect(clockTime(morning, { locale: "en-US" })).toBe("9:05 AM");
+    expect(clockTime(afternoon, { locale: "en-US" })).toBe("4:42 PM");
+    expect(clockTime(midnight, { locale: "en-US" })).toBe("12:08 AM");
+    expect(clockTime(morning, { locale: "en-GB" })).toBe("09:05");
+    expect(clockTime(afternoon, { locale: "en-GB" })).toBe("16:42");
+    expect(clockTime(midnight, { locale: "en-GB" })).toBe("00:08");
+    expect(clockTime(morning, { locale: "en-US", seconds: true })).toBe("9:05:07 AM");
+    expect(clockTime(morning, { locale: "en-GB", seconds: true })).toBe("09:05:07");
+    expect(hourName(0, "en-US")).toBe("12 AM");
+    expect(hourName(12, "en-US")).toBe("12 PM");
+    expect(hourName(24, "en-US")).toBe("12 AM");
+    expect(hourName(22, "en-GB")).toBe("22:00");
+    expect(hourName(24, "en-GB")).toBe("00:00");
+  });
+
+  it("names a day one way: Today, Yesterday, then the date (a weekday only over a day's rows)", () => {
+    const now = new Date(2026, 10, 8, 14, 30).getTime(); // Sunday 8 Nov 2026
+    const at = (y: number, m: number, d: number, h = 12, min = 0) => new Date(y, m - 1, d, h, min).getTime();
+    expect(dayWord(at(2026, 11, 8, 0, 1), now)).toBe("Today");
+    expect(dayWord(at(2026, 11, 7, 23, 59), now)).toBe("Yesterday");
+    expect(dayWord(at(2026, 11, 5), now)).toBe("Nov 5");
+    expect(dayWord(at(2026, 11, 5), now, true)).toBe("Thursday");
+    expect(dayWord(at(2026, 11, 1), now, true)).toBe("Nov 1");
+    expect(dayWord(at(2025, 12, 30), now, true)).toBe("Dec 30, 2025");
+    expect(shortDate(at(2026, 11, 3), now)).toBe("Nov 3");
+    expect(shortDate(at(2025, 11, 3), now)).toBe("Nov 3, 2025");
+    expect(formatWhen(at(2026, 11, 8, 16, 42), now, "en-US")).toBe("Today, 4:42 PM");
+    expect(formatWhen(at(2026, 11, 7, 23, 27), now, "en-GB")).toBe("Yesterday, 23:27");
+    expect(formatWhen(at(2026, 11, 3, 9, 5), now, "en-US")).toBe("Nov 3, 9:05 AM");
   });
 });
 

@@ -1,5 +1,6 @@
 import type { DayCount } from "../../lib/historyTypes";
-import { ribbonDot, ribbonLabel, shortDate, startOfDay } from "../../lib/historyModel";
+import { ribbonDot, ribbonLabel, startOfDay } from "../../lib/historyModel";
+import { shortDate } from "../../lib/usage";
 
 /**
  * The last 30 days as a row of dots: bigger means more changes that day. A day with changes is a
