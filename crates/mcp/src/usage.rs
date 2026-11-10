@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use atlas_core::usage::naming::model_label;
 use atlas_core::usage::query::{Cost, EffortUse, ModelUse, ScopeArgs, SessionRow, Tokens};
+use atlas_core::usage::scorecard::{DebriefArgs, RunDebrief, Scorecard, ScorecardArgs, ThemeArgs, Themes};
 use atlas_core::usage::{Event, EventSink, UsageConfig, UsageEngine, time};
 use serde_json::{Value, json};
 
@@ -55,12 +56,43 @@ impl Usage {
         Ok(e)
     }
 
-    /// `period`: today | yesterday | 7d | 30d | month | all. `project`: part of a project name.
-    pub fn summary(&self, period: &str, project: Option<&str>) -> Result<Value, String> {
+    /// The engine, once its first read of the chats is done.
+    fn ready(&self) -> Result<Arc<UsageEngine>, String> {
         let engine = self.engine()?;
         if !engine.wait_pass(0, FIRST_PASS) {
             return Err("Atlas is still reading your Claude Code chats for the first time. Try again in a minute.".into());
         }
+        Ok(engine)
+    }
+
+    /// The agent scorecard (read-only; `docs/specs/agent-scorecard.md`).
+    pub fn scorecard(&self, a: &ScorecardArgs) -> Result<Scorecard, String> {
+        self.ready()?.agent_scorecard(a)
+    }
+
+    /// The findings reviewers keep raising, grouped (masked text).
+    pub fn themes(&self, a: &ThemeArgs) -> Result<Themes, String> {
+        self.ready()?.review_themes(a)
+    }
+
+    /// One chat's helpers since a time; `None` when no chat has that id.
+    pub fn debrief(&self, a: &DebriefArgs) -> Result<Option<RunDebrief>, String> {
+        self.ready()?.run_debrief(a)
+    }
+
+    /// The chat to debrief when the caller does not know its own id: the newest one that used
+    /// helpers (else the newest chat), in any project, with the plain line that says which chat it is.
+    pub fn newest_chat(&self) -> Result<Option<(String, String)>, String> {
+        let engine = self.ready()?;
+        let q: atlas_core::usage::query::SessionQuery = serde_json::from_value(json!({ "sort": "start", "dir": "desc", "limit": 100 })).map_err(|e| e.to_string())?;
+        let rows = engine.sessions_list(&q)?.rows;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+        Ok(atlas_core::usage::debrief_text::pick_newest(&rows).map(|(row, has_helpers)| (row.session_id.clone(), atlas_core::usage::debrief_text::fallback_line(row, has_helpers, now))))
+    }
+
+    /// `period`: today | yesterday | 7d | 30d | month | all. `project`: part of a project name.
+    pub fn summary(&self, period: &str, project: Option<&str>) -> Result<Value, String> {
+        let engine = self.ready()?;
         let today = engine.today_date();
         let (from, to, label) = match period.trim().to_lowercase().as_str() {
             "today" => (today.clone(), today.clone(), "today"),

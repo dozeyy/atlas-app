@@ -36,6 +36,9 @@ Code: `crates/mcp` (server, usage summary), `crates/core/src/{ops,pending,connec
 | `find_repeated_requests` | no | Groups what the person typed in past chats (no AI, no network). Optional `like` (the request in front of Claude), `days`, `project`, `limit`, `currentProject` (default: the server's folder), `allProjectsText`. Returns `groups` (`id`, `count`, `sessions`, `days`, `representative`, `examples`, `meetsBar`, `offer`), `likeMatch`, `likeOffer`, `offersOff`, `offerBar`, `wordingsFrom`. The answer is shown to Claude, so wordings come only from `currentProject` unless `allProjectsText` is set (counts always span all projects). |
 | `note_skill_offer` | no (Atlas data only) | Remembers the answer to an offer to make a skill: `answer` offered, declined, made or never, with `groupId` or `like`, and `skillName` for made. Writes ids only to `habits.json`. |
 | `search_library` | no | Search the plugin catalog Atlas's Library saved (`<data>/library/catalog.json`): `{query, limit 1..20, default 10}` returns `{pluginId, name, description, marketplace, version, installed}`. Every word must match, the last as a prefix. No network, no command, nothing installed; with no catalog yet the error says to open Toolkit > Library once. |
+| `get_agent_scorecard` | no | How the helpers (subagents) in past chats have done, one card per helper type: runs, how they ended, finish rate, medians, tokens, models and efforts, reviews, projects. Optional `days`, `agentType` (also returns that type's newest runs), `startedFrom` (all, interactive, headless), `limit` (types, default 15). Counts and facts, never a grade. |
+| `get_review_themes` | no | What reviewer helpers keep raising, grouped, with counts, severities, the worker types the reviewed work came from and masked, cut-short examples. Optional `days`, `limit` (default 8). A quiet history returns no themes. |
+| `get_run_debrief` | no | The after-run debrief of one chat as plain text (10 lines / 900 characters; `detail` high: 40 / 3,000): optional `sessionId` (left out: the newest chat that used helpers, and the first line of the text names which chat it picked), optional `since` (ISO time, day or epoch ms), `detail`, `includeCost`. The text is byte-identical to `atlas-usage debrief` because both call `usage::debrief_text::render`. |
 
 Inputs are camelCase (`newName`, `backupId`). A failed call returns an MCP tool error with one plain
 sentence, never a protocol error.
@@ -188,6 +191,28 @@ Habits screen in the app.
   are therefore limited to the current project by default; a damaged `habits.json` turns offers
   off until fixed, and a bracketed harness line such as `[Request interrupted by user]` is never a
   request.
+
+## Helper reports (get_agent_scorecard, get_review_themes, get_run_debrief)
+
+Unit 4 of `docs/specs/agent-scorecard.md` (D60-D65). Read-only (`read_only_hint`), stdio only, and
+present in direct and propose mode alike (nothing is queued or written).
+
+- They read the usage index (`<data dir>/cli/cache.sqlite`, the same one `get_usage_summary` starts
+  on first use) and the transcripts, never writing the Claude folder; a test compares every file and
+  folder time under a scratch Claude folder before and after the calls. The first call waits up to
+  90 s for the first read of the chats, else says so in one sentence.
+- Finding text is secret-masked (`search::mask::mask_secrets`) before it is stored and cut short;
+  a helper's goal on the debrief is the first line of its dispatch description, dropped if masking
+  would change it, cut to 80 characters.
+- `get_run_debrief` returns text, not JSON: Claude folds a few lines of facts into the report it is
+  already writing, in the user's own style (the `atlas-debrief` skill says how). `atlas-usage debrief
+  --json` carries the same facts as JSON.
+- Files changed is not in the debrief: the ledger records no edits per helper, so `Changed` lists
+  only worktree branches helpers worked on, labelled as branches (D61: v1 is branches only). Branch
+  names are masked like goals. `Models` starts with the chat's own model and effort.
+- The skill `atlas-debrief` does not need these tools: it calls the plugin's own `atlas-usage debrief`
+  through the launcher (four exact `Bash(sh ".../atlas-usage.sh" debrief --detail low|high [--cost])` lines, no wildcard, so no other option such as `--cache-dir` is pre-approved; the program finds the chat from `CLAUDE_CODE_SESSION_ID`), so it works
+  without the app. The launcher refuses a program that has no `debrief` command (exit 4).
 
 ## Console windows
 

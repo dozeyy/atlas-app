@@ -418,12 +418,12 @@ impl<H: Host> Machine<H> {
         }
         self.wanted = Some(rect);
         self.asked = Some(rect);
-        if self.phase == Phase::Live && self.waiting.is_none() {
-            if let Some(r) = self.wanted.take() {
-                if r != self.held {
-                    self.request(r);
-                }
-            }
+        if self.phase == Phase::Live
+            && self.waiting.is_none()
+            && let Some(r) = self.wanted.take()
+            && r != self.held
+        {
+            self.request(r);
         }
         self.loop_rect = Some(self.held);
         Some(self.held) // the window keeps its size until the page has drawn the next one
@@ -613,10 +613,10 @@ impl<H: Host> Machine<H> {
         if self.exit {
             return self.finish();
         }
-        if let Some(r) = self.wanted.take() {
-            if r != self.held {
-                self.request(r);
-            }
+        if let Some(r) = self.wanted.take()
+            && r != self.held
+        {
+            self.request(r);
         }
         After::None
     }
@@ -647,10 +647,11 @@ impl<H: Host> Machine<H> {
             self.trace(&format!("released past the canvas at {:?}", rect_tuple(a)));
             return self.hand_back(None, Some(a));
         }
-        if let Some(r) = self.wanted.take() {
-            if r != self.held && self.request(r) {
-                return After::None; // its answer ends the drag
-            }
+        if let Some(r) = self.wanted.take()
+            && r != self.held
+            && self.request(r)
+        {
+            return After::None; // its answer ends the drag
         }
         let cl = self.host.client();
         if self.canvas.left != cl.left || self.canvas.top != cl.top {
@@ -813,12 +814,13 @@ unsafe extern "system" fn subclass_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
             // tao sizes the minimum for an undecorated window's client area, but this window keeps
             // its invisible resize borders: add them, or the client stops that much under the
             // minimum and the app then grows it back from the top-left corner, sliding the far edge.
-            if !IsZoomed(hwnd).as_bool() && !IsIconic(hwnd).as_bool() {
-                if let Some((bw, bh)) = border_size(hwnd) {
-                    let mmi = &mut *(lp.0 as *mut MINMAXINFO);
-                    mmi.ptMinTrackSize.x += bw;
-                    mmi.ptMinTrackSize.y += bh;
-                }
+            if !IsZoomed(hwnd).as_bool()
+                && !IsIconic(hwnd).as_bool()
+                && let Some((bw, bh)) = border_size(hwnd)
+            {
+                let mmi = &mut *(lp.0 as *mut MINMAXINFO);
+                mmi.ptMinTrackSize.x += bw;
+                mmi.ptMinTrackSize.y += bh;
             }
             return r;
         }
@@ -949,7 +951,7 @@ pub fn on_ack(seq: u64, via: u8) {
 fn dropped_for_test(seq: u64) -> bool {
     static EVERY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
     let n = *EVERY.get_or_init(|| std::env::var("ATLAS_FRAME_SYNC_DROP_ACK").ok().and_then(|v| v.parse().ok()).unwrap_or(0));
-    let drop = n > 0 && seq % n == 0;
+    let drop = n > 0 && seq.is_multiple_of(n);
     if drop {
         eprintln!("[atlas] frame sync: answer {seq} dropped (test override)");
     }

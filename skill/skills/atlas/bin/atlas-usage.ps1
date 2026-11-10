@@ -60,6 +60,13 @@ function Use-Program([string]$path, [string]$why) {
             exit 4
         }
     }
+    if ($rest.Count -gt 0 -and $rest[0] -eq 'debrief') {
+        $probe = (& $path debrief --help 2>$null | Out-String)
+        if ($probe -notmatch 'helpers did') {
+            [Console]::Error.WriteLine('atlas-usage: this copy of atlas-usage is too old for the debrief. Update the Atlas plugin or the Atlas app.')
+            exit 4
+        }
+    }
     & $path @rest
     exit $LASTEXITCODE
 }

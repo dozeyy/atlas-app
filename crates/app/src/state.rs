@@ -486,7 +486,8 @@ impl AppState {
         self.lock().settings.close_to_tray
     }
 
-    /// Draw keyboard shortcut hints (opt-in, default off).
+    /// Draw keyboard shortcut hints (opt-in, default off). Read by the macOS menu only.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn show_shortcuts(&self) -> bool {
         self.lock().settings.show_shortcuts
     }

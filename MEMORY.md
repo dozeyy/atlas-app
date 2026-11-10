@@ -459,3 +459,9 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Sheet no longer focuses Install when the check flagged something or the plugin follows a branch: focus goes to the findings box ("What Atlas found").
 - History label: only the first "changed" event after a Library backup takes its sentence (relabel claims (file, sha, backup); the live scan checks for an event already carrying the sentence). The live-scan SQL check has no dedicated test; the relabel claim is tested.
 - Accepted risk (no code): gap between the Local re-hash and Claude Code's copy, backstopped by the post-install rollback; written into docs/specs/skill-library.md.
+## 2026-11-09 - After-run debrief merged (ac9545e)
+- Unit 4 (branch worktree-agent-a3fe7b9591c51f7d5, head 94a37b4): `atlas-usage debrief --detail low|high [--cost]`, skill `atlas-debrief`, MCP `get_agent_scorecard` / `get_review_themes` / `get_run_debrief` (read-only, stdio), one renderer `usage::debrief_text::render`.
+- Verified: a real 11-helper chat recounted independently from the JSONL matched exactly (11 helpers, Opus 5.5 high 9 / medium 2, 13,321,113 tokens); MCP output byte-identical to the CLI; headless `claude -p` terse and high runs with no permission denials.
+- allowed-tools is 4 exact lines (no wildcard): the CLI reads `CLAUDE_CODE_SESSION_ID`, so no `--session` or `--cache-dir` can ride along. With no id it picks the newest chat with helpers and says so on the FIRST stdout line (stderr is invisible to the model).
+- Changed = worktree branches only for v1 (decided); branch names go through the secret mask. Models line includes the chat's own model ("(chat)").
+- Review: PASS with 2 MED usability gaps (session fallback, MCP sessionId) fixed in 94a37b4.
