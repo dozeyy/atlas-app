@@ -140,7 +140,9 @@ export function Bars({
                   style={{ ["--hs" as string]: Math.min(1.6, (h + 4) / Math.max(h, 1)), ["--i" as string]: i }}
                 />
               ) : (
-                <rect className="bar zero" x={x} y={base - ZERO_STUB} width={bw} height={ZERO_STUB} rx={1.5} style={{ ["--i" as string]: i }} />
+                // Half a pixel in on every side: the stub's 1 px hairline (trail.css) then sits inside
+                // the 3 px nub instead of straddling its edge and the baseline.
+                <rect className="bar zero" x={x + 0.5} y={base - ZERO_STUB + 0.5} width={bw - 1} height={ZERO_STUB - 1} rx={1} style={{ ["--i" as string]: i }} />
               )}
               {/* The pointer target never moves: a full-height slot, not the bar. */}
               <rect

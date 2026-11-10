@@ -1735,8 +1735,12 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
 .bar.today {
   fill: var(--accent);
 }
+/* A day with nothing in it: the 3 px nub in the empty tone with a 1 px hairline inside its edge, so
+   the axis never looks broken in Dark either (the History ribbon's empty dot is the same idea). */
 .bar.zero {
   fill: var(--heat-0);
+  stroke: var(--line);
+  stroke-width: 1;
 }
 .bar-hit {
   fill: transparent;
@@ -1826,6 +1830,11 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
 .cell.on {
   scale: 1.35;
 }
+/* An empty day: the same hairline inside the cell's edge (HeatGrid draws it half a pixel in). */
+.cell.empty {
+  stroke: var(--line);
+  stroke-width: 1;
+}
 .streak-ring {
   fill: none;
   stroke: var(--accent);
@@ -1858,6 +1867,9 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
   width: 10px;
   height: 10px;
   border-radius: 3px;
+}
+.heat-key i.empty {
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 .heat-key.in-row {
   position: absolute;
