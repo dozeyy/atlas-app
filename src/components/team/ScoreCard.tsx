@@ -2,28 +2,31 @@ import { Card } from "../controls";
 import { AgentAvatar, helperName } from "../usage/helperKit";
 import { TokenText } from "../usage/TokenText";
 import { exact, plural } from "../../lib/usage";
-import { REVIEWER_WORDS, finishLine, modelLine, rateSentence, reviewCountsLine, reviewerLine, usualLine, weeklyTitle } from "../../lib/teamModel";
+import { REVIEWER_WORDS, finishLine, modelLine, rateSentence, reviewCountsLine, reviewerLine, usualLine, weeklyBars, weeklyTitle } from "../../lib/teamModel";
 import type { ReviewCounts, TypeCard } from "../../lib/teamTypes";
 
+/** The small chart's height: the tallest week fills it, a week with runs is never under 2 px. */
+const WEEK_H = 32;
+
 /**
- * Twelve weeks of runs as small bars, this week in the accent. What they plot is said once under
- * the cards, not on each one; the exact numbers are the hover. The sheet draws the same twelve
- * weeks full size.
+ * Twelve weeks of runs as small bars, this week in the accent (the Dashboard's bars at rest and
+ * today). What they plot is said once under the cards, not on each one; a bar's hover says its
+ * own week and count, the gaps between them the whole row. The sheet draws the same twelve
+ * weeks full size, from the same buckets.
  */
-function WeekBars({ weekly }: { weekly: number[] }) {
+function WeekBars({ weekly, toTs }: { weekly: number[]; toTs: number }) {
   const max = Math.max(1, ...weekly);
   const last = weekly.length - 1;
+  const bars = weeklyBars(weekly, toTs);
   return (
-    <span title={weeklyTitle(weekly)} className="flex h-8 shrink-0 items-end gap-0.5">
-      {weekly.map((v, i) => (
+    <span title={weeklyTitle(weekly)} className="team-weeks" style={{ height: WEEK_H }}>
+      {bars.map((b, i) => (
         <span
-          key={i}
+          key={b.key}
           aria-hidden="true"
-          className="w-1 rounded-full"
-          style={{
-            height: v > 0 ? `${Math.max(14, Math.round((v / max) * 100))}%` : 2,
-            background: v > 0 ? (i === last ? "var(--accent)" : "var(--bar-rest)") : "var(--line-strong)",
-          }}
+          title={`${b.valueText}, week of ${b.axis}`}
+          className={`team-week${i === last ? " team-week-today" : ""}${b.value > 0 ? "" : " team-week-none"}`}
+          style={{ height: b.value > 0 ? Math.max(2, Math.round((b.value / max) * WEEK_H)) : 2 }}
         />
       ))}
     </span>
@@ -45,7 +48,7 @@ function besidesPassed(r: ReviewCounts): string {
  * it gave instead). Tokens, model and the typical run are two quiet lines; dollars stay on
  * hover; everything else is in the sheet the card opens.
  */
-export function ScoreCard({ card, onOpen }: { card: TypeCard; onOpen: () => void }) {
+export function ScoreCard({ card, toTs, onOpen }: { card: TypeCard; toTs: number; onOpen: () => void }) {
   const reviews = card.reviewer ? null : card.reviews;
   const rate = rateSentence(reviews);
   const main = card.reviewer ? (card.verdicts ? reviewerLine(card.verdicts) : "No verdicts given yet") : (rate ?? (reviews ? reviewCountsLine(reviews) : "No reviews yet"));
@@ -82,7 +85,7 @@ export function ScoreCard({ card, onOpen }: { card: TypeCard; onOpen: () => void
           <span className="d d-stat text-ink">{exact(card.runs)}</span>
           <span className="text-body text-ink-2">{card.runs === 1 ? "run" : "runs"}</span>
         </p>
-        <WeekBars weekly={card.weekly} />
+        <WeekBars weekly={card.weekly} toTs={toTs} />
       </div>
 
       <div className="border-t border-line pt-3">

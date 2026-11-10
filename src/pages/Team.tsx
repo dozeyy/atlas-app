@@ -163,7 +163,7 @@ function Scorecard({
       ) : (
         <div className="team-grid">
           {cards.map((c) => (
-            <ScoreCard key={c.agentType} card={c} onOpen={() => onOpenType(c.agentType)} />
+            <ScoreCard key={c.agentType} card={c} toTs={data.toTs} onOpen={() => onOpenType(c.agentType)} />
           ))}
         </div>
       )}
