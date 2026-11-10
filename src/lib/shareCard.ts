@@ -5,6 +5,7 @@
 // from the numbers and names a ShareCard carries; it never sees a chat name or a prompt.
 // (A canvas cannot set the CASL axis, so the figures use Recursive's default softness here.)
 
+import { drawSparkMark } from "./sparkMark";
 import type { ShareCard } from "./wrappedModel";
 
 const S = 3;
@@ -130,6 +131,13 @@ export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boole
     ctx.lineWidth = 1.6 * S;
     ctx.lineJoin = "round";
     ctx.stroke();
+    // The summit: a dot on the highest point and the Atlas mark above it, as the Dashboard ridge wears.
+    const peak = pts.reduce((best, pt) => (pt[1] < best[1] ? pt : best), pts[0]);
+    ctx.fillStyle = p.accent;
+    ctx.beginPath();
+    ctx.arc(peak[0], peak[1], 3 * S, 0, Math.PI * 2);
+    ctx.fill();
+    drawSparkMark(ctx, peak[0], peak[1] - 15 * S, 16 * S);
   }
 
   // Up to four facts, two to a row: the value over its label.
