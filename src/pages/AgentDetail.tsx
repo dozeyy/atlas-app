@@ -41,11 +41,12 @@ export function AgentDetailView({
   const spend = useMemo(() => (d.data ? spendRidge(d.data.timeline, d.data.agent.durationMs) : []), [d.data]);
 
   const back = (
-    <Button onClick={onBack} className="mb-4">
+    // A long chat name shortens inside the button; the whole name is in its hover.
+    <Button onClick={onBack} className="mb-4 min-w-0 max-w-[min(100%,30rem)]" title={`Back to ${sessionLabel}`}>
       <IconMotion motion="nudge">
         <ArrowLeft />
       </IconMotion>
-      {`Back to ${sessionLabel}`}
+      <span className="min-w-0 truncate">{`Back to ${sessionLabel}`}</span>
     </Button>
   );
 
