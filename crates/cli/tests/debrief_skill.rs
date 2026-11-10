@@ -41,12 +41,16 @@ fn the_skill_is_small_and_ascii() {
 fn it_only_runs_the_debrief_through_the_launcher_and_only_when_asked() {
     let (fm, body) = parts();
     let tools = get(&fm, "allowed-tools");
-    let launcher = "Bash(sh \"${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh\" debrief ";
-    let entries: Vec<&str> = tools.split("), ").collect();
-    assert_eq!(entries.len(), 2, "{tools}");
-    assert!(entries.iter().all(|e| e.starts_with(launcher)), "only launcher lines: {tools}");
-    // Never wider than `debrief --session ...`: a bare `debrief *` would also pre-approve --cache-dir anywhere.
-    assert!(!tools.contains("debrief *"), "{tools}");
+    // The exact invocations, no wildcard at all: an extra option (--cache-dir, --config-dir, --session,
+    // --since) or a different order does not match, so it asks the user instead of running.
+    let launcher = "Bash(sh \"${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh\" debrief";
+    let want: Vec<String> = ["--detail low", "--detail high", "--detail low --cost", "--detail high --cost"].iter().map(|t| format!("{launcher} {t})")).collect();
+    let got: Vec<String> = tools.split("), ").map(|e| if e.ends_with(')') { e.to_string() } else { format!("{e})") }).collect();
+    assert_eq!(got, want, "allowed-tools must list exactly these invocations: {tools}");
+    assert!(!tools.contains('*'), "no wildcard in allowed-tools: {tools}");
+    for flag in ["--cache-dir", "--config-dir", "--data-dir", "--session", "--since", "--cwd", "--project", "--json"] {
+        assert!(!tools.contains(flag), "{flag} must not be pre-approved: {tools}");
+    }
     assert!(!tools.contains("mcp__") && !tools.contains("PowerShell") && !tools.contains("Write") && !tools.contains("Edit"), "{tools}");
     assert!(dir_has_launcher());
 
@@ -54,7 +58,8 @@ fn it_only_runs_the_debrief_through_the_launcher_and_only_when_asked() {
     let when = get(&fm, "when_to_use");
     assert!(when.starts_with("Only when the user asks"), "{when}");
     assert!(when.contains("Never on your own initiative") && when.contains("never every turn"), "{when}");
-    assert!(body.contains("${CLAUDE_SESSION_ID}"), "it debriefs the current chat");
+    assert!(body.contains("Do not add a session id"), "it debriefs the current chat through the session environment");
+    assert!(body.contains("worktree branches only"), "Changed is labelled as branches");
     assert!(body.contains("Never impose a format") && body.contains("terse user"), "style rules");
     assert!(body.contains("only if the report already has headed sections"), "no Atlas heading by default");
     assert!(body.contains("too old for the debrief"), "the old-program line");

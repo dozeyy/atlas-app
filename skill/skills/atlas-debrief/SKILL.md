@@ -2,7 +2,7 @@
 name: atlas-debrief
 description: Plain-words facts about what a chat's helpers (subagents) did, to fold into a recap of a helper run. Needs only this plugin.
 when_to_use: Only when the user asks for a debrief or recap of a helper run, or an orchestrated run just ended and they asked for one. Never on your own initiative and never every turn.
-allowed-tools: Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --session * --detail low*), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --session * --detail high*)
+allowed-tools: Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --detail low), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --detail high), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --detail low --cost), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --detail high --cost)
 ---
 
 # Debrief a helper run
@@ -14,16 +14,16 @@ one at the end of an orchestrated run. Otherwise say nothing about it.
 
 Run it with the Bash tool (on Windows that is Git Bash). Copy this command character for
 character. Do not tidy or shorten the path, and keep the `..`: it is pre-approved only in
-exactly this form, and any other spelling stops to ask the user.
-`sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --session ${CLAUDE_SESSION_ID} --detail low`
+exactly this form, and any other spelling or extra option stops to ask the user.
+`sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --detail low`
 
+- It debriefs this chat. Do not add a session id.
 - `--detail high` only if they want each helper listed.
-- `--since <ISO time>` for just the latest run in a long chat.
-- `--cost` only if they asked what it cost (an estimate, not a bill).
+- `--cost` after the detail only if they asked what it cost (an estimate, not a bill).
 - Default timeout; never wait on it.
 
 You get a few lines of facts: Ran, Helpers, Models, Reviews, Tokens, sometimes Biggest,
-Open, Changed, Caught. Counts and labels, nothing graded.
+Open, Changed (worktree branches only), Caught. Counts and labels, nothing graded.
 
 ## Say it in their style
 

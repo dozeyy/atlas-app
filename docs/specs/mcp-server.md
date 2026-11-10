@@ -209,7 +209,7 @@ present in direct and propose mode alike (nothing is queued or written).
 - Files changed is not in the debrief: the ledger records no edits per helper, so `Changed` lists
   only worktree branches helpers worked on (D61 deviation, recorded in the unit's memory entry).
 - The skill `atlas-debrief` does not need these tools: it calls the plugin's own `atlas-usage debrief`
-  through the launcher (`Bash(sh ".../atlas-usage.sh" debrief --session * --detail low*)`), so it works
+  through the launcher (four exact `Bash(sh ".../atlas-usage.sh" debrief --detail low|high [--cost])` lines, no wildcard, so no other option such as `--cache-dir` is pre-approved; the program finds the chat from `CLAUDE_CODE_SESSION_ID`), so it works
   without the app. The launcher refuses a program that has no `debrief` command (exit 4).
 
 ## Console windows

@@ -42,9 +42,17 @@ OUT = ROOT / "docs" / "shots" / "debrief"
 S1 = "aaaa1001-0000-4000-8000-000000000001"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
+# The wrapper also tells the program which chat is "this chat" (CLAUDE_CODE_SESSION_ID, which Claude
+# Code sets for real in the Bash tool), so the skill runs `debrief --detail low` with no session id.
+rh.WRAPPER_RS = rh.WRAPPER_RS.replace(
+    'if let Some(d) = std::env::var_os("ATLAS_TEST_CONFIG")',
+    'if let Some(d) = std::env::var_os("ATLAS_TEST_SESSION") { c.env("CLAUDE_CODE_SESSION_ID", d); }\n    if let Some(d) = std::env::var_os("ATLAS_TEST_CONFIG")',
+)
+assert "ATLAS_TEST_SESSION" in rh.WRAPPER_RS
+
 PROMPTS = {
-    "terse": f"Give me a quick two line debrief of what the helpers did in chat {S1}. Use that session id.",
-    "high": f"Debrief the helpers of chat {S1} with every helper listed, one line each. Use that session id.",
+    "terse": "I just finished a run with helpers. Use the atlas-debrief skill and give me a quick two line debrief.",
+    "high": "I just finished a run with helpers. Use the atlas-debrief skill and debrief it with every helper listed, one line each.",
     "quiet": "Read the README and give me a three bullet summary in plain words",
     "tokens": "Reply with the single word ok.",
 }
@@ -70,7 +78,7 @@ def run(prompt, plugin, args, tmp, skills=("Skill(atlas-debrief)", "Skill(atlas:
     cmd = claude_cmd(prompt, plugin, args, skills) + ["--mcp-config", str(tmp / "empty-mcp.json"), "--strict-mcp-config"]
     env = dict(os.environ)
     env.pop("CLAUDE_CONFIG_DIR", None)
-    env.update(ATLAS_TEST_CONFIG=str(tmp / "claude"), ATLAS_DATA_DIR=str(tmp / "data"), ATLAS_USAGE_CACHE=str(tmp / "cache"), PATH=str(tmp / "bin") + os.pathsep + env.get("PATH", ""))
+    env.update(ATLAS_TEST_CONFIG=str(tmp / "claude"), ATLAS_TEST_SESSION=S1, ATLAS_DATA_DIR=str(tmp / "data"), ATLAS_USAGE_CACHE=str(tmp / "cache"), PATH=str(tmp / "bin") + os.pathsep + env.get("PATH", ""))
     r = subprocess.run(cmd, cwd=work, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", timeout=600, creationflags=NO_WINDOW)
     events = []
     for line in r.stdout.splitlines():
@@ -197,6 +205,8 @@ def main():
                     ok = bool(good) and not denials and "14" in text
                     want = "--detail high" if scenario == "high" else "--detail low"
                     ok = ok and any(want in str(inp.get("command", "")) for _, inp in good)
+                    # Only the exact pre-approved form: no session id, no other option.
+                    ok = ok and all("--session" not in str(inp.get("command", "")) and "-dir" not in str(inp.get("command", "")) for _, _, inp in calls)
                     # The program's own stderr notes (first-run indexing) come first; the debrief starts at "Ran: ".
                     size = len(results[good[0][0]][1].split("Ran: ", 1)[1]) + 5 if good else 0
                     tot = input_totals(events)
