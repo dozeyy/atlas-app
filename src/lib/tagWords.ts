@@ -14,10 +14,10 @@ export interface TagWords {
   tip: string;
 }
 
-/** The middle dot between a scope and its name ("Project · atlas"), written as an escape so the source stays ASCII. */
-const DOT = " · ";
+/** The middle dot between a scope and its name ("Project \u00b7 atlas"), written as an escape so the source stays ASCII. */
+const DOT = " \u00b7 ";
 
-/** "Project · atlas" -> "atlas"; a label without that part gives "". */
+/** "Project \u00b7 atlas" -> "atlas"; a label without that part gives "". */
 function after(label: string): string {
   const at = label.indexOf(DOT);
   return at < 0 ? "" : label.slice(at + DOT.length);
