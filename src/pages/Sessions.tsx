@@ -33,11 +33,11 @@ const SORTS = {
 type SortKey = keyof typeof SORTS;
 const SORT_CHOICES = (Object.keys(SORTS) as SortKey[]).map((value) => ({ value, label: SORTS[value].label }));
 /**
- * The order each loaded page came back in. While a new order is on its way the old page stays on
- * screen, and it has to be laid out by its own order: day bands over a page sorted by tokens repeat
- * the same day, and rows get left behind.
+ * What each loaded page was asked for: its order, and whether it answers a search. While a new
+ * answer is on its way the old page stays on screen, and it has to be laid out as what it is: day
+ * bands over a page sorted by tokens repeat the same day, and rows get left behind.
  */
-const pageOrder = new WeakMap<SessionPage, SortKey>();
+const pageShape = new WeakMap<SessionPage, { sort: SortKey; search: boolean }>();
 
 const SPANS = [
   { value: "all", label: "All time", days: 0 },
@@ -117,7 +117,7 @@ export function Sessions() {
   const first = useFetched(
     () =>
       backend.sessionsList(query).then((p) => {
-        pageOrder.set(p, sortKey);
+        pageShape.set(p, { sort: sortKey, search: Boolean(query.text) || (query.alsoIds?.length ?? 0) > 0 });
         return p;
       }),
     [JSON.stringify(query), info.config?.projectsDir ?? null],
@@ -174,10 +174,13 @@ export function Sessions() {
   const note = typed.length >= 2 ? searchNote(chat) : null;
 
   // The newest chat gets a card of its own, but only on the plain newest-first list.
-  const shownSort = (first.data && pageOrder.get(first.data)) ?? sortKey;
+  const shape = first.data ? pageShape.get(first.data) : undefined;
+  const shownSort = shape?.sort ?? sortKey;
   const pick = !filtered && shownSort === "newest" && first.data && rows.length > 0 ? rows[0] : null;
-  // Time-ordered lists fall under a band per day; the other orders stay one flat list.
-  const byTime = SORTS[shownSort].sort === "started";
+  // Time-ordered lists fall under a band per day; the other orders stay one flat list. So do search
+  // results: matches are scattered over the weeks, mostly one a day, and a band per match would
+  // repeat that row's own numbers and halve how many matches fit on screen.
+  const byTime = SORTS[shownSort].sort === "started" && !(shape?.search ?? Boolean(typed));
   const groups = byTime ? groupByDay(rows, new Date()) : [];
   const maxRow = Math.max(0, ...rows.map((r) => r.tokens.total));
   const maxDay = Math.max(0, ...groups.filter((_, gi) => !(gi === groups.length - 1 && cursor !== null)).map((g) => g.tokens));

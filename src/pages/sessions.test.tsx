@@ -203,6 +203,17 @@ describe("Sessions: the first view", () => {
     expect(rows()).toBe(before);
   });
 
+  it("lists search results as one flat list, and brings the day bands back when the search is cleared", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    expect(document.querySelectorAll(".day-section").length).toBeGreaterThan(0);
+    await userEvent.type(searchbox(), "export");
+    await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBe(0));
+    expect(document.querySelectorAll(".session-grid > li").length).toBeGreaterThan(0);
+    await userEvent.clear(searchbox());
+    await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBeGreaterThan(0));
+  });
+
   it("drops the card as soon as a search narrows the list", async () => {
     mount();
     await screen.findByRole("region", { name: "Pick up where you left off" });
