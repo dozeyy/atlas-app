@@ -176,6 +176,50 @@ describe("Chat receipt and helper map", () => {
     expect(screen.getByRole("complementary", { name: `Slice: ${top.name}` })).toBeInTheDocument();
   });
 
+  it("goes back with Escape and Alt+Left: a helper's page to its session, the session to the list", async () => {
+    const backend = sessionsBackend();
+    const { row, detail } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
+    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    const a = detail.agents[0];
+    await userEvent.click(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) })[0]);
+    expect(await screen.findByRole("heading", { level: 2, name: a.name })).toBeInTheDocument();
+
+    // From the helper: one step back is its session, on the tab it was opened from.
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("heading", { level: 2, name: a.name })).toBeNull();
+    expect(await screen.findByRole("radio", { name: "Helpers" })).toBeChecked();
+    expect(screen.queryByRole("searchbox", { name: "Search chats" })).toBeNull();
+
+    // A dialog or a text field keeps Escape for itself.
+    const sheet = document.body.appendChild(document.createElement("div"));
+    sheet.setAttribute("role", "dialog");
+    await userEvent.keyboard("{Escape}");
+    await userEvent.keyboard("{Alt>}{ArrowLeft}{/Alt}");
+    sheet.remove();
+    const field = document.body.appendChild(document.createElement("input"));
+    field.focus();
+    await userEvent.keyboard("{Escape}");
+    field.remove();
+    expect(screen.getByRole("radio", { name: "Helpers" })).toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: "Search chats" })).toBeNull();
+
+    // From the session: the list.
+    await userEvent.keyboard("{Alt>}{ArrowLeft}{/Alt}");
+    expect(await screen.findByRole("searchbox", { name: "Search chats" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Helpers" })).toBeNull();
+  });
+
+  it("goes from a session to the list with Escape too", async () => {
+    const backend = sessionsBackend();
+    const { row } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    await screen.findByRole("region", { name: "Who used it" });
+    await userEvent.keyboard("{Escape}");
+    expect(await screen.findByRole("searchbox", { name: "Search chats" })).toBeInTheDocument();
+  });
+
   it("keeps the old helper cards behind a List view", async () => {
     const backend = sessionsBackend();
     const { row, detail } = await chatWithHelpers(backend);

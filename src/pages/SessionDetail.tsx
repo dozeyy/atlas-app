@@ -43,6 +43,15 @@ import type { AgentSummary, Outcome, SessionDetail, TranscriptItem } from "../li
 
 type Tab = "receipt" | "helpers" | "messages" | "details";
 
+/** Anything that owns Escape while it is open: the going-back keys stand down for it. */
+const OVERLAY_OPEN = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+
+/** Focus is somewhere text is being typed or picked, where Escape and Alt+Left mean something else. */
+function isTyping(el: Element | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  return el.isContentEditable || el.matches("input, textarea, select, [contenteditable='true'], [role='textbox']");
+}
+
 /** One helper as a card: who it was, what it spent, how much of the session that is. */
 function HelperCard({
   agent,
@@ -454,7 +463,7 @@ export function SessionDetailView({
 }) {
   const backend = getBackend();
   const { info } = useAtlas();
-  const { tip } = useKeyHints();
+  const { tip, show: showKeys } = useKeyHints();
   const at = siblings ? siblings.indexOf(id) : -1;
   const prevId = siblings && at > 0 ? siblings[at - 1] : null;
   const nextId = siblings && at >= 0 && at < siblings.length - 1 ? siblings[at + 1] : null;
@@ -479,6 +488,21 @@ export function SessionDetailView({
   const [agentId, setAgentId] = useState<string | null>(() => peekPendingAgent(id));
   const agentChat = useRef(id);
   useEffect(() => clearPendingAgent(), []);
+  // Esc and Alt+Left step back one level: a helper's page to its session, the session to the list.
+  // Never while a sheet, menu or dialog is open (Esc is theirs), or while typing.
+  const onHelperPage = agentId !== null && !!d.data;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const wanted = e.altKey ? e.key === "ArrowLeft" : e.key === "Escape";
+      if (!wanted || document.querySelector(OVERLAY_OPEN) || isTyping(document.activeElement)) return;
+      e.preventDefault();
+      if (onHelperPage) setAgentId(null);
+      else onBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onHelperPage, onBack]);
   const [tab, setTab] = useState<Tab>("receipt");
   const [view, setView] = useState<"map" | "list">("map");
   const [order, setOrder] = useState<"started" | "spend">("started");
@@ -515,7 +539,7 @@ export function SessionDetailView({
   const spend = useMemo(() => spendRidge(d.data?.timeline ?? [], d.data?.row.durationMs ?? 0), [d.data]);
 
   const back = (
-    <Button onClick={onBack} className="shrink-0">
+    <Button onClick={onBack} className="shrink-0" title={showKeys ? tip("All sessions", "Esc") : undefined}>
       <IconMotion motion="nudge">
         <ArrowLeft />
       </IconMotion>
