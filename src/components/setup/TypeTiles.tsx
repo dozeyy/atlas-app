@@ -46,7 +46,8 @@ export function TypeTiles({
           >
             <KindTile kind={id === "more" ? "more" : (id as ItemKind)} size={44} icon={Icon} />
             <span className="min-w-0 flex-1">
-              <span className="d d-tile block text-ink">{count.toLocaleString()}</span>
+              {/* An empty type steps back (same size, quieter figure) so the eye lands on what is there. */}
+              <span className={`d d-tile block ${count === 0 ? "text-ink-2" : "text-ink"}`}>{count.toLocaleString()}</span>
               <span className="block truncate text-body text-ink-2">{label}</span>
             </span>
             <CaretRight size={14} weight="bold" aria-hidden="true" className="row-caret shrink-0 text-ink-2" />
