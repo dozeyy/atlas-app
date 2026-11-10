@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Package } from "@phosphor-icons/react";
-import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, helperName, kindLook, MainChatIcon, shownName, tileCorners, tilePath, type HelperKind } from "./helperKit";
+import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, helperName, helperOfFile, kindLook, MainChatIcon, shownName, tileCorners, tilePath, type HelperKind } from "./helperKit";
 import { typeName } from "../../lib/helperProgress";
 import { typeLabel } from "../../pages/AgentDetail";
 import { KINDS as SETUP_KINDS } from "../../lib/setup-model";
@@ -24,6 +24,18 @@ describe("helper icons", () => {
     const taken = new Set<unknown>([...SETUP_KINDS.map((k) => k.icon), Package]);
     for (const k of HELPER_KINDS) expect([k, taken.has(kindLook(k).Icon)]).toEqual([k, false]);
     expect(taken.has(MainChatIcon)).toBe(false);
+  });
+
+  it("names a saved file's helper by its whole id, never by one that only starts it", () => {
+    const agents = [{ agentId: "a1" }, { agentId: "a12" }, { agentId: "a1-b" }];
+    const file = (id: string) => `projects/-work-atlas/s-9/subagents/agent-${id}.jsonl`;
+    expect(helperOfFile(file("a1"), agents)?.agentId).toBe("a1");
+    expect(helperOfFile(file("a12"), agents)?.agentId).toBe("a12");
+    expect(helperOfFile(file("a1-b"), agents)?.agentId).toBe("a1-b");
+    // The longer ids listed first make no difference, and a file of no listed helper has no name.
+    expect(helperOfFile(file("a12"), [...agents].reverse())?.agentId).toBe("a12");
+    expect(helperOfFile(file("a123"), agents)).toBeUndefined();
+    expect(helperOfFile("projects/x/agent-a1", agents)?.agentId).toBe("a1");
   });
 
   it("a kind's own name lands on that kind", () => {

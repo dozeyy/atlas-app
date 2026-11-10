@@ -23,7 +23,7 @@ import { TokenText } from "../components/usage/TokenText";
 import { Breakdown, ClampList, ClampText, FileRow, ModelSplit, Stat } from "../components/usage/detailParts";
 import { HelperMap } from "../components/usage/HelperMap";
 import { HelperSlice } from "../components/usage/HelperSlice";
-import { AgentAvatar, ModelDots, OutcomeMark, sessionName, shownName, TokenFigure } from "../components/usage/helperKit";
+import { AgentAvatar, helperOfFile, ModelDots, OutcomeMark, sessionName, shownName, TokenFigure } from "../components/usage/helperKit";
 import { ReceiptPane } from "../components/usage/ReceiptPane";
 import { SessionTools, useSessionItems } from "../components/usage/SessionTools";
 import { Skeleton } from "../components/usage/StateBlocks";
@@ -435,7 +435,7 @@ function DetailsTab({
           <Card>
             <ul className="max-h-52 divide-y divide-line overflow-y-auto">
               {files.map((f) => {
-                const helper = f.isSubagent ? agents.find((a) => f.path.includes(`agent-${a.agentId}`)) : undefined;
+                const helper = f.isSubagent ? helperOfFile(f.path, agents) : undefined;
                 const who = f.isSubagent ? (helper ? shownName(helper) : "A helper") : "Main session";
                 return <FileRow key={f.path} who={who} path={f.path} missing={f.missing} />;
               })}

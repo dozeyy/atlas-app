@@ -213,6 +213,19 @@ export function helperKind(type: string | null): HelperKind {
   return "other";
 }
 
+/**
+ * Whose saved file a path is: the helper whose id is the whole id in "agent-<id>", never one whose
+ * id only starts another's ("agent-a1.jsonl" is a1's file, "agent-a12.jsonl" is not).
+ */
+export function helperOfFile<T extends { agentId: string }>(path: string, agents: readonly T[]): T | undefined {
+  return agents.find((a) => {
+    const at = path.lastIndexOf(`agent-${a.agentId}`);
+    if (at < 0) return false;
+    const after = path.charAt(at + 6 + a.agentId.length);
+    return after === "" || !/[A-Za-z0-9_-]/.test(after);
+  });
+}
+
 /** A kind's icon, colours and name. */
 export function kindLook(kind: HelperKind): Look {
   const k = KINDS[kind];
