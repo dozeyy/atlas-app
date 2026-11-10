@@ -15,7 +15,6 @@ import {
 } from "@phosphor-icons/react";
 import { Button, Card, IconButton, SegmentedControl } from "../components/controls";
 import { Bars } from "../components/charts/Bars";
-import { Ridge } from "../components/charts/Ridge";
 import { IconMotion } from "../components/IconMotion";
 import { TokenText } from "../components/usage/TokenText";
 import { Breakdown, ClampText, ModelSplit, Stat } from "../components/usage/detailParts";
@@ -25,7 +24,7 @@ import { AgentAvatar, ModelDots, OutcomeMark, sessionName, TokenFigure } from ".
 import { ReceiptPane } from "../components/usage/ReceiptPane";
 import { SessionTools, useSessionItems } from "../components/usage/SessionTools";
 import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
-import { hasClearPeak, spendRidge, timelineBars } from "../components/usage/timelineBars";
+import { timelineBars } from "../components/usage/timelineBars";
 import type { BarDatum } from "../components/charts/shared";
 import { getBackend } from "../lib/ipc";
 import { clearPendingAgent, peekPendingAgent } from "../lib/nav";
@@ -199,7 +198,7 @@ function HelperList({
   onOpen,
 }: {
   agents: AgentSummary[];
-  order: "started" | "spend";
+  order: "started" | "tokens";
   sessionId: string;
   sessionTokens: number;
   names: Map<string, string>;
@@ -209,7 +208,7 @@ function HelperList({
   const intro = useIntro(`helpers:${sessionId}`);
   const roots = useMemo(() => helperTree(agents), [agents]);
   const nested = order === "started" && roots.some((r) => r.kids.length > 0);
-  const flat = order === "spend" ? [...agents].sort((a, b) => headline(b.tokens) - headline(a.tokens)) : agents;
+  const flat = order === "tokens" ? [...agents].sort((a, b) => headline(b.tokens) - headline(a.tokens)) : agents;
 
   if (nested) {
     return (
@@ -338,13 +337,11 @@ function DetailsTab({
   d,
   scope,
   bins,
-  spend,
 }: {
   id: string;
   d: SessionDetail;
   scope: "all" | "main";
   bins: BarDatum[];
-  spend: BarDatum[];
 }) {
   const { row, byModel, agents, main, files } = d;
   const total = row.tokens;
@@ -353,7 +350,6 @@ function DetailsTab({
   const hasItems = groups.some((g) => g.items.length > 0);
 
   const jumps: { key: string; label: string }[] = [{ key: "tokens", label: "Tokens" }];
-  if (spend.length > 1) jumps.push({ key: "spend", label: "Spend" });
   if (bins.length > 0) jumps.push({ key: "timeline", label: "Timeline" });
   if (byModel.length > 1) jumps.push({ key: "models", label: "Models" });
   if (hasItems) jumps.push({ key: "tools", label: "Tools" });
@@ -397,15 +393,8 @@ function DetailsTab({
           <Breakdown t={scope === "main" ? main.tokens : total} />
         </section>
 
-        {spend.length > 1 && (
-          <section id="sd-spend" aria-label="Spend as it ran" className="jump-target min-w-0">
-            <h3 className="rcpt-head">Spend as it ran</h3>
-            <Card className="px-4 py-3">
-              <Ridge id={`session:${id}:spend`} data={spend} label="Spend as it ran" height={120} summit={hasClearPeak(spend.map((s) => s.value))} />
-            </Card>
-          </section>
-        )}
-
+        {/* The one chart of the run over time, in tokens; each bar's dollar estimate is in its hover.
+            (A dollar ridge used to sit here: in tokens it would be this same chart again.) */}
         {bins.length > 0 && (
           <section id="sd-timeline" aria-label="Tokens through the session" className="jump-target min-w-0">
             <h3 className="rcpt-head">Tokens through the session</h3>
@@ -505,7 +494,7 @@ export function SessionDetailView({
   }, [onHelperPage, onBack]);
   const [tab, setTab] = useState<Tab>("receipt");
   const [view, setView] = useState<"map" | "list">("map");
-  const [order, setOrder] = useState<"started" | "spend">("started");
+  const [order, setOrder] = useState<"started" | "tokens">("started");
   const [scope, setScope] = useState<"all" | "main">("all");
   const [picked, setPicked] = useState<string>(MAIN_ID);
   const [visitedMessages, setVisitedMessages] = useState(false);
@@ -536,7 +525,6 @@ export function SessionDetailView({
   }, [costNow, reloadReceipt]);
 
   const bins = useMemo(() => timelineBars(d.data?.timeline ?? [], d.data?.row.durationMs ?? 0), [d.data]);
-  const spend = useMemo(() => spendRidge(d.data?.timeline ?? [], d.data?.row.durationMs ?? 0), [d.data]);
 
   const back = (
     <Button onClick={onBack} className="shrink-0" title={showKeys ? tip("All sessions", "Esc") : undefined}>
@@ -660,7 +648,7 @@ export function SessionDetailView({
                 onChange={setOrder}
                 options={[
                   { value: "started", label: "Started" },
-                  { value: "spend", label: "Spend" },
+                  { value: "tokens", label: "Tokens" },
                 ]}
               />
             )}
@@ -759,7 +747,7 @@ export function SessionDetailView({
           </div>
         )}
 
-        {shownTab === "details" && <DetailsTab id={id} d={d.data} scope={scope} bins={bins} spend={spend} />}
+        {shownTab === "details" && <DetailsTab id={id} d={d.data} scope={scope} bins={bins} />}
       </div>
     </div>
   );

@@ -262,6 +262,21 @@ describe("Chat receipt and helper map", () => {
     expect(await screen.findByRole("searchbox", { name: "Search chats" })).toBeInTheDocument();
   });
 
+  it("draws the run over time once, in tokens: no dollar chart on Details, helpers order by tokens", async () => {
+    const backend = sessionsBackend();
+    const { row } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    await userEvent.click(await screen.findByRole("radio", { name: "Details" }));
+    expect(await screen.findByRole("region", { name: "Tokens through the session" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Spend as it ran" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Spend" })).toBeNull();
+    await userEvent.click(screen.getByRole("radio", { name: "Helpers" }));
+    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    const order = screen.getByRole("radiogroup", { name: "Order helpers by" });
+    expect(within(order).getByRole("radio", { name: "Tokens" })).toBeInTheDocument();
+    expect(within(order).queryByRole("radio", { name: "Spend" })).toBeNull();
+  });
+
   it("keeps the old helper cards behind a List view", async () => {
     const backend = sessionsBackend();
     const { row, detail } = await chatWithHelpers(backend);
