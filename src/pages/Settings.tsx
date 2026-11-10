@@ -424,7 +424,7 @@ export function Settings() {
           <Button onClick={() => void backend.pricingReveal().catch(() => {})}>Show file</Button>
         </Row>
         {/* No raw path on the surface in this section: a plain line, the path in its hover, the folder behind the button. */}
-        <Row label="Atlas data" hint={<span title={info.dataDir}>Its settings, cache and backups</span>}>
+        <Row label="Atlas data" hint={<span title={info.dataDir}>Its settings, usage data and backups</span>}>
           <Button onClick={() => void openDataDir()}>Open folder</Button>
         </Row>
       </>
