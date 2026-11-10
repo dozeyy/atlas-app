@@ -90,6 +90,8 @@ pre {
   font-size: 12px;
   font-weight: 400;
   font-variation-settings: normal;
+  /* Code shows the characters that are in the file: "=>" stays two characters in any face. */
+  font-variant-ligatures: none;
   letter-spacing: 0;
 }
 .code-text {

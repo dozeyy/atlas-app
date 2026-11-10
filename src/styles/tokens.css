@@ -268,7 +268,12 @@
   /* Type. System fonts only: SF Pro on macOS, Segoe UI Variable on Windows. */
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
     "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  --font-code: ui-monospace, "SF Mono", "Cascadia Code", "Cascadia Mono", Consolas, Menlo,
+  /* Code. On Windows Consolas comes before Cascadia: Cascadia Code's regular (400) has strokes as
+     dark as Segoe's semibold at 12 px, so every path, diff and file read bold (measured 2026-11-10:
+     computed weight 400, face CascadiaCodeRoman; picture docs/shots/fable-pass/for-will/
+     r4-code-text-compare.png), and it draws "=>" and "!=" as single arrows. Cascadia Mono (no
+     ligatures) stays as the fallback. macOS never gets this far: ui-monospace is SF Mono there. */
+  --font-code: ui-monospace, "SF Mono", Consolas, "Cascadia Mono", "Cascadia Code", Menlo,
     monospace;
 
   /* Display face: numbers and titles only (Recursive, CASL 0.4). Never body, buttons, tables, code. */
