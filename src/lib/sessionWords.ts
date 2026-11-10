@@ -40,6 +40,15 @@ export function receiptWords(r: Receipt | null): Receipt | null {
   };
 }
 
+/**
+ * A line the engine wrote for a person to read (an error from a session action), in the app's
+ * word. Only the engine's own sentence is reworded: "This chat has no project folder." A path or
+ * a name inside any other message is passed through as it is.
+ */
+export function engineLineWords(message: string): string {
+  return message.replace(/^This chat\b/, "This session");
+}
+
 /** The Toolkit's cost report with "where it loads" in the app's word. */
 export function costWords(report: CostReport): CostReport {
   return { ...report, rows: report.rows.map((row) => ({ ...row, loadsIn: loadsInWords(row.loadsIn) })) };
