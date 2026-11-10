@@ -74,6 +74,19 @@ export function searchEntries(idx: Indexed[], query: string): CatalogEntry[] {
   return hits.map((h) => h.e);
 }
 
+/**
+ * Nothing typed: the catalog's own order. That is the order each marketplace lists its plugins in
+ * (the directory's is ranked, its most used first), the directory before the marketplaces the
+ * user added. The page carries no install count, so this is the one real "most popular" signal
+ * it has; nothing is invented.
+ */
+export function catalogOrder(idx: Indexed[]): CatalogEntry[] {
+  const first: CatalogEntry[] = [];
+  const rest: CatalogEntry[] = [];
+  for (const x of idx) (x.e.marketplace === DIRECTORY ? first : rest).push(x.e);
+  return first.concat(rest);
+}
+
 // ---- sources -----------------------------------------------------------------------------------
 
 export const ALL = "all";
@@ -152,10 +165,14 @@ export function buildRows({ idx, installed, source, query }: RowInput): LibraryR
       if (r.kind === "plugin") rows.push(entry ? { type: "plugin", key: entry.pluginId, entry, installed: r } : { type: "installedPlugin", key: r.id, row: r });
       else rows.push({ type: "item", key: `item:${r.backupId}`, row: r });
     }
-    return rows.sort((a, b) => rowName(a).localeCompare(rowName(b)));
+    // What needs a second look ("Changed since you checked it") first, then A to Z.
+    const look = (r: LibraryRow) => (r.type === "plugin" && r.installed?.changed ? 0 : 1);
+    return rows.sort((a, b) => look(a) - look(b) || rowName(a).localeCompare(rowName(b)));
   }
   const scope = source.startsWith("mp:") ? idx.filter((x) => x.e.marketplace === source.slice(3)) : idx;
-  return searchEntries(scope, query).map((entry) => ({ type: "plugin", key: entry.pluginId, entry, installed: have.get(entry.pluginId) ?? null }));
+  // Typed words rank by match; nothing typed keeps the catalog's own order (see catalogOrder).
+  const list = tokens(query).length ? searchEntries(scope, query) : catalogOrder(scope);
+  return list.map((entry) => ({ type: "plugin", key: entry.pluginId, entry, installed: have.get(entry.pluginId) ?? null }));
 }
 
 export function rowName(r: LibraryRow): string {

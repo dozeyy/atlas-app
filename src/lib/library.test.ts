@@ -16,6 +16,7 @@ import {
   isStale,
   mpId,
   parseGithub,
+  rowName,
   searchEntries,
   sourceOptions,
   toolkitIdFor,
@@ -128,6 +129,28 @@ describe("Library rows and sources", () => {
     const rows = buildRows({ idx, installed: [plugin, item], source: INSTALLED, query: "" });
     expect(rows.map((r) => r.key)).toEqual([a.pluginId, "item:b2"]);
     expect(buildRows({ idx, installed: [plugin, item], source: INSTALLED, query: "tid" }).map((r) => r.key)).toEqual(["item:b2"]);
+  });
+
+  it("with nothing typed, keeps the catalog's own order, the directory before added marketplaces", () => {
+    // The captured file lists a local marketplace entry first, then the directory in its own (ranked) order.
+    const captured = fixture();
+    expect(captured[0]!.marketplace).not.toBe(DIRECTORY);
+    const rows = buildRows({ idx: indexEntries(captured), installed: [], source: ALL, query: "" });
+    expect(rows.slice(0, 3).map((r) => rowName(r))).toEqual(["superpowers", "frontend-design", "design"]);
+    expect(rows.at(-1)!.key).toBe(captured[0]!.pluginId);
+    expect(rows).toHaveLength(captured.length);
+    // One marketplace on its own keeps its order too, and typed words still rank by match.
+    const z = entry("zulu", "Last letter, listed first");
+    const own = indexEntries([z, a, b]);
+    expect(buildRows({ idx: own, installed: [], source: mpId(DIRECTORY), query: "" }).map((r) => rowName(r))).toEqual(["zulu", "alpha"]);
+    expect(buildRows({ idx: own, installed: [], source: ALL, query: "alp" }).map((r) => rowName(r))).toEqual(["alpha"]);
+  });
+
+  it("the Installed filter puts what changed since it was checked first", () => {
+    const z = entry("zulu", "Last");
+    const changed: InstalledRow = { ...plugin, id: z.pluginId, name: "zulu", backupId: "b3", changed: true };
+    const rows = buildRows({ idx: indexEntries([a, b, z]), installed: [plugin, item, changed], source: INSTALLED, query: "" });
+    expect(rows.map((r) => r.key)).toEqual([z.pluginId, a.pluginId, "item:b2"]);
   });
 
   it("says why a plugin cannot be installed", () => {

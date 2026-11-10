@@ -8,6 +8,11 @@ import type { ItemKind } from "../../lib/libraryTypes";
 import { removeItem, setPluginEnabled, uninstallPlugin, type LibraryState } from "../../state/libraryStore";
 
 const OVERSCAN = 6;
+/**
+ * Room a row keeps on the right while it asks "Uninstall name?": the two buttons, and from a
+ * 700 px list up the question too (at most 220 px, see Confirm).
+ */
+const CONFIRM_ROOM = "pr-[204px] @min-[700px]:pr-[432px]";
 
 export interface RowActions {
   /** Open the detail sheet for this row (focusInstall: put focus on its Install). */
@@ -21,7 +26,10 @@ export interface RowActions {
 function Confirm({ words, yes, onYes, onNo, busy }: { words: string; yes: string; onYes: () => void; onNo: () => void; busy: boolean }) {
   return (
     <div role="group" aria-label={words} className="flex items-center gap-2">
-      <span className="hidden text-body text-ink min-[900px]:inline">{words}</span>
+      {/* One line, never wider than the room the row keeps for it (CONFIRM_ROOM below). */}
+      <span title={words} className="hidden max-w-[220px] truncate text-body text-ink @min-[700px]:block">
+        {words}
+      </span>
       <Button onClick={onNo}>Keep</Button>
       <Button variant="danger" disabled={busy} onClick={onYes}>
         {yes}
@@ -120,8 +128,8 @@ function Row({
   } else {
     const r = row.row;
     name = r.name;
+    // The second line already names the repository: no source column for a copied item.
     second = `${itemWord(r.itemKind)} copied from ${r.repo || "GitHub"}`;
-    source = r.repo;
     tile = (r.itemKind in KIND_BY_ID ? r.itemKind : "more") as ItemKind | "more";
     const isBusy = busy[row.key];
     right = confirm ? (
@@ -137,7 +145,13 @@ function Row({
   }
 
   // Room the buttons on the right need, so the text never runs under them.
-  const reserve = row.type === "item" ? 230 : row.type === "plugin" && !row.installed ? 108 : row.type === "plugin" && row.installed?.changed ? 400 : 190;
+  const changed = row.type === "plugin" && !!row.installed?.changed;
+  const reserve = row.type === "item" ? 230 : row.type === "plugin" && !row.installed ? 108 : changed ? 400 : 190;
+  // Widths here are the list's own (it is the container), not the window's: an open sidebar or
+  // the source rail narrows the list, and the row follows. The source column gives way first,
+  // sooner on a row that carries the "Changed" chip and its button.
+  const sourceFrom = confirm || !source ? "" : changed ? "@min-[860px]:block" : "@min-[620px]:block";
+  const second2 = reason ?? second;
 
   return (
     <div
@@ -148,22 +162,51 @@ function Row({
       <button
         type="button"
         data-row={row.key}
-        aria-label={`${name}. ${reason ?? second}`}
+        aria-label={`${name}. ${second2}`}
         onClick={() => actions.open(row)}
-        className="row-btn h-full items-center gap-3 pl-3"
-        style={{ paddingRight: confirm ? 300 : reserve }}
+        className={`row-btn h-full items-center gap-3 pl-3 ${confirm ? CONFIRM_ROOM : ""}`}
+        style={confirm ? undefined : { paddingRight: reserve }}
       >
         <KindTile kind={tile} icon={tile === "more" ? Package : undefined} size={32} />
+        {/* Long names: one line, cut with "...", the whole text on hover. */}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-body font-semibold text-ink">{name}</span>
-          <span className={`block truncate text-caption ${reason ? "text-warning" : "text-ink-2"}`}>{reason ?? second}</span>
+          <span title={name} className="block truncate text-body font-semibold text-ink">
+            {name}
+          </span>
+          <span title={second2} className={`block truncate text-caption ${reason ? "text-warning" : "text-ink-2"}`}>
+            {second2}
+          </span>
         </span>
-        <span className={`hidden w-[132px] shrink-0 text-right ${confirm ? "" : "min-[760px]:block"}`}>
-          <span className="block truncate text-caption text-ink-2">{source}</span>
-          {version && <span className="mono block truncate text-caption text-ink-2">{version}</span>}
+        <span className={`hidden w-[132px] shrink-0 text-right ${sourceFrom}`}>
+          <span title={source} className="block truncate text-caption text-ink-2">
+            {source}
+          </span>
+          {version && (
+            <span title={version} className="mono block truncate text-caption text-ink-2">
+              {version}
+            </span>
+          )}
         </span>
       </button>
       <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-2">{right}</div>
+    </div>
+  );
+}
+
+/** The list while it loads: the same box and the same rows (tile, two lines, button), so nothing shifts when the plugins land. */
+export function ListSkeleton({ label }: { label: string }) {
+  return (
+    <div role="status" aria-label={label} className="min-h-0 flex-1 overflow-hidden rounded-card border border-line bg-surface">
+      {Array.from({ length: 14 }, (_, i) => (
+        <div key={i} aria-hidden="true" style={{ height: ROW_H }} className="flex items-center gap-3 border-b border-line px-3">
+          <span className="skeleton size-8 shrink-0 rounded-control" />
+          <span className="min-w-0 flex-1">
+            <span className="skeleton block h-3 rounded-control" style={{ width: `${24 + ((i * 17) % 28)}%` }} />
+            <span className="skeleton mt-2 block h-2.5 rounded-control" style={{ width: `${44 + ((i * 23) % 36)}%` }} />
+          </span>
+          <span className="skeleton h-8 w-[66px] shrink-0 rounded-control" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -231,7 +274,7 @@ export function LibraryList({
     <div
       ref={box}
       onScroll={(e) => setTop(e.currentTarget.scrollTop)}
-      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-card border border-line bg-surface"
+      className="@container min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-card border border-line bg-surface"
     >
       <div role="list" aria-label="Plugins and skills" style={{ height: rows.length * ROW_H }} className="relative">
         {rows.slice(from, to).map((row, i) => (

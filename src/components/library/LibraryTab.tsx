@@ -5,7 +5,7 @@ import { Button, IconButton } from "../controls";
 import { EmptyState } from "../EmptyState";
 import { SelectField } from "../usage/fields";
 import { AddFromGitHub } from "./AddFromGitHub";
-import { LibraryList, type RowActions } from "./LibraryList";
+import { LibraryList, ListSkeleton, type RowActions } from "./LibraryList";
 import { LibrarySheet, type SheetTarget } from "./LibrarySheet";
 import { SourceRail } from "./SourceRail";
 import { NO_CLI, OFFLINE, buildRows, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
@@ -143,7 +143,7 @@ export function LibraryTab() {
 
   let body;
   if (loading) {
-    body = <div role="status" aria-label="Loading the Library" className="skeleton min-h-0 flex-1 rounded-card" />;
+    body = <ListSkeleton label="Loading the Library" />;
   } else if (noCatalog && lib.source !== "installed") {
     body = lib.refreshing ? (
       <div role="status" aria-label="Loading the plugin catalog" className="relative min-h-0 flex-1">
@@ -166,14 +166,23 @@ export function LibraryTab() {
       </EmptyState>
     );
   } else if (rows.length === 0 && partial && lib.source !== "installed") {
-    body = <div role="status" aria-label="Searching the catalog" className="skeleton min-h-0 flex-1 rounded-card" />;
+    body = <ListSkeleton label="Searching the catalog" />;
   } else if (rows.length === 0) {
+    const nothingInstalled = lib.source === "installed" && !lib.query;
+    // What to do next, in words that fit what is on screen: the rail is only "on the left" when it is drawn.
+    const wider = lib.source === "all" ? "" : wide ? ", or pick All on the left" : ", or pick All in the list of sources";
     body = (
       <EmptyState
         fill
-        icon={lib.source === "installed" && !lib.query ? Package : MagnifyingGlass}
-        title={lib.source === "installed" && !lib.query ? "Nothing installed yet" : lib.query ? `Nothing matches ${lib.query}` : "Nothing here yet"}
-        body={lib.source === "installed" && !lib.query ? "Plugins and skills you add from the Library show up here." : "Try fewer words, or pick All on the left."}
+        icon={nothingInstalled ? Package : MagnifyingGlass}
+        title={nothingInstalled ? "Nothing installed yet" : lib.query ? `Nothing matches ${lib.query}` : "Nothing here yet"}
+        body={
+          nothingInstalled
+            ? "Plugins and skills you add from the Library show up here."
+            : lib.query
+              ? `Try fewer words${wider}.`
+              : "This marketplace lists no plugins. Pick All to see the rest."
+        }
         seed={7}
       />
     );

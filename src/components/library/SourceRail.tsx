@@ -28,7 +28,9 @@ export function SourceRail({
             }`}
           >
             {on && <span aria-hidden="true" className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-accent" />}
-            <span className="min-w-0 flex-1 truncate">{o.label}</span>
+            <span title={o.label} className="min-w-0 flex-1 truncate">
+              {o.label}
+            </span>
             <span className="mono shrink-0 text-caption text-ink-2">{o.count.toLocaleString()}</span>
           </button>
         );

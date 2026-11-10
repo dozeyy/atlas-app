@@ -72,7 +72,9 @@ function FileView({ token, item, onBack }: { token: string; item: InnerItem; onB
         <button type="button" onClick={onBack} className="press cursor-pointer rounded-control px-2 py-1 text-body text-accent-text hover:bg-accent-tint">
           Back to the list
         </button>
-        <span className="mono min-w-0 flex-1 truncate text-caption text-ink-2">{rel}</span>
+        <span title={rel} className="mono min-w-0 flex-1 truncate text-caption text-ink-2">
+          {rel}
+        </span>
       </div>
       {state === null && <div role="status" aria-label="Reading the file" className="skeleton h-40 rounded-card" />}
       {state && "error" in state && (
@@ -296,7 +298,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {description && <p className="selectable px-6 py-4 text-body text-ink">{description}</p>}
+          {description && <p className="selectable break-words px-6 py-4 text-body text-ink">{description}</p>}
 
           {loading && (
             <div className="border-t border-line px-6 py-4">
@@ -342,7 +344,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
                   <>
                     <p className="mb-2 text-body text-ink-2">{insideWords(shaped.items)}</p>
                     {!file && (
-                      <ul className="grid gap-0.5">
+                      <ul className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
                         {shaped.items.map((i) => (
                           <li key={i.rel}>
                             <button
@@ -350,7 +352,9 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
                               onClick={() => setFile(i)}
                               className="row-btn items-center gap-2 rounded-control px-2 py-1.5 text-body text-ink"
                             >
-                              <span className="min-w-0 flex-1 truncate">{i.name}</span>
+                              <span title={i.name} className="min-w-0 flex-1 truncate">
+                                {i.name}
+                              </span>
                               <span className="shrink-0 text-caption text-ink-2">{itemWord(i.kind)}</span>
                             </button>
                           </li>
