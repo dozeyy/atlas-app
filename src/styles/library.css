@@ -27,14 +27,16 @@ html[data-input="keyboard"] .lib-sel::before,
 }
 
 /*
- * A row's picture. On the shelf it is a quiet tile, so the names lead; installed, it is the
+ * A row's picture. On the shelf it is a quiet tile, so the names lead, its glyph in the topic's
+ * family colour (--tile, one of the four chart colours, pulled over halfway to ink so it reads on
+ * the raised fill in every theme: the same mix the helper avatars use); installed, it is the
  * Toolkit's clay tile ("this one is yours") and carries a mark on its corner. The tile relaxes
- * into a blob when its row is pointed at, like the Toolkit's tiles.
+ * into a blob when its row is pointed at, like the Toolkit's tiles, and its glyph comes to ink.
  */
 .lib-tile {
   border-radius: var(--r-control);
   background: var(--raised);
-  color: var(--ink-2);
+  color: color-mix(in srgb, var(--tile, var(--ink-2)) 55%, var(--ink));
   transition:
     border-radius var(--dur-hover) var(--ease-spring),
     color var(--dur-fast) var(--ease-out);

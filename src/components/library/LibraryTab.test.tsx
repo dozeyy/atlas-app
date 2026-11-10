@@ -343,6 +343,11 @@ describe("Library tab: installed plugins", () => {
     expect(shelf).toHaveAttribute("data-tile-topic", "review");
     expect(shelf).toHaveAttribute("data-tile-state", "none");
     expect(shelf.querySelector(".lib-mark")).toBeNull();
+    // Its glyph wears the topic's family colour (review checks: sand), the same four the helper
+    // avatars use; the installed one keeps the clay tile.
+    expect((shelf as HTMLElement).style.getPropertyValue("--tile")).toBe("var(--chart-3)");
+    expect((tile as HTMLElement).style.getPropertyValue("--tile")).toBe("var(--chart-2)");
+    expect(tile).toHaveClass("lib-tile-own");
     expect(await installBtn("code-review")).toHaveClass("lib-install");
 
     await userEvent.click(await screen.findByRole("button", { name: "Uninstall pdf-tools" }));
