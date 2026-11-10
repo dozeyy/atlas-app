@@ -68,13 +68,18 @@ export function Now() {
       <PageTitle title="Now" />
       <div className="now-root">
         {snap === null || groups === null ? null : !snap.watching ? (
-          <Quiet title="No Claude folder found" />
+          <Quiet title="No Claude folder found" hint="Choose it in Settings, under Claude folder." />
         ) : (
           <>
             {groups.running.length > 0 ? (
               <Running chats={groups.running} />
             ) : groups.waiting.length === 0 ? (
-              <Quiet title={groups.finished.length > 0 ? "Nothing running" : "No chats yet"} last={groups.finished[0] ?? null} now={now} />
+              <Quiet
+                title={groups.finished.length > 0 ? "Nothing running" : "No chats yet"}
+                hint={groups.finished.length > 0 ? undefined : "Start a chat in Claude Code and it shows up here while it works."}
+                last={groups.finished[0] ?? null}
+                now={now}
+              />
             ) : null}
             {(groups.waiting.length > 0 || groups.finished.length > 0) && (
               <div className="now-band" data-fill={groups.running.length === 0 && groups.waiting.length > 0 ? "" : undefined} data-cols={(groups.waiting.length > 0 ? 1 : 0) + (groups.finished.length > 0 ? 1 : 0)}>
@@ -103,7 +108,9 @@ export function Now() {
 
 // ---- nothing running -----------------------------------------------------------------
 
-function Quiet({ title, last, now }: { title: string; last?: NowLast | null; now?: number }) {
+/** One title and one plain second line: when the last chat ended, or else what to do next. */
+function Quiet({ title, hint, last, now }: { title: string; hint?: string; last?: NowLast | null; now?: number }) {
+  const line = last && now !== undefined ? `Last chat ended ${ago(last.endedMs, now)}` : hint;
   return (
     <section className="now-quiet card" aria-label={title}>
       <Topo seed={21} />
@@ -111,7 +118,7 @@ function Quiet({ title, last, now }: { title: string; last?: NowLast | null; now
         <Binoculars size={28} weight="duotone" aria-hidden="true" />
       </div>
       <h2 className="d d-title now-quiet-title">{title}</h2>
-      {last && now !== undefined && <p className="now-quiet-when">{`Last chat ended ${ago(last.endedMs, now)}`}</p>}
+      {line && <p className="now-quiet-when">{line}</p>}
     </section>
   );
 }
