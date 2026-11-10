@@ -258,11 +258,12 @@ function Palette() {
                     {Icon && <Icon size={16} aria-hidden="true" />}
                   </span>
                   <span className="qj-text">
-                    <span className="qj-title">
+                    {/* Names people wrote (chats, projects, skills) can be longer than the row: the whole of it is in the hover. Pages are short and get none. */}
+                    <span className="qj-title" title={item.kind === "page" ? undefined : item.title}>
                       <Marked text={item.title} query={query} />
                     </span>
                     {item.sub && (
-                      <span className="qj-sub">
+                      <span className="qj-sub" title={item.kind === "page" ? undefined : item.sub}>
                         <Marked text={item.sub} query={query} />
                       </span>
                     )}
