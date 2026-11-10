@@ -1,3 +1,6 @@
 # Pinned build hashes. One line per release asset: <version> <asset> <sha256>
 # The launcher downloads tag v<version> and runs the file only if its SHA-256 matches the line here.
 # Written by tools/pin-skill-checksums.ps1 when a release is made. Do not edit by hand.
+0.1.1 atlas-usage-windows-x64.exe 16beb713a530dd3e592e6c0c6f46a33d4aa91759eba527cbf59b3a21e60d6d93
+0.1.1 atlas-usage-macos-universal 7156ae92d2e32189ec726031b06e3b834016bd68d423b969310abf7e40032d4b
+0.1.1 atlas-usage-linux-x64 c62e81c2b46d3c87ff5576a91082d18af955f1c18892d76ae7149728f5be806a
