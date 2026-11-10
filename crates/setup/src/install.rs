@@ -71,8 +71,9 @@ pub fn atlas_exe(dir: &Path) -> PathBuf {
     dir.join("atlas.exe")
 }
 
-/// The switches for the silent run. `/NS` is the installer's own "no desktop shortcut"; without
-/// it a silent install makes one. The folder switch is separate (`folder_switch`) because the
+/// The switches for the silent run. `/NS` is the installer's "no shortcut" switch: without it a silent
+/// install puts Atlas on the desktop. It also skips the Start menu entry, which the installer hook
+/// (`crates/app/windows/hooks.nsh`) puts back. The folder switch is separate (`folder_switch`) because the
 /// installer wants it last and unquoted.
 pub fn silent_args() -> [&'static str; 2] {
     ["/S", "/NS"]

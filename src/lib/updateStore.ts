@@ -7,8 +7,8 @@ import type { UpdateInfo } from "./updateTypes";
 
 /** The first quiet check, after the first paint and the first index have had the disk. */
 export const FIRST_CHECK_MS = 5_000;
-/** Then once every six hours while Atlas stays open. */
-export const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
+/** Then once an hour while Atlas stays open, so a new release shows up the same session (one small file from GitHub). */
+export const CHECK_EVERY_MS = 60 * 60 * 1000;
 
 export type UpdateState =
   | { kind: "none" }

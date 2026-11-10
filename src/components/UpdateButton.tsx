@@ -32,7 +32,7 @@ function noteLine(notes: string | null): string {
  * until the next launch). The first time a launch finds an update, its small panel opens by
  * itself, without taking the keyboard focus; it is only an offer: "Later", Escape or a click
  * anywhere else closes it, and nothing installs unless the person clicks "Update and restart".
- * Checks run quietly: once a few seconds after the first paint, then every six hours.
+ * Checks run quietly: once a few seconds after the first paint, then every hour.
  */
 export function UpdateButton() {
   const { state, dismissed, offered } = useUpdate();

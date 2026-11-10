@@ -142,7 +142,7 @@ Reliability beats feature count.
   `tools/build-setup.ps1`; the release workflow (`.github/workflows/release.yml`, tags `v*`)
   builds the same chain. Details: `docs/releasing.md`.
 - **In-app updates** (`crates/app/src/update.rs`, `tauri-plugin-updater`): a quiet check after
-  first paint and every 6 h against `https://github.com/dozeyy/atlas/releases/latest/download/latest.json`
+  first paint and every hour against `https://github.com/dozeyy/atlas/releases/latest/download/latest.json`
   (the PUBLIC repo; this source repo is `dozeyy/atlas-app`);
   a blue download icon at the sidebar's bottom-left offers the update, never installs by itself.
   The signing key is `C:\Users\Will\.tauri\atlas-updater.key` (outside every repo, never

@@ -42,7 +42,7 @@ describe("the update icon", () => {
     expect(rest.join(" ")).not.toMatch(/[-#*]/); // markdown marks are stripped
   });
 
-  it("checks once after the first paint and then every six hours, and never installs by itself", async () => {
+  it("checks once after the first paint and then every hour, and never installs by itself", async () => {
     vi.useFakeTimers();
     mock.updates.available = NEWER;
     render(<UpdateButton />);

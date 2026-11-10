@@ -500,3 +500,8 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Sentences name at most 3 models/projects, then "and N more". Projects with the same folder name merge in the sentence (all-time showed "Origin Client" twice before).
 - skill/skills/atlas/SKILL.md section 3: the program's output is the whole reply; Claude adds no intro, closing line, recap, advice or hype.
 - Real outputs checked for chat, today, week, 30d, last-week --vs week, all (release build). Not yet in a public release: the skill downloads the CLI from the public repo, so dad's copy changes only after the next release.
+
+## 2026-11-09 - Atlas missing from Start search; why no update ever popped up
+- Root cause (proven): Atlas Setup runs the NSIS installer with `/S /NS`. In Tauri's template `/NS` ($NoShortcutMode) skips the Start menu entry too, not just the desktop one, so installs had no `Atlas.lnk` and Windows search never found Atlas. Fix: `crates/app/windows/hooks.nsh` NSIS_HOOK_POSTINSTALL creates `$SMPROGRAMS\Atlas.lnk` with the app's AppUserModelID when missing (also on updates, which repairs old installs); the uninstaller already removes that path. Verified on Will's PC: silent Setup install -> `Atlas.lnk` targets `%LOCALAPPDATA%\atlas\atlas.exe`, `Get-StartApps` lists Atlas (me.willhenry.atlas), no desktop shortcut.
+- The update offer never showed because no release has ever been published (`gh release list` is empty on dozeyy/atlas and dozeyy/atlas-app; no tags). The in-app check now runs hourly instead of every 6 h, so a new release appears in an open window within the hour.
+- macOS needs nothing: an app dragged into Applications shows in Spotlight and Launchpad by itself.
