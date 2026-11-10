@@ -440,3 +440,10 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Dropped my byte-scanning `effort_of` in line.rs (main's parser already puts `effort` on the message): the ledger reads `m.effort`. Per-run models keep "" for no effort recorded.
 - make-fixtures.py keeps main's "clear only what we write" list plus `claude-ledger`; the `ledger` argument still writes only that fixture.
 - Flaky under load: `habits::tests::the_second_call_with_no_new_rows_answers_from_memory` (a timing assert, 93 ms) failed while vitest ran alongside; passes alone and in a quiet full lib run.
+
+## 2026-11-09 - After-run debrief merged (ac9545e)
+- Unit 4 (branch worktree-agent-a3fe7b9591c51f7d5, head 94a37b4): `atlas-usage debrief --detail low|high [--cost]`, skill `atlas-debrief`, MCP `get_agent_scorecard` / `get_review_themes` / `get_run_debrief` (read-only, stdio), one renderer `usage::debrief_text::render`.
+- Verified: a real 11-helper chat recounted independently from the JSONL matched exactly (11 helpers, Opus 5.5 high 9 / medium 2, 13,321,113 tokens); MCP output byte-identical to the CLI; headless `claude -p` terse and high runs with no permission denials.
+- allowed-tools is 4 exact lines (no wildcard): the CLI reads `CLAUDE_CODE_SESSION_ID`, so no `--session` or `--cache-dir` can ride along. With no id it picks the newest chat with helpers and says so on the FIRST stdout line (stderr is invisible to the model).
+- Changed = worktree branches only for v1 (decided); branch names go through the secret mask. Models line includes the chat's own model ("(chat)").
+- Review: PASS with 2 MED usability gaps (session fallback, MCP sessionId) fixed in 94a37b4.
