@@ -1,5 +1,5 @@
 import { Card } from "../controls";
-import { AgentAvatar } from "../usage/helperKit";
+import { AgentAvatar, helperName } from "../usage/helperKit";
 import { TokenText } from "../usage/TokenText";
 import { exact, modelWithEffort, plural } from "../../lib/usage";
 import { REVIEWER_WORDS, finishLine, rateSentence, reviewCountsLine, reviewerLine, usualLine, weeklyTitle } from "../../lib/teamModel";
@@ -56,20 +56,22 @@ export function ScoreCard({ card, onOpen }: { card: TypeCard; onOpen: () => void
   const model = card.topModel ? modelWithEffort(card.topModel.model, card.topModel.effort) : "Model not known";
   const finish = finishLine(card);
   const usual = `${usualLine(card)}${finish ? ` \u00b7 ${finish}` : ""}`;
+  // The engine makes the name from the type ("Ui builder"): the short forms go back in capitals.
+  const name = helperName(card.displayName);
 
   return (
     <Card
       onClick={onOpen}
       hitClassName="text-left"
       className="flex h-full flex-col gap-3 p-4"
-      aria-label={`${card.displayName}, ${plural(card.runs, "run")}. Open details.`}
+      aria-label={`${name}, ${plural(card.runs, "run")}. Open details.`}
       data-agent-type={card.agentType}
     >
       <div className="flex items-center gap-3">
         <AgentAvatar type={card.agentType} size={40} />
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-lead font-semibold text-ink" title={card.displayName}>
-            {card.displayName}
+          <h3 className="truncate text-lead font-semibold text-ink" title={name}>
+            {name}
           </h3>
           {card.reviewer && <p className="truncate text-caption text-ink-2">{REVIEWER_WORDS}</p>}
         </div>

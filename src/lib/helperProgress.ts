@@ -5,6 +5,7 @@
 // it has moved (Step 3 of 6); else tool calls so far against the median of that kind's finished
 // runs (About 60% of a typical run); else nothing to compare (docs/specs/agent-scorecard.md D43).
 
+import { helperName } from "../components/usage/helperKit";
 import { formatDuration, modelWithEffort } from "./usage";
 import type { NowHelper } from "./nowTypes";
 
@@ -26,11 +27,11 @@ export interface Progress {
   hint?: string;
 }
 
-/** "code-reviewer" -> "Code reviewer", "general-purpose" -> "General purpose". */
+/** "code-reviewer" -> "Code reviewer", "general-purpose" -> "General purpose", "ui-builder" -> "UI builder". */
 export function typeName(t: string | null): string {
   if (!t) return "Helper";
   const s = t.replace(/[-_]+/g, " ").trim();
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "Helper";
+  return s ? helperName(s.charAt(0).toUpperCase() + s.slice(1)) : "Helper";
 }
 
 /**
@@ -56,7 +57,7 @@ export function progressOf(h: NowHelper): Progress {
   }
   const t = h.typical;
   if (t && t.calls > 0) {
-    const hint = `A typical ${typeName(h.agentType).toLowerCase()} run: ${t.calls} tool calls, ${formatDuration(t.ms)} (median of ${t.runs} runs).`;
+    const hint = `A typical ${helperName(typeName(h.agentType).toLowerCase())} run: ${t.calls} tool calls, ${formatDuration(t.ms)} (median of ${t.runs} runs).`;
     if (h.toolCalls >= t.calls) return { kind: "over", fill: FILL_CAP, text: "Longer than a typical run", hint };
     const share = h.toolCalls / t.calls;
     // Almost nothing done yet: a percentage would be a made-up number.

@@ -5,7 +5,7 @@ import { Button, Card } from "../components/controls";
 import { Bars } from "../components/charts/Bars";
 import { IconMotion } from "../components/IconMotion";
 import { Breakdown, ClampText, ModelSplit } from "../components/usage/detailParts";
-import { AgentAvatar, ModelChip, OutcomeMark, TokenFigure, type AvatarLevel } from "../components/usage/helperKit";
+import { AgentAvatar, helperName, ModelChip, OutcomeMark, TokenFigure, type AvatarLevel } from "../components/usage/helperKit";
 import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
 import { timelineBars } from "../components/usage/timelineBars";
 import { getBackend } from "../lib/ipc";
@@ -14,11 +14,11 @@ import { useFetched, useLiveReload } from "../lib/useUsage";
 import { compact, effortMix, exact, formatDuration, formatWhen, percent, share, topEffort } from "../lib/usage";
 import type { Outcome } from "../lib/types";
 
-/** "general-purpose" -> "General purpose". */
+/** "general-purpose" -> "General purpose", "ui-builder" -> "UI builder". */
 export function typeLabel(t: string | null): string {
   if (!t) return "Helper";
   const s = t.replace(/[-_]+/g, " ").trim();
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  return helperName(s.charAt(0).toUpperCase() + s.slice(1));
 }
 
 /**
@@ -103,7 +103,8 @@ export function AgentDetailView({
       <div className="flex items-center gap-4">
         <AgentAvatar type={agent.agentType} size={48} level={d.data.parentName ? "nested" : level} />
         <div className="min-w-0">
-          <h2 className="d d-figure break-words text-ink">{agent.name}</h2>
+          {/* A name made from the type gets its short forms in capitals; one that was written stays as written. */}
+          <h2 className="d d-figure break-words text-ink">{agent.nameSource === "type" ? helperName(agent.name) : agent.name}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-body text-ink-2">
             {outcome && <OutcomeMark outcome={outcome} />}
             {type && <span title={agent.agentType ?? undefined}>{type}</span>}

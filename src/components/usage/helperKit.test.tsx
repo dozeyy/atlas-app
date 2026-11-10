@@ -1,7 +1,9 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Package } from "@phosphor-icons/react";
-import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, kindLook, MainChatIcon, type HelperKind } from "./helperKit";
+import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, helperName, kindLook, MainChatIcon, type HelperKind } from "./helperKit";
+import { typeName } from "../../lib/helperProgress";
+import { typeLabel } from "../../pages/AgentDetail";
 import { KINDS as SETUP_KINDS } from "../../lib/setup-model";
 
 describe("helper icons", () => {
@@ -85,6 +87,35 @@ describe("helper icons", () => {
 
   it("keeps the icon on the 16 / 20 / 24 grid", () => {
     expect([20, 24, 28, 32, 36, 40, 48].map(avatarIconSize)).toEqual([16, 16, 16, 20, 20, 24, 24]);
+  });
+});
+
+describe("helper names", () => {
+  it("puts the known short forms back in capitals", () => {
+    expect(helperName("Ui builder")).toBe("UI builder");
+    expect(helperName("Qa lead")).toBe("QA lead");
+    expect(helperName("Api tester")).toBe("API tester");
+    expect(helperName("Mcp server dev")).toBe("MCP server dev");
+    expect(helperName("Fix ci")).toBe("Fix CI");
+    expect(helperName("Pr reviewer")).toBe("PR reviewer");
+    expect(helperName("a typical ui builder")).toBe("a typical UI builder");
+    expect(helperName("ui-builder")).toBe("UI-builder");
+    expect(helperName("Web ui and api (mcp)")).toBe("Web UI and API (MCP)");
+  });
+
+  it("only as whole words, and touches nothing else", () => {
+    for (const name of ["Build fixer", "Guide writer", "Price checker", "Circuit tester", "Apiary keeper", "Quality", "Sprint planner", "Code reviewer", "General purpose", "UI builder", "Explore", ""]) {
+      expect(helperName(name)).toBe(name);
+    }
+    expect(helperName("ui2 and api3")).toBe("ui2 and api3");
+  });
+
+  it("is what the type labels on Now, Sessions and Team go through", () => {
+    expect(typeName("ui-builder")).toBe("UI builder");
+    expect(typeLabel("ui-builder")).toBe("UI builder");
+    expect(typeLabel("qa_runner")).toBe("QA runner");
+    expect(typeName("general-purpose")).toBe("General purpose");
+    expect(typeLabel(null)).toBe("Helper");
   });
 });
 

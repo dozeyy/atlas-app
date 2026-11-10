@@ -16,6 +16,17 @@ export function sessionName(row: Pick<SessionRow, "name" | "projectName">): stri
   return row.name?.trim() || `Session in ${row.projectName}`;
 }
 
+/**
+ * A helper's name as it is shown: a name made from a type ("ui-builder" becomes "Ui builder")
+ * gets its short forms back in capitals, "UI builder". Only these six, only as whole words, and
+ * nothing else in the name is touched ("Build" keeps its "ui", "price" its "pr"). Every page that
+ * shows a name made from a helper's type passes it through here; a name a person or Claude wrote
+ * (a description, a prompt) is left as written.
+ */
+export function helperName(name: string): string {
+  return name.replace(/(^|[^A-Za-z0-9])(ui|qa|api|mcp|ci|pr)(?![A-Za-z0-9])/gi, (_, before: string, word: string) => before + word.toUpperCase());
+}
+
 // ---- model chips -------------------------------------------------------------
 
 /** Which chart colour a model family wears: the same dot on the Dashboard, Sessions and here. */

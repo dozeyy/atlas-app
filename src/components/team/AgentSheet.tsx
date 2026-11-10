@@ -1,6 +1,6 @@
 import { Bars } from "../charts/Bars";
 import { Button } from "../controls";
-import { AgentAvatar } from "../usage/helperKit";
+import { AgentAvatar, helperName } from "../usage/helperKit";
 import { TokenText } from "../usage/TokenText";
 import { SheetSection, SideSheet } from "./SideSheet";
 import { compact, exact, formatDuration, formatWhen, modelWithEffort, plural } from "../../lib/usage";
@@ -65,10 +65,11 @@ export function AgentSheet({
   const finish = finishLine(card);
   const rate = card.reviewer ? null : rateSentence(card.reviews);
   const bars = weeklyBars(card.weekly, toTs);
+  const name = helperName(card.displayName);
 
   return (
     <SideSheet
-      title={card.displayName}
+      title={name}
       lead={<AgentAvatar type={card.agentType} size={40} />}
       subtitle={
         <span>
@@ -87,7 +88,7 @@ export function AgentSheet({
       }
     >
       <SheetSection title="Runs per week">
-        <Bars id={`team-sheet-${card.agentType}`} data={bars} label={`${card.displayName} runs per week`} formatTick={(v) => String(Math.round(v))} height={160} calm highlight={-1} />
+        <Bars id={`team-sheet-${card.agentType}`} data={bars} label={`${name} runs per week`} formatTick={(v) => String(Math.round(v))} height={160} calm highlight={-1} />
         <p className="mt-2 text-body text-ink-2">
           {usualLine(card)}.
           {card.resumedRuns > 0 ? ` ${plural(card.resumedRuns, "run")} picked up again.` : ""}
