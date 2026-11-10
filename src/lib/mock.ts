@@ -22,6 +22,7 @@ import { mockCostReport } from "./setup-cost-mock";
 import { MockUsage } from "./mockUsage";
 import { MockSearch } from "./mockSearch";
 import { MockHistory } from "./mockHistory";
+import { MockLibrary } from "./mockLibrary";
 import { MockNow } from "./mockNow";
 import { MockUpdates } from "./mockUpdate";
 
@@ -285,6 +286,27 @@ export class MockBackend {
     ...(await this.history.settingsOverview()),
     keepVersions: this.info.settings.historyKeepVersions,
   });
+  // ---- Library: the stand-in lives in mockLibrary.ts ----
+  readonly library = new MockLibrary();
+  libraryCatalog: Backend["libraryCatalog"] = () => this.library.libraryCatalog();
+  libraryCatalogAll: Backend["libraryCatalogAll"] = () => this.library.libraryCatalogAll();
+  libraryRefresh: Backend["libraryRefresh"] = (m) => this.library.libraryRefresh(m);
+  libraryInstalled: Backend["libraryInstalled"] = () => this.library.libraryInstalled();
+  libraryInspectPlugin: Backend["libraryInspectPlugin"] = (id) => this.library.libraryInspectPlugin(id);
+  libraryInspectInstalled: Backend["libraryInspectInstalled"] = (id) => this.library.libraryInspectInstalled(id);
+  libraryInspectLink: Backend["libraryInspectLink"] = (t) => this.library.libraryInspectLink(t);
+  libraryReadFile: Backend["libraryReadFile"] = (t, r) => this.library.libraryReadFile(t, r);
+  libraryInstallPlugin: Backend["libraryInstallPlugin"] = (id, t) => this.library.libraryInstallPlugin(id, t);
+  libraryUninstallPlugin: Backend["libraryUninstallPlugin"] = (id) => this.library.libraryUninstallPlugin(id);
+  libraryUndo: Backend["libraryUndo"] = (b) => this.library.libraryUndo(b);
+  librarySetEnabled: Backend["librarySetEnabled"] = (id, on) => this.library.librarySetEnabled(id, on);
+  libraryAddMarketplace: Backend["libraryAddMarketplace"] = (t) => this.library.libraryAddMarketplace(t);
+  libraryInstallItems: Backend["libraryInstallItems"] = (t, p) => this.library.libraryInstallItems(t, p);
+  libraryRemoveItem: Backend["libraryRemoveItem"] = (b) => this.library.libraryRemoveItem(b);
+  libraryOpenRepo: Backend["libraryOpenRepo"] = (r) => this.library.libraryOpenRepo(r);
+  libraryCancel: Backend["libraryCancel"] = () => this.library.libraryCancel();
+  libraryPerf: Backend["libraryPerf"] = (ms) => this.library.libraryPerf(ms);
+  onLibraryProgress: Backend["onLibraryProgress"] = (cb) => this.library.onLibraryProgress(cb);
   // ---- updates: the stand-in lives in mockUpdate.ts ----
   readonly updates = new MockUpdates();
   updateCheck: Backend["updateCheck"] = () => this.updates.updateCheck();

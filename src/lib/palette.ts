@@ -6,10 +6,12 @@ import { localDay } from "./usage";
 import type { SetupItem } from "./setup-types";
 import type { SessionRow, View } from "./types";
 
-export type PaletteKind = "page" | "session" | "project" | "skill" | "agent" | "command";
+export type PaletteKind = "page" | "library" | "session" | "project" | "skill" | "agent" | "command";
 
 export interface PaletteTarget {
   view: View;
+  /** Open the Toolkit on this tab. */
+  toolkitTab?: "setup" | "library";
   /** Open this chat in Sessions. */
   session?: string;
   /** Show this project's chats in Sessions (a project key, as the filter uses it). */
@@ -38,6 +40,7 @@ export interface PaletteItem {
 /** What each kind is called on its row. */
 export const KIND_LABEL: Record<PaletteKind, string> = {
   page: "Page",
+  library: "Library",
   session: "Chat",
   project: "Project",
   skill: "Skill",
@@ -46,9 +49,9 @@ export const KIND_LABEL: Record<PaletteKind, string> = {
 };
 
 /** Same score, better kind first: pages, then projects and toolkit items, then chats. */
-const KIND_ORDER: Record<PaletteKind, number> = { page: 0, project: 1, skill: 2, agent: 2, command: 2, session: 3 };
+const KIND_ORDER: Record<PaletteKind, number> = { page: 0, library: 0, project: 1, skill: 2, agent: 2, command: 2, session: 3 };
 /** A little weight for the kind, so "set" lands on Settings before a chat that starts with "set". */
-const KIND_BIAS: Record<PaletteKind, number> = { page: 30, project: 10, skill: 8, agent: 8, command: 8, session: 0 };
+const KIND_BIAS: Record<PaletteKind, number> = { page: 30, library: 30, project: 10, skill: 8, agent: 8, command: 8, session: 0 };
 
 /** Other words a page answers to. */
 const PAGE_WORDS: Partial<Record<View, string>> = {
@@ -72,6 +75,20 @@ export function pageItems(nav: { view: View; label: string }[], mod: string): Pa
     at: 0,
     target: { view: n.view },
   }));
+}
+
+/** "Library": the Toolkit's second tab, found by typing (it is not one of the sidebar pages). */
+export function libraryItem(): PaletteItem {
+  return {
+    id: "library:tab",
+    kind: "library",
+    title: "Library",
+    sub: "Find and add plugins and skills",
+    meta: "",
+    extra: "plugins skills marketplace catalog install add github toolkit",
+    at: 0,
+    target: { view: "setup", toolkitTab: "library" },
+  };
 }
 
 export function sessionItem(row: SessionRow, now = new Date()): PaletteItem {

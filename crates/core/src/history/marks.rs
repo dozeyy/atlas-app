@@ -23,12 +23,15 @@ const CLAUDE_JSON_MS: i64 = 2 * 60 * 1000;
 pub const SOURCE_MCP: &str = "atlas_mcp";
 /// ... and for one the in-app assistant made.
 pub const SOURCE_ASSISTANT: &str = "atlas_assistant";
+/// ... and for one installed or removed from the Library tab.
+pub const SOURCE_LIBRARY: &str = "atlas_library";
 
 /// Map the word a backup is tagged with to the word History stores.
 pub fn history_source(tag: &str) -> Option<&'static str> {
     match tag {
         "mcp" => Some(SOURCE_MCP),
         "assistant" => Some(SOURCE_ASSISTANT),
+        "library" => Some(SOURCE_LIBRARY),
         _ => None,
     }
 }
@@ -37,6 +40,13 @@ pub fn history_source(tag: &str) -> Option<&'static str> {
 pub struct Marks {
     /// `<file key>|<sha256>` -> source
     by_version: HashMap<String, &'static str>,
+    /// `<file key>|<sha256>` -> (when its backup was made, the sentence the Library change was
+    /// tagged with), one per backup: the same file contents come back (install, remove, install),
+    /// so a row is matched to the backup made just before it, not to the contents alone.
+    labels: HashMap<String, Vec<(i64, String)>>,
+    /// Library installs and removals of a plugin: (plugin id, `install`|`uninstall`, when its
+    /// backup was made, its sentence). A plugin's own row ("Plugin added x") is matched by name.
+    plugin_ops: Vec<(String, String, i64, String)>,
     /// (file key, source) of deletes: the key itself, or a folder holding it
     removed: Vec<(String, &'static str)>,
     /// (when, source) of the newest tagged change to `.claude.json`
@@ -52,6 +62,11 @@ impl Marks {
         for p in provenance(backups, since) {
             let Some(src) = history_source(&p.source) else { continue };
             let key = file_key(Path::new(&p.path));
+            if src == SOURCE_LIBRARY
+                && let (Some((id, op)), Some(label)) = (p.plugin_op.clone(), p.summary.clone().filter(|l| !l.is_empty()))
+            {
+                m.plugin_ops.push((id, op, p.created_ms as i64, label));
+            }
             if key == cj_key {
                 let at = p.created_ms as i64;
                 if m.claude_json.is_none_or(|(t, _)| at > t) {
@@ -59,8 +74,17 @@ impl Marks {
                 }
                 continue;
             }
+            // A folder made from the Library: one exact version per file it holds.
+            for (file, sha) in &p.files {
+                m.by_version.insert(format!("{}|{sha}", file_key(Path::new(file))), src);
+            }
             match p.saved_sha {
                 Some(sha) => {
+                    if src == SOURCE_LIBRARY
+                        && let Some(label) = p.summary.clone().filter(|l| !l.is_empty())
+                    {
+                        m.labels.entry(format!("{key}|{sha}")).or_default().push((p.created_ms as i64, label));
+                    }
                     m.by_version.insert(format!("{key}|{sha}"), src);
                 }
                 None if p.action == "delete" => m.removed.push((key, src)),
@@ -77,6 +101,64 @@ impl Marks {
     /// The source of the version of file `key` with this hash, when a tagged change made it.
     pub fn version(&self, key: &str, sha: &str) -> Option<&'static str> {
         self.by_version.get(&format!("{key}|{sha}")).copied()
+    }
+
+    /// The plain sentence of the Library install or removal that left this exact version of a
+    /// file at `at_ms` (the file's modified time): the backup made last before that moment, and
+    /// no more than half an hour earlier (the same window as a plugin's own rows: a later edit
+    /// that happens to leave the same contents is not the Library's doing). A version that came
+    /// back later gets the sentence of the change that brought it back.
+    pub fn label(&self, key: &str, sha: &str, at_ms: i64) -> Option<&str> {
+        self.label_made(key, sha, at_ms).map(|(_, l)| l)
+    }
+
+    /// `label`, with the time of the backup it comes from: only the first change after a backup
+    /// may take its sentence, so the caller claims `(key, sha, made)` once. A later edit that
+    /// leaves the same contents is not the Library's doing, window or not.
+    pub fn label_made(&self, key: &str, sha: &str, at_ms: i64) -> Option<(i64, &str)> {
+        // The backup is made first and the file written after it; a little slack covers clocks.
+        const SLACK_MS: i64 = 500;
+        const WITHIN_MS: i64 = 30 * 60 * 1000;
+        self.labels
+            .get(&format!("{key}|{sha}"))?
+            .iter()
+            .filter(|(made, _)| *made <= at_ms + SLACK_MS && at_ms - *made <= WITHIN_MS)
+            .max_by_key(|(made, _)| *made)
+            .map(|(made, l)| (*made, l.as_str()))
+    }
+
+    /// How far before its event a backup's own change may be taken in (the file's time can read a
+    /// little earlier than the backup's clock).
+    pub const SLACK_MS: i64 = 500;
+
+    #[cfg(test)]
+    pub(super) fn with_label(mut self, key: &str, sha: &str, made_ms: i64, label: &str) -> Marks {
+        self.labels.entry(format!("{key}|{sha}")).or_default().push((made_ms, label.into()));
+        self
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_plugin_op(mut self, id: &str, op: &str, made_ms: i64, label: &str) -> Marks {
+        self.plugin_ops.push((id.into(), op.into(), made_ms, label.into()));
+        self
+    }
+
+    /// Whether any Library change is remembered (nothing to relabel otherwise).
+    pub fn has_library(&self) -> bool {
+        !self.labels.is_empty() || !self.plugin_ops.is_empty()
+    }
+
+    /// The sentence of the Library install (`op` = "install") or removal that put the plugin `id`
+    /// in or took it out, for its own row, seen at `at_ms`: the newest such change made before it
+    /// and no more than half an hour earlier.
+    pub fn plugin_label(&self, id: &str, op: &str, at_ms: i64) -> Option<&str> {
+        const SLACK_MS: i64 = 500;
+        const WITHIN_MS: i64 = 30 * 60 * 1000;
+        self.plugin_ops
+            .iter()
+            .filter(|(i, o, made, _)| i == id && o == op && *made <= at_ms + SLACK_MS && at_ms - *made <= WITHIN_MS)
+            .max_by_key(|(_, _, made, _)| *made)
+            .map(|(_, _, _, l)| l.as_str())
     }
 
     /// The source of the delete that removed the item with this key.
@@ -104,9 +186,29 @@ mod tests {
     }
 
     #[test]
+    fn a_library_change_keeps_its_plain_sentence_for_that_exact_version() {
+        let mut m = Marks::default();
+        // install (state A), remove (state B), install again (state A): three backups, two file states.
+        m.labels.insert("f:C:/c/settings.json|A".into(), vec![(1_000, "Installed fd from the Library".into()), (9_000, "Installed fd (undo of a removal)".into())]);
+        m.labels.insert("f:C:/c/settings.json|B".into(), vec![(5_000, "Uninstalled fd from the Library".into())]);
+        let k = "f:C:/c/settings.json";
+        // Each row gets the sentence of the backup made just before it, not the newest or oldest for its contents.
+        assert_eq!(m.label(k, "A", 2_000), Some("Installed fd from the Library"));
+        assert_eq!(m.label(k, "B", 6_000), Some("Uninstalled fd from the Library"));
+        assert_eq!(m.label(k, "A", 10_000), Some("Installed fd (undo of a removal)"));
+        // A row from before any tagged change, or other contents, gets none.
+        assert_eq!(m.label(k, "A", 100), None);
+        assert_eq!(m.label(k, "other", 2_000), None);
+        // The same contents again hours later (a hand edit that landed on them) are not the Library's.
+        assert_eq!(m.label(k, "B", 5_000 + 31 * 60 * 1000), None);
+        assert_eq!(m.label(k, "B", 5_000 + 29 * 60 * 1000), Some("Uninstalled fd from the Library"));
+    }
+
+    #[test]
     fn only_mcp_and_assistant_tags_count() {
         assert_eq!(history_source("mcp"), Some(SOURCE_MCP));
         assert_eq!(history_source("assistant"), Some(SOURCE_ASSISTANT));
+        assert_eq!(history_source("library"), Some(SOURCE_LIBRARY));
         assert_eq!(history_source("user"), None);
     }
 }

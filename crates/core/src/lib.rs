@@ -13,6 +13,7 @@ pub mod fsutil;
 pub mod habits;
 pub mod history;
 pub mod launch;
+pub mod library;
 pub mod layout;
 pub mod now;
 pub mod ops;

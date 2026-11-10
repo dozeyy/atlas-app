@@ -36,7 +36,14 @@ const VERB: Record<ChangeKind, string> = {
 };
 
 /** First line of a row: "Skill added". */
-export function whatHappened(e: Pick<HistoryEvent, "kind" | "item" | "source">): string {
+export function libraryLabel(e: Pick<HistoryEvent, "source"> & { summary?: string }): string | null {
+  return e.source === "atlas_library" && e.summary && e.summary.includes("from the Library") ? e.summary : null;
+}
+
+export function whatHappened(e: Pick<HistoryEvent, "kind" | "item" | "source"> & { summary?: string }): string {
+  // A plugin put in or taken out from the Library says so by name: "Installed x from the Library".
+  const lib = libraryLabel(e);
+  if (lib) return lib;
   if (e.source === "claude_edit" || e.source === "atlas_mcp") return `${noun(e.item.kind)} edited by Claude`;
   return `${noun(e.item.kind)} ${VERB[e.kind]}`;
 }
@@ -57,6 +64,8 @@ export function sourceNote(e: Pick<HistoryEvent, "source">): string | null {
       return "Made by Claude through Atlas's connector";
     case "atlas_assistant":
       return "Made by Atlas's assistant after you approved it";
+    case "atlas_library":
+      return "Installed from the Library";
     case "claude_backup":
       return "From a Claude Code backup";
     default:

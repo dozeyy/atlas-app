@@ -25,6 +25,8 @@ use crate::state::AppState;
 use crate::usage::Signal;
 
 pub const CHANGED_EVENT: &str = "atlas://history/changed";
+/// Asks History for another pass (the Library tagged a finished change).
+pub const POKE_EVENT: &str = "atlas://history/poke";
 
 type Shared<'a> = State<'a, Arc<AppState>>;
 
@@ -93,9 +95,14 @@ impl HistoryHost {
                 let _ = idle_tx.send(Msg::UsageIdle);
             }
         });
+        let tag_tx = tx.clone();
         let poke_tx = tx;
         app.listen(SETUP_EVENT, move |_| {
             let _ = poke_tx.send(Msg::Poke);
+        });
+        // A Library change just finished and tagged its backup: look again so its rows say so.
+        app.listen(POKE_EVENT, move |_| {
+            let _ = tag_tx.send(Msg::Poke);
         });
         let (host, app) = (Arc::clone(self), app.clone());
         let _ = std::thread::Builder::new().name("atlas-history".into()).spawn(move || host.run(&app, rx));
@@ -165,7 +172,7 @@ impl HistoryHost {
         if pruned.0 > 0 {
             eprintln!("[atlas] history: pruned {} old versions, {} bytes", pruned.0, pruned.1);
         }
-        let changed = report.added + report.changed + report.removed + report.renamed + imported.0 + imported.1;
+        let changed = report.added + report.changed + report.removed + report.renamed + report.relabeled + imported.0 + imported.1;
         if changed > 0 || report.baseline {
             let _ = app.emit(CHANGED_EVENT, Changed { events: changed });
         }

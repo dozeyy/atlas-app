@@ -227,8 +227,8 @@ if [ -d "$DBG" ]; then
   wait "$pid" 2>/dev/null
   rm -rf "$TOUR/req"
   n=$(ls "$TOUR"/*.png 2>/dev/null | wc -l | tr -d ' ')
-  # 25 stops light + 25 dark at 1280x800 (the 10 pages and the 15 Wrapped slides) and 11 at 900x600: src/lib/shotTour.ts.
-  [ "$n" -ge 61 ] && ok "$n tour pictures (expected 61)" || bad "only $n tour pictures (expected 61)"
+  # 27 stops light + 27 dark at 1280x800 (the 12 pages and views and the 15 Wrapped slides) and 13 at 900x600: src/lib/shotTour.ts.
+  [ "$n" -ge 67 ] && ok "$n tour pictures (expected 67)" || bad "only $n tour pictures (expected 67)"
   [ -f "$TOUR/sizes.txt" ] && note "window sizes captured: $(awk '{ split($2, r, ","); print r[3] "x" r[4] }' "$TOUR/sizes.txt" | sort | uniq -c | tr -s ' ' | tr '\n' ';')"
   if grep -E 'no picture|failed|tour stopped' "$TOUR/tour.log" >/dev/null 2>&1; then
     bad "tour steps went wrong: $(grep -cE 'no picture|failed|tour stopped' "$TOUR/tour.log") (tour/tour.log)"

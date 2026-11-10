@@ -53,6 +53,19 @@ import type {
 } from "./historyTypes";
 import type { NowFinished, NowSnapshot } from "./nowTypes";
 import type { UpdateInfo, UpdateProgress } from "./updateTypes";
+import type {
+  CatalogAll,
+  CatalogView,
+  FileText,
+  InstalledRow,
+  ItemResult,
+  LibraryDetail,
+  LibraryProgress,
+  MarketAdded,
+  Pick,
+  PluginOutcome,
+  UndoDone,
+} from "./libraryTypes";
 import { MockBackend } from "./mock";
 
 declare global {
@@ -72,6 +85,7 @@ export const NOW_FINISHED_EVENT = "atlas://now/finished";
 export const QUIT_ASK_EVENT = "atlas://quit-ask";
 export const MAXIMIZED_EVENT = "atlas://window/maximized";
 export const UPDATE_PROGRESS_EVENT = "atlas://update/progress";
+export const LIBRARY_PROGRESS_EVENT = "atlas://library/progress";
 
 export type Unlisten = () => void;
 
@@ -242,6 +256,35 @@ export interface Backend {
   /** Download, verify and install what the last check found, then start the new version. Resolves only on failure (the app is gone otherwise). */
   updateInstall(): Promise<void>;
   onUpdateProgress(cb: (p: UpdateProgress) => void): Promise<Unlisten>;
+
+  // Library (Toolkit > Library): plugins and skills to add. Nothing here reaches the network until
+  // the page asks (refresh, or opening something that needs its files); every look is named by a
+  // token, never a path.
+  /** The saved catalog and what Claude Code knows. Reads the cache only. */
+  libraryCatalog(): Promise<CatalogView>;
+  libraryCatalogAll(): Promise<CatalogAll>;
+  /** Ask Claude Code for the catalog again (one marketplace first when named). Rejects with one sentence. */
+  libraryRefresh(marketplace?: string): Promise<CatalogView>;
+  /** Plugins Claude Code has installed and items the Library copied. */
+  libraryInstalled(): Promise<InstalledRow[]>;
+  libraryInspectPlugin(pluginId: string): Promise<LibraryDetail>;
+  libraryInspectInstalled(id: string): Promise<LibraryDetail>;
+  libraryInspectLink(text: string): Promise<LibraryDetail>;
+  libraryReadFile(token: string, rel: string): Promise<FileText>;
+  libraryInstallPlugin(pluginId: string, token: string): Promise<PluginOutcome>;
+  libraryUninstallPlugin(id: string): Promise<string>;
+  /** Undo a plugin install (uninstalls) or removal (installs the same commit again). */
+  libraryUndo(backupId: string): Promise<UndoDone>;
+  librarySetEnabled(id: string, on: boolean): Promise<void>;
+  libraryAddMarketplace(token: string): Promise<MarketAdded>;
+  libraryInstallItems(token: string, picks: Pick[]): Promise<ItemResult[]>;
+  libraryRemoveItem(backupId: string): Promise<void>;
+  libraryOpenRepo(repo: string): Promise<void>;
+  /** Stop the download in progress. */
+  libraryCancel(): Promise<void>;
+  /** Tells the log how long the tab took to show rows. */
+  libraryPerf(ms: number): void;
+  onLibraryProgress(cb: (p: LibraryProgress) => void): Promise<Unlisten>;
 }
 
 const tauriBackend: Backend = {
@@ -337,6 +380,25 @@ const tauriBackend: Backend = {
     await invoke("update_install");
   },
   onUpdateProgress: (cb) => listen<UpdateProgress>(UPDATE_PROGRESS_EVENT, (e) => cb(e.payload)),
+  libraryCatalog: () => invoke<CatalogView>("library_catalog"),
+  libraryCatalogAll: () => invoke<CatalogAll>("library_catalog_all"),
+  libraryRefresh: (marketplace) => invoke<CatalogView>("library_refresh", { marketplace: marketplace ?? null }),
+  libraryInstalled: () => invoke<InstalledRow[]>("library_installed"),
+  libraryInspectPlugin: (pluginId) => invoke<LibraryDetail>("library_inspect_plugin", { pluginId }),
+  libraryInspectInstalled: (id) => invoke<LibraryDetail>("library_inspect_installed", { id }),
+  libraryInspectLink: (text) => invoke<LibraryDetail>("library_inspect_link", { text }),
+  libraryReadFile: (token, rel) => invoke<FileText>("library_read_file", { token, rel }),
+  libraryInstallPlugin: (pluginId, token) => invoke<PluginOutcome>("library_install_plugin", { pluginId, token }),
+  libraryUninstallPlugin: (id) => invoke<string>("library_uninstall_plugin", { id }),
+  libraryUndo: (backupId) => invoke<UndoDone>("library_undo", { backupId }),
+  librarySetEnabled: (id, on) => invoke<void>("library_set_enabled", { id, on }),
+  libraryAddMarketplace: (token) => invoke<MarketAdded>("library_add_marketplace", { token }),
+  libraryInstallItems: (token, picks) => invoke<ItemResult[]>("library_install_items", { token, picks }),
+  libraryRemoveItem: (backupId) => invoke<void>("library_remove_item", { backupId }),
+  libraryOpenRepo: (repo) => invoke<void>("library_open_repo", { repo }),
+  libraryCancel: () => invoke<void>("library_cancel"),
+  libraryPerf: (ms) => void invoke<void>("library_perf", { ms }).catch(() => {}),
+  onLibraryProgress: (cb) => listen<LibraryProgress>(LIBRARY_PROGRESS_EVENT, (e) => cb(e.payload)),
 };
 
 /** macOS menu bar (crates/app/src/macmenu.rs): the id of the picked Atlas item. */

@@ -158,6 +158,7 @@ fn lists_every_tool_with_descriptions_and_schemas() {
             "read_item",
             "rename_item",
             "restore_backup",
+            "search_library",
             "toggle_hook",
             "toggle_mcp_server",
             "update_item"
@@ -391,4 +392,26 @@ fn the_registered_entry_starts_the_server_when_claude_code_launches_it() {
     eprintln!("{text}");
     assert!(text.contains("Connected"), "Claude Code could not start the registered server:\n{text}");
     connect::disconnect(&ctx).unwrap();
+}
+
+#[test]
+fn search_library_reads_the_saved_catalog_and_says_what_to_do_without_one() {
+    use atlas_core::library::catalog::{Entry, Source, write_cache};
+    let sb = Sandbox::new();
+    let before = snapshot(&sb.config);
+    let mut c = Client::start(&sb, &[]);
+    let (err, _, text) = c.call("search_library", json!({"query": "frontend"}));
+    assert!(err, "{text}");
+    assert_eq!(text, "Open Toolkit > Library in Atlas once so it can load the plugin catalog.");
+    let e = |id: &str, name: &str, desc: &str| Entry { plugin_id: id.into(), name: name.into(), description: desc.into(), marketplace: "anthropic-plugin-directory".into(), version: "1.0.0".into(), source: Source::Command };
+    write_cache(&sb.data, vec![e("pdf-tools@anthropic-plugin-directory", "pdf-tools", "Work with PDF files"), e("frontend-design@anthropic-plugin-directory", "frontend-design", "Create distinctive frontend interfaces")], 1).unwrap();
+    let (err, v, text) = c.call("search_library", json!({"query": "frontend", "limit": 99}));
+    assert!(!err, "{text}");
+    let list = v["plugins"].as_array().unwrap();
+    assert_eq!(list.len(), 1, "{text}");
+    assert_eq!(list[0]["name"], "frontend-design");
+    assert_eq!(list[0]["pluginId"], "frontend-design@anthropic-plugin-directory");
+    assert_eq!(list[0]["installed"], false);
+    drop(c);
+    assert_eq!(snapshot(&sb.config), before, "search_library never writes the Claude folder");
 }

@@ -557,6 +557,34 @@ so `atlas-repeats` ships; Will has run 32 and 33.
   only, user-typed only, nothing logged (D44); the reviewer checks the filters and the masking.
 - The search schema bump re-reads the whole corpus once (background, existing budget).
 
+## Known, accepted risks (security review, 2026-11-09)
+- **Gap between the last look and Claude Code's copy.** A plugin inside a marketplace folder
+  (Local source) is re-hashed right before the install and refused if it is not the one that was
+  checked (`install::local_unchanged`), but Claude Code copies the folder a moment later, and a
+  process that can write the user's own Claude folder could change it in between. Not closed:
+  whoever can write that folder can already edit settings and hooks directly. The backstop is the
+  rollback: after the install the landed files are hashed again, and any difference from the
+  checked ones (`files_differ`) takes the plugin out again (`take_out_again`), both steps in
+  History. A pinned commit has the same backstop through the landed sha (`commit_differs`).
+- **A directory plugin's own entry is read from the repo it is fetched from**, at the pinned
+  commit (the built-in directory has no marketplace file on this computer). No entry for the
+  folder and no plugin manifest means "can't read" (two clicks), never clean. It is not read
+  again at install: the pinned commit is what is installed, and a changed listing is refused
+  (`same_listing`).
+
+- **Official entries of external directory plugins, mostly not visible (security re-review, 2026-11-09).**
+  A directory plugin whose repo is outside `claude-plugins-official` can have its manifest written inline
+  in the official marketplace's entry (`strict: false`, `skills`, `hooks`, `lspServers`...). Atlas looks the
+  entry up by name in the official marketplace folder Claude Code keeps (`known_marketplaces.json`), or in
+  the copy just fetched when the plugin comes from the official repo, and reads it only when its source
+  (repo, folder, commit) matches what the catalog lists; the same name from another place is unreadable
+  (two clicks). When that folder is not on the computer (Claude Code never added the official
+  marketplace), the roughly 3,350 external directory entries have no official entry to read: only their own
+  files and manifest are checked. Accepted: the plugin is still staged at an exact commit and the sheet
+  says what it found; the staged `repo:` key is not re-read at install. The same gap exists when the
+  local official clone is older than the catalog: a name added since is not in it, so its inline fields
+  are not seen.
+
 ## Suggested agent chain
 Unit A coder (sonnet; Rust + React; primary skill `ui-ux-pro-max`) and Unit B coder (sonnet;
 Rust + skill text) in parallel worktrees -> per unit code-reviewer (A: opus + security

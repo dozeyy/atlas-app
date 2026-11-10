@@ -176,7 +176,7 @@ fn write_lock(state: &AppState) -> Result<atlas_core::writelock::WriteGuard, Str
 
 impl SetupHub {
     /// Rescan now so the next snapshot already shows what just changed.
-    fn refresh(&self, app: &AppHandle, state: &AppState) {
+    pub(crate) fn refresh(&self, app: &AppHandle, state: &AppState) {
         if let Ok(live) = self.ensure(app, state) {
             live.rescan_wait(std::time::Duration::from_secs(3));
         }

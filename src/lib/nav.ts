@@ -52,6 +52,23 @@ export function clearPendingToolkitItem(): void {
   pendingItem = null;
 }
 
+/** "Show this Toolkit tab when the Toolkit appears" ("setup" or "library"). */
+export type ToolkitTab = "setup" | "library";
+let pendingTab: ToolkitTab | null = null;
+
+export function openToolkitTabNext(tab: ToolkitTab): void {
+  pendingTab = tab;
+  wake();
+}
+
+export function peekPendingToolkitTab(): ToolkitTab | null {
+  return pendingTab;
+}
+
+export function clearPendingToolkitTab(): void {
+  pendingTab = null;
+}
+
 /**
  * Told when a session or a project is asked for. A page that is already on screen uses this: it
  * does not mount again, so it cannot read the hand-off from its first render.

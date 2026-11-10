@@ -172,6 +172,20 @@ pub(crate) fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> 
     atlas_core::proc::quiet(cmd.arg(dir)).spawn().map(|_| ()).map_err(|e| format!("Could not open the folder: {e}"))
 }
 
+/// Open a github.com page in the default browser. Only `https://github.com/<owner>/<repo>` shapes
+/// get through, so a page can never hand the OS an arbitrary address.
+pub(crate) fn open_github(repo: &str) -> Result<(), String> {
+    let Ok(l) = atlas_core::library::link::parse(repo) else { return Err("That is not a GitHub repository.".into()) };
+    let url = format!("https://github.com/{}/{}", l.owner, l.repo);
+    #[cfg(windows)]
+    let r = atlas_core::proc::quiet(std::process::Command::new("rundll32.exe").arg("url.dll,FileProtocolHandler").arg(&url)).spawn();
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let r = std::process::Command::new("xdg-open").arg(&url).spawn();
+    r.map(|_| ()).map_err(|e| format!("Could not open the browser: {e}"))
+}
+
 /// The title bar is drawn by the page (it runs under the content, like the Claude app), so the
 /// three caption buttons call here. `action` is "minimize", "toggle-maximize" or "close".
 #[tauri::command]

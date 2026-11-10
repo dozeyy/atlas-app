@@ -1,0 +1,15 @@
+/* Toolkit > Library. Colours come from tokens.css; nothing here is a literal value. */
+
+/* The highlighted row (arrow keys, or the one that opened the sheet): accent tint and a bar. */
+.lib-sel {
+  background: var(--accent-tint);
+}
+.lib-sel::before {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 3px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  pointer-events: none;
+}

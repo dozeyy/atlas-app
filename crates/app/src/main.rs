@@ -4,6 +4,7 @@
 mod commands;
 mod history;
 mod intro;
+mod library;
 // Built everywhere so it stays compiled and linted; only macOS installs it.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod macmenu;
@@ -102,6 +103,7 @@ fn main() {
         .manage(Arc::clone(&state))
         .manage(Arc::new(setup_service::SetupHub::default()))
         .manage(Arc::new(update::Updates::default()))
+        .manage(Arc::new(library::Library::default()))
         .invoke_handler(tauri::generate_handler![
             commands::get_app_info,
             commands::update_settings,
@@ -171,6 +173,24 @@ fn main() {
             setup_service::setup_create_draft,
             setup_service::setup_create,
             setup_service::setup_validate_draft,
+            library::library_catalog,
+            library::library_catalog_all,
+            library::library_perf,
+            library::library_refresh,
+            library::library_installed,
+            library::library_cancel,
+            library::library_inspect_plugin,
+            library::library_inspect_installed,
+            library::library_inspect_link,
+            library::library_read_file,
+            library::library_install_plugin,
+            library::library_uninstall_plugin,
+            library::library_undo,
+            library::library_set_enabled,
+            library::library_add_marketplace,
+            library::library_install_items,
+            library::library_remove_item,
+            library::library_open_repo,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Focused(focused) => window.state::<Arc<AppState>>().usage.focus(*focused),

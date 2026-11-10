@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ComponentType, KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChatsCircle, FolderSimple, MagnifyingGlass, Robot, Sparkle, TerminalWindow, type IconProps } from "@phosphor-icons/react";
+import { ChatsCircle, FolderSimple, MagnifyingGlass, Package, Robot, Sparkle, TerminalWindow, type IconProps } from "@phosphor-icons/react";
 import { NAV } from "./Sidebar";
 import { useAtlas } from "../state/AtlasProvider";
 import { closePalette, usePaletteOpen } from "../state/paletteStore";
@@ -9,14 +9,15 @@ import { guardLeave } from "../state/unsavedStore";
 import { startSetup, useSetup } from "../state/setupStore";
 import { getBackend } from "../lib/ipc";
 import { useKeyHints } from "../lib/keyHints";
-import { openProjectNext, openSessionNext, openToolkitItemNext } from "../lib/nav";
-import { KIND_LABEL, clampIndex, matchRanges, pageItems, projectItem, rankItems, sessionItem, stepIndex, toolkitItems } from "../lib/palette";
+import { openProjectNext, openSessionNext, openToolkitItemNext, openToolkitTabNext } from "../lib/nav";
+import { KIND_LABEL, clampIndex, libraryItem, matchRanges, pageItems, projectItem, rankItems, sessionItem, stepIndex, toolkitItems } from "../lib/palette";
 import type { PaletteItem, PaletteKind } from "../lib/palette";
 import { CHAT_SEARCH_MIN_CHARS, useChatSearch, useDebounced } from "../lib/useChatSearch";
 import { usePaletteData } from "../lib/usePaletteData";
 import type { SessionRow } from "../lib/types";
 
 const KIND_ICON: Record<Exclude<PaletteKind, "page">, ComponentType<IconProps>> = {
+  library: Package,
   session: ChatsCircle,
   project: FolderSimple,
   skill: Sparkle,
@@ -112,6 +113,7 @@ function Palette() {
     const now = new Date();
     return [
       ...pageItems(NAV, mod),
+      libraryItem(),
       ...data.sessions.map((r) => sessionItem(r, now)),
       ...data.projects.map(projectItem),
       ...toolkitItems(setup.snapshot?.items ?? []),
@@ -160,6 +162,7 @@ function Palette() {
       if (t.session) openSessionNext(t.session);
       else if (t.project) openProjectNext(t.project);
       else if (t.toolkitItem) openToolkitItemNext(t.toolkitItem);
+      else if (t.toolkitTab) openToolkitTabNext(t.toolkitTab);
       setView(t.view);
     };
     // Leaving the current view with unsaved edits asks first, before anything is handed over.

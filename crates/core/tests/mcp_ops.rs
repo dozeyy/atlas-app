@@ -103,6 +103,48 @@ fn history_says_edited_by_claude_for_changes_made_through_ops() {
     assert!(!rule.is_empty() && rule.iter().all(|x| x.source != "atlas_mcp"), "{rule:?}");
 }
 
+// Verifier V4: a real install takes seconds, so the watcher's pass comes before the backup is
+// tagged with its sentence. The next look gives the earlier row its sentence.
+#[test]
+fn a_library_install_the_watcher_saw_first_gets_its_sentence_at_the_next_look() {
+    let e = env();
+    let store = Store::open(&e.data.join("history")).unwrap();
+    let o = ops(&e, "mcp");
+    let tracked = |o: &Ops| tracked_from(&o.discovery().snapshot);
+    scan::scan(&store, &tracked(&o), None, 1_800_000_000_000).unwrap();
+
+    let backups = e.data.join("setup-backups");
+    fs::create_dir_all(&backups).unwrap();
+    let settings = e.config.join("settings.json");
+    let id = atlas_core::setup_write::snapshot_files(&backups, "install-plugin-fd", "plugin", "fd@mk", &settings, &[]).unwrap();
+    // Claude Code writes the plugin in while its install runs ...
+    fs::write(&settings, "{\"enabledPlugins\":{\"fd@mk\":true}}\n").unwrap();
+    let now = chrono_now_ms();
+    // ... and the watcher's pass runs before anything is tagged.
+    let marks = Marks::from_backups(&backups, &e.inputs.root.claude_json, now);
+    scan::scan_marked(&store, &tracked(&o), None, now, &marks).unwrap();
+    let row = |store: &Store| query::events(store, &EventFilter { limit: 100, ..Default::default() }).unwrap().events.into_iter().find(|x| x.item.name == "settings.json" && x.kind == "changed").expect("a changed row");
+    let early = row(&store);
+    assert_ne!(early.source, "atlas_library");
+    assert_ne!(early.summary, "Installed fd from the Library");
+
+    // The install finishes and is tagged; the next look relabels the row.
+    atlas_core::setup_write::tag_library_op(
+        &backups,
+        &id,
+        "Installed fd from the Library",
+        atlas_core::setup_write::LibOp { op: "install".into(), id: "fd@mk".into(), repo: "o/r".into(), sha: "abc".into(), tree_hash: "h".into(), undone: false },
+    );
+    let later = now + 5_000;
+    let marks = Marks::from_backups(&backups, &e.inputs.root.claude_json, later);
+    let report = scan::scan_marked(&store, &tracked(&o), None, later, &marks).unwrap();
+    assert_eq!(report.relabeled, 1);
+    let done = row(&store);
+    assert_eq!((done.id, done.source.as_str(), done.summary.as_str()), (early.id, "atlas_library", "Installed fd from the Library"));
+    // And a third look finds nothing more to do.
+    assert_eq!(scan::scan_marked(&store, &tracked(&o), None, later + 1_000, &marks).unwrap().relabeled, 0);
+}
+
 fn chrono_now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
 }
@@ -411,6 +453,28 @@ fn direct_restore_cannot_bring_back_a_hook_or_revert_a_settings_save_or_restore_
     let plain = full.apply(&Write::UpdateItem { id: skill, text: skill_text("commit-helper", "Plain."), file: None, stamp: None }).unwrap();
     refused_as_code(o.apply(&Write::RestoreBackup { backup_id: plain.backup_id.unwrap() }));
     assert!(!fs::read_to_string(&path).unwrap().contains("hooks:"));
+}
+
+// D21: a Library plugin install is undone through Claude Code's command, which can run a plugin's
+// commands, so direct mode refuses it and the approved path preview names what it would do.
+#[test]
+fn direct_restore_cannot_undo_a_library_plugin_change() {
+    let e = env();
+    let backups = e.data.join("setup-backups");
+    fs::create_dir_all(&backups).unwrap();
+    let settings = e.config.join("settings.json");
+    let id = atlas_core::setup_write::snapshot_files(&backups, "install-plugin-fd", "plugin", "fd@mk", &settings, &[]).unwrap();
+    atlas_core::setup_write::tag_library_op(
+        &backups,
+        &id,
+        "Installed fd from the Library",
+        atlas_core::setup_write::LibOp { op: "install".into(), id: "fd@mk".into(), repo: "o/r".into(), sha: "abc".into(), tree_hash: "h".into(), undone: false },
+    );
+    let before = fs::read(&settings).unwrap();
+    refused_as_code(direct(&e).apply(&Write::RestoreBackup { backup_id: id.clone() }));
+    assert_eq!(fs::read(&settings).unwrap(), before);
+    let p = ops(&e, "assistant").preview(&Write::RestoreBackup { backup_id: id }).unwrap();
+    assert!(p.summary.starts_with("Uninstall plugin"), "{}", p.summary);
 }
 
 // F4: turning something on is code coming back.
