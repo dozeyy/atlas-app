@@ -134,3 +134,27 @@ once to update. Answers are kept as ids in
 Releasing: the `repeats` and `offer-note` commands exist only in builds from this change on, so
 the plugin version bump (plugin, app and tag move together) and `pin-skill-checksums` must come
 before this works for someone installing the plugin alone.
+
+## Recap of a helper run (atlas-debrief)
+
+A third, quiet skill. Ask Claude for a debrief or recap of what its helpers (subagents) did, or
+ask for one at the end of an orchestrated run, and it reads this chat's record on your computer
+and folds a few plain facts into the report it is already writing, in your own style: how long
+the run took, how many helpers and how they ended, which models and reasoning efforts they ran
+on, what the reviewers said, the tokens used, and anything still open. A terse report gets a
+line or two; a detailed one gets a short section. No dollars unless you ask. It never runs on
+its own, not after every turn, and the plugin has no hooks.
+
+It needs only this plugin. The same text is available by hand and, with the Atlas app and its
+connector, from the `get_run_debrief` tool (plus `get_agent_scorecard` and `get_review_themes`):
+
+```
+atlas-usage debrief                            # this chat ($CLAUDE_CODE_SESSION_ID); if unknown, the newest
+                                               # chat that used helpers, named in a first line
+atlas-usage debrief --last                     # the newest chat in this folder that used helpers
+atlas-usage debrief --session <id> --detail high   # one line per helper
+atlas-usage debrief --since 2026-11-09T14:00:00Z   # only what happened after that time
+```
+
+The program must be a build that has `debrief` (a plugin release after this one ships a matching
+checksum); an older copy is refused with one plain line, "too old for the debrief".

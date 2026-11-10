@@ -5,6 +5,7 @@
 //! Read-only on `~/.claude`: transcripts are only read. The cache lives in Atlas's own
 //! data folder (`<local app data>/atlas/cli`, or `--cache-dir`).
 
+mod debrief;
 mod fmt;
 mod render;
 mod repeats;
@@ -25,6 +26,7 @@ const HELP: &str = "atlas-usage - Claude Code token usage, same numbers as the A
 USAGE
   atlas-usage [SCOPE...] [--vs SCOPE] [options]
   atlas-usage repeats | offer-note ...   what you keep asking Claude for (run: atlas-usage repeats --help)
+  atlas-usage debrief ...                what this chat's helpers did (run: atlas-usage debrief --help)
 
 SCOPE (words may be combined: \"project last-week\")
   chat                this chat (default when nothing else is given)
@@ -203,6 +205,18 @@ fn main() {
         }
         return;
     }
+    // `debrief`: the helpers of one chat as short facts (src/debrief.rs).
+    if args.first().is_some_and(|a| a == "debrief") {
+        match debrief::run(args[1..].to_vec()) {
+            Ok(Some(out)) => println!("{out}"),
+            Ok(None) => println!("{}", debrief::HELP),
+            Err(debrief::Failure { message, code }) => {
+                eprintln!("atlas-usage: {}", fmt::plain(&message));
+                std::process::exit(code);
+            }
+        }
+        return;
+    }
     let opts = match parse_args(args) {
         Ok(o) => o,
         Err(e) if e.is_empty() => {
@@ -224,15 +238,25 @@ fn main() {
     }
 }
 
-fn run(o: &Opts) -> Result<String, String> {
+/// What every command needs to open the engine: where things are.
+struct Common {
+    cwd: Option<PathBuf>,
+    week_start: Option<bool>,
+    config_dir: Option<PathBuf>,
+    cache_dir: Option<PathBuf>,
+}
+
+/// Open the usage engine on the Claude folder (read-only) and wait for its first pass.
+/// The caller stops the engine when done.
+fn open(c: &Common) -> Result<Ctx, String> {
     let home = atlas_core::paths::home_dir().ok_or("no home folder")?;
     let here = std::env::current_dir().map_err(|e| e.to_string())?;
-    let cwd = o.cwd.clone().or_else(|| env_path("CLAUDE_PROJECT_DIR")).unwrap_or_else(|| here.clone());
+    let cwd = c.cwd.clone().or_else(|| env_path("CLAUDE_PROJECT_DIR")).unwrap_or_else(|| here.clone());
     let cwd = atlas_core::paths::absolutize(&cwd, &home, &here);
 
     let env_cfg: Option<OsString> = std::env::var_os("CLAUDE_CONFIG_DIR");
     let root = atlas_core::paths::resolve_config_root(&atlas_core::paths::ConfigInputs {
-        flag: o.config_dir.as_deref(),
+        flag: c.config_dir.as_deref(),
         settings_override: None,
         env: env_cfg.as_deref(),
         home: &home,
@@ -243,7 +267,7 @@ fn run(o: &Opts) -> Result<String, String> {
     }
     let atlas_env = std::env::var_os("ATLAS_DATA_DIR");
     let app_dir = atlas_core::paths::local_data_dir(None, atlas_env.as_deref(), &home, &here).ok_or("no local app data folder")?;
-    let cache_dir = match o.cache_dir.clone().or_else(|| env_path("ATLAS_USAGE_CACHE")) {
+    let cache_dir = match c.cache_dir.clone().or_else(|| env_path("ATLAS_USAGE_CACHE")) {
         Some(d) => atlas_core::paths::absolutize(&d, &home, &here),
         None => app_dir.join("cli"),
     };
@@ -258,7 +282,7 @@ fn run(o: &Opts) -> Result<String, String> {
     if first_run {
         eprintln!("atlas-usage: first run, indexing Claude Code transcripts (read-only). This can take a minute.");
     }
-    let sunday = o.week_start.unwrap_or_else(time::week_starts_sunday);
+    let sunday = c.week_start.unwrap_or_else(time::week_starts_sunday);
     let mut cfg = UsageConfig::new(root.projects_dir.clone(), root.dir.clone(), cache_dir.clone(), cache_db);
     cfg.watch = false;
     cfg.week_starts_sunday = sunday;
@@ -272,9 +296,13 @@ fn run(o: &Opts) -> Result<String, String> {
         eprintln!("atlas-usage: indexed in {:.0}s", started.elapsed().as_secs_f64());
     }
     let today = scope::day(&engine.today_date()).ok_or("bad today date")?;
-    let ctx = Ctx { engine: Arc::clone(&engine), today, sunday, cwd };
+    Ok(Ctx { engine, today, sunday, cwd })
+}
+
+fn run(o: &Opts) -> Result<String, String> {
+    let ctx = open(&Common { cwd: o.cwd.clone(), week_start: o.week_start, config_dir: o.config_dir.clone(), cache_dir: o.cache_dir.clone() })?;
     let out = if o.chat || (o.span.is_none() && !o.project && o.vs.is_none()) { chat(&ctx, o) } else { range(&ctx, o) };
-    engine.stop();
+    ctx.engine.stop();
     out
 }
 

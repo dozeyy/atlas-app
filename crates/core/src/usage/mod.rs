@@ -7,6 +7,7 @@
 //! file code lives in `crate::cache` (acceptance criterion 20).
 
 pub mod costmix;
+pub mod debrief_text;
 pub mod ingest;
 pub mod line;
 pub mod naming;

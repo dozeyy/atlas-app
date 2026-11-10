@@ -332,10 +332,16 @@ percent; and a short, honest end-of-run debrief inside the report Claude already
   time), `Helpers` (count by type and how they ended), `Reviews` (passed / sent back / no
   verdict), `Tokens` (total, then "about $X at API prices, estimate"), `Biggest` (the thread or
   helper with the most tokens and its share), `Open` (still running or stuck, D45 rule),
-  `Changed` (files edited count, worktree branches), `Caught` (top 1-2 finding themes of this
+  `Changed` (**v1: worktree branches only**, labelled as branches: the ledger records no edits
+  per helper, so no files-edited count is claimed), `Caught` (top 1-2 finding themes of this
   run, D14 grouping with the threshold lowered to >= 2 findings). **High:** at most 40 lines and
   3,000 characters: the same plus one line per helper (type, goal, how it ended, verdict,
   tokens, time) and up to 10 edited files.
+  `Models` lists the chat's own model and effort first, marked "chat", then the helpers'. When the
+  program picks the chat itself (no `--session`, no `CLAUDE_CODE_SESSION_ID`), the output starts
+  with one plain line, "Couldn't tell which chat this is, so this is the newest chat with helpers:
+  <title> (<age>).", on stdout (and the MCP text), which the skill keeps. Branch names are
+  secret-masked like goals (dropped on a match).
 - D62. Atlas supplies facts, never a format. The skill body tells Claude to fold them into the
   report it is already writing, in the active output style and the user's CLAUDE.md
   preferences: a terse user gets the key numbers in one or two lines (low), a detailed user a
@@ -357,7 +363,8 @@ percent; and a short, honest end-of-run debrief inside the report Claude already
 - D65. **MCP: yes**, three read-only tools (`read_only_hint`, allowed in direct and propose
   mode): `get_agent_scorecard {days?, agentType?, startedFrom?}` (JSON, the Team page's
   numbers), `get_review_themes {days?, limit?: 1..20}` (JSON, masked text), `get_run_debrief
-  {sessionId, since?, detail?}` (the same text as the CLI). Why yes: Sam's agents can report on
+  {sessionId?, since?, detail?}` (the same text as the CLI; no `sessionId` means the newest chat
+  that used helpers, and the first line of the text says which chat it picked). Why yes: Sam's agents can report on
   themselves in Slack ("I passed 9 of 12 reviews this month"), which is "Trust and Verify" in
   his own channel; the tools are read-only and never touch the Claude folder. Documented in
   `docs/specs/mcp-server.md`.
