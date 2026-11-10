@@ -17,6 +17,7 @@ import {
   installSummary,
   isStale,
   changedCount,
+  entryTopic,
   mpId,
   parseGithub,
   rowName,
@@ -203,6 +204,37 @@ describe("Library rows and sources", () => {
     expect(installBlock({ ...a, byCommand: true }, true)).toBe(COMMAND_SOURCE);
     expect(installBlock(a, false)).toBe(NO_CLI);
     expect(installBlock(a, true)).toBeNull();
+  });
+});
+
+describe("What a row is about", () => {
+  const t = (name: string, description = "") => entryTopic({ name, description });
+
+  it("reads the name first, so a word in passing in the description never wins", () => {
+    // "review" is in terraform's description, but its name already says what it is.
+    expect(t("terraform", "Plan and review infrastructure changes.")).toBe("cloud");
+    expect(t("code-review", "Review a pull request for bugs, regressions and style.")).toBe("review");
+    expect(t("commit-commands", "Commit, push and open a pull request in one step.")).toBe("commands");
+  });
+
+  it("names what a plugin adds to Claude Code before what it is for", () => {
+    expect(t("explanatory-output-style", "Adds short notes on why Claude chose a pattern.")).toBe("style");
+    expect(t("typescript-lsp", "Language server for TypeScript.")).toBe("language");
+    expect(t("hookify", "Turn a repeated correction into a rule.")).toBe("hooks");
+    expect(t("agent-sdk-dev", "Start and check a new Agent SDK app.")).toBe("agents");
+  });
+
+  it("falls back to the description, and to a plain plugin when the words say nothing", () => {
+    expect(t("playwright", "Drive a browser to check a page works.")).toBe("web");
+    expect(t("helper", "Write and explain database queries.")).toBe("data");
+    expect(t("superpowers", "A little of everything.")).toBe("plugin");
+    expect(entryTopic({ name: "zeta" })).toBe("plugin");
+  });
+
+  it("matches whole words, not letters inside one", () => {
+    // "ui" is not in "build", "git" is not in "digital", "pr" is not a rule at all.
+    expect(t("quick-guide", "A digital guide.")).toBe("plugin");
+    expect(t("fruit", "Suits everyone.")).toBe("plugin");
   });
 });
 

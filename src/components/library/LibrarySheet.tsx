@@ -10,7 +10,7 @@ import { PluginTile, tileState } from "./LibraryList";
 import { SafetyCheck } from "./SafetyCheck";
 import { getBackend } from "../../lib/ipc";
 import { errorText } from "../../lib/setup-actions";
-import { insideWords, installBlock, isClean, itemFile, itemWord, languageOf, readingWords, sourceCaption } from "../../lib/library";
+import { entryTopic, insideWords, installBlock, isClean, itemFile, itemWord, languageOf, readingWords, sourceCaption } from "../../lib/library";
 import type { CatalogEntry, InnerItem, InstalledRow, LibraryDetail, LibraryProgress } from "../../lib/libraryTypes";
 import { dropCheck, installPlugin, storeCheck, storedCheck, uninstallPlugin, useLibrary } from "../../state/libraryStore";
 
@@ -256,7 +256,9 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
   const from = entry ? sourceCaption(entry.marketplace) : "";
   const version = entry?.version || installed?.version || "";
   // The exact thing that was read: said quietly under the check, the whole id one hover away.
-  const checked = [version ? `Version ${version}` : "", detail?.sha ? `commit ${detail.sha.slice(0, 7)}` : ""].filter(Boolean).join(", ");
+  // The surface says the version in plain words; the commit id is for the hover.
+  const checked = version ? `Version ${version}` : detail?.sha ? "The copy Atlas read" : "";
+  const checkedTip = detail?.sha ? `Commit ${detail.sha}` : undefined;
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -272,7 +274,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
         className="sheet-enter relative flex h-full w-[min(480px,100vw)] flex-col border-l border-line bg-bg shadow-float outline-none"
       >
         <header className="flex items-start gap-3 border-b border-line px-6 py-4">
-          <PluginTile state={tileState(installed)} size={40} />
+          <PluginTile topic={entryTopic({ name: target.name, description: entry?.description })} state={tileState(installed)} size={40} />
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="selectable break-words text-subtitle font-semibold text-ink">
               {target.name}
@@ -374,7 +376,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
                 )}
               </Section>
 
-              <Section title={installed ? "What Atlas found" : "Before you install"} aside={checked ? <span title={detail.sha || undefined}>{checked}</span> : undefined} className="mt-auto">
+              <Section title={installed ? "What Atlas found" : "Before you install"} aside={checked ? <span title={checkedTip}>{checked}</span> : undefined} className="mt-auto">
                 <div ref={checkBox} tabIndex={-1} aria-label="What Atlas found" className="rounded-card outline-none">
                   <SafetyCheck report={detail.inspected.check} notInstalled={shaped.notInstalled} />
                 </div>
@@ -406,9 +408,12 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
             confirming ? (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="mr-auto text-body text-ink">Uninstall {target.name}?</span>
-                <Button onClick={() => setConfirming(false)}>Keep it</Button>
+                <Button autoFocus onClick={() => setConfirming(false)}>
+                  Keep it
+                </Button>
                 <Button
                   variant="danger"
+                  className="confirm-go"
                   disabled={!!busy}
                   onClick={async () => {
                     if (await uninstallPlugin(target.pluginId, target.name)) onClose();
