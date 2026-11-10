@@ -86,6 +86,8 @@ interface ErrorProps extends Common {
 export type EmptyStateProps = EmptyProps | NoMatchProps | ErrorProps;
 
 const FRAME = "rounded-card border border-line bg-surface";
+/** "Nothing matches" and "Could not load" are messages, not headings: the system face, a step above body. */
+const MESSAGE = "text-lead font-semibold text-ink";
 
 function Details({ reason }: { reason: string }) {
   const [open, setOpen] = useState(false);
@@ -124,7 +126,7 @@ export function EmptyState(props: EmptyStateProps) {
     return (
       <section role="alert" className={box}>
         <WarningCircle size={compact ? 20 : 24} weight="fill" aria-hidden="true" className="text-danger" />
-        <h2 className="h-section mt-3 max-w-[44ch] text-balance">{title}</h2>
+        <p className={`${MESSAGE} mt-3 max-w-[44ch] text-balance`}>{title}</p>
         {body && <p className="mt-1 max-w-[44ch] text-pretty text-body text-ink-2">{body}</p>}
         {action && (
           <Button className="mt-4" onClick={action.onClick}>
@@ -142,7 +144,7 @@ export function EmptyState(props: EmptyStateProps) {
     return (
       <section role="status" className={box}>
         <MagnifyingGlass size={compact ? 20 : 24} aria-hidden="true" className="text-ink-2" />
-        <h2 className="h-section mt-3 flex max-w-full items-baseline justify-center gap-1">
+        <p className={`${MESSAGE} mt-3 flex max-w-full items-baseline justify-center gap-1`}>
           {title ? (
             title
           ) : q ? (
@@ -153,7 +155,7 @@ export function EmptyState(props: EmptyStateProps) {
           ) : (
             "Nothing matches these filters"
           )}
-        </h2>
+        </p>
         {body && <p className="mt-1 max-w-[44ch] text-pretty text-body text-ink-2">{body}</p>}
         {action && (
           <Button className="mt-4" onClick={action.onClick}>

@@ -33,12 +33,9 @@ function Points({ items }: { items: { icon: ComponentType<IconProps>; title: str
   );
 }
 
+/** These sheets only tell you something, so they end in an outlined Close: the filled button is kept for the thing you came to do. */
 function Close({ onClose }: { onClose: () => void }) {
-  return (
-    <Button variant="primary" onClick={onClose}>
-      Close
-    </Button>
-  );
+  return <Button onClick={onClose}>Close</Button>;
 }
 
 /** The one place the sheets from Help > ... are chosen, so the menu only names an id. */
@@ -111,13 +108,13 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
       <div className="flex flex-col gap-5">
         {shortcutGroups(info.platform).map((g) => (
           <section key={g.title} aria-label={g.title}>
-            <h3 className="mb-2 text-caption font-semibold uppercase tracking-wide text-ink-2">{g.title}</h3>
+            <h3 className="h-sub mb-2">{g.title}</h3>
             {/* One key column for every group, so the right-hand column starts on one line down the sheet. */}
             <dl className="grid grid-cols-[9rem_minmax(0,1fr)] gap-x-6 gap-y-2">
               {g.rows.map((r) => (
                 <div key={r.keys} className="contents">
                   <dt>
-                    <kbd className="whitespace-nowrap rounded-[4px] border border-line bg-raised px-1.5 py-0.5 text-caption text-ink-2">{r.keys}</kbd>
+                    <kbd className="code-text whitespace-nowrap rounded-[4px] border border-line bg-raised px-1.5 py-0.5 text-ink-2">{r.keys}</kbd>
                   </dt>
                   <dd className="text-ink">{r.does}</dd>
                 </div>
@@ -183,14 +180,19 @@ function Report({ onClose }: { onClose: () => void }) {
       width={480}
       footer={
         <>
-          <Button onClick={() => void openDataDir()}>Open data folder</Button>
-          <Button onClick={() => void copy()}>{copied ? "Copied" : "Copy details"}</Button>
+          <Button className="mr-auto" onClick={() => void openDataDir()}>
+            Open data folder
+          </Button>
           <Close onClose={onClose} />
+          {/* The one thing this sheet is for. */}
+          <Button variant="primary" onClick={() => void copy()}>
+            {copied ? "Copied" : "Copy details"}
+          </Button>
         </>
       }
     >
       <Para>Atlas keeps no log files, so there is nothing to attach. Write down what you were doing and what happened, and include these details.</Para>
-      <pre className="selectable rounded-control border border-line bg-raised px-3 py-2 font-mono text-caption text-ink">{details}</pre>
+      <pre className="code-text selectable rounded-control border border-line bg-raised px-3 py-2 text-ink">{details}</pre>
     </Dialog>
   );
 }

@@ -28,6 +28,7 @@ export function Dialog({
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
@@ -48,6 +49,26 @@ export function Dialog({
     const first = panelEl?.querySelector<HTMLElement>("input, textarea, select");
     (first ?? panelEl)?.focus({ preventScroll: true });
     return giveBack;
+  }, []);
+
+  // Scrollbars hide at rest, so a body taller than its room says so itself: what runs on fades
+  // out at that edge (data-more below, data-less above; the look is `.dlg-body` in index.css).
+  useEffect(() => {
+    const el = body.current;
+    if (!el) return;
+    const mark = () => {
+      el.toggleAttribute("data-less", el.scrollTop > 1);
+      el.toggleAttribute("data-more", el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+    };
+    mark();
+    el.addEventListener("scroll", mark, { passive: true });
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(mark);
+    ro?.observe(el);
+    if (el.firstElementChild) ro?.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener("scroll", mark);
+      ro?.disconnect();
+    };
   }, []);
 
   const onKey = (e: KeyboardEvent) => {
@@ -84,10 +105,12 @@ export function Dialog({
         style={{ width: `min(${width}px, 100%)` }}
         className="pop-enter relative flex max-h-[min(720px,100%)] flex-col rounded-sheet border border-line-strong bg-bg shadow-float outline-none"
       >
-        <h2 id={titleId} className="selectable break-words px-6 pt-5 text-subtitle font-semibold text-ink">
+        <h2 id={titleId} className="h-section selectable break-words px-6 pt-5">
           {title}
         </h2>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3 text-body text-ink-2">{children}</div>
+        <div ref={body} className="dlg-body min-h-0 flex-1 overflow-y-auto px-6 py-3 text-body text-ink-2">
+          {children}
+        </div>
         {footer && <div className="flex flex-wrap items-center justify-end gap-2 px-6 pb-5 pt-2">{footer}</div>}
       </div>
     </div>,

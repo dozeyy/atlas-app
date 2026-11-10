@@ -14,7 +14,7 @@ import type { StackItem } from "../components/charts/StackBar";
 import { ActivityCard } from "../components/usage/ActivityCard";
 
 import { SessionGrid, SessionLine } from "../components/usage/SessionList";
-import { SectionTitle, Skeleton } from "../components/usage/StateBlocks";
+import { Skeleton } from "../components/usage/StateBlocks";
 import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
 import { openSessionNext } from "../lib/nav";
@@ -312,7 +312,7 @@ export function Dashboard() {
               <Card className="flex h-full flex-col gap-3 px-6 pb-4 pt-4 @[460px]:flex-row @[460px]:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="d d-figure text-ink">Last 7 days</h2>
+                    <h2 className="h-section">Last 7 days</h2>
                     {week?.delta != null && <Delta pct={week.delta} />}
                   </div>
                   <div
@@ -351,7 +351,7 @@ export function Dashboard() {
             <section aria-label="Models" className="rise" style={{ ["--i" as string]: 5 }}>
               <Card className="h-full px-5 py-4">
                 <div className="flex items-baseline justify-between">
-                  <h2 className="d d-figure text-ink">Models</h2>
+                  <h2 className="h-section">Models</h2>
                   <span className="text-caption text-ink-2">Last 30 days</span>
                 </div>
                 {data.byModel.length === 0 ? (
@@ -367,7 +367,7 @@ export function Dashboard() {
             <section aria-label="Projects" className="rise" style={{ ["--i" as string]: 6 }}>
               <Card className="h-full px-5 py-4">
                 <div className="flex items-baseline justify-between">
-                  <h2 className="d d-figure text-ink">Projects</h2>
+                  <h2 className="h-section">Projects</h2>
                   <span className="text-caption text-ink-2">Last 30 days</span>
                 </div>
                 {projects.rows.length === 0 ? (
@@ -401,7 +401,7 @@ export function Dashboard() {
             <section aria-label="Today" className="rise order-2 min-w-0" style={{ ["--i" as string]: 2 }}>
               <Card className="flex h-full flex-col px-5 py-3.5">
                 <div className="flex items-baseline justify-between">
-                  <h2 className="d d-figure text-ink">Today</h2>
+                  <h2 className="h-section">Today</h2>
                   <span className="text-caption text-ink-2">so far</span>
                 </div>
                 <div className="mt-2.5 flex flex-1 items-center gap-[18px]">
@@ -443,7 +443,7 @@ export function Dashboard() {
               <Card className="h-full px-5 py-3.5">
                 <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <div className="flex items-center gap-2">
-                    <h2 className="d d-figure text-ink">On a roll</h2>
+                    <h2 className="h-section">On a roll</h2>
                     {daily && daily.streak >= 2 && daily.streak === daily.longest && (
                       <span className="chip chip-clay">
                         <span className="spark" style={{ width: 12, height: 12, background: "currentColor" }} aria-hidden="true" />
@@ -471,18 +471,15 @@ export function Dashboard() {
             </section>
 
           <section aria-label="Recent sessions" className="rise @container order-6 min-w-0 @[600px]:col-span-2" style={{ ["--i" as string]: 7 }}>
-            <SectionTitle
-              aside={
-                <Button onClick={() => setView("sessions")}>
-                  <IconMotion motion="nudge">
-                    <ArrowRight />
-                  </IconMotion>
-                  See all sessions
-                </Button>
-              }
-            >
-              Recent sessions
-            </SectionTitle>
+            <div className="mb-3 flex items-center justify-between gap-4">
+              <h2 className="h-section">Recent sessions</h2>
+              <Button onClick={() => setView("sessions")}>
+                <IconMotion motion="nudge">
+                  <ArrowRight />
+                </IconMotion>
+                See all sessions
+              </Button>
+            </div>
             <Card>
               <SessionGrid>
                 {data.recent.slice(0, RECENT_SHOWN).map((r) => (

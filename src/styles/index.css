@@ -99,22 +99,23 @@ pre {
 /* ---- Headings: the rule ---------------------------------------------------------------------
    A page has ONE title and at most two heading levels under it. Nothing else is a heading.
 
-   Page title   <h1>. A top-level page (Dashboard, Sessions, Toolkit...) is already named by the
-                sidebar, so its h1 is `PageTitle` (read out, not drawn). A page you drill into (one
-                chat, one helper, one Toolkit list) draws it: `.h-page`, Recursive 24/28, weight
-                720. It is the only Recursive heading on a page; 24 px above it comes from the
-                page's own padding, 16 px below it before the first block.
-   Section      <h2 class="h-section">. Names a card, a pane, a dialog section, an empty state:
-                the system face, 16/24, weight 600, ink. 12 px below it to its content; 24 px
-                above it when it follows another block (the card's own padding when it is the
-                first thing in a card).
-   Group        <h3 class="h-sub">. A label over a group inside a section (a settings group, a
-                list of keys): the system face, 12/16, weight 600, ink-2, sentence case, never
-                capitals. 8 px below it; 16 px above it when it follows another group.
+   Page title   <h1 class="h-page">. A top-level page (Dashboard, Sessions, Toolkit...) is already
+                named by the sidebar, so its h1 is `PageTitle` (read out, not drawn). A page or side
+                sheet you open to look at one thing (one chat, one helper, one Toolkit list, one
+                skill) draws it: Recursive 24/28, weight 720. One per page, never a second one.
+                16 px below it before the first block; above it, the page's own padding.
+   Section      <h2 class="h-section">. Names a card, a pane, a dialog or an empty state ("Models",
+                "Recent sessions"): Recursive 20/24, weight 720, the `figure` step of DIRECTION's
+                type table. 12 px below it to its content; 24 px above it when it follows another
+                block (the card's own padding when it is the first thing in a card).
+   Group        <h3 class="h-sub">. A label over a group inside a section (a list of keys, a set of
+                rows): the system face, 12/16, weight 600, ink-2, sentence case, never capitals.
+                8 px below it; 16 px above it when it follows another group.
 
-   Recursive (`.d`) is for the page title and for figures (a count, a total, a date as a headline
-   number). Never for a section or group heading, body, buttons, nav, inputs, tables or code.
-   In the components layer, so a page can still add colour or truncation with a utility class. */
+   That is all three. A row's name, a tile's label, a message ("Nothing matches", "Could not
+   load") and a figure are not headings and do not wear these classes. Recursive stays out of
+   body, buttons, nav, inputs, tables and code. In the components layer, so a page can still add
+   truncation or a colour with a utility class. */
 @layer components {
 .h-page {
   font-family: var(--font-display);
@@ -126,10 +127,12 @@ pre {
   color: var(--ink);
 }
 .h-section {
-  font-family: var(--font-ui);
-  font-size: 16px;
+  font-family: var(--font-display);
+  font-variation-settings: var(--display-axes);
+  font-size: 20px;
   line-height: 24px;
-  font-weight: 600;
+  font-weight: 720;
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 .h-sub {
@@ -157,6 +160,24 @@ button {
    put straight into <body>). trail.css dims the row itself to match. */
 body > .fixed.inset-0 {
   top: var(--titlebar-h);
+}
+
+/* A dialog body taller than its room (Keyboard shortcuts in a short window). Scrollbars hide at
+   rest, so the body shows it itself: what runs on fades out at that edge and the thumb stays
+   drawn. Dialog.tsx sets data-more (more below) and data-less (more above). */
+.dlg-body[data-more],
+.dlg-body[data-less] {
+  --dlg-top: #000;
+  --dlg-bottom: #000;
+  scrollbar-color: var(--line-strong) transparent;
+  -webkit-mask-image: linear-gradient(to bottom, var(--dlg-top), #000 28px, #000 calc(100% - 40px), var(--dlg-bottom));
+  mask-image: linear-gradient(to bottom, var(--dlg-top), #000 28px, #000 calc(100% - 40px), var(--dlg-bottom));
+}
+.dlg-body[data-less] {
+  --dlg-top: transparent;
+}
+.dlg-body[data-more] {
+  --dlg-bottom: transparent;
 }
 
 /* Focus: the one place it is decided. A mouse click, a window coming back to the front and code that
