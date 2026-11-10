@@ -710,6 +710,7 @@ export function SessionDetailView({
                 nodeId={picked}
                 onOpenHelper={setAgentId}
                 effortOf={(a) => topEffort(a ? agents.find((x) => x.agentId === a)?.efforts : row.efforts)}
+                types={helperTypes}
               />
             </div>
           ) : receipt.error ? (

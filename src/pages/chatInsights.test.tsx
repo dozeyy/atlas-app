@@ -90,6 +90,14 @@ describe("Chat receipt and helper map", () => {
     const slice = screen.getByRole("complementary", { name: `Slice: ${target.name}` });
     expect(within(slice).getByRole("button", { name: /Open helper/ })).toBeInTheDocument();
     expect(within(slice).getByText(/of the chat/)).toBeInTheDocument();
+    // The slice wears the helper's own avatar, and where the tokens went waits behind one row.
+    expect(within(slice).getByRole("img", { name: /helper$/i })).toBeInTheDocument();
+    expect(within(slice).queryByRole("region", { name: "What it used" })).toBeNull();
+    const more = within(slice).getByRole("button", { name: "Where it went" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(within(slice).getByRole("region", { name: "What it used" })).toBeInTheDocument();
   });
 
   it("names the biggest helpers beside them in a few words, never inside a node; the whole name is on the plate", async () => {

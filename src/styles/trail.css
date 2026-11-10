@@ -2087,19 +2087,30 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
     border-left: 1px solid var(--line);
   }
 }
-.slice-dot {
-  flex-shrink: 0;
-  width: 10px;
-  height: 10px;
-  margin-top: 7px;
-  border-radius: 50%;
-}
 .slice-facts {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
   margin-top: 10px;
+}
+/* "Where it went": the kinds and the biggest lines wait behind one row, closed until asked. */
+.slice-more {
+  font-size: var(--text-caption);
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-align: left;
+}
+.slice-more > svg {
+  flex-shrink: 0;
+  transition: rotate var(--dur-fast) var(--ease-out);
+}
+.slice-more[aria-expanded="true"] > svg {
+  rotate: 180deg;
+}
+.slice-more-body {
+  margin-top: 4px;
 }
 .details-grid {
   display: grid;
