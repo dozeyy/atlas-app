@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
@@ -51,8 +51,16 @@ describe("Chat receipt and helper map", () => {
     expect(screen.getByRole("region", { name: "What it used" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Biggest line items" })).toBeInTheDocument();
     expect(screen.queryAllByText(/All figures are estimates/)).toHaveLength(0);
-    // Each list ends in a total, so the sum is visible.
-    expect(within(screen.getByRole("region", { name: "Who used it" })).getByText("Total")).toBeInTheDocument();
+    // A list of shares ends in a total, so the sum is visible; each of its lines wears the avatar the map gives that thread.
+    const who = screen.getByRole("region", { name: "Who used it" });
+    expect(within(who).getByText("Total")).toBeInTheDocument();
+    expect(within(who).getByRole("img", { name: "Main chat" })).toBeInTheDocument();
+    expect(within(who).getAllByRole("img", { name: /helper$/i }).length).toBeGreaterThan(0);
+    // The line items are rough sizes, not shares: no total under them, one note that says what "~" is.
+    const big = screen.getByRole("region", { name: "Biggest line items" });
+    expect(within(big).queryByText("Total")).toBeNull();
+    expect(within(big).queryByText("Everything else")).toBeNull();
+    expect(within(big).getByText(/^~ is a rough size/)).toBeInTheDocument();
     // Tokens are the figure everywhere; dollars live only in hover text.
     for (const name of ["Who used it", "What it used", "Biggest line items"]) {
       const region = screen.getByRole("region", { name });
@@ -141,6 +149,48 @@ describe("Chat receipt and helper map", () => {
     expect(map.querySelector(".map-plate")).toBeNull();
   });
 
+  it("keeps the key on one line: kinds that do not fit wait behind Key, how helpers ended stays in view", async () => {
+    const backend = sessionsBackend();
+    const { row } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
+    await screen.findByRole("group", { name: /^Helper map/ });
+    // Room for everything (nothing has a size here): the whole key is one list, with no Key button.
+    const whole = screen.getByRole("list", { name: "What the icons, shapes and dots mean" });
+    expect(within(whole).getAllByRole("listitem").length).toBeGreaterThan(1);
+    expect(screen.queryByRole("button", { name: "Key" })).toBeNull();
+
+    // The same key in a pane 300 px wide, where it measures 900: the kinds fold away.
+    const rect = (left: number, right: number) => ({ left, right, top: 0, bottom: 0, width: right - left, height: 0, x: left, y: 0, toJSON: () => ({}) });
+    const width = Object.getOwnPropertyDescriptor(Element.prototype, "clientWidth");
+    const box = Element.prototype.getBoundingClientRect;
+    Object.defineProperty(Element.prototype, "clientWidth", { configurable: true, get: () => 300 });
+    Element.prototype.getBoundingClientRect = function () {
+      return this.parentElement?.classList.contains("map-legend") ? rect(0, 900) : rect(0, 0);
+    };
+    try {
+      cleanup();
+      mountDetail(backend, row.sessionId);
+      await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
+      const key = await screen.findByRole("button", { name: "Key" });
+      expect(key).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("list", { name: "What the icons and shapes mean" })).toBeNull();
+      const dots = screen.getByRole("list", { name: "What the dots mean" });
+      expect(within(dots).getAllByRole("listitem").length).toBeGreaterThan(0);
+      expect(dots.querySelector(".helper-av")).toBeNull();
+      await userEvent.click(key);
+      expect(key).toHaveAttribute("aria-expanded", "true");
+      const kinds = screen.getByRole("list", { name: "What the icons and shapes mean" });
+      expect(kinds.querySelectorAll(".helper-av").length).toBeGreaterThan(0);
+      // It opens above the line, in the key's own room, not over the map.
+      expect(kinds.closest(".map-scroll")).toBeNull();
+      expect(kinds.nextElementSibling).toBe(key.parentElement);
+    } finally {
+      if (width) Object.defineProperty(Element.prototype, "clientWidth", width);
+      Element.prototype.getBoundingClientRect = box;
+    }
+  });
+
   it("selects a node from the keyboard and opens the helper from its slice", async () => {
     const backend = sessionsBackend();
     const { row, detail } = await chatWithHelpers(backend);
@@ -166,6 +216,65 @@ describe("Chat receipt and helper map", () => {
     await userEvent.click(within(who).getByRole("button", { name: new RegExp(`^${esc(top.name)}, `) }));
     expect(await screen.findByRole("group", { name: /^Helper map/ })).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: `Slice: ${top.name}` })).toBeInTheDocument();
+  });
+
+  it("goes back with Escape and Alt+Left: a helper's page to its session, the session to the list", async () => {
+    const backend = sessionsBackend();
+    const { row, detail } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
+    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    const a = detail.agents[0];
+    await userEvent.click(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) })[0]);
+    expect(await screen.findByRole("heading", { level: 2, name: a.name })).toBeInTheDocument();
+
+    // From the helper: one step back is its session, on the tab it was opened from.
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("heading", { level: 2, name: a.name })).toBeNull();
+    expect(await screen.findByRole("radio", { name: "Helpers" })).toBeChecked();
+    expect(screen.queryByRole("searchbox", { name: "Search chats" })).toBeNull();
+
+    // A dialog or a text field keeps Escape for itself.
+    const sheet = document.body.appendChild(document.createElement("div"));
+    sheet.setAttribute("role", "dialog");
+    await userEvent.keyboard("{Escape}");
+    await userEvent.keyboard("{Alt>}{ArrowLeft}{/Alt}");
+    sheet.remove();
+    const field = document.body.appendChild(document.createElement("input"));
+    field.focus();
+    await userEvent.keyboard("{Escape}");
+    field.remove();
+    expect(screen.getByRole("radio", { name: "Helpers" })).toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: "Search chats" })).toBeNull();
+
+    // From the session: the list.
+    await userEvent.keyboard("{Alt>}{ArrowLeft}{/Alt}");
+    expect(await screen.findByRole("searchbox", { name: "Search chats" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Helpers" })).toBeNull();
+  });
+
+  it("goes from a session to the list with Escape too", async () => {
+    const backend = sessionsBackend();
+    const { row } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    await screen.findByRole("region", { name: "Who used it" });
+    await userEvent.keyboard("{Escape}");
+    expect(await screen.findByRole("searchbox", { name: "Search chats" })).toBeInTheDocument();
+  });
+
+  it("draws the run over time once, in tokens: no dollar chart on Details, helpers order by tokens", async () => {
+    const backend = sessionsBackend();
+    const { row } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    await userEvent.click(await screen.findByRole("radio", { name: "Details" }));
+    expect(await screen.findByRole("region", { name: "Tokens through the session" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Spend as it ran" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Spend" })).toBeNull();
+    await userEvent.click(screen.getByRole("radio", { name: "Helpers" }));
+    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    const order = screen.getByRole("radiogroup", { name: "Order helpers by" });
+    expect(within(order).getByRole("radio", { name: "Tokens" })).toBeInTheDocument();
+    expect(within(order).queryByRole("radio", { name: "Spend" })).toBeNull();
   });
 
   it("keeps the old helper cards behind a List view", async () => {

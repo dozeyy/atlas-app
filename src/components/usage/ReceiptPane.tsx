@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Warning } from "@phosphor-icons/react";
+import { Stack, Warning } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { EndLine } from "./EndLine";
 import { Skeleton } from "./StateBlocks";
-import { modelTone } from "./helperKit";
+import { AgentAvatar, modelTone } from "./helperKit";
 import { useIntro } from "../../lib/motion";
 import { barWidth, byModel, cacheReads, fitColumn, flagText, guess, itemDetail, itemTitleFull, itemTitle, lineTitle, tokensText, whatItUsed, whoUsed, type SpendLine } from "../../lib/receiptView";
 import { compact, percent, plural, share } from "../../lib/usage";
@@ -13,6 +13,8 @@ import type { Receipt } from "../../lib/types";
 const FLAGS_SHOWN = 3;
 const WIDE_PX = 896; // where the receipt goes to three columns (Tailwind @4xl)
 const FOOTER_PX = 0; // nothing sits under the lists any more
+/** What a "~" figure is: the engine sizes each result by its length; it is not a slice of the chat's tokens. */
+const ITEMS_NOTE = "~ is a rough size from the length of each result, not a share of the total.";
 
 /** The pane's size, kept current. Starts at 0 (unknown) until the element is measured. */
 function useBox(): [{ w: number; h: number }, (el: HTMLDivElement | null) => void] {
@@ -42,9 +44,12 @@ function tint(line: SpendLine): string {
   return "var(--line-strong)";
 }
 
-function Line({ line, total, index, onOpen }: { line: SpendLine; total: number; index: number; onOpen?: (agentId: string | null) => void }) {
+/** Who a line is: maps a line to the mark in front of it (the "Who used it" list only). */
+type Mark = (line: SpendLine) => ReactNode;
+
+function Line({ line, total, index, onOpen, mark }: { line: SpendLine; total: number; index: number; onOpen?: (agentId: string | null) => void; mark?: Mark }) {
   const frac = share(line.tokens, total);
-  const body = (
+  const figures = (
     <>
       <span className="flex items-baseline justify-between gap-3" title={lineTitle(line)}>
         <span className={`min-w-0 truncate text-body ${line.kind === "other" || line.kind === "more" ? "text-ink-2" : "text-ink"}`}>{line.label}</span>
@@ -57,6 +62,15 @@ function Line({ line, total, index, onOpen }: { line: SpendLine; total: number; 
         <i style={{ width: `${barWidth(line.tokens, total)}%`, ["--bar" as string]: tint(line), ["--i" as string]: Math.min(index, 12) }} />
       </span>
     </>
+  );
+  // With a mark, the name and its bar sit beside it: the mark is as tall as the two together.
+  const body = mark ? (
+    <span className="flex items-center gap-2">
+      {mark(line)}
+      <span className="block min-w-0 flex-1">{figures}</span>
+    </span>
+  ) : (
+    figures
   );
   const open = onOpen && (line.kind === "helper" || line.kind === "main");
   return (
@@ -72,13 +86,27 @@ function Line({ line, total, index, onOpen }: { line: SpendLine; total: number; 
   );
 }
 
-function Lines({ lines, total, label, onOpen, children }: { lines: SpendLine[]; total: number; label: string; onOpen?: (agentId: string | null) => void; children?: ReactNode }) {
+function Lines({
+  lines,
+  total,
+  label,
+  onOpen,
+  mark,
+  children,
+}: {
+  lines: SpendLine[];
+  total: number;
+  label: string;
+  onOpen?: (agentId: string | null) => void;
+  mark?: Mark;
+  children?: ReactNode;
+}) {
   return (
     <section aria-label={label} className="min-w-0">
       <h3 className="rcpt-head">{label}</h3>
       <ul>
         {lines.map((l, i) => (
-          <Line key={l.key} line={l} total={total} index={i} onOpen={onOpen} />
+          <Line key={l.key} line={l} total={total} index={i} onOpen={onOpen} mark={mark} />
         ))}
       </ul>
       <div className="rcpt-total">
@@ -114,19 +142,23 @@ export interface ReceiptState {
 
 /**
  * Where the chat's tokens went: who used them, what they were, which line items were biggest,
- * and anything worth a look. Every list adds up to the chat's tokens; what no line explains is
- * "Everything else". Dollars are only estimates and show up in the hover text. The items and
- * flags are estimates read from the transcript, marked "about" or "~".
+ * and anything worth a look. "Who used it", "What it used" and "By model" each add up to the
+ * chat's tokens; what no line explains is "Everything else". Dollars are only estimates and show
+ * up in the hover text. The items and flags are sizes read from the transcript, marked "about"
+ * or "~": they are not shares of the total, so that list carries a note instead of a total.
  */
 export function ReceiptPane({
   state,
   sessionId,
   onOpenHelper,
   effortOf,
+  types,
 }: {
   state: ReceiptState;
   sessionId: string;
   onOpenHelper: (agentId: string | null) => void;
+  /** Helper type per agent id (from the session's helpers), for the icons in "Who used it". */
+  types?: Map<string, string | null>;
   /** A model's most used reasoning effort in this chat, when the transcripts recorded one. */
   effortOf?: (model: string) => string | null | undefined;
 }) {
@@ -157,13 +189,33 @@ export function ReceiptPane({
   const itemLimit = fit ? fit.items : flags.length > 0 ? 6 : 8;
   // The figure is tokens, so the biggest in tokens comes first.
   const items = [...r.items].sort((a, b) => b.tokens - a.tokens).slice(0, itemLimit);
-  const itemsOther = Math.max(0, total - items.reduce((s, i) => s + i.tokens, 0));
+  // The ~ figures are sizes read off the results, not shares of the chat's tokens, so this list
+  // has no total and no remainder: only the items it left out, as a count and their own size.
   const itemRest = r.items.length - items.length;
+  const itemRestTokens = r.items.reduce((s, i) => s + i.tokens, 0) - items.reduce((s, i) => s + i.tokens, 0);
+
+  // The same avatar the map and the helper list give each thread; the folded line gets the stack.
+  const whoMark = (line: SpendLine): ReactNode => {
+    if (line.kind === "main") return <AgentAvatar type={null} size={24} level="main" />;
+    if (line.kind === "helper") {
+      const nested = !!r.threads.find((t) => t.agentId === line.agentId)?.parentAgentId;
+      return <AgentAvatar type={types?.get(line.agentId ?? "") ?? null} size={24} level={nested ? "nested" : "helper"} />;
+    }
+    return (
+      <span
+        aria-hidden="true"
+        style={{ width: 24, height: 24 }}
+        className={`flex shrink-0 items-center justify-center ${line.kind === "more" ? "rounded-full border border-dashed border-line-strong text-ink-2" : ""}`}
+      >
+        {line.kind === "more" && <Stack size={14} weight="duotone" />}
+      </span>
+    );
+  };
 
   return (
     <div ref={boxRef} className={`flex h-full min-h-0 flex-col ${intro ? "intro" : ""}`}>
       <div className="rcpt-scroll grid min-h-0 flex-1 content-start gap-x-8 gap-y-6 @xl:grid-cols-2 @4xl:grid-cols-3">
-        <Lines label="Who used it" lines={whoUsed(r)} total={total} onOpen={r.threads.length > 1 ? onOpenHelper : undefined} />
+        <Lines label="Who used it" lines={whoUsed(r)} total={total} onOpen={r.threads.length > 1 ? onOpenHelper : undefined} mark={whoMark} />
 
         <div className="min-w-0 space-y-6">
           <Lines label="What it used" lines={whatItUsed(r)} total={total}>
@@ -218,17 +270,14 @@ export function ReceiptPane({
                   <span className="shrink-0 text-body tabular-nums text-ink">{`~${compact(i.tokens)}`}</span>
                 </li>
               ))}
-              {(itemsOther >= 1 || itemRest > 0) && (
+              {itemRest > 0 && (
                 <li className="rcpt-item">
-                  <span className="text-body text-ink-2">Everything else</span>
-                  <span className="shrink-0 text-body tabular-nums text-ink-2">{compact(itemsOther)}</span>
+                  <span className="text-body text-ink-2">{plural(itemRest, "smaller item")}</span>
+                  <span className="shrink-0 text-body tabular-nums text-ink-2">{`~${compact(itemRestTokens)}`}</span>
                 </li>
               )}
             </ul>
-            <div className="rcpt-total">
-              <span>Total</span>
-              <span className="tabular-nums text-ink">{tokensText(total)}</span>
-            </div>
+            <p className="mt-1 border-t border-line pt-2 text-caption text-ink-2">{ITEMS_NOTE}</p>
             </>
           )}
         </section>
