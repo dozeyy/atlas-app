@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
@@ -7,6 +7,7 @@ import { setBackend } from "../lib/ipc";
 import { MockBackend } from "../lib/mock";
 import { mockSetupSnapshot } from "../lib/setup-mock";
 import { reloadSetup, resetSetupStore } from "../state/setupStore";
+import { CHECKLIST_FOLDED_KEY } from "../components/setup/Checklist";
 import { CELEBRATE_MS, CHECKLIST_DONE_KEY } from "../components/setup/TopSlot";
 import { resetToasts } from "../state/toastStore";
 import { resetUnsaved } from "../state/unsavedStore";
@@ -790,6 +791,28 @@ describe("Setup page: checklist and create", () => {
     await waitFor(() => expect(screen.queryByRole("progressbar", { name: "Toolkit progress" })).not.toBeInTheDocument());
     expect(screen.getByRole("button", { name: /^Skills, \d+$/ })).toBeInTheDocument();
     expect(localStorage.getItem(CHECKLIST_DONE_KEY)).toBe("1");
+  });
+
+  it("puts the steps away on request, keeps the progress in view and remembers the choice", async () => {
+    const snap = await mockSetupSnapshot(false);
+    backend.snapshot = async () => ({ ...snap, items: snap.items.filter((i) => i.kind !== "agent") });
+    await open(backend);
+    expect(await screen.findByRole("button", { name: "Add an agent: Add your first agent" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide steps" }));
+    expect(screen.queryByRole("button", { name: "Add an agent: Add your first agent" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Finish your toolkit" })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Toolkit progress" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show steps" })).toHaveAttribute("aria-expanded", "false");
+    expect(localStorage.getItem(CHECKLIST_FOLDED_KEY)).toBe("1");
+
+    // Coming back to the page finds it as it was left.
+    cleanup();
+    await open(backend);
+    expect(await screen.findByRole("button", { name: "Show steps" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show steps" }));
+    expect(screen.getByRole("button", { name: "Add an agent: Add your first agent" })).toBeInTheDocument();
+    expect(localStorage.getItem(CHECKLIST_FOLDED_KEY)).toBeNull();
   });
 
   it("does not celebrate a second time, and the card returns when a step becomes undone", async () => {
