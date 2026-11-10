@@ -144,8 +144,9 @@ export function LibraryTab() {
     body = <div role="status" aria-label="Loading the Library" className="skeleton min-h-0 flex-1 rounded-card" />;
   } else if (noCatalog && lib.source !== "installed") {
     body = lib.refreshing ? (
-      <div role="status" aria-label="Loading the plugin catalog" className="skeleton relative min-h-0 flex-1 rounded-card">
-        <p className="absolute inset-0 flex items-center justify-center px-6 text-center text-body text-ink-2">
+      <div role="status" aria-label="Loading the plugin catalog" className="relative min-h-0 flex-1">
+        <div aria-hidden className="skeleton absolute inset-0 rounded-card" />
+        <p className="absolute inset-0 flex items-center justify-center px-6 text-center text-body text-ink">
           Getting the plugin list from Claude Code. The first time takes a few seconds.
         </p>
       </div>
