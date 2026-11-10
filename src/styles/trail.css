@@ -1033,6 +1033,100 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   background: var(--accent);
   opacity: 0.85;
 }
+/* A folder's band: the day band's look, but the whole band is one button that folds the folder. */
+.folder-h {
+  margin: 0;
+  font: inherit;
+}
+.folder-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 36px;
+  padding: 0 20px 0 14px;
+  text-align: left;
+  cursor: pointer;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.folder-head:hover {
+  background: var(--raised);
+}
+.folder-head:active {
+  background: color-mix(in srgb, var(--raised) 85%, var(--ink));
+}
+.folder-section + .folder-section .folder-head {
+  border-top: 1px solid var(--line);
+}
+.folder-section:first-child .folder-head {
+  border-radius: var(--r-card) var(--r-card) 0 0;
+}
+/* The ring sits inside the band, so it is not cut by the card's edge or the pane's. */
+html[data-input="keyboard"] .folder-head:focus-visible {
+  outline-offset: -2px;
+}
+.folder-caret {
+  flex: none;
+  color: var(--ink-2);
+  transition: transform var(--dur) var(--ease-out);
+}
+.folder-caret.is-open {
+  transform: rotate(90deg);
+}
+.folder-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.folder-count,
+.folder-latest,
+.folder-total {
+  flex: none;
+  font-size: var(--text-caption);
+  line-height: 16px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.folder-latest {
+  margin-left: auto;
+}
+.folder-bar {
+  flex: none;
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.folder-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+/* A narrow page keeps the name, the count and the latest time; the folder's total gives way. */
+@container (max-width: 720px) {
+  .folder-total,
+  .folder-bar {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .folder-caret {
+    transition: none;
+  }
+}
 
 /* ---- Session rows in columns (container = the page, so the sidebar's width counts) ---------- */
 .session-grid {

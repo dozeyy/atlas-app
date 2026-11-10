@@ -8,8 +8,9 @@ import { MockBackend } from "../lib/mock";
 import type { SearchPage } from "../lib/searchTypes";
 import { hitParts } from "../components/usage/SessionList";
 
-function mount(setup?: (b: MockBackend) => void) {
+function mount(setup?: (b: MockBackend) => void, grouping: "folder" | "day" = "folder") {
   localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "sessions" }));
+  localStorage.setItem("atlas.sessions.grouping", grouping);
   const backend = new MockBackend();
   setup?.(backend);
   setBackend(backend);
@@ -256,9 +257,104 @@ describe("Sessions: Show more", () => {
   });
 });
 
-describe("Sessions: the first view", () => {
-  it("opens with the newest chat as a card and the list under day bands", async () => {
+describe("Sessions: by folder", () => {
+  const heads = () => [...document.querySelectorAll<HTMLButtonElement>("button.folder-head")];
+  const names = () => heads().map((h) => h.querySelector(".folder-name")!.textContent);
+  const rowsIn = (head: HTMLElement) => head.closest("section")!.querySelectorAll(".session-grid > li").length;
+
+  it("opens grouped by folder: the folder with the newest chat first, newest first inside, every folder once", async () => {
+    const backend = mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    const first = (await backend.sessionsList({ limit: 50, sort: "started", dir: "desc" })).rows;
+    expect(names()[0]).toBe(first[0].projectName);
+    expect(new Set(names()).size).toBe(names().length);
+    expect(document.querySelectorAll(".day-section").length).toBe(0);
+    // Inside a folder the rows keep newest-first and say their whole date (no band names the day).
+    const li = heads()[0].closest("section")!.querySelectorAll(".session-grid > li");
+    expect(li[0].textContent).toMatch(/(Today|Yesterday|[A-Z][a-z]{2} \d+), \d{1,2}:\d\d( [AP]M)?/);
+    // The header: name, count, when the latest chat started, and the path on hover.
+    const h = heads()[0];
+    expect(h).toHaveAccessibleName(new RegExp(`^${first[0].projectName}, \\d+ sessions so far, latest (Today|Yesterday)`));
+    expect(h.querySelector(".folder-name")!.getAttribute("data-tip")).toContain(first[0].projectPath);
+    expect(h.getAttribute("aria-expanded")).toBe("true");
+    // The band names the folder once; its rows do not repeat it (the day bands do the same with the day).
+    expect(li[0].querySelector(".proj-dot")).toBeNull();
+    expect(h.querySelector(".proj-dot")).not.toBeNull();
+  });
+
+  it("folds a folder shut, remembers it, and opens it again with Enter", async () => {
     mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    const h = heads()[1];
+    const n = rowsIn(h);
+    expect(n).toBeGreaterThan(0);
+    await userEvent.click(h);
+    expect(h.getAttribute("aria-expanded")).toBe("false");
+    expect(rowsIn(h)).toBe(0);
+    expect(JSON.parse(localStorage.getItem("atlas.sessions.folded")!)).toHaveLength(1);
+    h.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(h.getAttribute("aria-expanded")).toBe("true");
+    expect(rowsIn(h)).toBe(n);
+  });
+
+  it("walks headers and rows with the arrow keys and folds with Left", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    const h = heads()[0];
+    h.focus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(h.closest("section")!.querySelector("button.row-btn"));
+    await userEvent.keyboard("{ArrowUp}");
+    expect(document.activeElement).toBe(h);
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(h.getAttribute("aria-expanded")).toBe("false");
+    // Folded: Down goes straight to the next folder's header.
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(heads()[1]);
+    await userEvent.keyboard("{ArrowRight}");
+    expect(heads()[1].getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("adds a page without a second header for a folder it already shows", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    const before = names();
+    const counts = heads().map(rowsIn);
+    await userEvent.click(screen.getByRole("button", { name: "Show more" }));
+    await waitFor(() => expect(document.querySelectorAll(".session-grid > li").length).toBe(100));
+    expect(names().slice(0, before.length)).toEqual(before);
+    expect(new Set(names()).size).toBe(names().length);
+    expect(heads().map(rowsIn).reduce((s, n) => s + n, 0)).toBe(100);
+    for (let i = 0; i < counts.length; i++) expect(rowsIn(heads()[i])).toBeGreaterThanOrEqual(counts[i]);
+  });
+
+  it("keeps the folders in a search, with the typed word marked, and hides folders with no match", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    await userEvent.click(screen.getByRole("button", { name: "Filter" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Project" }), "-mock-site");
+    await waitFor(() => expect(names()).toEqual(["site"]));
+    await userEvent.keyboard("{Escape}");
+    await userEvent.type(searchbox(), "export");
+    await waitFor(() => expect(document.querySelectorAll("mark.sl-hit").length).toBeGreaterThan(0));
+    expect(names()).toEqual(["site"]);
+  });
+
+  it("switches to day bands from the Sort menu and remembers it", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Newest first" }));
+    await userEvent.click(screen.getByRole("radio", { name: "By day" }));
+    await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBeGreaterThan(0));
+    expect(heads()).toHaveLength(0);
+    expect(localStorage.getItem("atlas.sessions.grouping")).toBe("day");
+  });
+});
+
+describe("Sessions: the first view", () => {
+  it("opens with the newest chat as a card and, by day, the list under day bands", async () => {
+    mount(undefined, "day");
     const card = await screen.findByRole("region", { name: "Pick up where you left off" });
     expect(within(card).getByRole("button", { name: "Copy resume command" })).toBeInTheDocument();
     // At least one band, named for its day, holding rows.
@@ -275,7 +371,7 @@ describe("Sessions: the first view", () => {
   });
 
   it("leaves no stale rows behind when the order goes to Most tokens and back to Newest first", async () => {
-    mount();
+    mount(undefined, "day");
     await screen.findByRole("region", { name: "Pick up where you left off" });
     const rows = () => document.querySelectorAll(".session-grid > li").length;
     const before = rows();
@@ -291,8 +387,8 @@ describe("Sessions: the first view", () => {
     expect(rows()).toBe(before);
   });
 
-  it("lists search results as one flat list, and brings the day bands back when the search is cleared", async () => {
-    mount();
+  it("by day, lists search results as one flat list, and brings the day bands back when the search is cleared", async () => {
+    mount(undefined, "day");
     await screen.findByRole("region", { name: "Pick up where you left off" });
     expect(document.querySelectorAll(".day-section").length).toBeGreaterThan(0);
     await userEvent.type(searchbox(), "export");
