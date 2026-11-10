@@ -243,7 +243,8 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
           </div>
         ) : (
           <>
-            <fieldset>
+            {/* min-w-0: a fieldset refuses to shrink below its content by default, which pushed long paths past the sheet. */}
+            <fieldset className="min-w-0">
               <legend className="h-sub mb-2">Where should it go</legend>
               <div className="space-y-2">
                 {sheet.targets.map((t) => (

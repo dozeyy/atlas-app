@@ -339,9 +339,15 @@ export function layoutMap(threads: ReceiptThread[], size: { width: number; heigh
 /** How far a big tree is zoomed out so the pane shows more of it: never below this, so a bubble stays readable. */
 export const MIN_ZOOM = 0.7;
 
-/** The zoom for a canvas shown in a pane: 1 when it fits, down to MIN_ZOOM when it does not. */
+/**
+ * The zoom for a canvas shown in a pane: 1 when it fits, smaller when it does not. The picture
+ * always fits the pane's width (nothing in Atlas scrolls sideways); only the height may still
+ * overflow, and there the floor keeps a tall tree readable.
+ */
 export function zoomFor(layout: { width: number; height: number }, pane: { width: number; height: number }): number {
-  return clamp(Math.min(pane.width / layout.width, pane.height / layout.height), MIN_ZOOM, 1);
+  const fitW = Math.min(1, pane.width / layout.width);
+  const fitH = clamp(pane.height / layout.height, MIN_ZOOM, 1);
+  return Math.min(fitW, fitH);
 }
 
 /** The ids from the main chat down to `id`: what lights up when you point at a node. */

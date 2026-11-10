@@ -406,12 +406,20 @@ describe("helper map: picture", () => {
     }
   });
 
-  it("zooms a big tree out a little, never below the floor, and a plate then takes more canvas so it reads at full size", () => {
+  it("zooms a big tree out so it fits the pane's width (never a sideways scroll), the floor only limits the height, and a plate then takes more canvas so it reads at full size", () => {
     const pane = { width: 410, height: 369 };
     const m = layoutMap(many(MAP_LIMIT), pane, undefined, "tokens");
     const z = zoomFor(m, pane);
-    expect(z).toBe(MIN_ZOOM);
+    expect(m.width * z).toBeLessThanOrEqual(pane.width + 0.01);
+    expect(z).toBeLessThan(1);
     expect(zoomFor({ width: 300, height: 200 }, pane)).toBe(1);
+    // Wide: fits the width whatever the floor says. Tall only: the floor holds.
+    expect(zoomFor({ width: 2000, height: 300 }, pane)).toBeCloseTo(410 / 2000, 5);
+    expect(zoomFor({ width: 400, height: 2000 }, pane)).toBe(MIN_ZOOM);
+    for (const size of [{ width: 520, height: 360 }, { width: 900, height: 560 }, { width: 1280, height: 640 }]) {
+      const big = layoutMap(many(101), size, undefined, "tokens");
+      expect(big.width * zoomFor(big, size)).toBeLessThanOrEqual(size.width + 0.01);
+    }
     const node = m.nodes.find((n) => n.kind === "helper");
     expect(node).toBeDefined();
     const at1 = placePlate(m, node!.id, "12.4M tokens, finished");

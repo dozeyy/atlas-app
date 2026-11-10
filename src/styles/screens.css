@@ -202,11 +202,12 @@
 }
 
 /* ---- History: the detail pane and the diff ------------------------------------------------- */
+/* Many copies make more rows, never a sideways scroll. */
 .hx-scrub {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  overflow-x: auto;
   padding: 4px 2px;
 }
 .hx-scrub-hit {
