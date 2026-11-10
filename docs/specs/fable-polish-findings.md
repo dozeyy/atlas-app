@@ -47,6 +47,8 @@ Short SHAs are commits on the polish branch. The longer notes per area are in
 - Sizes and counts were formatted four ways, some in brackets (`f08a60f`).
 - The search box had no clear button on some pages; the peak mark sat on level bars; a toast covered the last row (`c5da056`).
 - The Sessions keys were missing from Keyboard shortcuts (`eaf9ef9`). Mock data used names that looked real, and mock runs were flat (`e3e4c34`).
+- Wrapped showed a helper's type id ("general-purpose"); it now reads "General purpose" like Team and Sessions (`19c0d82`).
+- In a 900x600 window, a long skill name plus a two-line check message pushed Cancel and Save under the edit sheet's bottom gap, which took their clicks (`6f0d39e`).
 
 ## Redesigns
 
@@ -89,3 +91,6 @@ Short SHAs are commits on the polish branch. The longer notes per area are in
 10. **Remember "Key" open** on the helper map.
 11. **Wrapped at a small window** could scale the centred slides on their own instead of the whole frame.
 12. **One money format.** The rounded hover estimate (`fmtUsd`) and the exact figure (`formatUsd`) are two helpers; left because they answer different questions.
+13. **macOS title bar.** With the sidebar open, the sidebar button's box and the Wrapped gift's box overlap by 5 px (the glyphs do not, and each glyph still reaches its own button). `padding-left: 78px` in `src/styles/trail.css` (the macOS `.titlebar-left` rule) clears it, but it moves both buttons toward the traffic lights, so it wants a look on a real Mac first.
+14. **Edit sheet in a short window.** With a long name and a two-line check message at 900x600, Cancel and Save start a few pixels below the fold and the sheet scrolls to them with no gap under them. The editor already gives up height down to eight lines; a smaller floor at this size would keep them in view.
+15. **History rows with very long names.** The change label ("Settings file changed") is cut before the file name gives up its last characters; the whole line is on the row's hover. Let the name shrink to nothing first.
