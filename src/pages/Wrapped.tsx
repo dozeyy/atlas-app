@@ -13,6 +13,23 @@ import { IndexProgress } from "../components/IndexProgress";
 import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
 import { Story } from "../components/wrapped/Story";
 
+/** The story's own shape while it is read: the trail, the sheet, Back and Next. Nothing jumps when it lands. */
+function StorySkeleton() {
+  return (
+    <div className="sm-story" aria-hidden="true">
+      <div className="sm-trail">
+        <i className="sm-trail-track" />
+      </div>
+      <div className="sm-skel pulse-dot" />
+      <div className="sm-foot">
+        <Skeleton className="h-8 w-20" />
+        <span />
+        <Skeleton className="h-8 w-20" />
+      </div>
+    </div>
+  );
+}
+
 export function Wrapped() {
   const backend = getBackend();
   const { info, goBack } = useAtlas();
@@ -36,11 +53,18 @@ export function Wrapped() {
   }
 
   if (!d && (waiting || notReady)) {
+    // When the usage engine has failed there is nothing on its way: the message and its one way
+    // forward stand alone, with no placeholder under them promising a story.
+    const failed = status?.state === "error";
     return (
-      <div className="@container flex flex-col gap-4">
+      <div className="@container flex min-h-0 flex-1 flex-col">
         <PageTitle title="Wrapped" />
-        <IndexProgress status={status} progress={progress} />
-        <Skeleton className="h-72" />
+        <IndexProgress
+          status={status}
+          progress={progress}
+          onRetry={() => void backend.usageReindex("changed").catch(() => {})}
+        />
+        {!failed && <StorySkeleton />}
       </div>
     );
   }

@@ -137,7 +137,9 @@ export function drawShareCard(canvas: HTMLCanvasElement, card: ShareCard): boole
   card.facts.slice(0, 4).forEach((f, i) => {
     const x = PAD_X + (i % COLS) * (colW + COL_GAP);
     const y = factsTop + Math.floor(i / COLS) * (48 * S + 20 * S);
-    const px = fit(ctx, f.value, display(720), 26 * S, 16 * S, colW);
+    // A long name steps down a little, then is cut with "...": it never shrinks to small print
+    // beside a full-size number.
+    const px = fit(ctx, f.value, display(720), 26 * S, 20 * S, colW);
     ctx.font = display(720)(px);
     ctx.fillStyle = p.ink;
     ctx.fillText(clip(ctx, f.value, colW), x, y + 24 * S);

@@ -391,6 +391,16 @@ describe("buildSlides: the Summit story", () => {
     expect(buildSlides(rich({ skills: [item("design:design-critique", "skill", 9, 5)] })).find((s) => s.id === "skill")!.figure).toBe("design-critique");
   });
 
+  it("shows a connector's tool by the tool's own name, with the exact id as the hover", () => {
+    expect(plainNames(["mcp__browser__read_page", "Bash"])).toEqual(["read_page", "Bash"]);
+    expect(plainNames(["mcp__a__read", "mcp__b__read"])).toEqual(["mcp__a__read", "mcp__b__read"]);
+    const tool = buildSlides(rich({ tools: [item("mcp__browser__read_page", "tool", 9, 5)] })).find((s) => s.id === "tool")!;
+    expect(tool.figure).toBe("read_page");
+    expect(tool.hint).toBe("mcp__browser__read_page");
+    // A name shown as it is has nothing more exact to say.
+    expect(buildSlides(rich({ tools: [item("Bash", "tool", 9, 5)] })).find((s) => s.id === "tool")!.hint).toBeUndefined();
+  });
+
   it("has no novels phrase for a small total", () => {
     const t = buildSlides(rich({ tokens: 100_000 })).find((s) => s.id === "tokens")!;
     expect(t.line).toBe("");

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { MouseEvent } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,6 +22,8 @@ const OPEN_LAYERS =
 const LEAVE_MS = 280;
 /** The frame is never drawn larger than this, so a big window does not blow the slide up. */
 const MAX_SCALE = 1.3;
+/** Under this scale the window is a small one: the end card sits beside its button, not above it. */
+const SMALL_SCALE = 0.8;
 
 interface At {
   i: number;
@@ -216,7 +218,17 @@ export function Story({
         <div ref={sheet} className="sm-sheet">
           <div
             className="sm-scaler"
-            style={{ width: FRAME_W, height: FRAME_H, transform: `translate(-50%, -50%) scale(${scale})` }}
+            // --sm-k lets the small print keep a readable size on screen when the frame is scaled
+            // down (summit.css); a small window also gets the tighter card layout.
+            data-small={scale < SMALL_SCALE ? "" : undefined}
+            style={
+              {
+                width: FRAME_W,
+                height: FRAME_H,
+                transform: `translate(-50%, -50%) scale(${scale})`,
+                "--sm-k": scale,
+              } as CSSProperties
+            }
           >
             <div
               key={i}
@@ -240,7 +252,7 @@ export function Story({
           <ArrowLeft size={14} aria-hidden="true" />
           Back
         </Button>
-        <span className="text-caption text-ink-2">
+        <span className="sm-foot-at text-caption text-ink-2">
           {i + 1} of {slides.length}
         </span>
         {i === last ? (

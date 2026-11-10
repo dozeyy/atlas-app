@@ -82,25 +82,29 @@ export function CardView({ slide, settled }: { slide: Slide; settled: boolean })
     <div className="sm-frame" data-slide={slide.id} data-layout="card" data-settled={settled ? "" : undefined}>
       <div className="sm-cardwrap">
         <canvas ref={canvas} className="sm-card" role="img" aria-label={describe(card)} width={CARD_W} height={CARD_H} />
+        {/* The outer box holds the room in the scaled frame; the inner one keeps the button the
+            app's own size on screen (summit.css). */}
         <div className="sm-card-save">
-          <Button variant="primary" onClick={() => void save()} disabled={status.kind === "busy" || !drawn}>
-            <DownloadSimple size={16} weight="bold" aria-hidden="true" />
-            Save image
-          </Button>
-          <span
-            role="status"
-            className="sm-card-status"
-            data-bad={status.kind === "error" ? "" : undefined}
-            title={status.kind === "saved" ? status.path : undefined}
-          >
-            {status.kind === "saved"
-              ? `Saved to ${status.path}`
-              : status.kind === "error"
-                ? status.text
-                : !drawn
-                  ? "The picture could not be drawn."
-                  : ""}
-          </span>
+          <div className="sm-card-save-in">
+            <Button variant="primary" onClick={() => void save()} disabled={status.kind === "busy" || !drawn}>
+              <DownloadSimple size={16} weight="bold" aria-hidden="true" />
+              Save image
+            </Button>
+            <span
+              role="status"
+              className="sm-card-status"
+              data-bad={status.kind === "error" ? "" : undefined}
+              title={status.kind === "saved" ? status.path : undefined}
+            >
+              {status.kind === "saved"
+                ? `Saved to ${status.path}`
+                : status.kind === "error"
+                  ? status.text
+                  : !drawn
+                    ? "The picture could not be drawn."
+                    : ""}
+            </span>
+          </div>
         </div>
       </div>
     </div>
