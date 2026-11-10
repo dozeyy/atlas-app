@@ -1872,6 +1872,17 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
 }
 
 /*
+ * A Toolkit list (one tile opened). 8 px of side room so a card's lift and keyboard ring are not
+ * cut; the scrollbar's own width (--sb, measured) goes into the page's gutter, so the cards end
+ * where the toolbar above them ends, with or without a scrollbar.
+ */
+.toolkit-pane {
+  margin-left: -8px;
+  margin-right: calc(-8px - var(--sb, 0px));
+  scrollbar-gutter: stable;
+}
+
+/*
  * The corner X (delete) and lock on a Toolkit card. The 28px button never moves; its face
  * lifts with the card, tints on hover, turns a quarter on the X, and shrinks on press.
  */

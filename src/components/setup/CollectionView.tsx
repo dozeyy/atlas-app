@@ -1,11 +1,11 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { ArrowLeft, Plus } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { EmptyState } from "../EmptyState";
 import { IconMotion } from "../IconMotion";
 import { GroupBody, GroupSection } from "./GroupSection";
-import { Toolbar } from "./Toolbar";
+import { filtersNarrow, Toolbar } from "./Toolbar";
 import {
   DEFAULT_FILTERS,
   gridMove,
@@ -60,6 +60,16 @@ export function CollectionView({
   // No page header any more: keyboard focus starts in the search box.
   useEffect(() => search.current?.focus({ preventScroll: true }), []);
 
+  // The list's scrollbar sits in the page's gutter (the pane grows by the bar's width, whatever
+  // that is on this system), so the cards end exactly where the toolbar above them ends. The
+  // same measure the Sessions list uses.
+  useLayoutEffect(() => {
+    const el = list.current;
+    if (!el || el.offsetWidth === 0) return;
+    const bar = `${el.offsetWidth - el.clientWidth}px`;
+    if (el.style.getPropertyValue("--sb") !== bar) el.style.setProperty("--sb", bar);
+  });
+
   const patch = useCallback((p: Partial<Filters>) => {
     setFilters((f) => ({ ...f, ...p }));
     if (p.showWorktrees !== undefined) setIncludeWorktrees(p.showWorktrees);
@@ -86,6 +96,13 @@ export function CollectionView({
   const effective = useMemo(() => ({ ...filters, query }), [filters, query]);
   const visible = useMemo(() => visibleItems(items, effective), [items, effective]);
   const groups = useMemo(() => groupItems(visible), [visible]);
+  // What the list holds before anyone searches or narrows it: the number the tile showed, plus
+  // worktree copies and backups only once they are switched on. "Showing 8 of 9" is said only
+  // when a search or a filter on screen took something away, never for what is hidden by default.
+  const pool = useMemo(
+    () => visibleItems(items, { ...DEFAULT_FILTERS, showWorktrees: filters.showWorktrees, showBackups: filters.showBackups }).length,
+    [items, filters.showWorktrees, filters.showBackups],
+  );
 
   // Arrows move across the cards the way they sit on screen; Home / End jump to the ends.
   const onListKey = (e: KeyboardEvent) => {
@@ -134,9 +151,12 @@ export function CollectionView({
     first.focus();
   };
 
-  const forceOpen = query.trim() !== "";
   const creatable = single && CREATABLE.includes(single) ? (single as CreateKind) : null;
-  const clearAll = () => patch({ ...DEFAULT_FILTERS, showWorktrees: filters.showWorktrees });
+  const typed = query.trim() !== "";
+  const narrowed = filtersNarrow(filters);
+  // One wording for "nothing matches" on every list: the action names what it clears.
+  const clear = () => patch({ ...(typed ? { query: "" } : {}), ...(narrowed ? { scope: DEFAULT_FILTERS.scope, projectId: null } : {}) });
+  const empty = pool === 0 && !typed && !narrowed;
 
   return (
     <div className="fade-in flex min-h-0 flex-1 flex-col">
@@ -149,7 +169,8 @@ export function CollectionView({
         </Button>
         {/* The list you opened is named: Toolkit stays the page, this is the one thing on it. */}
         <h2 className="h-page min-w-0 truncate">{tileTitle(tile)}</h2>
-        {creatable && (
+        {/* An empty list offers "New ..." once, in the middle of the page; the header's comes with the first item. */}
+        {creatable && !empty && (
           <Button variant="primary" className="ml-auto" onClick={() => onCreate(creatable)}>
             <IconMotion motion="pop">
               <Plus />
@@ -168,12 +189,12 @@ export function CollectionView({
         onSearchKeyDown={onSearchDown}
         shortcut={showKeys ? (mac ? "Cmd F" : "Ctrl F") : undefined}
         shown={visible.length}
-        total={items.length}
+        total={pool}
         placeholder={searchPlaceholder(tile)}
       />
 
-      <div ref={list} onKeyDown={onListKey} className="-mx-2 -mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pt-2">
-        {items.length === 0 ? (
+      <div ref={list} onKeyDown={onListKey} className="toolkit-pane -mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pt-2">
+        {empty ? (
           <EmptyState
             fill
             seed={73}
@@ -181,14 +202,20 @@ export function CollectionView({
             body={tileBlurb(tile)}
           >
             {creatable && (
-              <Button onClick={() => onCreate(creatable)}>
+              <Button variant="primary" onClick={() => onCreate(creatable)}>
                 <Plus />
                 New {KIND_BY_ID[creatable].singular}
               </Button>
             )}
           </EmptyState>
         ) : groups.length === 0 ? (
-          <EmptyState variant="no-match" fill query={query.trim() || undefined} action={{ onClick: clearAll, label: "Clear search and filters" }} />
+          <EmptyState
+            variant="no-match"
+            fill
+            query={query.trim() || undefined}
+            body={typed && narrowed ? "Filters are on too." : typed ? "Try fewer words." : undefined}
+            action={{ onClick: clear, label: typed && narrowed ? "Clear search and filters" : typed ? "Clear search" : "Clear filters" }}
+          />
         ) : single ? (
           <GroupBody group={groups[0]!} onOpenItem={onOpenItem} canDelete />
         ) : (
@@ -196,7 +223,7 @@ export function CollectionView({
             <GroupSection
               key={g.meta.kind}
               group={g}
-              open={forceOpen || !folded.has(g.meta.kind)}
+              open={typed || !folded.has(g.meta.kind)}
               onToggle={() =>
                 setFolded((s) => {
                   const n = new Set(s);

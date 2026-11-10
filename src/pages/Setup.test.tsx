@@ -254,9 +254,27 @@ describe("Setup page: a collection", () => {
     await waitFor(() => expect(screen.queryByText("deep-research")).not.toBeInTheDocument());
     expect(screen.getByText("commit-helper")).toBeInTheDocument();
     await userEvent.type(screen.getByRole("searchbox"), "zzzz");
-    expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Clear search and filters" }));
+    // G12: one wording on every list. Only a search is on, so the action is "Clear search", with the hint line.
+    const none = (await screen.findByText("Nothing matches")).closest("section")!;
+    expect(within(none).getByText("Try fewer words.")).toBeInTheDocument();
+    await userEvent.click(within(none).getByRole("button", { name: "Clear search" }));
     expect(await screen.findByText("deep-research")).toBeInTheDocument();
+  });
+
+  it("names what the no-match action clears: filters too when a filter is on, filters alone with nothing typed", async () => {
+    await open(backend);
+    await openTile("Output styles");
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await userEvent.click(within(screen.getByLabelText("Show items from")).getByRole("radio", { name: "Projects" }));
+    await userEvent.keyboard("{Escape}");
+    const none = (await screen.findByText("Nothing matches these filters")).closest("section")!;
+    expect(within(none).getByRole("button", { name: "Clear filters" })).toBeInTheDocument();
+    await userEvent.type(screen.getByRole("searchbox"), "zzzz");
+    const both = (await screen.findByText("Nothing matches")).closest("section")!;
+    expect(within(both).getByText("Filters are on too.")).toBeInTheDocument();
+    await userEvent.click(within(both).getByRole("button", { name: "Clear search and filters" }));
+    await waitFor(() => expect(screen.queryByText(/Nothing matches/)).not.toBeInTheDocument());
+    expect(screen.getByRole("searchbox")).toHaveValue("");
   });
 
   it("narrows by where things live: All, Global, then one project", async () => {
