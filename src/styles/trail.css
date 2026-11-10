@@ -1910,6 +1910,19 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
 .x-del:active .x-del-face {
   transform: scale(var(--press-scale));
 }
+/*
+ * The "yes" of an in-place confirm (Delete on a Toolkit item, Uninstall in the Library): the
+ * danger colour as a fill, so the one button that removes something cannot be mistaken for the
+ * one that keeps it. It holds still like every destructive control.
+ */
+.btn-danger.confirm-go .btn-face {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-accent);
+}
+.btn-danger.confirm-go:hover:not(:disabled) .btn-face {
+  background: color-mix(in srgb, var(--danger) 88%, var(--ink));
+}
 .item-wrap:hover .x-del-face {
   translate: 0 var(--lift);
 }

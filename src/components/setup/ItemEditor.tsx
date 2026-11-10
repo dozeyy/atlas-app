@@ -26,7 +26,7 @@ function HeaderFields({ item, text, setText }: { item: SetupItem; text: string; 
           <label htmlFor="hf-name" className="text-body text-ink-2">
             Name
           </label>
-          <input id="hf-name" className={`${FIELD_INPUT} mono`} value={name.value} disabled readOnly title="A skill's name is its folder name" />
+          <input id="hf-name" className={FIELD_INPUT} value={name.value} disabled readOnly title="A skill's name is its folder name" />
         </>
       )}
       {desc?.single && (

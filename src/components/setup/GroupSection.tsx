@@ -24,10 +24,14 @@ function Cards({ items, onOpen, onDelete }: { items: SetupItem[]; onOpen: (id: s
   const list = all ? items : items.slice(0, CARD_CAP);
   // When the list mixes places (Global, a project, a plugin), each place gets its own small heading.
   const runs = scopeRuns(list);
-  const headed = runs.length > 1;
+  // A heading earns its line when a place holds several things. When every place holds one, the
+  // cards share one grid (each card's chip already says where it lives), so no card sits alone
+  // under its own heading beside an empty column.
+  const headed = runs.length > 1 && runs.some((r) => r.items.length > 1);
+  const blocks = headed ? runs : [{ label: "all", items: list }];
   return (
     <>
-      {runs.map((r) => (
+      {blocks.map((r) => (
         <div key={r.label} className={headed ? "mb-5 last:mb-0" : undefined}>
           {headed && (
             <h3 className="mb-2 flex items-baseline gap-2 text-body font-medium text-ink-2">
@@ -35,7 +39,8 @@ function Cards({ items, onOpen, onDelete }: { items: SetupItem[]; onOpen: (id: s
               <span className="font-normal">{r.items.length}</span>
             </h3>
           )}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))] gap-3">
+          {/* The only card on the page takes the row, as a list of one would. */}
+          <div className={`grid gap-3 ${list.length === 1 ? "grid-cols-1" : "grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))]"}`}>
             {r.items.map((i) => (
               <ItemCard key={i.id} item={i} onOpen={onOpen} onDelete={onDelete} />
             ))}

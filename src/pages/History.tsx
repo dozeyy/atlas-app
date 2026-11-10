@@ -42,7 +42,7 @@ function Hero({ o, now, onPick }: { o: HistoryOverview; now: number; onPick: (da
           )}
         </div>
         <div className="min-w-0 self-end">
-          <Ribbon days={o.days} onPick={onPick} now={now} />
+          <Ribbon days={o.days} since={o.watchingSince} onPick={onPick} now={now} />
         </div>
       </Card>
     </section>
@@ -252,8 +252,9 @@ export function History() {
           {filtered && <Button onClick={showEverything}>Show everything</Button>}
         </div>
       ) : wide ? (
-        <div className="rise grid min-h-[240px] flex-1 grid-cols-[minmax(300px,380px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-6" style={rise(3)}>
-          <div className="min-h-0 overflow-y-auto pr-1">
+        // The list gets half: its rows are sentences, and a diff wraps inside its pane.
+        <div className="rise grid min-h-[240px] flex-1 grid-cols-[minmax(380px,1fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-6" style={rise(3)}>
+          <div className="hx-pane pr-1">
             <Timeline
               sections={view.sections}
               selectedId={selected?.id ?? null}
@@ -265,7 +266,7 @@ export function History() {
               now={view.now}
             />
           </div>
-          <div className="min-h-0 overflow-y-auto rounded-card">
+          <div className="hx-pane rounded-t-card">
             {showDetail && selected && (
               <Card className="p-5">
                 <Detail key={selected.id} event={selected} />

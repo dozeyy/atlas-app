@@ -65,10 +65,13 @@ describe("Toolkit: what the setup costs", () => {
     expect(document.querySelector("[data-tile]")?.textContent).not.toMatch(/token|\$|week/);
   });
 
-  it("ranks the biggest costs in tokens above the tiles and opens an item with its own figures", async () => {
+  it("ranks the biggest costs in tokens under the tiles and opens an item with its own figures", async () => {
     await open(backend);
     const panel = await screen.findByRole("region", { name: "What your setup costs" });
-    expect(panel).toHaveTextContent(/tokens load with every message/);
+    expect(panel).toHaveTextContent(/tokens per message, in every chat/);
+    // Will's layout: the tiles are the way in, so they come before any numbers.
+    const tile = document.querySelector("[data-tile]")!;
+    expect(tile.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(panel.textContent).not.toContain("$");
     expect(within(panel).getAllByRole("listitem").length).toBeGreaterThan(1);
     await userEvent.click(within(panel).getAllByRole("button")[0]!);

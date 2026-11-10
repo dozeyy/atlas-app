@@ -32,8 +32,8 @@ function report(rows: CostRow[], over: Partial<CostReport> = {}): CostReport {
 const items = [{ id: "i1", kind: "instructions", name: "CLAUDE.md" }] as SetupItem[];
 
 const rows = [
-  row({ id: "i1", name: "CLAUDE.md", loadsIn: "Chats in pixel-garden", tokens: 8804, turns: 12_103, usdWeek: 21.26 }),
-  row({ name: "Other connected tools (19)", kind: "mcpServer", loadsIn: "Chats that connect them", tokens: 7294, turns: 15_682, usdWeek: 25.26, measured: true }),
+  row({ id: "i1", name: "CLAUDE.md", loadsIn: "Chats in pixel-garden", global: false, tokens: 8804, turns: 12_103, usdWeek: 21.26 }),
+  row({ name: "Other connected tools (19)", kind: "mcpServer", loadsIn: "Chats that connect them", global: false, tokens: 7294, turns: 15_682, usdWeek: 25.26, measured: true }),
   row({ id: "i2", name: "agent-routing", kind: "rule", tokens: 2791, usdWeek: 13.92 }),
 ];
 
@@ -50,7 +50,7 @@ describe("CostPanel", () => {
     render(<CostPanel report={report(rows)} items={items} />);
     expect(screen.getByRole("heading", { name: "What your setup costs" })).toBeInTheDocument();
     const head = document.querySelector("[data-cost-headline]")!;
-    expect(head).toHaveTextContent("30k tokens load with every message");
+    expect(head).toHaveTextContent("30k tokens per message, in every chat");
 
     const lis = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(lis).toHaveLength(3);
@@ -59,14 +59,17 @@ describe("CostPanel", () => {
     expect(lis[0]).toHaveTextContent("Other connected tools19");
     expect(lis[0]).not.toHaveTextContent("(19)");
     expect(lis[0]).toHaveTextContent("114M a week");
-    expect(lis[0]).toHaveTextContent("Chats that connect them - 7.3k per message");
+    // One unit on the surface: the row says where it loads, never a second per-message figure
+    // (a some-chats row can be bigger per message than the every-chat headline).
+    expect(lis[0]).toHaveTextContent("Only chats that connect them");
+    expect(lis[0]).not.toHaveTextContent("per message");
     // A project's file carries the project name in its title, so same-named files differ.
     expect(lis[1]).toHaveTextContent("CLAUDE.md · pixel-garden");
     expect(lis[1]).toHaveTextContent("107M a week");
     expect(lis[2]).toHaveTextContent("agent-routing");
     expect(lis[2]).not.toHaveTextContent("·");
-    expect(lis[1]).toHaveTextContent("Chats in pixel-garden - 8.8k per message");
-    expect(lis[2]).toHaveTextContent("All chats - 2.8k per message");
+    expect(lis[1]).toHaveTextContent("Only chats in pixel-garden");
+    expect(lis[2]).toHaveTextContent("Every chat");
   });
 
   it("shows no dollars on screen: they live in the hover", () => {

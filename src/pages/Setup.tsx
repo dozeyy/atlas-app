@@ -10,7 +10,7 @@ import { DetailSheet } from "../components/setup/DetailSheet";
 import { ItemRow } from "../components/setup/ItemViews";
 import { PathText } from "../components/setup/parts";
 import { NoSetup, SetupError, SetupSkeleton } from "../components/setup/states";
-import { TopSlot } from "../components/setup/TopSlot";
+import { Insights, TopSlot } from "../components/setup/TopSlot";
 import { TypeTiles } from "../components/setup/TypeTiles";
 import { CostProvider } from "../components/setup/CostContext";
 import { countByKind, itemsForTile, MORE_KINDS, type TileId } from "../lib/setup-model";
@@ -180,8 +180,10 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
               {jsonNote}
             </p>
           )}
-          <TopSlot items={counted} loads={loads} cost={cost} onCreate={setCreating} onOpen={setSelectedId} />
+          {/* Will's layout: the checklist, then the tiles (the way in to everything), then the numbers. */}
+          <TopSlot items={counted} onCreate={setCreating} />
           <TypeTiles counts={counts} moreCount={moreCount} onOpen={openTile} />
+          <Insights items={counted} loads={loads} cost={cost} onOpen={setSelectedId} />
           <div className="mt-4">
             <MissingProjects projects={missingProjects} items={gone} onOpen={setSelectedId} />
           </div>

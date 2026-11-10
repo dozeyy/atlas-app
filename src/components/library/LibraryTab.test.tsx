@@ -268,6 +268,28 @@ describe("Library tab: installed plugins", () => {
     expect(document.querySelector("[data-row]")?.getAttribute("data-row")).toBe("pdf-tools@anthropic-plugin-directory");
     expect((await row("pdf-tools")).getAttribute("aria-label")).toMatch(/\. Installed$/);
 
+    // The picture: what it is about (its glyph) and, on its corner, that it is installed and on.
+    const tile = (await row("pdf-tools")).querySelector("[data-tile-topic]")!;
+    expect(tile).toHaveAttribute("data-tile-topic", "documents");
+    expect(tile).toHaveAttribute("data-tile-state", "on");
+    expect(tile).toHaveAttribute("title", "Documents");
+    // A plugin still on the shelf has the glyph, a quiet Install and no mark.
+    const shelf = (await row("code-review")).querySelector("[data-tile-topic]")!;
+    expect(shelf).toHaveAttribute("data-tile-topic", "review");
+    expect(shelf).toHaveAttribute("data-tile-state", "none");
+    expect(shelf.querySelector(".lib-mark")).toBeNull();
+    expect(await installBtn("code-review")).toHaveClass("lib-install");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Uninstall pdf-tools" }));
+    // The question is the row's own first line, so it is there at every width; Keep has the keyboard.
+    const asked = (await row("pdf-tools")).querySelector("[data-row-title]")!;
+    expect(asked).toHaveTextContent("Uninstall pdf-tools?");
+    expect(asked.className).not.toMatch(/hidden/);
+    expect(screen.getByRole("button", { name: "Keep" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Uninstall" })).toHaveClass("confirm-go");
+    await userEvent.click(screen.getByRole("button", { name: "Keep" }));
+    expect(await row("pdf-tools")).toHaveFocus();
+    expect(screen.queryByText("Uninstall pdf-tools?")).not.toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: "Uninstall pdf-tools" }));
     expect(screen.getByText("Uninstall pdf-tools?")).toBeInTheDocument();
     expect(lib().calls.some((c) => c.startsWith("uninstall:"))).toBe(false);

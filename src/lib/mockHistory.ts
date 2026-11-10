@@ -153,7 +153,20 @@ function diffText(a: string, b: string): HistoryDiff {
   return { kind: "text", summary: [], hunks: [{ skippedBefore: 0, lines: out }], skippedAfter: 0, added, removed, cut: false };
 }
 
-const TEXT: Record<number, string> = { 11: SETTINGS_V1, 12: SETTINGS_V2, 31: SKILL_V1, 32: SKILL_V2 };
+/** The skill that was removed: its last copy is a real file, as the app would have kept it. */
+const OLD_NOTES = `---
+name: old-notes
+description: Turn rough meeting notes into a short summary with next steps.
+---
+
+# Old notes
+
+1. Read the notes the user pasted.
+2. Write three lines: what was decided, what is still open, who does what.
+3. Keep names and dates exactly as written.
+`;
+
+const TEXT: Record<number, string> = { 11: SETTINGS_V1, 12: SETTINGS_V2, 31: SKILL_V1, 32: SKILL_V2, 61: OLD_NOTES };
 
 export class MockHistory {
   /** Tests set these to try the other states. */

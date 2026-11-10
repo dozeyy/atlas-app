@@ -250,7 +250,7 @@ export function LibraryTab() {
             </button>
           )}
         </div>
-        {!wide && <SelectField label="Source" value={lib.source} onChange={setSource} options={options.map((o) => ({ value: o.id, label: `${o.label} ${exact(o.count)}${o.flag ? `, ${o.flag.short}` : ""}` }))} />}
+        {!wide && <SelectField label="Source" value={lib.source} onChange={setSource} options={options.map((o) => ({ value: o.id, label: loading ? o.label : `${o.label} ${exact(o.count)}${o.flag ? `, ${o.flag.short}` : ""}` }))} />}
         <Button onClick={() => setAdding(true)}>
           <GithubLogo size={16} aria-hidden="true" className="ico" />
           Add from GitHub
@@ -279,7 +279,7 @@ export function LibraryTab() {
       )}
 
       <div className="flex min-h-0 flex-1 gap-4">
-        {wide && <SourceRail options={options} value={lib.source} onChange={setSource} onAdd={() => setAdding(true)} />}
+        {wide && <SourceRail options={options} value={lib.source} counts={!loading} onChange={setSource} onAdd={() => setAdding(true)} />}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">{body}</div>
       </div>
 

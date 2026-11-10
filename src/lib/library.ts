@@ -253,6 +253,90 @@ export function rowName(r: LibraryRow): string {
   return r.type === "plugin" ? r.entry.name : r.row.name;
 }
 
+// ---- what a row is about -----------------------------------------------------------------------
+
+/**
+ * What a plugin is about, read from its own name and description: the catalog sends nothing else
+ * (no contents, no counts), so the row's picture is a reading of those words and never a claim
+ * about what is inside. "plugin" is the honest answer when the words say nothing.
+ */
+export type Topic =
+  | "style"
+  | "language"
+  | "hooks"
+  | "agents"
+  | "commands"
+  | "skills"
+  | "design"
+  | "review"
+  | "documents"
+  | "security"
+  | "cloud"
+  | "data"
+  | "web"
+  | "git"
+  | "loop"
+  | "build"
+  | "plugin";
+
+/** One word for the picture's hover. */
+export const TOPIC_WORD: Record<Topic, string> = {
+  style: "Output style",
+  language: "Language server",
+  hooks: "Hooks",
+  agents: "Agents",
+  commands: "Commands",
+  skills: "Skills",
+  design: "Design",
+  review: "Review",
+  documents: "Documents",
+  security: "Security",
+  cloud: "Cloud",
+  data: "Data",
+  web: "Web",
+  git: "Git",
+  loop: "Automation",
+  build: "Building",
+  plugin: "Plugin",
+};
+
+// First match wins. A plain entry is a whole word (or two words in a row); one ending in "*" is
+// the start of a word. What a plugin adds to Claude Code (a style, hooks, agents) comes before
+// what it is for (design, review, documents).
+const TOPIC_RULES: [Topic, string[]][] = [
+  ["style", ["output style", "output styles"]],
+  ["language", ["lsp", "language server"]],
+  ["hooks", ["hook*"]],
+  ["agents", ["agent*", "subagent*"]],
+  ["commands", ["command*", "slash"]],
+  ["skills", ["skill*"]],
+  ["design", ["design*", "frontend", "ui", "ux", "css", "figma", "tailwind"]],
+  ["review", ["review*", "audit*", "lint*"]],
+  ["documents", ["pdf", "docx", "xlsx", "pptx", "excel", "spreadsheet*", "slides", "document*", "notes", "markdown"]],
+  ["security", ["security", "secure", "secret*", "vulnerab*"]],
+  ["cloud", ["infrastructure", "terraform", "deploy*", "cloud", "docker", "kubernetes", "aws", "azure", "gcp"]],
+  ["data", ["sql", "database*", "query", "queries", "postgres*", "csv", "analytics"]],
+  ["web", ["browser*", "playwright", "web", "website*", "http", "scrape*"]],
+  ["git", ["git", "github", "gitlab", "commit*", "branch*", "merge", "changelog", "pull request", "pull requests"]],
+  ["loop", ["loop*", "schedule*", "automat*", "cron", "repeat*"]],
+  ["build", ["dev", "sdk", "build*", "test*", "debug*", "workflow*", "feature*"]],
+];
+
+function topicIn(text: string): Topic | null {
+  const hay = ` ${tokens(text).join(" ")} `;
+  for (const [topic, words] of TOPIC_RULES) {
+    for (const w of words) {
+      if (w.endsWith("*") ? hay.includes(` ${w.slice(0, -1)}`) : hay.includes(` ${w} `)) return topic;
+    }
+  }
+  return null;
+}
+
+/** The name says most, so it is read first; the description only when the name says nothing. */
+export function entryTopic(e: { name: string; description?: string }): Topic {
+  return topicIn(e.name) ?? topicIn(e.description ?? "") ?? "plugin";
+}
+
 // ---- words -------------------------------------------------------------------------------------
 
 /** "Updated just now", "Updated 3 min ago", "Updated 2 h ago", "Updated 4 days ago". */

@@ -8,9 +8,12 @@ export function SourceRail({
   value,
   onChange,
   onAdd,
+  counts = true,
 }: {
   options: SourceOption[];
   value: string;
+  /** False while the catalog loads: the counts are not known yet. */
+  counts?: boolean;
   onChange: (id: string) => void;
   onAdd: () => void;
 }) {
@@ -37,7 +40,9 @@ export function SourceRail({
                 {o.flag.short}
               </span>
             )}
-            <span className="mono shrink-0 text-caption text-ink-2">{exact(o.count)}</span>
+            {/* A count is a number in the app's own face (tabular, so the column lines up), and it
+                is only there once it is known: a rail that says "0" while it loads is wrong. */}
+            {counts && <span className="shrink-0 text-caption font-normal tabular-nums text-ink-2">{exact(o.count)}</span>}
           </button>
         );
       })}

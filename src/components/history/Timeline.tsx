@@ -56,10 +56,11 @@ function Row({
         title={tip}
         onClick={() => onSelect(head)}
       >
-        <span className="hx-dot" data-tone={dotTone(head.kind)} aria-hidden="true" />
+        <span className="hx-dot" data-tone={dotTone(head.kind)} data-picked={picked || undefined} aria-hidden="true" />
         <span className="hx-row-face">
-          {/* An agent wears the avatar it has everywhere else (helperKit); the row's hover says the rest. */}
-          {head.item.kind === "agent" ? <AgentAvatar type={head.item.name} size={32} quiet /> : <KindTile kind={setupKind(head.item.kind)} size={32} />}
+          {/* An agent wears the avatar it has everywhere else (helperKit); the row's hover says the rest.
+              Every other tile is quiet until its change is the open one: clay marks that one only. */}
+          {head.item.kind === "agent" ? <AgentAvatar type={head.item.name} size={32} quiet /> : <KindTile kind={setupKind(head.item.kind)} size={32} quiet={!picked} />}
           <span className="min-w-0 flex-1">
             {/* The name gives way first. A cut name always keeps a letter, its dots and its whole
                 ending; past that the label gives way. The space is for screen readers and tests. */}
@@ -72,7 +73,8 @@ function Row({
               )}
               {!lib && nameEnd && <span className="shrink-0 whitespace-nowrap text-ink-2">{nameEnd}</span>}
             </span>
-            {second && <span className="block truncate text-body text-ink-2">{second}</span>}
+            {/* The sentence is the point of the row: it takes a second line before it is cut. */}
+            {second && <span className="line-clamp-2 text-body text-ink-2">{second}</span>}
           </span>
           {!dated && <span className="shrink-0 text-caption text-ink-2">{clockTime(head.at)}</span>}
         </span>

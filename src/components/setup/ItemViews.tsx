@@ -3,7 +3,7 @@ import { Lock, X } from "@phosphor-icons/react";
 import { Card } from "../controls";
 import { pushToast } from "../../state/toastStore";
 import type { KeyboardEvent } from "react";
-import { displayDescription, displayName, KIND_BY_ID, relativeTime } from "../../lib/setup-model";
+import { displayChips, displayDescription, displayName, KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import type { SetupItem } from "../../lib/setup-types";
 import { ConflictChip, copyText, formatDate, ItemIcon, ScopeChip, SecretsChip, StateChip, TagChip, WarningMark } from "./parts";
 import { useItemCost } from "./CostContext";
@@ -22,15 +22,6 @@ function onCopyKey(e: KeyboardEvent, item: SetupItem) {
 }
 
 const MAX_CHIPS = 3;
-
-/**
- * The chips a card shows. A hook's own chips are its event and its type, which its title
- * ("Before a tool runs - Bash") and first line ("Runs ...") already say in plain words, so a hook
- * card carries none. Every other kind shows its chips as given.
- */
-function cardChips(item: SetupItem): string[] {
-  return item.kind === "hook" ? [] : item.chips;
-}
 
 /**
  * The hover on a name: the name in full (it can be cut short), and for a hook the name Claude's
@@ -81,10 +72,11 @@ function CornerControl({ item, onDelete }: { item: SetupItem; onDelete?: (item: 
 
 /** A full card: icon, name, two lines of description, then where it lives. The corner holds the delete X or a lock. */
 export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemProps & { onDelete?: (item: SetupItem) => void }) {
-  const chips = cardChips(item);
+  const chips = displayChips(item);
   const shown = chips.slice(0, MAX_CHIPS);
   const more = chips.length - shown.length;
-  const showState = item.enabled.state !== "on" && item.enabled.state !== "none" && item.enabled.label;
+  // A copy that loses to another says so once, on its "Overridden by ..." chip; without that chip the state says it.
+  const showState = item.enabled.state !== "on" && item.enabled.state !== "none" && item.enabled.label && !(item.enabled.state === "shadowed" && item.conflict);
   const cost = useItemCost(item.id);
   const description = displayDescription(item);
   return (
@@ -107,7 +99,7 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
             {showState ? <StateChip enabled={item.enabled} /> : null}
           </span>
           {description ? (
-            <span title={description} className="line-clamp-2 text-body text-ink-2">
+            <span title={description === item.description ? description : `${description}\n${item.description}`} className="line-clamp-2 text-body text-ink-2">
               {description}
             </span>
           ) : (
@@ -157,7 +149,7 @@ export const ItemRow = memo(function ItemRow({ item, onOpen, mono }: ItemProps &
       aria-label={`${KIND_BY_ID[item.kind].singular} ${displayName(item)}, ${item.scopeLabel}`}
       className="flex min-h-9 w-full cursor-pointer items-center gap-3 border-b border-line px-4 py-1.5 text-left transition-colors duration-[var(--dur-fast)] [contain-intrinsic-size:auto_36px] [content-visibility:auto] last:border-b-0 hover:bg-raised active:bg-raised"
     >
-      <span title={nameHover(item)} className={`min-w-0 flex-1 truncate text-body text-ink ${mono ? "mono" : "font-medium"}`}>
+      <span title={nameHover(item)} className={`min-w-0 flex-1 truncate text-body text-ink ${mono && displayName(item) === item.name ? "mono" : "font-medium"}`}>
         {displayName(item)}
       </span>
       {/* A counted row (a hook script) says how many hooks use it once, in words; its description is the same count. */}

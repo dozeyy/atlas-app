@@ -1,6 +1,6 @@
 // Pure helpers for the Team tab: what the cards and themes say, in plain words. No React here.
 
-import { addDays, exact, formatDuration, localDay, plural } from "./usage";
+import { addDays, exact, formatDuration, localDay, modelLabel, plural } from "./usage";
 import type { BarDatum } from "../components/charts/shared";
 import type { EndCounts, ReviewCounts, ReviewTheme, RunRow, ScorecardArgs, StartedFrom, TypeCard, VerdictCounts } from "./teamTypes";
 
@@ -88,12 +88,13 @@ export function reviewCountsLine(r: ReviewCounts): string {
 
 /** A reviewer type's own verdicts, the four rows of the sheet (a partial report counts as other). */
 export function verdictRows(v: VerdictCounts): { key: string; label: string; n: number }[] {
+  // Only the verdicts that were given: a row that counts nothing is noise.
   return [
     { key: "pass", label: "Passed", n: v.pass },
     { key: "findings", label: "Sent back", n: v.findings },
     { key: "other", label: "Other", n: v.other + v.partial },
     { key: "none", label: "No verdict", n: v.none },
-  ];
+  ].filter((r) => r.n > 0);
 }
 
 export function reviewerLine(v: VerdictCounts): string {
@@ -129,14 +130,31 @@ export function weeklyTitle(weekly: number[]): string {
   return `Runs per week, last ${weekly.length} weeks, oldest first: ${weekly.map((v) => exact(v)).join(", ")}. ${plural(total, "run")} in all.`;
 }
 
-/** How runs ended, as the sheet words it. Unknown runs are said, never hidden. */
+/**
+ * How runs ended, as the sheet words it: only the ways that happened. A row that counts nothing
+ * is noise; a run whose ending is not known is still said, never hidden.
+ */
 export function endRows(e: EndCounts): { key: string; label: string; n: number }[] {
   return [
     { key: "finished", label: "Finished", n: e.finished },
     { key: "errored", label: "Hit an error", n: e.errored },
     { key: "stopped", label: "Stopped", n: e.stopped },
     { key: "unknown", label: "Not known", n: e.unknown },
-  ];
+  ].filter((r) => r.n > 0);
+}
+
+/**
+ * The model a helper mostly ran on, with how hard it was asked to think: "Sonnet 5.5, high effort".
+ * The bare word ("high") says nothing on its own.
+ */
+export function modelLine(model: string, effort: string | null | undefined): string {
+  const name = modelLabel(model);
+  return effort ? `${name}, ${effort} effort` : name;
+}
+
+/** What the small bars on every card plot, said once under the cards. */
+export function weeklyLegend(weeks: number): string {
+  return `The small bars on a card are its runs per week, last ${weeks} weeks.`;
 }
 
 export function finishLine(c: TypeCard): string | null {

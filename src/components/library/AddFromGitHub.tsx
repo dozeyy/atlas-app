@@ -87,7 +87,12 @@ export function AddFromGitHub({ onClose }: { onClose: () => void }) {
     }
   };
 
-  let primary: { label: string; onClick: () => void; disabled: boolean } = { label: "Check", onClick: () => void check(), disabled: !repo || phase.t === "checking" };
+  // After a failed read the same button says what pressing it now means.
+  let primary: { label: string; onClick: () => void; disabled: boolean } = {
+    label: phase.t === "error" ? "Check again" : "Check",
+    onClick: () => void check(),
+    disabled: !repo || phase.t === "checking",
+  };
   if (shaped?.shape === "marketplace") primary = { label: "Add this marketplace", onClick: () => void addMarketplace(), disabled: false };
   else if (shaped && shaped.shape !== "nothing") primary = { label: `Install ${count} ${count === 1 ? "item" : "items"}`, onClick: () => void installItems(), disabled: count === 0 };
   if (phase.t === "working") primary = { label: "Working...", onClick: () => {}, disabled: true };

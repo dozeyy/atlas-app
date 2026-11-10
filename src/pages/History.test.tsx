@@ -35,7 +35,11 @@ describe("History", () => {
     const rail = await screen.findByRole("list", { name: "Changes" });
     expect(screen.getByText("changes seen")).toBeInTheDocument();
     expect(screen.getByText("files watched")).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Changes in the last 30 days" })).toBeInTheDocument();
+    // Watching began 24 days ago: the ribbon starts there, and its first date is the one beside it.
+    const ribbon = screen.getByRole("group", { name: "Changes since Atlas began watching" });
+    expect(within(ribbon).getAllByRole("button")).toHaveLength(25);
+    const since = screen.getByText("watching since").previousElementSibling!.textContent!;
+    expect(ribbon.nextElementSibling).toHaveTextContent(since);
     expect(within(rail).getByText("Today")).toBeInTheDocument();
     expect(within(rail).getByText("Yesterday")).toBeInTheDocument();
     expect(within(rail).getByText("Before Atlas was watching")).toBeInTheDocument();

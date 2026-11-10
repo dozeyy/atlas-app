@@ -14,7 +14,7 @@ import {
 } from "@phosphor-icons/react";
 import { IconMotion, type Motion } from "../IconMotion";
 import { AgentAvatar, agentLook } from "../usage/helperKit";
-import { displayName, enabledTone, KIND_BY_ID, type Tone } from "../../lib/setup-model";
+import { displayName, enabledTone, KIND_BY_ID, stateWords, type Tone } from "../../lib/setup-model";
 import { formatBytes } from "../../lib/labels";
 import { clockTime, shortDate } from "../../lib/usage";
 import type { Conflict, Enabled, ItemKind, ScopeKind, SetupItem } from "../../lib/setup-types";
@@ -59,13 +59,10 @@ const SCOPE_ICON: Record<ScopeKind, Icon> = {
   managed: Buildings,
 };
 
-export function scopeTone(s: ScopeKind): Tone {
-  return s === "user" ? "accent" : "muted";
-}
-
+/** Where an item lives. Every place is the same quiet chip: the icon and the word tell them apart, and clay is not spent on it. */
 export function ScopeChip({ scope, label }: { scope: ScopeKind; label: string }) {
   return (
-    <Chip tone={scopeTone(scope)} icon={SCOPE_ICON[scope]} title={label}>
+    <Chip tone="muted" icon={SCOPE_ICON[scope]} title={label}>
       {label}
     </Chip>
   );
@@ -73,7 +70,12 @@ export function ScopeChip({ scope, label }: { scope: ScopeKind; label: string })
 
 export function StateChip({ enabled }: { enabled: Enabled }) {
   if (enabled.state === "none" || !enabled.label) return null;
-  return <Chip tone={enabledTone(enabled.state)}>{enabled.label}</Chip>;
+  const { label, hint } = stateWords(enabled);
+  return (
+    <Chip tone={enabledTone(enabled.state)} title={hint}>
+      {label}
+    </Chip>
+  );
 }
 
 export function ConflictChip({ conflict }: { conflict: Conflict }) {
@@ -124,12 +126,15 @@ export function KindTile({
   size = 36,
   icon,
   title,
+  quiet = false,
 }: {
   kind: ItemKind | "more";
   size?: number;
   icon?: ComponentType<IconProps>;
   /** What the icon stands for, on hover. Left out where a label already sits beside the tile. */
   title?: string;
+  /** No clay: for a long list on a calm page (History), where the tile repeats on every row. */
+  quiet?: boolean;
 }) {
   const Icon = icon ?? KIND_BY_ID[kind as ItemKind].icon;
   return (
@@ -137,7 +142,7 @@ export function KindTile({
       aria-hidden="true"
       title={title}
       style={{ width: size, height: size }}
-      className="kind-tile flex shrink-0 items-center justify-center bg-accent-tint text-accent-text"
+      className={`kind-tile flex shrink-0 items-center justify-center ${quiet ? "bg-raised text-ink-2 shadow-[inset_0_0_0_1px_var(--line)]" : "bg-accent-tint text-accent-text"}`}
     >
       <IconMotion motion={KIND_MOTION[kind] ?? "pop"} size={Math.round(size * 0.55)}>
         <Icon />

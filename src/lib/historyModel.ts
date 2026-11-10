@@ -155,11 +155,25 @@ export function groupEvents(events: HistoryEvent[], now: number, watchingSince: 
   return out;
 }
 
-/** What a dot on the rail looks like: accent for added/changed, sand for dated, grey otherwise. */
-export function dotTone(kind: ChangeKind): "accent" | "sand" | "quiet" {
-  if (kind === "added" || kind === "changed") return "accent";
-  if (kind === "dated") return "sand";
-  return "quiet";
+/**
+ * What a dot on the rail looks like. History is a calm page: every change Atlas saw is the same
+ * quiet dot, and a date from before it was watching is a hollow one. Clay is kept for the change
+ * that is open.
+ */
+export function dotTone(kind: ChangeKind): "seen" | "before" {
+  return kind === "dated" ? "before" : "seen";
+}
+
+/**
+ * The first day on the ribbon Atlas was watching for. Days before it have nothing to show, so the
+ * ribbon starts there and its first date agrees with "watching since". 0 when watching began
+ * before the ribbon does, or is not known.
+ */
+export function ribbonStart(days: DayCount[], watchingSince: number): number {
+  if (watchingSince <= 0 || days.length === 0) return 0;
+  const first = startOfDay(watchingSince);
+  const at = days.findIndex((d) => d.day >= first);
+  return at < 0 ? 0 : at;
 }
 
 /** Dot diameter in px for a day with this many changes (0 = a faint pip). */

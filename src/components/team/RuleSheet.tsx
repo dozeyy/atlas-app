@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { WarningCircle } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { ErrorBlock, Skeleton } from "../usage/StateBlocks";
@@ -17,6 +17,65 @@ export function whereWords(t: RuleTarget): string {
   if (t.kind === "file") return `the rule file ${t.title.replace(/^A rule file, /, "")}`;
   if (t.id === "global") return "your global CLAUDE.md";
   return `${t.title.replace(/^CLAUDE\.md in /, "")}'s CLAUDE.md`;
+}
+
+/**
+ * What a place is called in the list. The engine's title for a rule file carries the file name it
+ * made from the finding (a long slug); the path under it already shows that, so the title is words.
+ */
+export function targetTitle(t: RuleTarget): string {
+  if (t.kind !== "file") return t.title;
+  return t.exists ? "A rule file of its own" : "A new rule file of its own";
+}
+
+/**
+ * The one-line rule in a box that grows with it: a long line wraps and is read whole instead of
+ * running out of a single-line field. It is still one line in the file: a line break typed or
+ * pasted in becomes a space, and Enter saves.
+ */
+function LineField({
+  id,
+  value,
+  disabled,
+  describedBy,
+  onChange,
+  onEnter,
+}: {
+  id: string;
+  value: string;
+  disabled: boolean;
+  describedBy: string;
+  onChange: (v: string) => void;
+  onEnter: () => void;
+}) {
+  const box = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.style.height = "auto";
+    // The border is outside scrollHeight.
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={box}
+      id={id}
+      rows={1}
+      value={value}
+      maxLength={LINE_MAX}
+      disabled={disabled}
+      spellCheck={false}
+      aria-describedby={describedBy}
+      onChange={(e) => onChange(e.target.value.replace(/[\r\n]+/g, " "))}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onEnter();
+        }
+      }}
+      className="selectable team-draft block w-full resize-none overflow-hidden rounded-control border border-line-strong bg-surface px-3 py-2 font-mono text-body text-ink [overflow-wrap:anywhere]"
+    />
+  );
 }
 
 /** The few lines of the file around where the rule lands, before and after, in a calm code well. */
@@ -202,16 +261,14 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
                       }}
                       className="mt-1 accent-[var(--accent-solid)]"
                     />
-                    {/* One line each: a long folder or file name is cut with "...", whole on hover. */}
+                    {/* The name in words, then where it is: a long path wraps, it is never cut mid-word. */}
                     <span className="min-w-0 flex-1">
-                      <span title={t.title} className="block truncate text-body font-medium text-ink">
-                        {t.title}
+                      <span title={targetTitle(t)} className="block truncate text-body font-medium text-ink">
+                        {targetTitle(t)}
                       </span>
-                      <span title={t.path} className="selectable block truncate text-caption text-ink-2">
-                        {t.path}
-                      </span>
+                      <span className="selectable block text-caption text-ink-2 [overflow-wrap:anywhere]">{t.path}</span>
                       {t.blocked && <span className="block text-caption text-warning">{t.blocked}</span>}
-                      {!t.exists && !t.blocked && <span className="block text-caption text-ink-2">{t.kind === "file" ? "A new file" : "This file is created"}</span>}
+                      {!t.exists && !t.blocked && t.kind !== "file" && <span className="block text-caption text-ink-2">This file is created</span>}
                     </span>
                   </label>
                 ))}
@@ -235,22 +292,13 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
                   />
                 ) : (
                   <>
-                    <input
+                    <LineField
                       id={`${radioName}-text`}
-                      type="text"
                       value={text}
-                      maxLength={LINE_MAX}
                       disabled={!!target.blocked}
-                      spellCheck={false}
-                      aria-describedby={`${radioName}-hint`}
-                      onChange={(e) => setDrafts((d) => ({ ...d, [target.id]: e.target.value.replace(/[\r\n]+/g, " ") }))}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void save();
-                        }
-                      }}
-                      className="selectable team-draft w-full rounded-control border border-line-strong bg-surface px-3 py-2 font-mono text-body text-ink"
+                      describedBy={`${radioName}-hint`}
+                      onChange={(v) => setDrafts((d) => ({ ...d, [target.id]: v }))}
+                      onEnter={() => void save()}
                     />
                     <p id={`${radioName}-hint`} className="mt-1 text-caption text-ink-2">
                       One line that starts with a dash. It goes under "Caught in review".
