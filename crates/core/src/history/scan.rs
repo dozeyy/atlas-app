@@ -30,11 +30,13 @@ pub struct ScanReport {
     pub changed: usize,
     pub removed: usize,
     pub renamed: usize,
+    /// Rows that got a Library install's sentence after they were made.
+    pub relabeled: usize,
 }
 
 impl ScanReport {
     pub fn is_empty(&self) -> bool {
-        self.added + self.changed + self.removed + self.renamed == 0 && !self.baseline
+        self.added + self.changed + self.removed + self.renamed + self.relabeled == 0 && !self.baseline
     }
 }
 
@@ -294,7 +296,50 @@ pub fn scan_marked(store: &Store, tracked: &[Tracked], claude_json: Option<&Path
         }
         Ok(())
     })?;
+    // A real install takes seconds: the watcher saw the files change before the backup was tagged
+    // with its sentence, so rows made earlier get it now.
+    report.relabeled = relabel(store, marks, now_ms)?;
     Ok(report)
+}
+
+/// Give the rows of recent Library installs and removals their plain sentence and source, however
+/// early the row was made. Idempotent: a row that already has it is left alone.
+fn relabel(store: &Store, marks: &Marks, now_ms: i64) -> Result<usize, String> {
+    if !marks.has_library() {
+        return Ok(0);
+    }
+    let since = now_ms - 25 * 60 * 60 * 1000;
+    store.tx(|tx| {
+        type Row = (i64, String, i64, String, String, String, Option<String>, Option<i64>, String, String);
+        let rows: Vec<Row> = {
+            let mut st = tx.prepare(
+                "SELECT e.event_id, e.item_key, e.at, e.kind, e.source, e.summary, v.sha256, v.version_id, i.kind, i.name
+                 FROM events e JOIN items i ON i.item_key = e.item_key LEFT JOIN versions v ON v.version_id = e.to_version
+                 WHERE e.at >= ?1 AND e.kind IN ('changed','added','removed')",
+            )?;
+            let it = st.query_map([since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?)))?;
+            it.collect::<Result<_, _>>()?
+        };
+        let mut n = 0;
+        for (id, key, at, kind, src, summary, sha, vid, ikind, name) in rows {
+            let label = match kind.as_str() {
+                "changed" => sha.as_deref().and_then(|s| marks.label(&key, s, at)),
+                "added" if ikind == "plugin" => marks.plugin_label(&name, "install", at),
+                "removed" if ikind == "plugin" => marks.plugin_label(&name, "uninstall", at),
+                _ => None,
+            };
+            let Some(label) = label else { continue };
+            if summary == label && src == super::marks::SOURCE_LIBRARY {
+                continue;
+            }
+            tx.execute("UPDATE events SET summary = ?2, source = ?3 WHERE event_id = ?1", rusqlite::params![id, label, super::marks::SOURCE_LIBRARY])?;
+            if let Some(v) = vid {
+                tx.execute("UPDATE versions SET source = ?2 WHERE version_id = ?1 AND origin_ref IS NULL", rusqlite::params![v, super::marks::SOURCE_LIBRARY])?;
+            }
+            n += 1;
+        }
+        Ok(n)
+    })
 }
 
 fn norm_display(p: &Path) -> String {
@@ -448,4 +493,44 @@ pub fn prune(store: &Store, keep: usize) -> Result<(usize, u64), String> {
         }
     }
     Ok((dropped, freed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_plugins_own_rows_get_the_install_and_removal_sentences_late() {
+        // Verifier V4: "Plugin added fd@mk" was written while the install still ran.
+        let t = tempfile::tempdir().unwrap();
+        let store = Store::open(t.path()).unwrap();
+        let k = "f:C:/c/plugins/cache/mk/fd/1/.claude-plugin/plugin.json";
+        store
+            .tx(|tx| {
+                store::upsert_item(tx, k, "plugin", "user", None, "fd@mk", "C:/c/plugins/cache/mk/fd/1/.claude-plugin/plugin.json", 1)?;
+                store::add_event(tx, &NewEvent { item_key: k, at: 10_000, kind: "added", from_version: None, to_version: None, source: source::SNAPSHOT, summary: "New." })?;
+                store::add_event(tx, &NewEvent { item_key: k, at: 50_000, kind: "removed", from_version: None, to_version: None, source: source::SNAPSHOT, summary: "Removed." })?;
+                // A plugin of another name, and a row from long after the install, are left alone.
+                store::upsert_item(tx, "f:other", "plugin", "user", None, "other@mk", "C:/o", 1)?;
+                store::add_event(tx, &NewEvent { item_key: "f:other", at: 10_500, kind: "added", from_version: None, to_version: None, source: source::SNAPSHOT, summary: "New." })?;
+                store::add_event(tx, &NewEvent { item_key: k, at: 10_000 + 2 * 60 * 60 * 1000, kind: "added", from_version: None, to_version: None, source: source::SNAPSHOT, summary: "New." })?;
+                Ok(())
+            })
+            .unwrap();
+        let marks = Marks::default().with_plugin_op("fd@mk", "install", 9_000, "Installed fd from the Library").with_plugin_op("fd@mk", "uninstall", 49_000, "Uninstalled fd from the Library");
+        let now = 20_000 + 3 * 60 * 60 * 1000;
+        assert_eq!(relabel(&store, &marks, now).unwrap(), 2);
+        let rows: Vec<(i64, String, String)> = store
+            .with(|c| {
+                let mut st = c.prepare("SELECT at, source, summary FROM events ORDER BY event_id")?;
+                let it = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+                it.collect::<rusqlite::Result<_>>()
+            })
+            .unwrap();
+        assert_eq!(rows[0], (10_000, "atlas_library".into(), "Installed fd from the Library".into()));
+        assert_eq!(rows[1], (50_000, "atlas_library".into(), "Uninstalled fd from the Library".into()));
+        assert_eq!(rows[2].2, "New.", "another plugin is not this install");
+        assert_eq!(rows[3].1, "atlas_snapshot", "a row long after the install is not part of it");
+        assert_eq!(relabel(&store, &marks, now).unwrap(), 0, "a second look changes nothing");
+    }
 }

@@ -44,6 +44,9 @@ pub struct Marks {
     /// tagged with), one per backup: the same file contents come back (install, remove, install),
     /// so a row is matched to the backup made just before it, not to the contents alone.
     labels: HashMap<String, Vec<(i64, String)>>,
+    /// Library installs and removals of a plugin: (plugin id, `install`|`uninstall`, when its
+    /// backup was made, its sentence). A plugin's own row ("Plugin added x") is matched by name.
+    plugin_ops: Vec<(String, String, i64, String)>,
     /// (file key, source) of deletes: the key itself, or a folder holding it
     removed: Vec<(String, &'static str)>,
     /// (when, source) of the newest tagged change to `.claude.json`
@@ -59,6 +62,11 @@ impl Marks {
         for p in provenance(backups, since) {
             let Some(src) = history_source(&p.source) else { continue };
             let key = file_key(Path::new(&p.path));
+            if src == SOURCE_LIBRARY
+                && let (Some((id, op)), Some(label)) = (p.plugin_op.clone(), p.summary.clone().filter(|l| !l.is_empty()))
+            {
+                m.plugin_ops.push((id, op, p.created_ms as i64, label));
+            }
             if key == cj_key {
                 let at = p.created_ms as i64;
                 if m.claude_json.is_none_or(|(t, _)| at > t) {
@@ -102,6 +110,30 @@ impl Marks {
         // The backup is made first and the file written after it; a little slack covers clocks.
         const SLACK_MS: i64 = 500;
         self.labels.get(&format!("{key}|{sha}"))?.iter().filter(|(made, _)| *made <= at_ms + SLACK_MS).max_by_key(|(made, _)| *made).map(|(_, l)| l.as_str())
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_plugin_op(mut self, id: &str, op: &str, made_ms: i64, label: &str) -> Marks {
+        self.plugin_ops.push((id.into(), op.into(), made_ms, label.into()));
+        self
+    }
+
+    /// Whether any Library change is remembered (nothing to relabel otherwise).
+    pub fn has_library(&self) -> bool {
+        !self.labels.is_empty() || !self.plugin_ops.is_empty()
+    }
+
+    /// The sentence of the Library install (`op` = "install") or removal that put the plugin `id`
+    /// in or took it out, for its own row, seen at `at_ms`: the newest such change made before it
+    /// and no more than half an hour earlier.
+    pub fn plugin_label(&self, id: &str, op: &str, at_ms: i64) -> Option<&str> {
+        const SLACK_MS: i64 = 500;
+        const WITHIN_MS: i64 = 30 * 60 * 1000;
+        self.plugin_ops
+            .iter()
+            .filter(|(i, o, made, _)| i == id && o == op && *made <= at_ms + SLACK_MS && at_ms - *made <= WITHIN_MS)
+            .max_by_key(|(_, _, made, _)| *made)
+            .map(|(_, _, _, l)| l.as_str())
     }
 
     /// The source of the delete that removed the item with this key.

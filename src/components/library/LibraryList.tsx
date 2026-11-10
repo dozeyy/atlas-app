@@ -5,7 +5,7 @@ import { Chip, KindTile } from "../setup/parts";
 import { KIND_BY_ID } from "../../lib/setup-model";
 import { ROW_H, installBlock, itemWord, sourceCaption, type LibraryRow } from "../../lib/library";
 import type { ItemKind } from "../../lib/libraryTypes";
-import { canInstallAtOnce, removeItem, setPluginEnabled, uninstallPlugin, type LibraryState } from "../../state/libraryStore";
+import { removeItem, setPluginEnabled, uninstallPlugin, type LibraryState } from "../../state/libraryStore";
 
 const OVERSCAN = 6;
 
@@ -93,9 +93,9 @@ function Row({
           disabled={!!reason || !!isBusy}
           title={reason ?? undefined}
           aria-label={`Install ${name}`}
-          onClick={() => (canInstallAtOnce(entry.pluginId) ? actions.quickInstall(row) : actions.open(row, true))}
+          onClick={() => actions.quickInstall(row)}
         >
-          {isBusy === "installing" ? "Installing..." : "Install"}
+          {isBusy === "installing" ? "Installing..." : isBusy === "checking" ? "Checking..." : "Install"}
         </Button>
       );
     }

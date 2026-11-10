@@ -2222,6 +2222,8 @@ pub struct Provenance {
     pub files: Vec<(String, String)>,
     /// The plain sentence a Library change was tagged with ("Installed x from the Library").
     pub summary: Option<String>,
+    /// For a Library plugin change: (plugin id, `install` or `uninstall`).
+    pub plugin_op: Option<(String, String)>,
 }
 
 /// Changes made by the MCP server or the assistant since `since_ms`, newest first.
@@ -2237,7 +2239,8 @@ pub fn provenance(backups: &Path, since_ms: u64) -> Vec<Provenance> {
         }
         let Some(path) = m.path.clone().or(m.file.clone()) else { continue };
         let files = m.files.iter().flatten().map(|(rel, sha)| (format!("{}/{rel}", path.trim_end_matches(['/', '\\'])), sha.clone())).collect();
-        out.push(Provenance { created_ms: m.created_ms, action: m.action, source, path, saved_sha: m.saved_sha, files, summary: m.summary });
+        let plugin_op = m.lib.as_ref().filter(|_| m.kind == "plugin").map(|l| (l.id.clone(), l.op.clone()));
+        out.push(Provenance { created_ms: m.created_ms, action: m.action, source, path, saved_sha: m.saved_sha, files, summary: m.summary, plugin_op });
     }
     out.sort_by_key(|p| std::cmp::Reverse(p.created_ms));
     out

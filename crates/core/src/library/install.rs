@@ -781,6 +781,31 @@ mod tests {
     }
 
     #[test]
+    fn an_autocrlf_copy_is_the_same_plugin_and_an_undone_removal_stays_installed() {
+        // Verifier V1/V2: a git clone with core.autocrlf wrote CRLF into every text file (a script
+        // too); the checked archive had LF. That is not a change, so nothing is taken out, and
+        // uninstall then Undo leaves the plugin installed.
+        const LF: &[(&str, &str)] = &[(".claude-plugin/plugin.json", "{\n\"name\":\"fd\"\n}\n"), ("skills/fd/SKILL.md", "---\nname: fd\n---\nbody\n"), ("hooks/check.py", "import sys\nprint(1)\n")];
+        const CRLF: &[(&str, &str)] = &[(".claude-plugin/plugin.json", "{\r\n\"name\":\"fd\"\r\n}\r\n"), ("skills/fd/SKILL.md", "---\r\nname: fd\r\n---\r\nbody\r\n"), ("hooks/check.py", "import sys\r\nprint(1)\r\n")];
+        let e = env();
+        let fake = fake_claude(e.dir.clone(), CRLF);
+        let runner = Runner::with_exec("claude".into(), &e.root, fake);
+        let good = tree_hash_of(LF);
+        // No commit to pin it to: before the fix a mismatch here took the plugin out again.
+        let src = Source::Local { path: "./x".into() };
+        let o = install_plugin(&e.ctx(), &runner, "fd@mk", &src, &Checked { repo: "", sha: "", tree_hash: &good }).unwrap();
+        assert!(!o.changed, "line endings alone are not a change");
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_some());
+        let rows = ledger::installed_rows(&e.dir, &e.root.claude_json, &e.data);
+        assert!(!rows[0].changed);
+        let removed = uninstall_plugin(&e.ctx(), &runner, "fd@mk").unwrap();
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_none());
+        let undone = undo_plugin_backup(&e.ctx(), &runner, &removed, Some(&src)).unwrap();
+        assert_eq!(undone.did, "install");
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_some(), "Undo leaves it installed");
+    }
+
+    #[test]
     fn a_command_source_is_refused_before_anything_runs() {
         let e = env();
         let fake = fake_claude(e.dir.clone(), TREE);

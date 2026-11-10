@@ -125,16 +125,14 @@ describe("Library tab: installing (D20, D24, D19 words)", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("a plugin that was not checked yet opens the sheet and puts focus on its Install, without installing", async () => {
+  it("a plugin that was not checked yet is checked by the row's Install and installed at once when clean", async () => {
     mount();
     await openLibraryTab();
     await userEvent.click(await installBtn("code-review"));
-    const sheet = await screen.findByRole("dialog");
-    const go = await within(sheet).findByRole("button", { name: "Install" });
-    await waitFor(() => expect(go).toHaveFocus());
-    expect(lib().calls.some((c) => c.startsWith("install:"))).toBe(false);
-    await userEvent.click(go);
     await waitFor(() => expect(lib().installed).toHaveLength(1));
+    const calls = lib().calls;
+    expect(calls.findIndex((c) => c.startsWith("inspect:"))).toBeLessThan(calls.findIndex((c) => c.startsWith("install:")));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(); // 1 click, no sheet
   });
 
   it("a flagged plugin always takes the second, deliberate click in the sheet, after its flags", async () => {
@@ -207,9 +205,7 @@ describe("Library tab: installed plugins", () => {
   it("shows an installed plugin with its switch and an Uninstall that asks first", async () => {
     mount();
     await openLibraryTab();
-    await userEvent.click(await installBtn("pdf-tools")); // opens the sheet (not checked yet)
-    const sheet = await screen.findByRole("dialog");
-    await userEvent.click(await within(sheet).findByRole("button", { name: "Install" }));
+    await userEvent.click(await installBtn("pdf-tools")); // checks it, clean, installs at once
     await waitFor(() => expect(lib().installed).toHaveLength(1));
 
     await userEvent.click(await screen.findByRole("button", { name: "Uninstall pdf-tools" }));
@@ -228,8 +224,6 @@ describe("Library tab: installed plugins", () => {
     mount();
     await openLibraryTab();
     await userEvent.click(await installBtn("pdf-tools"));
-    const sheet = await screen.findByRole("dialog");
-    await userEvent.click(await within(sheet).findByRole("button", { name: "Install" }));
     await waitFor(() => expect(lib().installed).toHaveLength(1));
     await userEvent.click(await screen.findByRole("button", { name: "Uninstall pdf-tools" }));
     await userEvent.click(screen.getByRole("button", { name: "Uninstall" }));

@@ -576,12 +576,6 @@ fn scan_file(acc: &mut Acc, rel: &str, bytes: &[u8], role: Option<Role>) {
     }
 }
 
-/// Text kinds, where a git checkout's line endings (`core.autocrlf`) say nothing about the content.
-/// Scripts and everything else are compared byte for byte.
-fn is_text_kind(name: &str) -> bool {
-    matches!(ext_of(&name.to_ascii_lowercase()).as_str(), "md" | "markdown" | "json" | "jsonc" | "yaml" | "yml" | "txt" | "toml")
-}
-
 /// The bytes with every CRLF read as LF. A file with a NUL in it is binary and stays as it is.
 fn same_eol(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
     if !bytes.windows(2).any(|w| w == b"\r\n") || bytes.contains(&0) {
@@ -670,8 +664,9 @@ pub fn check_tree_entry(base: &Path, not_installed: &[NotInstalled], entry: Entr
         };
         // Claude Code installs through `git clone`, which on a machine with `core.autocrlf` turns
         // every text file's LF into CRLF; the archive Atlas read has LF. Same plugin, same hash.
-        // Only text kinds (md, json, yaml...) are compared that way; a script's bytes are exact.
-        let same = if is_text_kind(rel.rsplit('/').next().unwrap_or(rel)) { same_eol(&bytes) } else { std::borrow::Cow::Borrowed(&bytes[..]) };
+        // Every text file (no NUL byte in it) is compared that way, scripts included, since the
+        // checkout converts them all; a binary file's bytes are exact.
+        let same = same_eol(&bytes);
         hasher.update((same.len() as u64).to_le_bytes());
         hasher.update(&*same);
         scan_file(&mut acc, rel, &bytes, roles.get(rel.as_str()).copied());
@@ -790,12 +785,18 @@ mod tests {
     }
 
     #[test]
-    fn a_scripts_line_endings_are_part_of_its_hash() {
-        // Review finding 10: only text kinds (md, json, yaml) are read as the same across CRLF/LF.
-        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    fn an_autocrlf_checkout_of_scripts_and_text_is_the_same_plugin_but_other_changes_are_not() {
+        // Verifier V1: core.autocrlf turns every text file's LF into CRLF (scripts too), so a
+        // script that differs only in line endings is the same plugin; one that differs in content is not.
+        let (a, b, e) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         put(a.path(), "run.sh", "#!/bin/sh\necho hi\n");
+        put(a.path(), "hooks/check.py", "import sys\nprint(1)\n");
         put(b.path(), "run.sh", "#!/bin/sh\r\necho hi\r\n");
-        assert_ne!(tree_hash(a.path()), tree_hash(b.path()));
+        put(b.path(), "hooks/check.py", "import sys\r\nprint(1)\r\n");
+        put(e.path(), "run.sh", "#!/bin/sh\necho bye\n");
+        put(e.path(), "hooks/check.py", "import sys\nprint(1)\n");
+        assert_eq!(tree_hash(a.path()), tree_hash(b.path()));
+        assert_ne!(tree_hash(a.path()), tree_hash(e.path()));
         let (c, d) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         put(c.path(), "hooks/hooks.json", "{\n \"hooks\": {}\n}\n");
         put(d.path(), "hooks/hooks.json", "{\r\n \"hooks\": {}\r\n}\r\n");

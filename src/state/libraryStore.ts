@@ -23,7 +23,7 @@ export interface LibraryState {
   source: string;
   query: string;
   /** Plugin ids (or installed ids) being installed or removed right now. */
-  busy: Record<string, "installing" | "removing">;
+  busy: Record<string, "checking" | "installing" | "removing">;
   /** Bumps when a check is stored, so a row re-reads whether it can install at once. */
   checks: number;
 }
@@ -148,7 +148,7 @@ export const canInstallAtOnce = (pluginId: string): boolean => isClean(cache.get
 
 // ---- doing -------------------------------------------------------------------------------------
 
-function mark(id: string, what: "installing" | "removing" | null) {
+function mark(id: string, what: "checking" | "installing" | "removing" | null) {
   const busy = { ...state.busy };
   if (what) busy[id] = what;
   else delete busy[id];
@@ -170,11 +170,35 @@ export async function installPlugin(pluginId: string, name: string, token: strin
     return out;
   } catch (e) {
     dropCheck(pluginId);
-    pushToast({ message: errorText(e, "Atlas could not install that. Nothing changed."), tone: "error" });
+    // "...so Atlas took it out again" must be read: it stays long enough.
+    pushToast({ message: errorText(e, "Atlas could not install that. Nothing changed."), tone: "error", ms: 15_000 });
     return null;
   } finally {
     mark(pluginId, null);
   }
+}
+
+/**
+ * A row's Install (spec: 1 click when the check is clean). Runs the check if there is none yet; a
+ * clean one installs right away (a toast with Undo), anything flagged or unreadable comes back as
+ * "open" so the sheet shows the reasons and its Install is the second click.
+ */
+export async function checkThenInstall(pluginId: string, name: string): Promise<"done" | "open"> {
+  if (state.busy[pluginId]) return "done";
+  let d = cache.get(pluginId);
+  if (!d) {
+    mark(pluginId, "checking");
+    try {
+      d = await getBackend().libraryInspectPlugin(pluginId);
+      storeCheck(pluginId, d);
+    } catch {
+      return "open"; // the sheet runs it again and says what went wrong
+    } finally {
+      mark(pluginId, null);
+    }
+  }
+  if (!isClean(d.inspected)) return "open";
+  return (await installPlugin(pluginId, name, d.token)) ? "done" : "open";
 }
 
 export async function uninstallPlugin(id: string, name: string): Promise<boolean> {
@@ -201,7 +225,7 @@ export async function undoPlugin(backupId: string, name: string): Promise<boolea
     pushToast({ message: done.did === "uninstall" ? `Took ${name} out again.` : `Put ${name} back.`, tone: "success" });
     return true;
   } catch (e) {
-    pushToast({ message: errorText(e, "Atlas could not undo that. Nothing changed."), tone: "error" });
+    pushToast({ message: errorText(e, "Atlas could not undo that. Nothing changed."), tone: "error", ms: 15_000 });
     return false;
   }
 }

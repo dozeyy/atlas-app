@@ -576,41 +576,50 @@ pub async fn library_read_file(lib: Lib<'_>, token: String, rel: String) -> Resu
 
 /// Install a plugin the user has looked at (the token is that look).
 #[tauri::command]
-pub async fn library_install_plugin(state: Info<'_>, lib: Lib<'_>, plugin_id: String, token: String) -> Result<install::PluginOutcome, String> {
+pub async fn library_install_plugin(app: AppHandle, state: Info<'_>, lib: Lib<'_>, plugin_id: String, token: String) -> Result<install::PluginOutcome, String> {
     let (st, lib) = (state.inner().clone(), lib.inner().clone());
     blocking(move || {
-        let env = Env::of(&st)?;
-        let (repo, sha, tree_hash, checked_source, checked_fields) = lib.with(&token, |s| {
-            if s.plugin_id.as_deref() != Some(plugin_id.as_str()) {
-                return Err("Check it again first.".to_string());
-            }
-            Ok((s.repo.clone(), s.sha.clone(), s.tree_hash.clone(), s.source.clone(), s.entry_fields.clone()))
-        })?;
-        // The listing may have been refreshed since the look (review finding 3): what Claude Code
-        // would install now has to be what was checked, or nothing is installed.
-        let entry = entry_of(&env, &plugin_id);
-        let source = entry.as_ref().map(|e| e.source.clone());
-        let checked_source = checked_source.ok_or("Check it again first.")?;
-        install::same_listing(&checked_source, source.as_ref())?;
-        // ... and so does what the marketplace's own entry says the plugin loads.
-        if let (Some(was), Some(e)) = (checked_fields, entry.as_ref())
-            && was != entry_fields_key(&entry_fields_of(&env, e))
-        {
-            return Err(install::LISTING_MOVED.into());
-        }
-        let source = source.ok_or("That plugin is not in the catalog. Press Refresh.")?;
-        let runner = env.runner()?;
-        install::install_plugin(&env.ctx(), &runner, &plugin_id, &source, &install::Checked { repo: &repo, sha: &sha, tree_hash: &tree_hash })
+        let out = install_checked(&st, &lib, &plugin_id, &token);
+        // The change is done and its backup tagged: History looks again so its rows say what it was.
+        let _ = app.emit(crate::history::POKE_EVENT, ());
+        out
     })
     .await
 }
 
+fn install_checked(st: &Arc<AppState>, lib: &Library, plugin_id: &str, token: &str) -> Result<install::PluginOutcome, String> {
+    let env = Env::of(st)?;
+    let (repo, sha, tree_hash, checked_source, checked_fields) = lib.with(token, |s| {
+        if s.plugin_id.as_deref() != Some(plugin_id) {
+            return Err("Check it again first.".to_string());
+        }
+        Ok((s.repo.clone(), s.sha.clone(), s.tree_hash.clone(), s.source.clone(), s.entry_fields.clone()))
+    })?;
+    // The listing may have been refreshed since the look (review finding 3): what Claude Code
+    // would install now has to be what was checked, or nothing is installed.
+    let entry = entry_of(&env, plugin_id);
+    let source = entry.as_ref().map(|e| e.source.clone());
+    let checked_source = checked_source.ok_or("Check it again first.")?;
+    install::same_listing(&checked_source, source.as_ref())?;
+    // ... and so does what the marketplace's own entry says the plugin loads.
+    if let (Some(was), Some(e)) = (checked_fields, entry.as_ref())
+        && was != entry_fields_key(&entry_fields_of(&env, e))
+    {
+        return Err(install::LISTING_MOVED.into());
+    }
+    let source = source.ok_or("That plugin is not in the catalog. Press Refresh.")?;
+    let runner = env.runner()?;
+    install::install_plugin(&env.ctx(), &runner, plugin_id, &source, &install::Checked { repo: &repo, sha: &sha, tree_hash: &tree_hash })
+}
+
 #[tauri::command]
-pub async fn library_uninstall_plugin(state: Info<'_>, id: String) -> Result<String, String> {
+pub async fn library_uninstall_plugin(app: AppHandle, state: Info<'_>, id: String) -> Result<String, String> {
     let st = state.inner().clone();
     blocking(move || {
         let env = Env::of(&st)?;
-        install::uninstall_plugin(&env.ctx(), &env.runner()?, &id)
+        let out = install::uninstall_plugin(&env.ctx(), &env.runner()?, &id);
+        let _ = app.emit(crate::history::POKE_EVENT, ());
+        out
     })
     .await
 }
@@ -624,9 +633,11 @@ pub async fn library_undo(app: AppHandle, state: Info<'_>, hub: Hub<'_>, backup_
         let env = Env::of(&st)?;
         let op = sw::library_op(&env.backups, &backup_id).ok_or("That change can't be undone from here.")?;
         let now = entry_of(&env, &op.id).map(|e| e.source);
-        let done = install::undo_plugin_backup(&env.ctx(), &env.runner()?, &backup_id, now.as_ref())?;
+        let done = install::undo_plugin_backup(&env.ctx(), &env.runner()?, &backup_id, now.as_ref());
+        // Also when it failed: a take-out after a bad install leaves its own backups.
         hub.refresh(&app, &st);
-        Ok(done)
+        let _ = app.emit(crate::history::POKE_EVENT, ());
+        done
     })
     .await
 }

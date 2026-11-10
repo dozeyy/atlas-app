@@ -10,7 +10,7 @@ import { LibrarySheet, type SheetTarget } from "./LibrarySheet";
 import { SourceRail } from "./SourceRail";
 import { NO_CLI, OFFLINE, buildRows, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
 import { openToolkitItemNext, openToolkitTabNext } from "../../lib/nav";
-import { installPlugin, openLibrary, refreshLibrary, reportFirstRows, setQuery, setSource, storedCheck, useLibrary } from "../../state/libraryStore";
+import { checkThenInstall, openLibrary, refreshLibrary, reportFirstRows, setQuery, setSource, useLibrary } from "../../state/libraryStore";
 import { useSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
 
@@ -96,11 +96,7 @@ export function LibraryTab() {
   const actions: RowActions = useMemo(
     () => ({
       open: openRow,
-      quickInstall: (row) => {
-        const d = storedCheck(row.entry.pluginId);
-        if (d) void installPlugin(row.entry.pluginId, row.entry.name, d.token).then((out) => out === null && openRow(row, true));
-        else openRow(row, true);
-      },
+      quickInstall: (row) => void checkThenInstall(row.entry.pluginId, row.entry.name).then((r) => r === "open" && openRow(row, true)),
       openItem,
     }),
     [openRow, openItem],
@@ -148,7 +144,11 @@ export function LibraryTab() {
     body = <div role="status" aria-label="Loading the Library" className="skeleton min-h-0 flex-1 rounded-card" />;
   } else if (noCatalog && lib.source !== "installed") {
     body = lib.refreshing ? (
-      <div role="status" aria-label="Loading the plugin catalog" className="skeleton min-h-0 flex-1 rounded-card" />
+      <div role="status" aria-label="Loading the plugin catalog" className="skeleton relative min-h-0 flex-1 rounded-card">
+        <p className="absolute inset-0 flex items-center justify-center px-6 text-center text-body text-ink-2">
+          Getting the plugin list from Claude Code. The first time takes a few seconds.
+        </p>
+      </div>
     ) : (
       <EmptyState
         fill
