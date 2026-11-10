@@ -351,6 +351,11 @@
 
 /* ---- Tailwind names ----------------------------------------------------- */
 @theme inline {
+  /* The spacing unit behind every p-*, gap-*, m-*, h-* and w-* class: 4 px, so the app sits
+     on the 8 px grid (gap-2 = 8, px-5 = 20, py-4 = 16). Tailwind's own unit is 0.25rem, which
+     the 14 px root font made 3.5 px: every padding and gap landed between the grid lines. */
+  --spacing: 4px;
+
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-raised: var(--raised);
