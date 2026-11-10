@@ -572,6 +572,17 @@ so `atlas-repeats` ships; Will has run 32 and 33.
   again at install: the pinned commit is what is installed, and a changed listing is refused
   (`same_listing`).
 
+- **Official entries of external directory plugins, mostly not visible (security re-review, 2026-11-09).**
+  A directory plugin whose repo is outside `claude-plugins-official` can have its manifest written inline
+  in the official marketplace's entry (`strict: false`, `skills`, `hooks`, `lspServers`...). Atlas looks the
+  entry up by name in the official marketplace folder Claude Code keeps (`known_marketplaces.json`), or in
+  the copy just fetched when the plugin comes from the official repo, and reads it only when its source
+  (repo, folder, commit) matches what the catalog lists; the same name from another place is unreadable
+  (two clicks). When that folder is not on the computer (Claude Code never added the official
+  marketplace), the roughly 3,350 external directory entries have no official entry to read: only their own
+  files and manifest are checked. Accepted: the plugin is still staged at an exact commit and the sheet
+  says what it found; the staged `repo:` key is not re-read at install.
+
 ## Suggested agent chain
 Unit A coder (sonnet; Rust + React; primary skill `ui-ux-pro-max`) and Unit B coder (sonnet;
 Rust + skill text) in parallel worktrees -> per unit code-reviewer (A: opus + security

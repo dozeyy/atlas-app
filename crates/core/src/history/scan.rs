@@ -10,7 +10,6 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-use rusqlite::OptionalExtension;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -276,7 +275,16 @@ pub fn scan_marked(store: &Store, tracked: &[Tracked], claude_json: Option<&Path
             } else if let Some((made, l)) = marks.label_made(&t.key, &s.sha, at_of(s.mtime)) {
                 // Only the first change after a Library backup takes its sentence: a later hand
                 // edit that lands on the same contents has an event with it already.
-                let taken = tx.query_row("SELECT 1 FROM events WHERE item_key = ?1 AND kind = 'changed' AND summary = ?2 AND at >= ?3 LIMIT 1", rusqlite::params![t.key, l, made - Marks::SLACK_MS], |_| Ok(())).optional()?.is_some();
+                // The same claim as `relabel` makes: (file, contents, backup). An earlier row with
+                // these contents and this sentence that belongs to this very backup has it.
+                let taken = {
+                    let mut st = tx.prepare(
+                        "SELECT e.at FROM events e JOIN versions v ON v.version_id = e.to_version
+                         WHERE e.item_key = ?1 AND e.kind = 'changed' AND e.summary = ?2 AND v.sha256 = ?3 AND e.at >= ?4",
+                    )?;
+                    let ats: Vec<i64> = st.query_map(rusqlite::params![t.key, l, s.sha, made - Marks::SLACK_MS], |r| r.get(0))?.collect::<Result<_, _>>()?;
+                    ats.into_iter().any(|a| marks.label_made(&t.key, &s.sha, a).map(|(m, _)| m) == Some(made))
+                };
                 (!taken).then_some(l)
             } else {
                 None
@@ -545,6 +553,52 @@ mod tests {
         assert_eq!(rows[2].2, "New.", "another plugin is not this install");
         assert_eq!(rows[3].1, "atlas_snapshot", "a row long after the install is not part of it");
         assert_eq!(relabel(&store, &marks, now).unwrap(), 0, "a second look changes nothing");
+    }
+
+    #[test]
+    fn installing_again_within_half_an_hour_still_gets_the_library_sentence_live() {
+        // Install fd, uninstall it (Undo), install it again: the same file contents come back, the
+        // second install is its own backup's change and says so, as the first did.
+        let t = tempfile::tempdir().unwrap();
+        let store = Store::open(&t.path().join("db")).unwrap();
+        let dir = t.path().join("claude");
+        fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("settings.json");
+        let key = "f:settings";
+        let tr = vec![Tracked { key: key.into(), kind: "settings".into(), scope: "user".into(), project: None, name: "settings".into(), path: f.clone() }];
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+        let base = now - 20 * 60 * 1000;
+        let put = |text: &str, at: i64| {
+            fs::write(&f, text).unwrap();
+            fs::File::options().write(true).open(&f).unwrap().set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_millis(at as u64)).unwrap();
+        };
+        let (a, b) = ("{\"enabledPlugins\":{\"fd@mk\":true}}", "{\"enabledPlugins\":{}}");
+        let (sha_a, sha_b) = (store::sha_hex(a.as_bytes()), store::sha_hex(b.as_bytes()));
+        let (inst, uninst) = ("Installed fd from the Library", "Uninstalled fd from the Library");
+        let marks = Marks::default().with_label(key, &sha_a, base - 100, inst).with_label(key, &sha_b, base + 59_900, uninst).with_label(key, &sha_a, base + 119_900, inst);
+        put("{}", base - 60_000);
+        scan_marked(&store, &tr, None, base - 50_000, &marks).unwrap(); // the first look
+        put(a, base);
+        scan_marked(&store, &tr, None, base + 10_000, &marks).unwrap();
+        put(b, base + 60_000);
+        scan_marked(&store, &tr, None, base + 70_000, &marks).unwrap();
+        put(a, base + 120_000);
+        scan_marked(&store, &tr, None, base + 130_000, &marks).unwrap();
+        let sums: Vec<String> = store
+            .with(|c| {
+                let mut st = c.prepare("SELECT summary FROM events WHERE kind = 'changed' ORDER BY at")?;
+                let it = st.query_map([], |r| r.get(0))?;
+                it.collect::<rusqlite::Result<_>>()
+            })
+            .unwrap();
+        assert_eq!(sums, [inst, uninst, inst]);
+        // A hand edit that puts the same contents back a minute later is nobody's install.
+        put(b, base + 150_000);
+        scan_marked(&store, &tr, None, base + 160_000, &marks).unwrap();
+        put(a, base + 180_000);
+        scan_marked(&store, &tr, None, base + 190_000, &marks).unwrap();
+        let last: String = store.with(|c| c.query_row("SELECT summary FROM events WHERE kind = 'changed' ORDER BY at DESC LIMIT 1", [], |r| r.get(0))).unwrap();
+        assert_ne!(last, inst, "the third time the contents came back was not an install");
     }
 
     #[test]

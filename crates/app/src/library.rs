@@ -212,11 +212,56 @@ fn entry_fields_of(env: &Env, entry: &catalog::Entry, repo: Option<(&Path, &Path
             Some(loc) => catalog::entry_components(Path::new(&loc), &entry.name).map(Some),
             None => Err("Atlas could not find the marketplace's files, so it could not read the plugin's own entry".to_string()),
         },
-        None if entry.marketplace == catalog::DIRECTORY => match (&entry.source, repo) {
-            (catalog::Source::Github { path, .. }, Some((root, base))) => catalog::entry_components_in_repo(root, base, &entry.name, path.as_deref()),
-            _ => Err("Atlas could not read the plugin's own entry in the catalog".to_string()),
-        },
+        None if entry.marketplace == catalog::DIRECTORY => {
+            let in_repo = match (&entry.source, repo) {
+                (catalog::Source::Github { path, .. }, Some((root, base))) => catalog::entry_components_in_repo(root, base, &entry.name, path.as_deref()),
+                _ => Err("Atlas could not read the plugin's own entry in the catalog".to_string()),
+            };
+            // The official marketplace can also list the plugin by name, with its manifest inline.
+            let official = match official_folder(env, entry, repo) {
+                Some(dir) => catalog::entry_in_official(&dir, &entry.name, &entry.source),
+                None => Ok(None),
+            };
+            join_fields(in_repo, official)
+        }
         None => Err("Atlas could not find the marketplace's files, so it could not read the plugin's own entry".to_string()),
+    }
+}
+
+/// Where the official marketplace's file is: the folder Claude Code keeps for it, else (a plugin
+/// that is itself fetched from the official repo) the copy just fetched. `None` when neither is
+/// on this computer: the official entries of external plugins are then not visible (an accepted
+/// risk, docs/specs/skill-library.md).
+fn official_folder(env: &Env, entry: &catalog::Entry, repo: Option<(&Path, &Path)>) -> Option<PathBuf> {
+    if let Some(loc) = ledger::marketplaces(&env.root.dir).into_iter().find(|m| m.name == catalog::OFFICIAL).and_then(|m| m.install_location) {
+        return Some(PathBuf::from(loc));
+    }
+    match (&entry.source, repo) {
+        (catalog::Source::Github { repo: r, .. }, Some((root, _))) if r.eq_ignore_ascii_case(catalog::OFFICIAL_REPO) => Some(root.to_path_buf()),
+        _ => None,
+    }
+}
+
+/// The plugin's own repo and the official marketplace may both name what it loads: both are
+/// checked. An official entry that can't be matched to this plugin is never skipped, and two
+/// that disagree on a field are unreadable (neither can be vouched for over the other).
+fn join_fields(in_repo: Result<Option<serde_json::Value>, String>, official: Result<Option<serde_json::Value>, String>) -> Result<Option<serde_json::Value>, String> {
+    match (in_repo, official) {
+        (_, Err(e)) | (Err(e), _) => Err(e),
+        (own, Ok(None)) => own,
+        (Ok(None), Ok(Some(v))) => Ok(Some(v)),
+        (Ok(Some(serde_json::Value::Object(mut a))), Ok(Some(serde_json::Value::Object(b)))) => {
+            for (k, v) in b {
+                match a.get(&k) {
+                    Some(x) if *x != v => return Err("The plugin's repo and the official marketplace name different things for this plugin, so Atlas could not tell what it loads".to_string()),
+                    _ => {
+                        a.insert(k, v);
+                    }
+                }
+            }
+            Ok(Some(serde_json::Value::Object(a)))
+        }
+        _ => Err("Atlas could not read the plugin's own entry in the catalog".to_string()),
     }
 }
 
@@ -852,13 +897,73 @@ mod tests {
     }
 
     #[test]
+    fn an_external_plugins_inline_fields_in_the_official_marketplace_are_checked_too() {
+        // Security review (LOW): box, amd-skills... have a plugin.json (or nothing) in their own repo
+        // and name their skills, hooks or servers inline in claude-plugins-official's entry.
+        let t = tempfile::tempdir().unwrap();
+        let env = env_at(t.path());
+        std::fs::create_dir_all(t.path().join("plugins")).unwrap();
+        let official = t.path().join("official");
+        std::fs::create_dir_all(official.join(".claude-plugin")).unwrap();
+        let sha = "1111111111111111111111111111111111111111";
+        let write_official = |body: &str| std::fs::write(official.join(".claude-plugin/marketplace.json"), body).unwrap();
+        std::fs::write(t.path().join("plugins/known_marketplaces.json"), format!(r#"{{"claude-plugins-official":{{"source":{{"source":"github","repo":"a/b"}},"installLocation":{}}}}}"#, serde_json::to_string(&official).unwrap())).unwrap();
+        // The plugin's own repo, fetched: a plugin.json that names nothing.
+        let repo = t.path().join("repo");
+        std::fs::create_dir_all(repo.join(".claude-plugin")).unwrap();
+        std::fs::write(repo.join(".claude-plugin/plugin.json"), r#"{"name":"box"}"#).unwrap();
+        std::fs::create_dir_all(repo.join("skills/a")).unwrap();
+        std::fs::write(repo.join("skills/a/SKILL.md"), "---
+name: a
+description: Notes
+---
+Help with notes.
+").unwrap();
+        let mut e = entry(catalog::DIRECTORY);
+        e.name = "box".into();
+        e.source = catalog::Source::Github { repo: "box/skills".into(), sha: Some(sha.into()), path: None, git_ref: None };
+        let listing = |extra: &str| format!(r#"{{"plugins":[{{"name":"box","source":{{"source":"url","url":"https://github.com/box/skills.git","sha":"{sha}"}},"strict":false{extra}}}]}}"#);
+        let check = |f: &Result<Option<serde_json::Value>, String>| atlas_core::library::check::check_tree_entry(&repo, &[], atlas_core::library::check::EntryFields::Fields(f.as_ref().unwrap().as_ref().unwrap()));
+        // Inline skills: read, shown, not a flag.
+        write_official(&listing(r#","skills":["./skills/a"]"#));
+        let f = entry_fields_of(&env, &e, Some((&repo, &repo)));
+        assert_eq!(f.as_ref().unwrap().as_ref().unwrap()["skills"][0], "./skills/a");
+        assert!(check(&f).flags.is_empty(), "{:?}", check(&f).flags.iter().map(|f| &f.code).collect::<Vec<_>>());
+        // Inline hooks or language servers: flagged, so two clicks.
+        write_official(&listing(r#","hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"x"}]}]},"lspServers":{"x":{"command":"x"}}"#));
+        let f = entry_fields_of(&env, &e, Some((&repo, &repo)));
+        let codes: Vec<String> = check(&f).flags.iter().map(|f| f.code.to_string()).collect();
+        assert!(codes.iter().any(|c| c == "commands"), "{codes:?}");
+        // The name is listed there from another repo or another commit: unreadable.
+        write_official(&listing("").replace("box/skills.git", "someone/else.git"));
+        assert!(entry_fields_of(&env, &e, Some((&repo, &repo))).is_err());
+        write_official(&listing("").replace(sha, "2222222222222222222222222222222222222222"));
+        assert!(entry_fields_of(&env, &e, Some((&repo, &repo))).is_err());
+        // Not listed there at all: only its own repo counts, as before.
+        write_official(r#"{"plugins":[]}"#);
+        assert_eq!(entry_fields_of(&env, &e, Some((&repo, &repo))).unwrap(), None);
+        // No official folder on this computer and a plugin from elsewhere: the entry is not visible
+        // (accepted risk, docs/specs/skill-library.md), the plugin's own files are still checked.
+        std::fs::remove_file(t.path().join("plugins/known_marketplaces.json")).unwrap();
+        assert!(official_folder(&env, &e, Some((&repo, &repo))).is_none());
+        assert_eq!(entry_fields_of(&env, &e, Some((&repo, &repo))).unwrap(), None);
+        // ... but a plugin fetched from the official repo itself has the file in hand.
+        let mut own = e.clone();
+        own.source = catalog::Source::Github { repo: "Anthropics/Claude-Plugins-Official".into(), sha: Some(sha.into()), path: Some("plugins/box".into()), git_ref: None };
+        assert!(official_folder(&env, &own, Some((&repo, &repo))).is_some());
+    }
+
+    #[test]
     fn the_built_in_directory_has_no_marketplace_file_and_that_is_not_a_failure() {
         // Security review: the directory is not in known_marketplaces.json, so every one of its
         // plugins got an "unreadable entry" flag and the one-click install never fired.
         let t = tempfile::tempdir().unwrap();
         let env = env_at(t.path());
         std::fs::create_dir_all(t.path().join("plugins")).unwrap();
-        std::fs::write(t.path().join("plugins/known_marketplaces.json"), r#"{"claude-plugins-official":{"source":{"source":"github","repo":"a/b"},"installLocation":"C:/nowhere"}}"#).unwrap();
+        let official = t.path().join("official");
+        std::fs::create_dir_all(official.join(".claude-plugin")).unwrap();
+        std::fs::write(official.join(".claude-plugin/marketplace.json"), r#"{"plugins":[]}"#).unwrap();
+        std::fs::write(t.path().join("plugins/known_marketplaces.json"), format!(r#"{{"claude-plugins-official":{{"source":{{"source":"github","repo":"a/b"}},"installLocation":{}}}}}"#, serde_json::to_string(&official).unwrap())).unwrap();
         // The directory: its entry is read from the repo the plugin is fetched from.
         let repo = t.path().join("repo");
         let base = repo.join("plugins/fd");

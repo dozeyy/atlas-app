@@ -197,6 +197,61 @@ fn components_of(entry: &Value) -> Value {
     Value::Object(out)
 }
 
+/// The marketplace the built-in directory draws most of its plugins from, and its repo.
+pub const OFFICIAL: &str = "claude-plugins-official";
+pub const OFFICIAL_REPO: &str = "anthropics/claude-plugins-official";
+
+/// Whether the official marketplace's own `source` for a plugin is the place the catalog lists it
+/// at now: the same repo and folder, and the same commit when the marketplace names one.
+fn same_origin(official: &Source, listing: &Source) -> bool {
+    let (Source::Github { repo: ro, sha: so, path: po, git_ref: fo }, Source::Github { repo: rl, sha: sl, path: pl, git_ref: fl }) = (official, listing) else { return false };
+    let place = |p: &Option<String>| p.as_deref().map(|p| p.trim_start_matches("./").trim_matches('/').to_string()).filter(|p| !p.is_empty() && p != ".");
+    ro.eq_ignore_ascii_case(rl)
+        && place(po) == place(pl)
+        && match (so, sl) {
+            (Some(a), Some(b)) => super::install::same_commit(a, b),
+            (Some(_), None) => false,
+            (None, _) => true,
+        }
+        && (fo.is_none() || fo == fl)
+}
+
+/// The component fields of the entry the *official* marketplace lists under `name`, for a plugin
+/// the built-in directory lists at `listing`. A directory plugin whose own repo is elsewhere can
+/// still have its manifest written inline in the official marketplace's entry (`strict: false`,
+/// inline `skills`, `hooks`...), which Claude Code applies on top of the plugin's own files.
+///
+/// `official` is a folder holding the official marketplace's `.claude-plugin/marketplace.json`.
+/// `Ok(None)`: no entry of that name there. `Ok(Some(fields))`: one entry, listed at the same
+/// place. `Err`: the file can't be read, the name is listed twice, or it is listed at another
+/// place (then nothing it names can be matched to what is being installed).
+pub fn entry_in_official(official: &Path, name: &str, listing: &Source) -> Result<Option<Value>, String> {
+    const MAX_BYTES: u64 = 16 * 1024 * 1024;
+    let file = official.join(".claude-plugin").join("marketplace.json");
+    let unread = || "Atlas could not read the official marketplace's entry for this plugin".to_string();
+    let md = fs::metadata(&file).map_err(|_| unread())?;
+    if !md.is_file() || md.len() > MAX_BYTES {
+        return Err(unread());
+    }
+    let bytes = fs::read(&file).map_err(|_| unread())?;
+    let v: Value = serde_json::from_slice(bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&bytes)).map_err(|_| unread())?;
+    let named: Vec<&Value> = v.get("plugins").and_then(Value::as_array).into_iter().flatten().filter(|p| p.get("name").and_then(Value::as_str) == Some(name)).collect();
+    let entry = match named.as_slice() {
+        [] => return Ok(None),
+        [one] => *one,
+        _ => return Err(unread()),
+    };
+    let source = match parse_source(entry.get("source").unwrap_or(&Value::Null)) {
+        // `./plugins/x` in the official repo.
+        Source::Local { path } => Source::Github { repo: OFFICIAL_REPO.into(), sha: None, path: Some(path), git_ref: None },
+        other => other,
+    };
+    if !same_origin(&source, listing) {
+        return Err("The official marketplace lists a plugin of this name from somewhere else, so Atlas could not tell what it loads".to_string());
+    }
+    Ok(Some(components_of(entry)))
+}
+
 /// A folder name as a marketplace writes it as a source (`./plugins/x`) and as a repo path
 /// (`plugins/x`): the same place.
 fn same_place(a: &str, b: &str) -> bool {
@@ -367,6 +422,43 @@ mod tests {
 
     fn e(id: &str, name: &str, desc: &str, mp: &str) -> Entry {
         Entry { plugin_id: id.into(), name: name.into(), description: desc.into(), marketplace: mp.into(), version: String::new(), source: Source::Command }
+    }
+
+    #[test]
+    fn the_official_entry_of_an_external_plugin_is_matched_by_name_and_origin() {
+        // box-like: the plugin's own repo is elsewhere, the official entry names its skills inline.
+        let t = tempfile::tempdir().unwrap();
+        fs::create_dir_all(t.path().join(".claude-plugin")).unwrap();
+        fs::write(
+            t.path().join(".claude-plugin/marketplace.json"),
+            r#"{"plugins":[
+              {"name":"box","source":{"source":"url","url":"https://github.com/box/skills.git","sha":"1111111111111111111111111111111111111111"},"strict":false,"skills":["./skills/a"]},
+              {"name":"hooky","source":{"source":"git-subdir","url":"https://github.com/o/mono","path":"hooky","sha":"2222222"},"hooks":{"PreToolUse":[]},"lspServers":{"x":{"command":"x"}}},
+              {"name":"moved","source":{"source":"url","url":"https://github.com/someone/else.git","sha":"3333333"},"skills":[]},
+              {"name":"inrepo","source":"./plugins/inrepo","hooks":{}},
+              {"name":"twice","source":"./a"},{"name":"twice","source":"./b"}]}"#,
+        )
+        .unwrap();
+        let gh = |repo: &str, sha: Option<&str>, path: Option<&str>| Source::Github { repo: repo.into(), sha: sha.map(Into::into), path: path.map(Into::into), git_ref: None };
+        let at = |name: &str, l: &Source| entry_in_official(t.path(), name, l);
+        // The same url and commit: its inline fields come back.
+        let v = at("box", &gh("box/skills", Some("1111111111111111111111111111111111111111"), None)).unwrap().unwrap();
+        assert_eq!(v["skills"][0], "./skills/a");
+        let v = at("hooky", &gh("o/mono", Some("2222222abcdef"), Some("hooky"))).unwrap().unwrap();
+        assert!(v.get("hooks").is_some() && v.get("lspServers").is_some());
+        // An in-repo entry matches the official repo's own folder.
+        assert!(at("inrepo", &gh(OFFICIAL_REPO, Some("abc1234"), Some("plugins/inrepo"))).unwrap().is_some());
+        // A name that is not there adds nothing; the same name from another place, another commit,
+        // another folder, or listed twice is never matched.
+        assert_eq!(at("nobody", &gh("x/y", None, None)).unwrap(), None);
+        assert!(at("moved", &gh("box/skills", Some("3333333"), None)).is_err());
+        assert!(at("box", &gh("box/skills", Some("9999999"), None)).is_err());
+        assert!(at("box", &gh("box/skills", None, None)).is_err());
+        assert!(at("hooky", &gh("o/mono", Some("2222222"), Some("other"))).is_err());
+        assert!(at("twice", &gh(OFFICIAL_REPO, None, Some("a"))).is_err());
+        assert!(at("box", &Source::Local { path: "./x".into() }).is_err());
+        // A missing or unreadable official file is not "nothing there".
+        assert!(entry_in_official(&t.path().join("nope"), "box", &gh("box/skills", None, None)).is_err());
     }
 
     #[test]
