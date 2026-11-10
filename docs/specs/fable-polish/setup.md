@@ -127,11 +127,58 @@ this way (`compareItems` in `src/lib/setup-model.ts`); nothing had to change, an
 Test changed on purpose: `src/pages/Setup.test.tsx` looks for the two new search placeholders
 (item 9). No other test changed.
 
+## Proof
+
+- `after` pictures for every stop at 900x600 and 1180x780, Dark and Light, and the stress set
+  (72-character names, CJK, a deep project path, long descriptions) at both sizes.
+- Layout audit with no pictures at 1600x1000 (Dark, Light), Silver at both sizes, sidebar
+  collapsed and expanded at both sizes, reduced motion at 1180x780, and 900x600 with the sidebar
+  open plus the stress data: no horizontal scroll, nothing cut without a hover, nothing clipped
+  or off screen. The only lines left are a sheet or dialog lying over the page behind it, and
+  item 25.
+- First page scroll: 399 to 216 px at 900x600, 150 to 0 px at 1180x780. With the sidebar forced
+  open at 900x600 the column is under 720 px, so the panels stack as before (399 px).
+- `npx tsc --noEmit` clean; `npx vitest run` 64 files, 884 tests passed.
+
+## Redesigns (after the scope was widened; each is its own commit)
+
+Before pictures are the polish `after-...` pictures of the same stop; after pictures are named
+`r1-after-...`, `r2-after-...`, `r3-after-...`.
+
+- R1. **The checklist can be put away.** It had no way out: one step a person never wants (an
+  output style, say) kept a 280 px card at the top for good, and with it open the page scrolled
+  261 px at 1180x780 with no full tile row on screen. Principle: user control, and keeping the
+  way in (the tiles) on screen. A caret in the card's corner folds it to one line (title, the
+  bar, "4 of 7"), remembered on this device; the open card is unchanged apart from the caret,
+  so the decided layout (checklist first) stands. Folded: 36 px of scroll at 1180x780 (the mock
+  has a missing-projects row at the bottom), all twelve tiles on screen.
+  Before `toolkit-checklist/after-*.png`; after `toolkit-checklist/r1-after-*.png` (open) and
+  `toolkit-checklist-folded/r1-after-*.png` (put away). Files: `Checklist.tsx`, a test in
+  `Setup.test.tsx`.
+- R2. **Hook cards say when the hook runs.** The card's chips were the event and the type
+  ("PreToolUse", "command"), both already in its title and first line. Principle: no repeated
+  fact, plain words over jargon. One chip now, in the words the create flow already uses
+  ("Before a tool runs"); an event Atlas has no words for shows no chip.
+  Before `toolkit-hook/after-*.png`; after `toolkit-hook/r2-after-*.png`. File: `ItemViews.tsx`.
+- R3. **An empty type steps back.** "0 Hooks" was as loud as "6 Skills". Principle: hierarchy,
+  the figure that means "nothing here" should not compete. Same tile and size, the 0 in the
+  secondary ink. Before `toolkit-checklist-folded/r1-after-*.png`; after
+  `toolkit-checklist-folded/r3-after-*.png`. File: `TypeTiles.tsx`.
+
+Looked at again and left:
+
+- A title on an open type ("Skills"): "no page headers" is a standing review rule of Will's;
+  the search box, the New button and the Back button name the type.
+- Tiles above the two panels: at the default window both fit with no scroll either way, and
+  after the polish six tiles show at 900x600; moving them changes what Will has approved for a
+  gain only at the smallest window.
+- Three card columns at the default window, or a card with one line less: cards would drop to
+  about 300 px wide and cut names and chips; equal cards are the decided look.
+- The X delete showing on hover only: decided, and Delete is also in the sheet.
+
 ## Suggestions for Will (not built)
 
-- A. While the checklist is still open, hide the "Used and never used" and "What your setup
-  costs" panels (a new setup has little to show in them) so the tiles sit right under the
-  checklist.
+- A. Built as R1 in a smaller form (fold the checklist instead of hiding the panels).
 - B. Sheets and dialogs should start below the title bar so the window can still be moved,
   minimised and closed while one is open (item 25; four files, three of them not this area's).
 - C. A sort choice in the Filters menu (Name / Last changed / Most used) for skills and agents,
