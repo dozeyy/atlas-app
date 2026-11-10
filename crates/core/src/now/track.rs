@@ -589,9 +589,13 @@ impl Session {
         }
         let mut repeated = false;
         let mut keyed = false;
-        if let Some(m) = p.usage {
+        // The line parser only gives usage for a line with both `message.id` and `requestId`
+        // (one reply = one `id|requestId`, as in the ledger and tools/recount.py); 0 of 255,131
+        // usage lines on Will's PC lack either. An empty key is never counted, so a replayed
+        // unkeyed line can never be added twice.
+        if let Some(m) = p.usage.filter(|m| !m.key.is_empty()) {
             // A reply written again later with less output (zeroed counts) is a replay: skip it.
-            let replay = !m.key.is_empty() && self.files[fi].rows.get(&m.key).is_some_and(|old| m.output < old.output);
+            let replay = self.files[fi].rows.get(&m.key).is_some_and(|old| m.output < old.output);
             if !replay && !is_sub && !m.model.is_empty() {
                 // Model and effort go together: a reply with no effort clears the old one.
                 self.model = Some(m.model.clone());
@@ -602,7 +606,7 @@ impl Session {
             if !replay && is_sub && m.model.starts_with("claude-") {
                 self.files[fi].model = Some(m.model.clone());
             }
-            keyed = !m.key.is_empty();
+            keyed = true;
             let counts = Counts {
                 input: m.input,
                 output: m.output,
@@ -618,7 +622,7 @@ impl Session {
             );
             let row = Row { tokens: m.input + m.output + m.cw5m + m.cw1h, cost, output: m.output };
             let f = &mut self.files[fi];
-            let key = if m.key.is_empty() { format!("#{}", f.rows.len()) } else { m.key.clone() };
+            let key = m.key.clone();
             // Same rule as the ledger: a replayed line with less output never replaces the reply.
             if replay {
                 repeated = true;
@@ -1186,6 +1190,26 @@ mod tests {
         assert_eq!(c.tokens, 230);
         assert!(c.steps.iter().any(|s| s.by.as_deref() == Some("Find the callers")));
         assert!(!format!("{c:?}").contains("SECRET PROMPT"));
+    }
+
+    #[test]
+    fn a_reply_without_its_ids_is_never_counted_twice() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("s7.jsonl");
+        // Twice the same reply with no requestId, then twice with no message id.
+        let line = |id: &str, req: &str| {
+            format!(
+                r#"{{"type":"assistant","timestamp":"2026-11-08T10:00:01.000Z"{req},"message":{{{id}"model":"claude-sonnet-5-5","stop_reason":"end_turn","content":[{{"type":"text","text":"x"}}],"usage":{{"input_tokens":3,"output_tokens":40,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}}}}"#
+            )
+        };
+        let body = [line(r#""id":"m1","#, ""), line(r#""id":"m1","#, ""), line("", r#","requestId":"r1""#), line("", r#","requestId":"r1""#)].join("\n");
+        std::fs::write(&p, body + "\n").unwrap();
+        let mut s = Session::new("s7".into(), 1, "proj".into());
+        let (facts, prices, stats) = (Facts::new(), PriceTable::seed(), ReadStats::default());
+        let a = s.add_file(&p, false);
+        s.read_file(a, &facts, &prices, &stats).unwrap();
+        // Same rule as the ledger and the recount: a line missing either id is not a countable reply.
+        assert_eq!(s.chat(now_after()).tokens, 0);
     }
 
     #[test]

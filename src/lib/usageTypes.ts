@@ -78,6 +78,8 @@ export interface ModelUse {
 
 export interface ModelSpend {
   model: string;
+  /** The price list knows the model (Session and helper detail send it). */
+  known?: boolean;
   tokens: Tokens;
   cost: Cost;
   efforts?: EffortUse[];

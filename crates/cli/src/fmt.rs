@@ -162,9 +162,6 @@ fn model_label(m: &str) -> String {
     atlas_core::usage::naming::model_label(m)
 }
 
-/// The reasoning-effort mix as the app words it: one effort is just its name ("high"); a mix
-/// is each effort's share of the replies that had one, most used first ("high 93%, medium 7%").
-/// Empty when no reply said (never a guess).
 /// A share of a whole as people read it: a part that is there never shows as 0%, and a part
 /// that is not the whole never shows as 100% ("<1%", ">99%"). `p` is 0..=100.
 pub fn share_text(p: f64) -> String {
@@ -173,10 +170,15 @@ pub fn share_text(p: f64) -> String {
     } else if p > 99.0 && p < 100.0 {
         ">99%".into()
     } else {
-        format!("{p:.0}%")
+        // p.round(), not {:.0}: the formatter rounds half to even (12.5 -> "12"), the app's
+        // Math.round says 13.
+        format!("{}%", p.round())
     }
 }
 
+/// The reasoning-effort mix as the app words it: one effort is just its name ("high"); a mix
+/// is each effort's share of the replies that had one, most used first ("high 93%, medium 7%").
+/// Empty when no reply said (never a guess).
 pub fn effort_mix(e: &[atlas_core::usage::query::EffortUse]) -> String {
     let total: u64 = e.iter().map(|x| x.replies).sum();
     match e {
@@ -296,6 +298,8 @@ mod tests {
         assert_eq!(share_text(0.4), "<1%");
         assert_eq!(share_text(45.6), "46%");
         assert_eq!(share_text(99.6), ">99%");
+        assert_eq!(share_text(12.5), "13%");
+        assert_eq!(share_text(2.5), "3%");
         assert_eq!(share_text(100.0), "100%");
     }
 

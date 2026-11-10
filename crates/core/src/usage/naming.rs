@@ -145,6 +145,16 @@ pub fn agent_id_of_stem(stem: &str) -> String {
     stem.strip_prefix("agent-").unwrap_or(stem).to_string()
 }
 
+/// A model id without a trailing bracketed suffix ("claude-opus-5-5[1m]" -> "claude-opus-5-5"):
+/// the suffix picks a context size, not a different model.
+pub fn base_model_id(id: &str) -> &str {
+    let t = id.trim();
+    match t.strip_suffix(']').and_then(|s| s.rfind('[').map(|i| &s[..i])) {
+        Some(base) if !base.is_empty() => base.trim_end(),
+        _ => t,
+    }
+}
+
 /// A model id as people say it, always with its full version: "claude-opus-5-5" -> "Opus 5.5",
 /// "claude-fable-5-2" -> "Fable 5.2", "claude-haiku-4-5-20251001" -> "Haiku 4.5", the old
 /// "claude-3-5-sonnet-20241022" -> "Sonnet 3.5". Any family works, so a model Atlas has never
@@ -152,6 +162,7 @@ pub fn agent_id_of_stem(stem: &str) -> String {
 /// a separate question (`PriceTable::is_known`). Anything else (`<synthetic>`) stays as it is.
 /// The app's `modelLabel` (`src/lib/usage.ts`) follows the same rules.
 pub fn model_label(id: &str) -> String {
+    let id = base_model_id(id);
     let digits = |s: &str, max: usize| !s.is_empty() && s.len() <= max && s.bytes().all(|b| b.is_ascii_digit());
     let family = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_lowercase());
     let cap = |s: &str| {
@@ -196,6 +207,9 @@ mod tests {
             ("<synthetic>", "<synthetic>"),
             ("gpt-5", "gpt-5"),
             ("claude-opus", "claude-opus"),
+            ("claude-opus-5-5[1m]", "Opus 5.5"),
+            ("claude-sonnet-4-5-20250929[1m]", "Sonnet 4.5"),
+            ("[1m]", "[1m]"),
         ] {
             assert_eq!(model_label(id), want, "{id}");
         }

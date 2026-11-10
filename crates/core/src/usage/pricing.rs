@@ -154,8 +154,10 @@ impl PriceTable {
         Ok(())
     }
 
-    /// Exact id, or an id listed as an alias (D22).
+    /// Exact id, or an id listed as an alias (D22). A context suffix ("claude-opus-5-5[1m]") is
+    /// the same model: it is dropped before the lookup.
     pub fn model(&self, id: &str) -> Option<&ModelPrice> {
+        let id = super::naming::base_model_id(id);
         self.models.get(id).or_else(|| self.alias_index.get(id).and_then(|c| self.models.get(c)))
     }
 
@@ -193,7 +195,9 @@ impl PriceTable {
         }
         // "not_available" is what the API reports when the model has no geo control (28 % of the
         // rows on Will's PC): billed like global, as Claude Code does.
-        let geo = if b.geo.is_empty() || b.geo == "not_available" { "global" } else { b.geo };
+        // Compared lowercased and trimmed: a transcript saying "US" is the "us" rate, not unpriced.
+        let geo = b.geo.trim().to_ascii_lowercase();
+        let geo = if geo.is_empty() || geo == "not_available" { "global" } else { geo.as_str() };
         let geo_mult = *self.geo_multipliers.get(geo)?;
         let (mut pin, mut pout, mut w5, mut w1, mut pr) = if b.price_tier == 1 {
             match &m.long_context {
@@ -316,6 +320,30 @@ mod tests {
         let x = Counts { input: 1_000_000, output: 1_000_000, cw5m: 1_000_000, cr: 1_000_000, ..Default::default() };
         let want = (16.0 + 80.0 + 20.0 + 0.4) * 1.1;
         assert!((t.cost(&b, &x).unwrap() - want).abs() < 1e-9, "{:?}", t.cost(&b, &x));
+    }
+
+    #[test]
+    fn geo_is_matched_without_case_or_spaces() {
+        let t = PriceTable::seed();
+        let x = c(1000, 1000);
+        let us = t.cost(&basis("claude-opus-5-5", "standard", "us", "standard", 0), &x).unwrap();
+        for g in ["US", " Us ", "us"] {
+            assert_eq!(t.cost(&basis("claude-opus-5-5", "standard", g, "standard", 0), &x), Some(us), "{g:?}");
+        }
+        assert_eq!(t.cost(&basis("claude-opus-5-5", "standard", "NOT_AVAILABLE", "standard", 0), &x), t.cost(&basis("claude-opus-5-5", "standard", "", "standard", 0), &x));
+    }
+
+    #[test]
+    fn a_context_suffix_is_the_same_model() {
+        let t = PriceTable::seed();
+        assert!(t.is_known("claude-opus-5-5[1m]"));
+        assert!(t.is_known("claude-haiku-4-5-20251001[1m]"), "alias plus suffix");
+        let x = c(1000, 1000);
+        assert_eq!(
+            t.cost(&basis("claude-opus-5-5[1m]", "standard", "global", "standard", 0), &x),
+            t.cost(&basis("claude-opus-5-5", "standard", "global", "standard", 0), &x)
+        );
+        assert!(!t.is_known("[1m]"));
     }
 
     #[test]

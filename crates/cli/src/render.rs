@@ -400,7 +400,7 @@ pub fn chat(d: &SessionDetail, note: Option<&str>, top: usize) -> String {
         s.push('\n');
     }
 
-    let models = by_label(d.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total, m.efforts.as_slice(), m.cost.usd.is_some())));
+    let models = by_label(d.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total, m.efforts.as_slice(), m.known)));
     if !models.is_empty() {
         s.push_str("Models\n");
         let rows: Vec<_> = models.into_iter().take(top).map(|(label, tokens)| (label, tokens, pct(tokens, r.tokens.total))).collect();
@@ -768,7 +768,7 @@ mod tests {
     }
 
     fn by_model(id: &str, total: u64) -> ByModel {
-        ByModel { model: id.into(), tokens: tok(total, 0), cost: priced(0.5), efforts: Vec::new() }
+        ByModel { model: id.into(), known: true, tokens: tok(total, 0), cost: priced(0.5), efforts: Vec::new() }
     }
 
     fn message(ts: i64, total: u64) -> MessagePoint {
@@ -816,7 +816,7 @@ mod tests {
         dt.row.efforts = vec![e("high", 9), e("medium", 1)];
         dt.by_model[0].efforts = vec![e("medium", 2)];
         dt.by_model[1].efforts = vec![e("high", 5)]; // the dated id: same row, mixes merge
-        dt.by_model.push(ByModel { model: "claude-nova-9-1".into(), tokens: tok(50, 0), cost: Cost::default(), efforts: Vec::new() });
+        dt.by_model.push(ByModel { model: "claude-nova-9-1".into(), known: false, tokens: tok(50, 0), cost: Cost::default(), efforts: Vec::new() });
         dt.agents[0].efforts = vec![e("xhigh", 4)];
         let out = chat(&dt, None, 5);
         assert!(out.contains("\"x\" \u{00B7} p \u{00B7} Opus 5.5 \u{00B7} high 90%, medium 10% \u{00B7} "), "{out}");
@@ -824,6 +824,17 @@ mod tests {
         assert!(out.lines().any(|l| l.starts_with("Opus 5.5 ") && !l.contains("\u{00B7} ")), "no effort, no suffix: {out}");
         assert!(out.lines().any(|l| l.starts_with("Nova 9.1 (not priced)")), "{out}");
         assert!(out.contains("| scout | Explore | Sonnet 4.5 | xhigh | 300 |"), "{out}");
+    }
+
+    #[test]
+    fn a_known_model_with_an_unpriced_reply_keeps_its_name() {
+        let _g = glyph_lock();
+        let mut dt = detail("x", "p", "scout");
+        // e.g. Opus 4.7 in fast mode: known to the price list, no rate for that speed.
+        dt.by_model.push(ByModel { model: "claude-opus-4-7".into(), known: true, tokens: tok(50, 0), cost: Cost::default(), efforts: Vec::new() });
+        let out = chat(&dt, None, 5);
+        assert!(out.lines().any(|l| l.starts_with("Opus 4.7 ")), "{out}");
+        assert!(!out.contains("Opus 4.7 (not priced)"), "{out}");
     }
 
     /// Switches ASCII mode on and puts it back even when an assert fails.

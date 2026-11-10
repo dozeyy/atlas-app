@@ -93,13 +93,15 @@ export function formatDuration(ms: number): string {
  * whether it is priced is a separate question. Anything else (`<synthetic>`) stays as it is.
  * Same rules as `model_label` in `crates/core/src/usage/naming.rs`.
  */
-export function modelLabel(id: string): string {
+export function modelLabel(raw: string): string {
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  // A context suffix ("claude-opus-5-5[1m]") is the same model.
+  const id = raw.trim().replace(/(.)\s*\[[^\]]*\]$/, "$1");
   let m = /^claude-([a-z]+)-(\d{1,3})(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
   if (m) return `${cap(m[1])} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
   m = /^claude-(\d{1,3})(?:-(\d{1,2}))?-([a-z]+)(?:-\d{8})?$/.exec(id);
   if (m) return `${cap(m[3])} ${m[1]}${m[2] ? `.${m[2]}` : ""}`;
-  return id;
+  return raw;
 }
 
 /** The most used reasoning effort, or null when no reply recorded one (never a guess). */

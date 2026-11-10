@@ -50,7 +50,7 @@ export function Breakdown({ t }: { t: Tokens }) {
  * transcripts recorded one, "not priced" for a model the price list does not know, its tokens
  * and its cost.
  */
-export function ModelSplit({ rows }: { rows: { model: string; tokens: Tokens; cost: Cost; efforts?: EffortUse[] }[] }) {
+export function ModelSplit({ rows }: { rows: { model: string; tokens: Tokens; cost: Cost; known?: boolean; efforts?: EffortUse[] }[] }) {
   return (
     <Card className="overflow-hidden">
       <table className="w-full text-body">
@@ -67,7 +67,7 @@ export function ModelSplit({ rows }: { rows: { model: string; tokens: Tokens; co
             <tr key={r.model} className="border-b border-line last:border-b-0">
               <th scope="row" className="px-5 py-2 text-left font-normal text-ink" title={r.model}>
                 {modelLabel(r.model)}
-                {r.cost.usd === null && <span className="ml-2 text-caption text-ink-2">not priced</span>}
+                {(r.known === undefined ? r.cost.usd === null : !r.known) && <span className="ml-2 text-caption text-ink-2">not priced</span>}
                 {effortMix(r.efforts) && <span className="block text-caption text-ink-2">{`Effort ${effortMix(r.efforts)}`}</span>}
               </th>
               <td className="px-3 py-2 text-right" title={exact(headline(r.tokens))}>{compact(headline(r.tokens))}</td>

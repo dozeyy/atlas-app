@@ -305,6 +305,10 @@ pub struct SessionPage {
 #[serde(rename_all = "camelCase")]
 pub struct ByModel {
     pub model: String,
+    /// The price list knows this model (a known model can still be unpriced for one reply,
+    /// e.g. a speed or tier the list has no rate for).
+    #[serde(default)]
+    pub known: bool,
     pub tokens: Tokens,
     pub cost: Cost,
     /// Replies per reasoning effort on this model, most used first.
@@ -1690,7 +1694,13 @@ pub fn agent_detail(conn: &Connection, ctx: &QueryCtx, session_id: &str, agent_i
     )?;
     let mut by_model: Vec<ByModel> = by_model
         .into_iter()
-        .map(|(model, a)| ByModel { efforts: efforts.remove(&model).unwrap_or_default(), model, tokens: a.t, cost: a.cost() })
+        .map(|(model, a)| ByModel {
+            efforts: efforts.remove(&model).unwrap_or_default(),
+            known: ctx.prices.is_known(&model),
+            model,
+            tokens: a.t,
+            cost: a.cost(),
+        })
         .collect();
     by_model.sort_by(|a, b| b.tokens.total.cmp(&a.tokens.total).then_with(|| a.model.cmp(&b.model)));
 
@@ -1779,7 +1789,13 @@ pub fn session_detail(conn: &Connection, ctx: &QueryCtx, id: &str) -> rusqlite::
     )?;
     let mut by_model: Vec<ByModel> = by_model
         .into_iter()
-        .map(|(model, a)| ByModel { efforts: efforts.remove(&model).unwrap_or_default(), model, tokens: a.t, cost: a.cost() })
+        .map(|(model, a)| ByModel {
+            efforts: efforts.remove(&model).unwrap_or_default(),
+            known: ctx.prices.is_known(&model),
+            model,
+            tokens: a.t,
+            cost: a.cost(),
+        })
         .collect();
     by_model.sort_by(|a, b| b.tokens.total.cmp(&a.tokens.total).then_with(|| a.model.cmp(&b.model)));
 

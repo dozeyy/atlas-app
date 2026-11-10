@@ -148,6 +148,9 @@ describe("models", () => {
     expect(modelLabel("claude-nova-9-1")).toBe("Nova 9.1");
     expect(modelLabel("claude-opus-4-1-20250805")).toBe("Opus 4.1");
     expect(modelLabel("<synthetic>")).toBe("<synthetic>");
+    expect(modelLabel("claude-opus-5-5[1m]")).toBe("Opus 5.5");
+    expect(modelLabel("claude-sonnet-4-5-20250929[1m]")).toBe("Sonnet 4.5");
+    expect(modelLabel("[1m]")).toBe("[1m]");
     expect(modelLabel("claude-opus")).toBe("claude-opus");
   });
 });
