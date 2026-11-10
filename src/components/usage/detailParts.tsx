@@ -105,8 +105,8 @@ export function Breakdown({ t, main }: { t: Tokens; main?: Tokens }) {
   const rows: [name: string, pick: (x: Tokens) => number, hover: string, note?: string][] = [
     [W.input.label, (x) => x.input, `${W.input.term}\n${W.input.about}`],
     [W.output.label, (x) => x.output, `${W.output.term}\n${W.output.about}`],
-    [`${W.cacheWrite.label}, 5 minutes`, (x) => x.cacheWrite5m, `${W.cacheWrite.term}, 5-minute\n${W.cacheWrite.about}`],
-    [`${W.cacheWrite.label}, 1 hour`, (x) => x.cacheWrite1h, `${W.cacheWrite.term}, 1-hour\n${W.cacheWrite.about}`],
+    ["Saved for 5 minutes", (x) => x.cacheWrite5m, `${W.cacheWrite.term}, 5-minute\n${W.cacheWrite.about}`],
+    ["Saved for 1 hour", (x) => x.cacheWrite1h, `${W.cacheWrite.term}, 1-hour\n${W.cacheWrite.about}`],
     ["Reused", (x) => x.cacheRead, `${W.cacheRead.term}\n${W.cacheRead.about}`, "Counted apart, not in the total"],
   ];
   const cols: [string, Tokens][] = main ? [["Main chat", main], ["With helpers", t]] : [["Tokens", t]];

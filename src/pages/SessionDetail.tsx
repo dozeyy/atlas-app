@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   ArrowBendDownRight,
   ArrowLeft,
+  ArrowsClockwise,
   CaretDown,
   CaretRight,
   CaretUp,
@@ -33,6 +34,8 @@ import { clearPendingAgent, peekPendingAgent } from "../lib/nav";
 import { copyResume, openFolder } from "../lib/sessionActions";
 import { resumeCommand } from "../lib/sessionBrowse";
 import { useAtlas } from "../state/AtlasProvider";
+import { pushToast } from "../state/toastStore";
+import { KIND_WORDS } from "../lib/receiptView";
 import { useKeyHints } from "../lib/keyHints";
 import { helperTree, type HelperNode } from "../lib/helperTree";
 import { MAIN_ID } from "../lib/helperMap";
@@ -51,6 +54,16 @@ const OVERLAY_OPEN = '[role="dialog"], [role="alertdialog"], [role="menu"], [rol
 function isTyping(el: Element | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   return el.isContentEditable || el.matches("input, textarea, select, [contenteditable='true'], [role='textbox']");
+}
+
+/** Puts a saved chat file's path on the clipboard and says so. */
+async function copyPath(path: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(path);
+    pushToast({ message: "Path copied", tone: "success" });
+  } catch {
+    pushToast({ message: "Could not reach the clipboard.", tone: "error" });
+  }
 }
 
 /** One helper as a card: who it was, what it spent, how much of the session that is. */
@@ -349,7 +362,7 @@ function DetailsTab({
   const groups = useSessionItems(id);
   const hasItems = groups.some((g) => g.items.length > 0);
 
-  const jumps: { key: string; label: string }[] = [{ key: "tokens", label: "Tokens" }];
+  const jumps: { key: string; label: string }[] = [{ key: "tokens", label: "Breakdown" }];
   if (bins.length > 0) jumps.push({ key: "timeline", label: "Timeline" });
   if (byModel.length > 1) jumps.push({ key: "models", label: "Models" });
   if (hasItems) jumps.push({ key: "tools", label: "Tools" });
@@ -370,9 +383,16 @@ function DetailsTab({
       )}
       <div className="details-grid">
         <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-4 @3xl:col-span-2">
-          <Stat label="Tokens" sub={total.cacheRead > 0 ? `plus ${compact(total.cacheRead)} cache reads` : undefined}>
-            <span title={exact(headline(total))}>{compact(headline(total))}</span>
-          </Stat>
+          {/* The chat's tokens are the figure at the top of the page; this tile is what sits apart from it. */}
+          {total.cacheRead > 0 ? (
+            <Stat label="Reused" icon={<ArrowsClockwise size={14} aria-hidden="true" />} sub={`not part of the ${compact(headline(total))}`}>
+              <span title={`${KIND_WORDS.cacheRead.term}: ${exact(total.cacheRead)} tokens\n${KIND_WORDS.cacheRead.about}`}>{compact(total.cacheRead)}</span>
+            </Stat>
+          ) : (
+            <Stat label="Tokens">
+              <span title={exact(headline(total))}>{compact(headline(total))}</span>
+            </Stat>
+          )}
           <Stat
             label="Messages"
             icon={<Hash size={14} aria-hidden="true" />}
@@ -420,19 +440,28 @@ function DetailsTab({
         )}
 
         <section id="sd-files" aria-label="Files" className="jump-target min-w-0 @3xl:col-span-2">
-          <h3 className="rcpt-head">{`Files (${files.length})`}</h3>
+          <h3 className="rcpt-head" title="The saved chat files these figures were read from">{`Files (${files.length})`}</h3>
+          {/* A row says whose file it is; the path is its hover and one press away on the clipboard.
+              (The project folder is the first fact on the page's line and behind "Open folder".) */}
           <Card>
-            <ul className="max-h-40 divide-y divide-line overflow-y-auto">
-              {files.map((f) => (
-                <li key={f.path} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
-                  <code className="selectable min-w-0 flex-1 break-all text-caption text-ink">{f.path}</code>
-                  {f.isSubagent && <span className="text-caption text-ink-2">helper</span>}
-                  {f.missing && <span className="text-caption text-warning">removed from disk</span>}
-                </li>
-              ))}
+            <ul className="max-h-52 divide-y divide-line overflow-y-auto">
+              {files.map((f) => {
+                const helper = f.isSubagent ? agents.find((a) => f.path.includes(`agent-${a.agentId}`)) : undefined;
+                const who = f.isSubagent ? (helper ? shownName(helper) : "A helper") : "Main chat";
+                return (
+                  <li key={f.path} className="flex items-center gap-3 py-1 pl-4 pr-2">
+                    <span className="min-w-0 flex-1 truncate text-body text-ink" title={f.path}>
+                      {who}
+                    </span>
+                    {f.missing && <span className="shrink-0 text-caption text-warning">removed from disk</span>}
+                    <IconButton aria-label={`Copy the file path of ${who}`} title={`Copy path\n${f.path}`} onClick={() => void copyPath(f.path)}>
+                      <Copy size={14} aria-hidden="true" />
+                    </IconButton>
+                  </li>
+                );
+              })}
             </ul>
           </Card>
-          <code className="selectable mt-2 block break-all text-caption text-ink-2">{row.projectPath}</code>
         </section>
       </div>
     </>

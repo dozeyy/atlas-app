@@ -300,6 +300,27 @@ describe("Chat receipt and helper map", () => {
     expect(within(order).queryByRole("radio", { name: "Spend" })).toBeNull();
   });
 
+  it("keeps ids and paths off the Details tab: a file is whose it is, a helper type is words, the exact value is the hover", async () => {
+    const backend = sessionsBackend();
+    const { row, detail } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    await userEvent.click(await screen.findByRole("radio", { name: "Details" }));
+    const files = await screen.findByRole("region", { name: "Files" });
+    expect(files.textContent).not.toMatch(/\.jsonl|projects\//);
+    expect(files.textContent).not.toContain(row.projectPath);
+    const main = within(files).getByText("Main chat");
+    expect(main.getAttribute("title")).toMatch(/\.jsonl$/);
+    expect(within(files).getAllByRole("button", { name: /^Copy the file path of / })).toHaveLength(detail.files.length);
+    // The chat's total is the page's one figure; the tile here is what sits apart from it.
+    expect(document.querySelectorAll(".d-hero")).toHaveLength(1);
+    expect(screen.getAllByText("Reused").length).toBe(2); // the tile and the breakdown's row
+    const tools = await screen.findByRole("region", { name: "Tools and skills" });
+    const types = [...new Set(detail.agents.map((a) => a.agentType).filter((t): t is string => !!t && /[-_]/.test(t)))];
+    expect(types.length).toBeGreaterThan(0);
+    for (const t of types) expect(within(tools).queryByText(t)).toBeNull();
+    expect(tools.querySelector(`[title="${types[0]}"]`)).not.toBeNull();
+  });
+
   it("keeps the old helper cards behind a List view", async () => {
     const backend = sessionsBackend();
     const { row, detail } = await chatWithHelpers(backend);

@@ -198,7 +198,7 @@ describe("Sessions", () => {
     await userEvent.click(screen.getByRole("radio", { name: "Details" }));
     expect(await screen.findByText("Token breakdown")).toBeInTheDocument();
     // Plain word on the surface, the exact term in its hover.
-    expect(screen.getByText("Reused").closest("th")).toHaveAttribute("title", expect.stringMatching(/^Cache reads/));
+    expect(within(screen.getByRole("region", { name: "Token breakdown" })).getByText("Reused").closest("th")).toHaveAttribute("title", expect.stringMatching(/^Cache reads/));
     expect(screen.queryByText(/Mock request number 1\./)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "Messages" }));
     await userEvent.click(screen.getByRole("button", { name: /Show conversation/ }));
