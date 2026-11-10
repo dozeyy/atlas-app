@@ -47,7 +47,8 @@ function isCut(el: Element): boolean {
 function visibleText(el: Element): string {
   const hidden = (e: Element) => {
     const s = getComputedStyle(e);
-    return s.display === "none" || s.visibility === "hidden" || Number(s.opacity) === 0;
+    // parseFloat: an opacity the engine does not report (jsdom gives "") is not zero.
+    return s.display === "none" || s.visibility === "hidden" || parseFloat(s.opacity) === 0;
   };
   if (hidden(el)) return "";
   let out = "";
