@@ -2333,17 +2333,60 @@ html[data-input="keyboard"] .clamp-more:focus-visible {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-.map-legend {
+/* The key: one line under the map, in room of its own (the map ends where it starts, so it never
+   sits on a node). Kinds that do not fit on the line wait behind "Key" and open in a row above it. */
+.map-key {
   flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
   padding-top: 10px;
+}
+.map-key-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 24px;
+}
+.map-key-row > .map-legend {
+  overflow: hidden;
+}
+.map-key-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: -8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.map-key-btn:hover {
+  background: var(--raised);
+}
+.map-key-btn > svg {
+  transition: rotate var(--dur-fast) var(--ease-out);
+}
+.map-key-btn[aria-expanded="true"] > svg {
+  rotate: 180deg;
+}
+html[data-input="keyboard"] .map-key-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.map-legend {
+  display: flex;
+  min-width: 0;
+  gap: 4px 16px;
   font-size: var(--text-caption);
   line-height: 16px;
   color: var(--ink-2);
+  white-space: nowrap;
+}
+.map-legend-kinds {
+  flex-wrap: wrap;
+  padding-bottom: 8px;
 }
 .map-legend li {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 6px;

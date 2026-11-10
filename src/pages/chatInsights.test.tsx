@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
@@ -147,6 +147,48 @@ describe("Chat receipt and helper map", () => {
     expect(map.querySelector(".map-plate")).not.toBeNull();
     act(() => node.blur());
     expect(map.querySelector(".map-plate")).toBeNull();
+  });
+
+  it("keeps the key on one line: kinds that do not fit wait behind Key, how helpers ended stays in view", async () => {
+    const backend = sessionsBackend();
+    const { row } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
+    await screen.findByRole("group", { name: /^Helper map/ });
+    // Room for everything (nothing has a size here): the whole key is one list, with no Key button.
+    const whole = screen.getByRole("list", { name: "What the icons, shapes and dots mean" });
+    expect(within(whole).getAllByRole("listitem").length).toBeGreaterThan(1);
+    expect(screen.queryByRole("button", { name: "Key" })).toBeNull();
+
+    // The same key in a pane 300 px wide, where it measures 900: the kinds fold away.
+    const rect = (left: number, right: number) => ({ left, right, top: 0, bottom: 0, width: right - left, height: 0, x: left, y: 0, toJSON: () => ({}) });
+    const width = Object.getOwnPropertyDescriptor(Element.prototype, "clientWidth");
+    const box = Element.prototype.getBoundingClientRect;
+    Object.defineProperty(Element.prototype, "clientWidth", { configurable: true, get: () => 300 });
+    Element.prototype.getBoundingClientRect = function () {
+      return this.parentElement?.classList.contains("map-legend") ? rect(0, 900) : rect(0, 0);
+    };
+    try {
+      cleanup();
+      mountDetail(backend, row.sessionId);
+      await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
+      const key = await screen.findByRole("button", { name: "Key" });
+      expect(key).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("list", { name: "What the icons and shapes mean" })).toBeNull();
+      const dots = screen.getByRole("list", { name: "What the dots mean" });
+      expect(within(dots).getAllByRole("listitem").length).toBeGreaterThan(0);
+      expect(dots.querySelector(".helper-av")).toBeNull();
+      await userEvent.click(key);
+      expect(key).toHaveAttribute("aria-expanded", "true");
+      const kinds = screen.getByRole("list", { name: "What the icons and shapes mean" });
+      expect(kinds.querySelectorAll(".helper-av").length).toBeGreaterThan(0);
+      // It opens above the line, in the key's own room, not over the map.
+      expect(kinds.closest(".map-scroll")).toBeNull();
+      expect(kinds.nextElementSibling).toBe(key.parentElement);
+    } finally {
+      if (width) Object.defineProperty(Element.prototype, "clientWidth", width);
+      Element.prototype.getBoundingClientRect = box;
+    }
   });
 
   it("selects a node from the keyboard and opens the helper from its slice", async () => {
