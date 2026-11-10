@@ -5,6 +5,7 @@ import { getBackend } from "../../lib/ipc";
 import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import { cacheNotReady } from "../../lib/useUsage";
 import { joinUsage, usageWindow } from "../../lib/usage-join";
+import { exact } from "../../lib/usage";
 import type { SetupItem } from "../../lib/setup-types";
 import type { UsageRow } from "../../lib/usage-types";
 import { MiniKind } from "./parts";
@@ -224,12 +225,12 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
                 {used.slice(0, TOP).map((r) => {
                   const it = byId.get(r.id)!;
                   return (
-                    <li key={r.id} title={`${it.name}: ${r.uses30d.toLocaleString()} ${r.uses30d === 1 ? "time" : "times"}${r.lastUsed ? `, last ${relativeTime(r.lastUsed)}` : ""}`}>
+                    <li key={r.id} title={`${it.name}: ${exact(r.uses30d)} ${r.uses30d === 1 ? "time" : "times"}${r.lastUsed ? `, last ${relativeTime(r.lastUsed)}` : ""}`}>
                       <div className="flex items-baseline gap-2">
                         <MiniKind kind={it.kind} name={it.name} />
                         {open(r.id, it.name)}
                         <span className="ml-auto shrink-0 text-caption text-ink-2">
-                          <span className="d d-small text-ink">{r.uses30d.toLocaleString()}</span>x
+                          <span className="d d-small text-ink">{exact(r.uses30d)}</span>x
                         </span>
                       </div>
                       <div aria-hidden="true" className="mt-0.5 h-1 overflow-hidden rounded-full bg-raised">

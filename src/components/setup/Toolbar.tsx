@@ -6,6 +6,7 @@ import { SelectField } from "../usage/fields";
 import { DEFAULT_FILTERS } from "../../lib/setup-model";
 import type { Filters, ScopeFilter } from "../../lib/setup-model";
 import type { HiddenCounts, SetupProject } from "../../lib/setup-types";
+import { exact } from "../../lib/usage";
 
 function Labeled({ label, checked, onChange, count }: { label: string; checked: boolean; onChange: (v: boolean) => void; count?: number }) {
   return (
@@ -133,8 +134,8 @@ export function Toolbar({
       </div>
       <p role="status" className="mt-2 text-caption text-ink-2">
         {shown === total
-          ? `${total.toLocaleString()} ${total === 1 ? "item" : "items"}`
-          : `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} items`}
+          ? `${exact(total)} ${total === 1 ? "item" : "items"}`
+          : `Showing ${exact(shown)} of ${exact(total)} items`}
       </p>
     </div>
   );

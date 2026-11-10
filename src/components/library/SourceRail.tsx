@@ -1,5 +1,6 @@
 import { Plus } from "@phosphor-icons/react";
 import type { SourceOption } from "../../lib/library";
+import { exact } from "../../lib/usage";
 
 /** Where plugins come from: All, Installed, the directory, and each marketplace added. 232 px at 1100 px wide and up. */
 export function SourceRail({
@@ -36,7 +37,7 @@ export function SourceRail({
                 {o.flag.short}
               </span>
             )}
-            <span className="mono shrink-0 text-caption text-ink-2">{o.count.toLocaleString()}</span>
+            <span className="mono shrink-0 text-caption text-ink-2">{exact(o.count)}</span>
           </button>
         );
       })}

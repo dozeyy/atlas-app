@@ -90,7 +90,7 @@ function CostSection({ row, report }: { row: CostRow; report: CostReport }) {
   const perCall = isPerCall(row.kind);
   if (perCall && row.bodyTokens > 0) {
     const ran =
-      row.uses === null ? "" : row.uses === 0 ? ", not run lately" : `, ran ${row.uses.toLocaleString()} ${row.uses === 1 ? "time" : "times"}`;
+      row.uses === null ? "" : row.uses === 0 ? ", not run lately" : `, ran ${exact(row.uses)} ${row.uses === 1 ? "time" : "times"}`;
     rows.push({
       label: "Per call",
       value: (
@@ -106,7 +106,7 @@ function CostSection({ row, report }: { row: CostRow; report: CostReport }) {
       label: "Per message",
       value: <Tokens n={row.tokens} hover={perCall ? "" : usd} />,
     });
-    rows.push({ label: "Loads in", value: row.turns > 0 ? `${row.loadsIn} (${row.turns.toLocaleString()} messages)` : row.loadsIn });
+    rows.push({ label: "Loads in", value: row.turns > 0 ? `${row.loadsIn}, ${exact(row.turns)} messages` : row.loadsIn });
   }
   if (!perCall && row.tokens === 0 && row.bodyTokens > 0) {
     rows.push({

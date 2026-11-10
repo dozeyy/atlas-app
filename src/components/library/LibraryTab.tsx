@@ -10,6 +10,7 @@ import { LibrarySheet, type SheetTarget } from "./LibrarySheet";
 import { SourceRail } from "./SourceRail";
 import { NO_CLI, OFFLINE, buildList, changedCount, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
 import { openToolkitItemNext, openToolkitTabNext } from "../../lib/nav";
+import { exact } from "../../lib/usage";
 import { checkThenInstall, openLibrary, refreshLibrary, reportFirstRows, setQuery, setSource, useLibrary } from "../../state/libraryStore";
 import { useSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
@@ -249,7 +250,7 @@ export function LibraryTab() {
             </button>
           )}
         </div>
-        {!wide && <SelectField label="Source" value={lib.source} onChange={setSource} options={options.map((o) => ({ value: o.id, label: `${o.label} (${o.count.toLocaleString()}${o.flag ? `, ${o.flag.short}` : ""})` }))} />}
+        {!wide && <SelectField label="Source" value={lib.source} onChange={setSource} options={options.map((o) => ({ value: o.id, label: `${o.label} ${exact(o.count)}${o.flag ? `, ${o.flag.short}` : ""}` }))} />}
         <Button onClick={() => setAdding(true)}>
           <GithubLogo size={16} aria-hidden="true" className="ico" />
           Add from GitHub

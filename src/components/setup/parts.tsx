@@ -15,6 +15,7 @@ import {
 import { IconMotion, type Motion } from "../IconMotion";
 import { AgentAvatar, agentLook } from "../usage/helperKit";
 import { displayName, enabledTone, KIND_BY_ID, type Tone } from "../../lib/setup-model";
+import { formatBytes } from "../../lib/labels";
 import { clockTime, shortDate } from "../../lib/usage";
 import type { Conflict, Enabled, ItemKind, ScopeKind, SetupItem } from "../../lib/setup-types";
 
@@ -209,11 +210,9 @@ export function sentenceCase(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** A file's size, the one way the app writes one (`formatBytes`): "812 B", "3.4 KB", "2.3 MB". */
 export function formatSize(n: number | null): string {
-  if (n === null) return "";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return n === null ? "" : formatBytes(n);
 }
 
 /** "Nov 9, 8:58 PM" (the year when it is not this one): the app's one date and one clock. */

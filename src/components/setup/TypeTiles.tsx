@@ -3,6 +3,7 @@ import { Card } from "../controls";
 import { KindTile } from "./parts";
 import { KIND_BY_ID, tileBlurb, TILE_KINDS, type TileId } from "../../lib/setup-model";
 import type { ItemKind } from "../../lib/setup-types";
+import { exact } from "../../lib/usage";
 
 /**
  * Twelve tiles, all the same size. 12 divides into 2, 3, 4 and 6 columns, so every
@@ -47,7 +48,7 @@ export function TypeTiles({
             <KindTile kind={id === "more" ? "more" : (id as ItemKind)} size={44} icon={Icon} />
             <span className="min-w-0 flex-1">
               {/* An empty type steps back (same size, quieter figure) so the eye lands on what is there. */}
-              <span className={`d d-tile block ${count === 0 ? "text-ink-2" : "text-ink"}`}>{count.toLocaleString()}</span>
+              <span className={`d d-tile block ${count === 0 ? "text-ink-2" : "text-ink"}`}>{exact(count)}</span>
               <span className="block truncate text-body text-ink-2">{label}</span>
             </span>
             <CaretRight size={14} weight="bold" aria-hidden="true" className="row-caret shrink-0 text-ink-2" />

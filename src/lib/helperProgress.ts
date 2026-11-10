@@ -80,6 +80,8 @@ export function statusOf(h: NowHelper, now: number): Status {
   if (h.done || idle < STUCK_MS) return { text: h.phase, tone: "phase" };
   const min = Math.floor(idle / 60_000);
   const open = h.openCall;
-  if (!open) return { text: `No progress for ${min} min`, tone: "warning" };
-  return { text: open.kind === "run" ? `Running ${open.word} for ${min} min` : `Waiting on ${open.word} for ${min} min`, tone: "calm" };
+  // The app's one way to write a length of time: past an hour it is "1 h 15 min", not "75 min".
+  const quiet = formatDuration(min * 60_000);
+  if (!open) return { text: `No progress for ${quiet}`, tone: "warning" };
+  return { text: open.kind === "run" ? `Running ${open.word} for ${quiet}` : `Waiting on ${open.word} for ${quiet}`, tone: "calm" };
 }

@@ -2,6 +2,8 @@
 // the plain sentences around them. No React and no IPC here, so every rule has a test.
 
 import type { CatalogEntry, CatalogView, InstalledRow, Inspected, ItemResult, MarketplaceInfo } from "./libraryTypes";
+import { formatBytes } from "./labels";
+import { exact } from "./usage";
 
 /** Claude Code's own marketplace. */
 export const DIRECTORY = "anthropic-plugin-directory";
@@ -130,7 +132,7 @@ export function sourceOptions(
       label: "Installed",
       count: installedCount,
       // The row says it too, but that row can be far down the list: the source says so where it is always seen.
-      flag: changed > 0 ? { short: `${changed.toLocaleString()} changed`, full: `${changed.toLocaleString()} changed since you checked ${changed === 1 ? "it" : "them"}` } : undefined,
+      flag: changed > 0 ? { short: `${exact(changed)} changed`, full: `${exact(changed)} changed since you checked ${changed === 1 ? "it" : "them"}` } : undefined,
     },
     { id: mpId(DIRECTORY), label: sourceCaption(DIRECTORY), count: counts.get(DIRECTORY) ?? 0 },
   ];
@@ -268,10 +270,9 @@ export function isStale(view: CatalogView | null, nowMs: number): boolean {
   return !view || view.fetchedMs === null || nowMs - view.fetchedMs > STALE_MS;
 }
 
-/** "2.1 MB" / "340 KB". */
+/** "2.1 MB" / "340 KB": the app's one size format, never less than 1 KB while something is arriving. */
 export function bytesWords(n: number): string {
-  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(n / 1024))} KB`;
+  return formatBytes(Math.max(1024, n));
 }
 
 /** "Reading owner/repo... 2.1 MB". */
