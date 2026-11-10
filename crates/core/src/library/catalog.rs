@@ -202,18 +202,23 @@ pub const OFFICIAL: &str = "claude-plugins-official";
 pub const OFFICIAL_REPO: &str = "anthropics/claude-plugins-official";
 
 /// Whether the official marketplace's own `source` for a plugin is the place the catalog lists it
-/// at now: the same repo and folder, and the same commit when the marketplace names one.
+/// at now: the same repo and folder, and the same commit when the marketplace names one. A ref
+/// ("main") only matters when no commit is pinned on both sides: the catalog never carries a ref,
+/// and a commit that both sides name is the same tree whatever branch it was found on.
 fn same_origin(official: &Source, listing: &Source) -> bool {
     let (Source::Github { repo: ro, sha: so, path: po, git_ref: fo }, Source::Github { repo: rl, sha: sl, path: pl, git_ref: fl }) = (official, listing) else { return false };
     let place = |p: &Option<String>| p.as_deref().map(|p| p.trim_start_matches("./").trim_matches('/').to_string()).filter(|p| !p.is_empty() && p != ".");
+    let pinned_together = match (so, sl) {
+        (Some(a), Some(b)) => Some(super::install::same_commit(a, b)),
+        (Some(_), None) => Some(false),
+        (None, _) => None,
+    };
     ro.eq_ignore_ascii_case(rl)
         && place(po) == place(pl)
-        && match (so, sl) {
-            (Some(a), Some(b)) => super::install::same_commit(a, b),
-            (Some(_), None) => false,
-            (None, _) => true,
+        && match pinned_together {
+            Some(same) => same,
+            None => fo.is_none() || fo == fl,
         }
-        && (fo.is_none() || fo == fl)
 }
 
 /// The component fields of the entry the *official* marketplace lists under `name`, for a plugin
@@ -447,6 +452,18 @@ mod tests {
         let v = at("hooky", &gh("o/mono", Some("2222222abcdef"), Some("hooky"))).unwrap().unwrap();
         assert!(v.get("hooks").is_some() && v.get("lspServers").is_some());
         // An in-repo entry matches the official repo's own folder.
+        // The official entry follows "main" and pins a commit; the listing pins the same commit and
+        // carries no ref (it never does): the same plugin.
+        let pinned_with_ref = Source::Github { repo: "amd/skills".into(), sha: Some("6916fb0123".into()), path: None, git_ref: Some("main".into()) };
+        let listed = Source::Github { repo: "amd/skills".into(), sha: Some("6916fb0123456789".into()), path: None, git_ref: None };
+        assert!(same_origin(&pinned_with_ref, &listed));
+        // Without a commit on both sides the ref still has to agree.
+        let follows_main = Source::Github { repo: "amd/skills".into(), sha: None, path: None, git_ref: Some("main".into()) };
+        assert!(same_origin(&follows_main, &Source::Github { repo: "amd/skills".into(), sha: None, path: None, git_ref: Some("main".into()) }));
+        assert!(!same_origin(&follows_main, &Source::Github { repo: "amd/skills".into(), sha: None, path: None, git_ref: Some("dev".into()) }));
+        assert!(!same_origin(&follows_main, &Source::Github { repo: "amd/skills".into(), sha: Some("6916fb0".into()), path: None, git_ref: None }));
+        // A different commit is never the same plugin, whatever the ref.
+        assert!(!same_origin(&pinned_with_ref, &Source::Github { repo: "amd/skills".into(), sha: Some("1234567".into()), path: None, git_ref: None }));
         assert!(at("inrepo", &gh(OFFICIAL_REPO, Some("abc1234"), Some("plugins/inrepo"))).unwrap().is_some());
         // A name that is not there adds nothing; the same name from another place, another commit,
         // another folder, or listed twice is never matched.

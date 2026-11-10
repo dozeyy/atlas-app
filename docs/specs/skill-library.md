@@ -581,7 +581,9 @@ so `atlas-repeats` ships; Will has run 32 and 33.
   (two clicks). When that folder is not on the computer (Claude Code never added the official
   marketplace), the roughly 3,350 external directory entries have no official entry to read: only their own
   files and manifest are checked. Accepted: the plugin is still staged at an exact commit and the sheet
-  says what it found; the staged `repo:` key is not re-read at install.
+  says what it found; the staged `repo:` key is not re-read at install. The same gap exists when the
+  local official clone is older than the catalog: a name added since is not in it, so its inline fields
+  are not seen.
 
 ## Suggested agent chain
 Unit A coder (sonnet; Rust + React; primary skill `ui-ux-pro-max`) and Unit B coder (sonnet;
