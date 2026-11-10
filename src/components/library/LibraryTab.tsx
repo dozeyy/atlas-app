@@ -8,7 +8,7 @@ import { AddFromGitHub } from "./AddFromGitHub";
 import { LibraryList, ListSkeleton, type RowActions } from "./LibraryList";
 import { LibrarySheet, type SheetTarget } from "./LibrarySheet";
 import { SourceRail } from "./SourceRail";
-import { NO_CLI, OFFLINE, buildRows, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
+import { NO_CLI, OFFLINE, buildRows, changedCount, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
 import { openToolkitItemNext, openToolkitTabNext } from "../../lib/nav";
 import { checkThenInstall, openLibrary, refreshLibrary, reportFirstRows, setQuery, setSource, useLibrary } from "../../state/libraryStore";
 import { useSetup } from "../../state/setupStore";
@@ -51,7 +51,10 @@ export function LibraryTab() {
 
   const query = useDeferredValue(lib.query);
   const rows = useMemo(() => buildRows({ idx: lib.idx, installed: lib.installed, source: lib.source, query }), [lib.idx, lib.installed, lib.source, query]);
-  const options = useMemo(() => sourceOptions(lib.view?.total ?? 0, lib.view?.counts ?? {}, lib.view?.marketplaces ?? [], lib.installed.length), [lib.view, lib.installed.length]);
+  const options = useMemo(
+    () => sourceOptions(lib.view?.total ?? 0, lib.view?.counts ?? {}, lib.view?.marketplaces ?? [], lib.installed.length, changedCount(lib.idx, lib.installed)),
+    [lib.view, lib.idx, lib.installed],
+  );
   const cli = lib.view?.cli ?? true;
 
   const index = selectedKey ? rows.findIndex((r) => r.key === selectedKey) : -1;
@@ -235,7 +238,7 @@ export function LibraryTab() {
             </button>
           )}
         </div>
-        {!wide && <SelectField label="Source" value={lib.source} onChange={setSource} options={options.map((o) => ({ value: o.id, label: `${o.label} (${o.count.toLocaleString()})` }))} />}
+        {!wide && <SelectField label="Source" value={lib.source} onChange={setSource} options={options.map((o) => ({ value: o.id, label: `${o.label} (${o.count.toLocaleString()}${o.flag ? `, ${o.flag.short}` : ""})` }))} />}
         <Button onClick={() => setAdding(true)}>
           <GithubLogo size={16} aria-hidden="true" className="ico" />
           Add from GitHub

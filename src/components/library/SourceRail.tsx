@@ -31,6 +31,11 @@ export function SourceRail({
             <span title={o.label} className="min-w-0 flex-1 truncate">
               {o.label}
             </span>
+            {o.flag && (
+              <span title={o.flag.full} className="shrink-0 text-caption font-normal text-warning">
+                {o.flag.short}
+              </span>
+            )}
             <span className="mono shrink-0 text-caption text-ink-2">{o.count.toLocaleString()}</span>
           </button>
         );

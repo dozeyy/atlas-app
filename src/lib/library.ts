@@ -101,17 +101,37 @@ export interface SourceOption {
   id: string;
   label: string;
   count: number;
+  /** Something in this source wants a second look: short words for the rail, and the whole sentence. */
+  flag?: { short: string; full: string };
+}
+
+/** Installed plugins the list marks "Changed since you checked it": changed, and still in the catalog. */
+export function changedCount(idx: Indexed[], installed: InstalledRow[]): number {
+  const ids = new Set(idx.map((x) => x.e.pluginId));
+  return installed.filter((r) => r.kind === "plugin" && r.changed && ids.has(r.id)).length;
 }
 
 /** The rail: All, Installed, the directory, then each marketplace the user added. */
-export function sourceOptions(total: number, perMarketplace: Record<string, number>, marketplaces: MarketplaceInfo[], installedCount: number): SourceOption[] {
+export function sourceOptions(
+  total: number,
+  perMarketplace: Record<string, number>,
+  marketplaces: MarketplaceInfo[],
+  installedCount: number,
+  changed = 0,
+): SourceOption[] {
   const counts = new Map<string, number>(Object.entries(perMarketplace));
   const names = new Set<string>([...counts.keys(), ...marketplaces.map((m) => m.name)]);
   names.delete(DIRECTORY);
   const rest = [...names].sort((a, b) => a.localeCompare(b));
   const out: SourceOption[] = [
     { id: ALL, label: "All", count: total },
-    { id: INSTALLED, label: "Installed", count: installedCount },
+    {
+      id: INSTALLED,
+      label: "Installed",
+      count: installedCount,
+      // The row says it too, but that row can be far down the list: the source says so where it is always seen.
+      flag: changed > 0 ? { short: `${changed.toLocaleString()} changed`, full: `${changed.toLocaleString()} changed since you checked ${changed === 1 ? "it" : "them"}` } : undefined,
+    },
     { id: mpId(DIRECTORY), label: sourceCaption(DIRECTORY), count: counts.get(DIRECTORY) ?? 0 },
   ];
   for (const n of rest) out.push({ id: mpId(n), label: n, count: counts.get(n) ?? 0 });

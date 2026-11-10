@@ -14,6 +14,7 @@ import {
   installBlock,
   installSummary,
   isStale,
+  changedCount,
   mpId,
   parseGithub,
   rowName,
@@ -151,6 +152,19 @@ describe("Library rows and sources", () => {
     const changed: InstalledRow = { ...plugin, id: z.pluginId, name: "zulu", backupId: "b3", changed: true };
     const rows = buildRows({ idx: indexEntries([a, b, z]), installed: [plugin, item, changed], source: INSTALLED, query: "" });
     expect(rows.map((r) => r.key)).toEqual([z.pluginId, a.pluginId, "item:b2"]);
+  });
+
+  it("the Installed source says how many changed, counting only plugins the list can show as changed", () => {
+    const z = entry("zulu", "Last");
+    const changed: InstalledRow = { ...plugin, id: z.pluginId, name: "zulu", backupId: "b3", changed: true };
+    const gone: InstalledRow = { ...plugin, id: "left@nowhere", name: "left", backupId: "b4", changed: true }; // no longer in the catalog: no chip on its row
+    const n = changedCount(indexEntries([a, b, z]), [plugin, item, changed, gone]);
+    expect(n).toBe(1);
+    const flag = (count: number) => sourceOptions(3, {}, [], 4, count).find((o) => o.id === INSTALLED)?.flag;
+    expect(flag(1)).toEqual({ short: "1 changed", full: "1 changed since you checked it" });
+    expect(flag(2)?.full).toBe("2 changed since you checked them");
+    expect(flag(0)).toBeUndefined();
+    expect(sourceOptions(3, {}, [], 4, 2).filter((o) => o.flag)).toHaveLength(1);
   });
 
   it("says why a plugin cannot be installed", () => {
