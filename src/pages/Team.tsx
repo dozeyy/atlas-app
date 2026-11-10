@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChatsCircle, Scales } from "@phosphor-icons/react";
+import { ChatsCircle, MagnifyingGlass, Scales } from "@phosphor-icons/react";
 import { EmptyState } from "../components/EmptyState";
-import { SegmentedControl } from "../components/controls";
+import { Button, SegmentedControl } from "../components/controls";
 import { AgentSheet } from "../components/team/AgentSheet";
 import { RuleSheet } from "../components/team/RuleSheet";
 import { ScoreCard } from "../components/team/ScoreCard";
@@ -64,9 +64,27 @@ function CardsSkeleton() {
   );
 }
 
+/** "Caught in review" while it loads: the list's own box and rows (two lines, then the button). */
+function ThemesSkeleton() {
+  return (
+    <div role="status" aria-label="Loading" className="rounded-card border border-line bg-surface px-5">
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} aria-hidden="true" className="flex items-start gap-3 border-b border-line py-3 last:border-b-0">
+          <div className="min-w-0 flex-1">
+            <Skeleton className="h-3.5" style={{ width: `${46 + ((i * 19) % 34)}%` }} />
+            <Skeleton className="mt-2 h-3 w-40 max-w-full" />
+          </div>
+          <Skeleton className="h-8 w-[132px] shrink-0" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Scorecard({
   prefs,
   filter,
+  onClearFilter,
   onOpenType,
   onSheetRuns,
   openType,
@@ -76,6 +94,7 @@ function Scorecard({
 }: {
   prefs: TeamPrefs;
   filter: string;
+  onClearFilter: () => void;
   onOpenType: (t: string) => void;
   onSheetRuns: (r: RunRow) => void;
   openType: string | null;
@@ -116,7 +135,9 @@ function Scorecard({
           fill
         />
       ) : cards.length === 0 ? (
-        <p className="py-10 text-center text-body text-ink-2">{`No helper matches "${filter.trim()}".`}</p>
+        <EmptyState icon={MagnifyingGlass} title={`No helper matches ${filter.trim()}`} body="Try fewer words." seed={7} fill>
+          <Button onClick={onClearFilter}>Clear search</Button>
+        </EmptyState>
       ) : (
         <div className="team-grid">
           {cards.map((c) => (
@@ -161,7 +182,7 @@ function ReviewView({
 
   const data = themes.data;
   if (themes.error && !data) return <ErrorBlock title="Could not read the reviews" message={themes.error} onRetry={() => themes.reload()} />;
-  if (!data) return <Skeleton aria-label="Loading" className="h-64" />;
+  if (!data) return <ThemesSkeleton />;
 
   return (
     <>
@@ -248,16 +269,17 @@ export function Team({ onShowSetup }: { onShowSetup: () => void }) {
           <>
             <SelectField label="Started from" value={prefs.startedFrom} options={STARTED_OPTIONS} onChange={(v) => setPrefs({ startedFrom: v as StartedFrom })} />
             <div ref={search} className="flex min-w-[200px] flex-1">
-              <SearchField value={filter} onChange={setFilter} label="Find a helper" placeholder="Find a helper, press / to jump here" />
+              <SearchField value={filter} onChange={setFilter} label="Find a helper" placeholder="Find a helper" />
             </div>
           </>
         )}
       </div>
-      <div className="team-pane flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="team-pane flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
         {prefs.view === "scorecard" ? (
           <Scorecard
             prefs={prefs}
             filter={filter}
+            onClearFilter={() => setFilter("")}
             openType={openType}
             onOpenType={setOpenType}
             closeSheet={() => setOpenType(null)}

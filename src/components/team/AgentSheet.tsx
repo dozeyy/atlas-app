@@ -1,9 +1,10 @@
 import { Bars } from "../charts/Bars";
 import { Button } from "../controls";
+import { AgentAvatar } from "../usage/helperKit";
 import { TokenText } from "../usage/TokenText";
 import { SheetSection, SideSheet } from "./SideSheet";
-import { compact, formatDuration, formatWhen, modelWithEffort, plural } from "../../lib/usage";
-import { endRows, finishLine, medianCalls, medianTime, rateSentence, reviewCountsLine, runOutcome, verdictRows, weeklyBars } from "../../lib/teamModel";
+import { compact, exact, formatDuration, formatWhen, modelWithEffort, plural } from "../../lib/usage";
+import { HEADLESS_HINT, REVIEWER_WORDS, endRows, finishLine, rateSentence, reviewCountsLine, runOutcome, startedLine, usualLine, verdictRows, weeklyBars } from "../../lib/teamModel";
 import type { RunRow, TypeCard } from "../../lib/teamTypes";
 
 function Count({ label, n, total }: { label: string; n: number; total: number }) {
@@ -14,7 +15,7 @@ function Count({ label, n, total }: { label: string; n: number; total: number })
       <span aria-hidden="true" className="team-meter min-w-0 flex-1">
         <span className="team-meter-fill" style={{ width: `${Math.round(share * 100)}%` }} />
       </span>
-      <span className="w-10 shrink-0 text-right tabular-nums text-ink">{n}</span>
+      <span className="w-14 shrink-0 text-right tabular-nums text-ink">{exact(n)}</span>
     </li>
   );
 }
@@ -29,7 +30,9 @@ function RunLine({ run, onOpen }: { run: RunRow; onOpen: (r: RunRow) => void }) 
         className="press team-run flex w-full cursor-pointer items-baseline gap-3 rounded-control px-2 py-1.5 text-left text-body hover:bg-raised"
       >
         <span className="w-32 shrink-0 text-ink-2">{formatWhen(run.started)}</span>
-        <span className="min-w-0 flex-1 truncate text-ink">{run.project || "No project"}</span>
+        <span title={run.project || undefined} className="min-w-0 flex-1 truncate text-ink">
+          {run.project || "No project"}
+        </span>
         <span className="w-16 shrink-0 text-right text-ink-2">{formatDuration(run.durationMs)}</span>
         <span className="w-24 shrink-0 text-right text-ink">{runOutcome(run)}</span>
         <span className="w-16 shrink-0 text-right tabular-nums text-ink-2">{compact(run.tokens)}</span>
@@ -66,8 +69,10 @@ export function AgentSheet({
   return (
     <SideSheet
       title={card.displayName}
+      lead={<AgentAvatar type={card.agentType} size={40} />}
       subtitle={
         <span>
+          {card.reviewer ? `${REVIEWER_WORDS} \u00b7 ` : ""}
           {plural(card.runs, "run")}
           {" \u00b7 "}
           <TokenText tokens={card.tokens.total} cost={card.cost} />
@@ -84,7 +89,7 @@ export function AgentSheet({
       <SheetSection title="Runs per week">
         <Bars id={`team-sheet-${card.agentType}`} data={bars} label={`${card.displayName} runs per week`} formatTick={(v) => String(Math.round(v))} height={160} calm highlight={-1} />
         <p className="mt-2 text-body text-ink-2">
-          {medianTime(card)}. {medianCalls(card)}.
+          {usualLine(card)}.
           {card.resumedRuns > 0 ? ` ${plural(card.resumedRuns, "run")} picked up again.` : ""}
         </p>
       </SheetSection>
@@ -117,7 +122,9 @@ export function AgentSheet({
           <ul>
             {card.projects.map((p) => (
               <li key={p.projectKey} className="flex items-baseline gap-3 py-1 text-body">
-                <span className="min-w-0 flex-1 truncate text-ink">{p.name || "No project"}</span>
+                <span title={p.name || undefined} className="min-w-0 flex-1 truncate text-ink">
+                  {p.name || "No project"}
+                </span>
                 <span className="shrink-0 text-ink-2">{plural(p.runs, "run")}</span>
                 <span className="w-28 shrink-0 text-right tabular-nums text-ink-2">{`${compact(p.tokens)} tokens`}</span>
               </li>
@@ -127,8 +134,8 @@ export function AgentSheet({
       )}
 
       <SheetSection title="Started from">
-        <p className="text-body text-ink">
-          {plural(card.started.interactive, "run")} from a chat, {plural(card.started.headless, "run")} headless
+        <p title={HEADLESS_HINT} className="text-body text-ink">
+          {startedLine(card.started)}
         </p>
       </SheetSection>
 
@@ -137,7 +144,9 @@ export function AgentSheet({
           <ul>
             {card.mix.map((m) => (
               <li key={`${m.model}-${m.effort ?? ""}`} className="flex items-baseline gap-3 py-1 text-body">
-                <span className="min-w-0 flex-1 truncate text-ink">{modelWithEffort(m.model, m.effort)}</span>
+                <span title={modelWithEffort(m.model, m.effort)} className="min-w-0 flex-1 truncate text-ink">
+                  {modelWithEffort(m.model, m.effort)}
+                </span>
                 <span className="shrink-0 text-ink-2">{plural(m.runs, "run")}</span>
               </li>
             ))}

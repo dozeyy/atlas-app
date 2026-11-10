@@ -107,13 +107,14 @@ export function AddFromGitHub({ onClose }: { onClose: () => void }) {
       }
     >
       <form
-        className="grid gap-3"
+        // One column that may shrink: a long name is cut or wrapped, it never widens the dialog.
+        className="grid grid-cols-[minmax(0,1fr)] gap-3"
         onSubmit={(e) => {
           e.preventDefault();
           if (!detail) void check();
         }}
       >
-        <label className="grid gap-1.5">
+        <label className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
           <span className="text-body text-ink-2">A link to a repository with skills, agents, commands or plugins</span>
           <input
             ref={input}
@@ -125,7 +126,7 @@ export function AddFromGitHub({ onClose }: { onClose: () => void }) {
             placeholder="github.com/owner/repo"
             spellCheck={false}
             autoComplete="off"
-            className="selectable mono h-9 rounded-control border border-line-strong bg-surface px-3 text-body text-ink outline-none focus-visible:border-accent"
+            className="selectable mono h-9 min-w-0 rounded-control border border-line-strong bg-surface px-3 text-body text-ink outline-none focus-visible:border-accent"
           />
         </label>
 
@@ -135,28 +136,34 @@ export function AddFromGitHub({ onClose }: { onClose: () => void }) {
           </p>
         )}
         {phase.t === "error" && (
-          <p role="alert" className="text-body text-ink">
+          <p role="alert" className="break-words text-body text-ink">
             {phase.message}
           </p>
         )}
 
         {detail && shaped && (
-          <div className="grid gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
             {shaped.shape === "nothing" && (
-              <p role="status" className="text-body text-ink">
+              <p role="status" className="break-words text-body text-ink">
                 Atlas found nothing it can install in {detail.repo}.
               </p>
             )}
             {shaped.shape === "marketplace" && (
               <>
-                <p className="text-body text-ink">
+                <p className="break-words text-body text-ink">
                   <span className="font-semibold">{shaped.name}</span> is a marketplace with {shaped.plugins.length} {shaped.plugins.length === 1 ? "plugin" : "plugins"}.
                 </p>
-                <ul className="grid max-h-48 gap-1 overflow-y-auto">
+                <ul className="grid max-h-48 grid-cols-[minmax(0,1fr)] gap-1 overflow-y-auto">
                   {shaped.plugins.map((p) => (
-                    <li key={p.name} className="rounded-control bg-raised px-3 py-1.5">
-                      <div className="text-body font-medium text-ink">{p.name}</div>
-                      {p.description && <div className="truncate text-caption text-ink-2">{p.description}</div>}
+                    <li key={p.name} className="min-w-0 rounded-control bg-raised px-3 py-1.5">
+                      <div title={p.name} className="truncate text-body font-medium text-ink">
+                        {p.name}
+                      </div>
+                      {p.description && (
+                        <div title={p.description} className="truncate text-caption text-ink-2">
+                          {p.description}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -165,9 +172,15 @@ export function AddFromGitHub({ onClose }: { onClose: () => void }) {
             )}
             {(shaped.shape === "plugin" || shaped.shape === "loose") && (
               <>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-body font-semibold text-ink">{shaped.name}</span>
-                  <Chip tone="muted">{detail.repo}</Chip>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span title={shaped.name} className="min-w-0 max-w-full truncate text-body font-semibold text-ink">
+                    {shaped.name}
+                  </span>
+                  <span className="flex min-w-0 max-w-full">
+                    <Chip tone="muted" title={detail.repo}>
+                      {detail.repo}
+                    </Chip>
+                  </span>
                 </div>
                 <ItemChecklist
                   items={shaped.items}

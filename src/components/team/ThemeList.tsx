@@ -2,8 +2,9 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { CaretRight, Check } from "@phosphor-icons/react";
 import { Button } from "../controls";
-import { foundLine, madeLabel, raisedLine, severityLine } from "../../lib/teamModel";
-import { formatWhen, plural } from "../../lib/usage";
+import { AgentAvatar } from "../usage/helperKit";
+import { madeLabel, severityLine } from "../../lib/teamModel";
+import { exact, formatWhen, plural } from "../../lib/usage";
 import type { ReviewTheme, ThemeExample, Themes } from "../../lib/teamTypes";
 
 const SHOWN = 12;
@@ -11,9 +12,28 @@ const SHOWN = 12;
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex gap-3 py-0.5 text-body">
-      <dt className="w-28 shrink-0 text-ink-2">{label}</dt>
-      <dd className="min-w-0 flex-1 text-ink">{children}</dd>
+      <dt className="w-32 shrink-0 text-ink-2">{label}</dt>
+      <dd className="min-w-0 flex-1 break-words text-ink">{children}</dd>
     </div>
+  );
+}
+
+/** Helpers as avatar, name and count: the same picture a helper has on its card. */
+function Who({ list, nameOf, extra, none }: { list: { agentType: string; count: number }[]; nameOf: (type: string) => string; extra?: string; none: string }) {
+  if (list.length === 0 && !extra) return <>{none}</>;
+  return (
+    <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
+      {list.map((x) => (
+        <li key={x.agentType} className="flex min-w-0 max-w-full items-center gap-1.5">
+          <AgentAvatar type={x.agentType} size={20} />
+          <span title={nameOf(x.agentType)} className="min-w-0 truncate">
+            {nameOf(x.agentType)}
+          </span>
+          <span title={plural(x.count, "time")} className="shrink-0 tabular-nums text-ink-2">{`(${exact(x.count)})`}</span>
+        </li>
+      ))}
+      {extra && <li className="text-ink-2">{extra}</li>}
+    </ul>
   );
 }
 
@@ -42,11 +62,23 @@ function ThemeRow({
           className="press team-theme-head flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-control text-left"
         >
           <CaretRight size={14} weight="bold" aria-hidden="true" className={`team-caret mt-1 shrink-0 text-ink-2 ${open ? "team-caret-open" : ""}`} />
-          <span className="min-w-0">
-            <span className="selectable block text-body font-medium text-ink">{theme.label}</span>
-            <span className="mt-0.5 block text-caption text-ink-2">
-              {`Raised ${plural(theme.count, "time")} in ${plural(theme.runs, "run")}`}
-              {sev ? `, ${sev}` : ""}
+          {/* A long theme is two lines until it is opened (the whole text on hover); it never runs under the button beside it. */}
+          <span className="min-w-0 flex-1 break-words">
+            <span title={open ? undefined : theme.label} className={`selectable block text-body font-medium text-ink ${open ? "" : "line-clamp-2"}`}>
+              {theme.label}
+            </span>
+            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-ink-2">
+              {theme.foundInWorkBy.length > 0 && (
+                <span title={`Found in work by ${theme.foundInWorkBy.map((x) => nameOf(x.agentType)).join(", ")}`} className="flex shrink-0 items-center gap-1">
+                  {theme.foundInWorkBy.slice(0, 3).map((x) => (
+                    <AgentAvatar key={x.agentType} type={x.agentType} size={20} />
+                  ))}
+                </span>
+              )}
+              <span className="min-w-0">
+                {`Raised ${plural(theme.count, "time")} in ${plural(theme.runs, "run")}`}
+                {sev ? `, ${sev}` : ""}
+              </span>
             </span>
           </span>
         </button>
@@ -63,9 +95,19 @@ function ThemeRow({
       </div>
       {open && (
         <dl className="mb-3 ml-5 rounded-control bg-raised px-4 py-3">
-          <Detail label="Found in work by">{foundLine(theme, nameOf)}</Detail>
-          <Detail label="Raised by">{raisedLine(theme, nameOf)}</Detail>
-          {theme.projects.length > 0 && <Detail label="Projects">{theme.projects.join(", ")}</Detail>}
+          <Detail label="Found in work by">
+            <Who list={theme.foundInWorkBy} nameOf={nameOf} extra={theme.notTied > 0 ? `not tied to one helper (${exact(theme.notTied)})` : undefined} none="Not tied to one helper" />
+          </Detail>
+          <Detail label="Raised by">
+            <Who list={theme.reviewers} nameOf={nameOf} none="Not known" />
+          </Detail>
+          {theme.projects.length > 0 && (
+            <Detail label="Projects">
+              <span title={theme.projects.join(", ")} className="line-clamp-2">
+                {theme.projects.join(", ")}
+              </span>
+            </Detail>
+          )}
           <Detail label="Last seen">{formatWhen(theme.lastSeen)}</Detail>
           {theme.examples.length > 0 && (
             <Detail label="Seen like this">
@@ -75,10 +117,10 @@ function ThemeRow({
                     <button
                       type="button"
                       onClick={() => onOpenExample(e)}
-                      title="Open the review that said this"
+                      title={`${e.text}\nOpens the review that said this.`}
                       className="selectable cursor-pointer text-left text-ink hover:text-accent-text hover:underline"
                     >
-                      {e.text}
+                      <span className="line-clamp-2">{e.text}</span>
                     </button>
                   </li>
                 ))}

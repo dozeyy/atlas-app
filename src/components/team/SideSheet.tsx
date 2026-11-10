@@ -12,6 +12,7 @@ import { X } from "@phosphor-icons/react";
 export function SideSheet({
   title,
   subtitle,
+  lead,
   onClose,
   children,
   footer,
@@ -19,6 +20,8 @@ export function SideSheet({
 }: {
   title: string;
   subtitle?: ReactNode;
+  /** A picture for what the sheet is about (a helper's avatar), left of the title. */
+  lead?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
@@ -92,11 +95,12 @@ export function SideSheet({
         className="sheet-enter relative flex h-full flex-col overflow-y-auto border-l border-line bg-bg shadow-float outline-none"
       >
         <header className="sticky top-0 z-10 flex items-start gap-3 border-b border-line bg-bg px-6 py-4">
+          {lead}
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="selectable break-words text-subtitle font-semibold text-ink">
               {title}
             </h2>
-            {subtitle && <div className="mt-1 text-body text-ink-2">{subtitle}</div>}
+            {subtitle && <div className="mt-1 break-words text-body text-ink-2">{subtitle}</div>}
           </div>
           <button
             type="button"

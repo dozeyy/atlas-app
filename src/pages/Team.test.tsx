@@ -114,7 +114,11 @@ describe("Team: Scorecard", () => {
     await openToolkit();
     const worker = await card("General purpose");
     expect(within(worker).getByText("Passed 9 of 12 reviews")).toBeInTheDocument();
-    expect(within(worker).getByText("9 min typical")).toBeInTheDocument();
+    expect(within(worker).getByText(/^Usually 9 min and \d+ tool calls/)).toBeInTheDocument();
+    // The helper's own picture, and what the small chart plots, said on its face.
+    expect(worker.querySelector("svg")).not.toBeNull();
+    expect(within(worker).getByText("Per week, last 12 weeks")).toBeInTheDocument();
+    expect(within(worker).getByText("Its work in review")).toBeInTheDocument();
 
     // 4 tied reviews: counts, no rate.
     const few = await card("UI builder");
@@ -123,11 +127,16 @@ describe("Team: Scorecard", () => {
 
     // 2 runs: no medians.
     const tiny = await card("Chore runner");
-    expect(within(tiny).getAllByText("Too few runs yet")).toHaveLength(2);
+    // Said once for the card, not once per number.
+    expect(within(tiny).getAllByText(/Too few runs/)).toHaveLength(1);
 
     // A reviewer shows the verdicts it gave.
     const reviewer = await card("Code reviewer");
     expect(within(reviewer).getByText("6 passed, 3 sent back")).toBeInTheDocument();
+    expect(within(reviewer).getByText("Reviews other helpers' work")).toBeInTheDocument();
+    expect(within(reviewer).getByText("Verdicts it gave")).toBeInTheDocument();
+    // No jargon on the surface.
+    expect(screen.queryByText(/headless/i)).not.toBeInTheDocument();
   });
 
   it("puts dollars on hover only", async () => {

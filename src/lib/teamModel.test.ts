@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterCards, historyLine, loadPrefs, madeLabel, medianCalls, medianTime, rateSentence, reviewCountsLine, reviewerLine, TOO_FEW, weeklyBars } from "./teamModel";
+import { filterCards, historyLine, loadPrefs, madeLabel, rateSentence, reviewCountsLine, reviewerLine, startedLine, TOO_FEW, usualLine, weeklyBars, weeklyTitle } from "./teamModel";
 import type { ReviewCounts, TypeCard } from "./teamTypes";
 
 const counts = (o: Partial<ReviewCounts>): ReviewCounts => ({ tied: 0, passed: 0, sentBack: 0, other: 0, notTied: 0, rateOk: false, ...o });
@@ -13,13 +13,18 @@ describe("team model", () => {
     expect(reviewCountsLine(counts({}))).toBe("No reviews yet");
   });
 
-  it("hides medians below 3 runs", () => {
-    const few = { tooFewRuns: true, durationMsMedian: null, toolCallsMedian: null } as TypeCard;
-    expect(medianTime(few)).toBe(TOO_FEW);
-    expect(medianCalls(few)).toBe(TOO_FEW);
+  it("hides medians below 3 runs, and says so once", () => {
+    const few = { tooFewRuns: true, durationMsMedian: 1000, toolCallsMedian: 4 } as TypeCard;
+    expect(usualLine(few)).toBe(TOO_FEW);
     const ok = { tooFewRuns: false, durationMsMedian: 540_000, toolCallsMedian: 1 } as TypeCard;
-    expect(medianTime(ok)).toBe("9 min typical");
-    expect(medianCalls(ok)).toBe("1 tool call typical");
+    expect(usualLine(ok)).toBe("Usually 9 min and 1 tool call");
+    expect(usualLine({ ...ok, toolCallsMedian: null } as TypeCard)).toBe("Usually 9 min");
+    expect(usualLine({ ...ok, durationMsMedian: null, toolCallsMedian: null } as TypeCard)).toBe(TOO_FEW);
+  });
+
+  it("says where runs started and the weekly counts in plain words", () => {
+    expect(startedLine({ interactive: 1, headless: 6 })).toBe("1 run from a chat, 6 outside a chat");
+    expect(weeklyTitle([0, 2, 1])).toBe("Runs per week, last 3 weeks, oldest first: 0, 2, 1. 3 runs in all.");
   });
 
   it("filters cards by every typed word", () => {

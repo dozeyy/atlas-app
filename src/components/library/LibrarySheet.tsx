@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowSquareOut, Package, X } from "@phosphor-icons/react";
+import { ArrowSquareOut, CaretRight, Package, X } from "@phosphor-icons/react";
 import { Button } from "../controls";
-import { Chip, KindTile } from "../setup/parts";
+import { Chip } from "../setup/parts";
+import { KIND_BY_ID } from "../../lib/setup-model";
+import { PluginTile, tileState } from "./LibraryList";
 import { SafetyCheck } from "./SafetyCheck";
 import { getBackend } from "../../lib/ipc";
 import { errorText } from "../../lib/setup-actions";
@@ -22,13 +24,22 @@ export interface SheetTarget {
 
 const EASY = "Atlas could not read that. Check your connection and try again.";
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, aside, className = "", children }: { title: string; aside?: ReactNode; className?: string; children: ReactNode }) {
   return (
-    <section className="border-t border-line px-6 py-4">
-      <h3 className="mb-2.5 text-body font-semibold text-ink">{title}</h3>
+    <section className={`border-t border-line px-6 py-4 ${className}`}>
+      <div className="mb-2.5 flex items-baseline justify-between gap-3">
+        <h3 className="shrink-0 text-body font-semibold text-ink">{title}</h3>
+        {aside && <span className="min-w-0 truncate text-caption text-ink-2">{aside}</span>}
+      </div>
       {children}
     </section>
   );
+}
+
+/** The kind of thing an item is, as the Toolkit draws it. */
+function KindIcon({ kind }: { kind: string }) {
+  const Icon = kind in KIND_BY_ID ? KIND_BY_ID[kind as keyof typeof KIND_BY_ID].icon : Package;
+  return <Icon size={16} aria-hidden="true" className="shrink-0 text-ink-2" />;
 }
 
 /** One file of the plugin, read-only, so the person can see what it says before installing. */
@@ -72,7 +83,9 @@ function FileView({ token, item, onBack }: { token: string; item: InnerItem; onB
         <button type="button" onClick={onBack} className="press cursor-pointer rounded-control px-2 py-1 text-body text-accent-text hover:bg-accent-tint">
           Back to the list
         </button>
-        <span className="mono min-w-0 flex-1 truncate text-caption text-ink-2">{rel}</span>
+        <span title={rel} className="mono min-w-0 flex-1 truncate text-caption text-ink-2">
+          {rel}
+        </span>
       </div>
       {state === null && <div role="status" aria-label="Reading the file" className="skeleton h-40 rounded-card" />}
       {state && "error" in state && (
@@ -238,11 +251,10 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
   const entry = target.entry;
   const repo = detail?.repo || "";
   const description = entry?.description || shaped?.description || "";
-  const facts = [
-    repo || (entry ? sourceCaption(entry.marketplace) : ""),
-    entry?.version ? `v${entry.version}` : installed?.version ? `v${installed.version}` : "",
-    detail?.sha ? detail.sha.slice(0, 7) : "",
-  ].filter(Boolean);
+  const from = entry ? sourceCaption(entry.marketplace) : "";
+  const version = entry?.version || installed?.version || "";
+  // The exact thing that was read: said quietly under the check, the whole id one hover away.
+  const checked = [version ? `Version ${version}` : "", detail?.sha ? `commit ${detail.sha.slice(0, 7)}` : ""].filter(Boolean).join(", ");
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -258,31 +270,26 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
         className="sheet-enter relative flex h-full w-[min(480px,100vw)] flex-col border-l border-line bg-bg shadow-float outline-none"
       >
         <header className="flex items-start gap-3 border-b border-line px-6 py-4">
-          <KindTile kind="more" icon={Package} size={40} />
+          <PluginTile state={tileState(installed)} size={40} />
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="selectable break-words text-subtitle font-semibold text-ink">
               {target.name}
             </h2>
-            <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-caption text-ink-2">
-              {facts.map((f, i) =>
-                i === 0 && repo ? (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => void getBackend().libraryOpenRepo(repo)}
-                    title="Open on GitHub"
-                    className="press mono inline-flex max-w-full cursor-pointer items-center gap-1 truncate text-accent-text hover:underline"
-                  >
-                    <span className="truncate">{f}</span>
-                    <ArrowSquareOut size={12} aria-hidden="true" className="shrink-0" />
-                  </button>
-                ) : (
-                  <span key={f} className={i === 0 ? "" : "mono"}>
-                    {f}
-                  </span>
-                ),
+            {/* Where it comes from, in words. The version and the commit are under the check, not up here. */}
+            <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-caption text-ink-2">
+              {from && <span className="min-w-0 truncate">{from}</span>}
+              {repo && (
+                <button
+                  type="button"
+                  onClick={() => void getBackend().libraryOpenRepo(repo)}
+                  title={`Open ${repo} on GitHub`}
+                  className="press inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1 text-accent-text hover:underline"
+                >
+                  <span className="truncate">{repo}</span>
+                  <ArrowSquareOut size={12} aria-hidden="true" className="shrink-0" />
+                </button>
               )}
-              {installed && <Chip tone="good">Installed</Chip>}
+              {installed && <Chip tone={installed.changed ? "warn" : "good"}>{installed.changed ? "Installed, changed" : installed.enabled === false ? "Installed, switched off" : "Installed"}</Chip>}
             </p>
           </div>
           <button
@@ -295,8 +302,9 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {description && <p className="selectable px-6 py-4 text-body text-ink">{description}</p>}
+        {/* Top: what it is and what is inside. Bottom, next to the button: what Atlas found. Spare room sits between the two. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {description && <p className="selectable break-words px-6 py-4 text-body text-ink">{description}</p>}
 
           {loading && (
             <div className="border-t border-line px-6 py-4">
@@ -335,23 +343,25 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
 
           {detail && shaped && (
             <>
-              <Section title="What's inside">
+              <Section title="What's inside" aside={shaped.items.length > 0 ? insideWords(shaped.items) : undefined}>
                 {shaped.items.length === 0 ? (
                   <p className="text-body text-ink-2">Atlas found no skills, agents or commands to list.</p>
                 ) : (
                   <>
-                    <p className="mb-2 text-body text-ink-2">{insideWords(shaped.items)}</p>
                     {!file && (
-                      <ul className="grid gap-0.5">
+                      <ul className="-mx-2 grid grid-cols-[minmax(0,1fr)] gap-0.5">
                         {shaped.items.map((i) => (
                           <li key={i.rel}>
                             <button
                               type="button"
+                              title={`Read ${i.name}`}
                               onClick={() => setFile(i)}
-                              className="row-btn items-center gap-2 rounded-control px-2 py-1.5 text-body text-ink"
+                              className="row-btn items-center gap-2.5 rounded-control px-2 py-1.5 text-body text-ink"
                             >
+                              <KindIcon kind={i.kind} />
                               <span className="min-w-0 flex-1 truncate">{i.name}</span>
                               <span className="shrink-0 text-caption text-ink-2">{itemWord(i.kind)}</span>
+                              <CaretRight size={12} weight="bold" aria-hidden="true" className="shrink-0 text-ink-2" />
                             </button>
                           </li>
                         ))}
@@ -362,7 +372,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
                 )}
               </Section>
 
-              <Section title="Before you install">
+              <Section title={installed ? "What Atlas found" : "Before you install"} aside={checked ? <span title={detail.sha || undefined}>{checked}</span> : undefined} className="mt-auto">
                 <div ref={checkBox} tabIndex={-1} aria-label="What Atlas found" className="rounded-card outline-none">
                   <SafetyCheck report={detail.inspected.check} notInstalled={shaped.notInstalled} />
                 </div>
