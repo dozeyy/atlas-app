@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
-import type { ReactNode } from "react";
-import { CheckCircle, WarningCircle } from "@phosphor-icons/react";
-import { Button } from "../controls";
+import type { KeyboardEvent, ReactNode } from "react";
+import { ArrowsIn, ArrowsOut, CheckCircle, WarningCircle } from "@phosphor-icons/react";
+import { Button, IconButton } from "../controls";
 import { useKeyHints } from "../../lib/keyHints";
 import { setUnsaved } from "../../state/unsavedStore";
 import { errorText } from "../../lib/setup-actions";
@@ -48,6 +48,9 @@ export function TextEditor({
   const [checked, setChecked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Full window: the same editor (never remounted, so edits and undo stay) grows over the whole
+  // Atlas window; Escape or the button brings it back. The sheet behind never sees that Escape.
+  const [wide, setWide] = useState(false);
 
   const textRef = useRef(initial);
   const seq = useRef(0);
@@ -123,6 +126,30 @@ export function TextEditor({
 
   useEffect(() => editor.current?.markLine(problems[0]?.line ?? null), [problems]);
 
+  // Growing or shrinking keeps the caret where it was and the keyboard in the text.
+  const wasWide = useRef(wide);
+  useEffect(() => {
+    if (wasWide.current === wide) return;
+    wasWide.current = wide;
+    editor.current?.focus();
+  }, [wide]);
+
+  const onKey = (e: KeyboardEvent) => {
+    if (e.defaultPrevented) return;
+    if (e.key === "Escape" && wide) {
+      e.preventDefault();
+      e.stopPropagation();
+      setWide(false);
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      e.stopPropagation();
+      setWide((w) => !w);
+    }
+  };
+  const wideKeys = `${mod} Shift F`;
+
   const submit = async () => {
     if (!canSaveRef.current) return;
     setSaving(true);
@@ -145,10 +172,19 @@ export function TextEditor({
   submitRef.current = () => void submit();
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div
+      data-wide={wide || undefined}
+      onKeyDown={onKey}
+      className={wide ? "editor-wide fixed inset-0 z-20 flex flex-col gap-3 bg-bg p-6" : "flex min-h-0 flex-1 flex-col gap-3"}
+    >
+      {wide && <p className="truncate text-caption text-ink-2">{label}</p>}
       {above?.({ text, setText: (next) => editor.current?.setText?.(next) })}
       {/* Gives up height (down to about eight lines) before the check message and Save are pushed out of a short window. */}
-      <div ref={host} data-editor className="h-[min(440px,calc(var(--app-h)*0.52))] min-h-[200px] overflow-hidden rounded-card border border-line-strong bg-surface" />
+      <div
+        ref={host}
+        data-editor
+        className={`${wide ? "min-h-0 flex-1" : "h-[min(440px,calc(var(--app-h)*0.52))] min-h-[200px]"} overflow-hidden rounded-card border border-line-strong bg-surface`}
+      />
 
       <div aria-live="polite" className="min-h-6">
         {problems.length > 0 ? (
@@ -177,7 +213,17 @@ export function TextEditor({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {hint && <p className="mr-auto text-caption text-ink-2">{hint}</p>}
+        {/* Sits with Save and Cancel, never over the text. */}
+        <IconButton
+          aria-label={wide ? "Exit full window" : "Full window"}
+          title={wide ? "Exit full window (Esc)" : showKeys ? `Full window (${wideKeys})` : "Full window"}
+          onClick={() => setWide((w) => !w)}
+          className="-ml-2"
+        >
+          {wide ? <ArrowsIn size={16} aria-hidden="true" /> : <ArrowsOut size={16} aria-hidden="true" />}
+        </IconButton>
+        {hint && <p className="text-caption text-ink-2">{hint}</p>}
+        <span className="flex-1" />
         <Button onClick={onCancel} disabled={saving}>
           Cancel
         </Button>

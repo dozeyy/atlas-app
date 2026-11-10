@@ -70,6 +70,7 @@ export function shortcutGroups(platform: Platform): { title: string; rows: { key
         { keys: "Up / Down", does: "Move between cards" },
         { keys: "Escape", does: "Clear the search, then go back to the tiles" },
         { keys: `${mod}+C`, does: "Copy the path of the selected item" },
+        { keys: `${mod}+Shift+F`, does: "While editing a file: the editor fills the window; Escape brings it back" },
       ],
     },
     {

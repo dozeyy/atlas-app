@@ -2863,3 +2863,30 @@ html.reduced .upd-pop {
 html.reduced .upd-spin .upd-arc {
   animation: none;
 }
+
+/*
+ * The file editor grown to the whole Atlas window (TextEditor `wide`). The same element moves
+ * from its place in the sheet to cover the window, so it lands from a touch smaller, like a
+ * sheet; reduced motion fades it in. Its button sits in the Save row, never over the text.
+ */
+@keyframes editor-wide-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.editor-wide {
+  animation: editor-wide-in var(--dur-slow) var(--ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .editor-wide {
+    animation: fade-in 120ms var(--ease-out) both;
+  }
+}
+html.reduced .editor-wide {
+  animation: fade-in 120ms var(--ease-out) both;
+}

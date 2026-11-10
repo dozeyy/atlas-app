@@ -291,8 +291,10 @@ html[data-input="keyboard"] :focus-within {
   }
 }
 
+/* `backwards`, not `both`: a filled transform animation leaves an identity matrix on the panel for
+   good, and that makes it the box a `position: fixed` child (the full-window editor) sizes to. */
 .sheet-enter {
-  animation: sheet-in var(--dur-slow) var(--ease-out) both;
+  animation: sheet-in var(--dur-slow) var(--ease-out) backwards;
 }
 /* The way out: the same path back, in 180 ms (`useClosing` holds the unmount that long), so a
    sheet never vanishes inside one frame after animating in. The scrim fades with it. */

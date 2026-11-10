@@ -552,6 +552,34 @@ describe("Setup page: edit", () => {
     expect(await screen.findByText("Saved deep-research.")).toBeInTheDocument();
   });
 
+  it("fills the window and comes back on Escape, keeping the edit, the focus and the sheet", async () => {
+    const { dialog, ta } = await openEditor("Skills", /skill deep-research/);
+    const save = within(dialog).getByRole("button", { name: /^Save/ });
+    fireEvent.input(ta, { target: { value: ta.value + "\nOne more line.\n" } });
+    await waitFor(() => expect(save).toBeEnabled());
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Full window" }));
+    expect(dialog.querySelector("[data-wide]")).not.toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Exit full window" })).toBeInTheDocument();
+    expect(document.activeElement).toBe(ta);
+
+    // Escape only leaves full window: the sheet stays open, nothing asks to discard, the edit is kept.
+    await userEvent.keyboard("{Escape}");
+    expect(dialog.querySelector("[data-wide]")).toBeNull();
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(screen.queryByText("Discard your changes?")).toBeNull();
+    expect(ta.value).toContain("One more line.");
+    expect(save).toBeEnabled();
+    expect(document.activeElement).toBe(ta);
+
+    // The shortcut toggles it as well; Save is still there to press.
+    await userEvent.keyboard("{Control>}{Shift>}f{/Shift}{/Control}");
+    expect(dialog.querySelector("[data-wide]")).not.toBeNull();
+    expect(within(dialog).getByRole("button", { name: /^Save/ })).toBeEnabled();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Exit full window" }));
+    expect(dialog.querySelector("[data-wide]")).toBeNull();
+  });
+
   it("disables Save and says what is wrong, with the line, while the text is invalid", async () => {
     await open(backend);
     await openTile("MCP servers");
