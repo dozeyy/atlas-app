@@ -5,20 +5,10 @@ import { PathText } from "./parts";
 import { TextEditor } from "./TextEditor";
 import { getBackend } from "../../lib/ipc";
 import { errorText } from "../../lib/setup-actions";
+import { HOOK_EVENTS } from "../../lib/setup-model";
 import type { CreateKind, Draft } from "../../lib/setup-types";
 import { reloadSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
-
-export const HOOK_EVENTS: { value: string; label: string }[] = [
-  { value: "PostToolUse", label: "After a tool runs" },
-  { value: "PreToolUse", label: "Before a tool runs" },
-  { value: "UserPromptSubmit", label: "When you send a message" },
-  { value: "Stop", label: "When Claude finishes" },
-  { value: "SessionStart", label: "When a session starts" },
-  { value: "Notification", label: "When Claude needs you" },
-  { value: "SubagentStop", label: "When an agent finishes" },
-  { value: "PreCompact", label: "Before the chat is trimmed" },
-];
 
 const NAME_HELP: Record<CreateKind, { label: string; placeholder: string; hint: string } | null> = {
   instructions: null,

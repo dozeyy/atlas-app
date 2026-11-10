@@ -6,7 +6,7 @@ import { TextEditor } from "./TextEditor";
 import { getBackend } from "../../lib/ipc";
 import { readField, setField } from "../../lib/frontmatter";
 import { errorText } from "../../lib/setup-actions";
-import { KIND_BY_ID } from "../../lib/setup-model";
+import { displayName, KIND_BY_ID } from "../../lib/setup-model";
 import type { RawEdit, SetupItem, SkillFile } from "../../lib/setup-types";
 import { reloadSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
@@ -168,7 +168,7 @@ export function ItemEditor({
     }
   };
 
-  const label = file ? `${item.name}/${file}` : item.name;
+  const label = file ? `${item.name}/${file}` : displayName(item);
 
   const save = async (text: string, force: boolean) => {
     if (!raw) return;
@@ -253,7 +253,7 @@ export function ItemEditor({
         key={version}
         initial={raw.text}
         language={raw.language}
-        label={file ? `Editing ${item.name} ${file}` : `Editing ${item.name}`}
+        label={file ? `Editing ${item.name} ${file}` : `Editing ${displayName(item)}`}
         validate={(t) => getBackend().setupValidate(item.id, t, file)}
         onSubmit={(t) => save(t, false)}
         onCancel={onCancel}

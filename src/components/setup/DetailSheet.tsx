@@ -11,7 +11,7 @@ import { pushToast } from "../../state/toastStore";
 import { Preview } from "./Preview";
 import { getBackend } from "../../lib/ipc";
 import { splitFrontmatter } from "../../lib/markdown";
-import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
+import { displayDescription, displayName, KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import { isPerCall, rowFor, usdHover } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
 import type { CostReport, CostRow, MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
@@ -434,6 +434,7 @@ export function DetailSheet({
   };
 
   const { mcp, conflict } = item;
+  const lead = displayDescription(item);
   const costRow = useMemo(() => rowFor(cost, item.id), [cost, item.id]);
   const rows: { label: string; value: ReactNode; copy?: string }[] = [
     { label: "Where", value: item.scopeLabel },
@@ -445,6 +446,11 @@ export function DetailSheet({
     ...(item.usedBy !== null ? [{ label: "Used by", value: item.usedBy === 0 ? "No hook uses this script" : `${item.usedBy} ${item.usedBy === 1 ? "hook" : "hooks"}` }] : []),
     // Raw header keys (lowercase: name, model, ...) are shown once, under "Settings in the file's header".
     ...item.detail.filter((d) => !RAW_KEY.test(d.label)).map((d) => ({ label: d.label, value: d.value })),
+    // A hook's title is in plain words; the name the settings file uses stays findable here
+    // (the scan's own Event and Matcher rows say it when they are present).
+    ...(displayName(item) !== item.name && !item.detail.some((d) => d.label === "Event")
+      ? [{ label: "In settings", value: <span className="mono">{item.name}</span> }]
+      : []),
   ];
 
   return createPortal(
@@ -464,7 +470,7 @@ export function DetailSheet({
           <ItemIcon item={item} size={40} />
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="selectable break-words text-subtitle font-semibold text-ink">
-              {item.name}
+              {displayName(item)}
             </h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <Chip tone="muted">{sentenceCase(meta.singular)}</Chip>
@@ -529,7 +535,7 @@ export function DetailSheet({
           <ItemEditor key={item.id} item={item} initialFile={editFile} onCancel={tryStop} onDirtyChange={setDirty} />
         ) : (
           <>
-        {item.description && <p className="selectable px-6 py-4 text-lead text-ink">{item.description}</p>}
+        {lead && <p className="selectable px-6 py-4 text-lead text-ink">{lead}</p>}
 
         {item.warnings.length > 0 && (
           <div role="note" className="mx-6 mb-4 rounded-card bg-warning-tint px-4 py-3 text-body text-warning">
@@ -667,7 +673,7 @@ export function DetailSheet({
             </>
           }
         >
-          <p className="text-body text-ink">You have edits to {item.name} that are not saved. If you leave now they are lost.</p>
+          <p className="text-body text-ink">You have edits to {displayName(item)} that are not saved. If you leave now they are lost.</p>
         </Dialog>
       )}
     </div>,

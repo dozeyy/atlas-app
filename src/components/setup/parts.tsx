@@ -14,7 +14,7 @@ import {
 } from "@phosphor-icons/react";
 import { IconMotion, type Motion } from "../IconMotion";
 import { AgentAvatar, agentLook } from "../usage/helperKit";
-import { enabledTone, KIND_BY_ID, type Tone } from "../../lib/setup-model";
+import { displayName, enabledTone, KIND_BY_ID, type Tone } from "../../lib/setup-model";
 import type { Conflict, Enabled, ItemKind, ScopeKind, SetupItem } from "../../lib/setup-types";
 
 type Icon = ComponentType<IconProps>;
@@ -235,5 +235,5 @@ export async function copyText(text: string): Promise<boolean> {
 
 /** For screen readers and the sheet title. */
 export function describeItem(i: SetupItem): string {
-  return `${KIND_BY_ID[i.kind].singular} ${i.name}, ${i.scopeLabel}`;
+  return `${KIND_BY_ID[i.kind].singular} ${displayName(i)}, ${i.scopeLabel}`;
 }

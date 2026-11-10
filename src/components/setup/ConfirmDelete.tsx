@@ -3,6 +3,7 @@ import { Button } from "../controls";
 import { Dialog } from "../Dialog";
 import { PathText } from "./parts";
 import { deleteItem, errorText, whatGetsRemoved } from "../../lib/setup-actions";
+import { displayName } from "../../lib/setup-model";
 import type { SetupItem } from "../../lib/setup-types";
 
 /** "Delete <name>?" with what goes away and the promise of a backup. */
@@ -25,7 +26,7 @@ export function ConfirmDelete({ item, onCancel, onDone }: { item: SetupItem; onC
   return (
     <Dialog
       alert
-      title={`Delete ${item.name}?`}
+      title={`Delete ${displayName(item)}?`}
       onClose={busy ? () => {} : onCancel}
       footer={
         <>

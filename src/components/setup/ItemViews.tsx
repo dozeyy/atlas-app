@@ -3,11 +3,10 @@ import { Lock, X } from "@phosphor-icons/react";
 import { Card } from "../controls";
 import { pushToast } from "../../state/toastStore";
 import type { KeyboardEvent } from "react";
-import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
+import { displayDescription, displayName, KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import type { SetupItem } from "../../lib/setup-types";
 import { ConflictChip, copyText, formatDate, ItemIcon, ScopeChip, SecretsChip, StateChip, TagChip, WarningMark } from "./parts";
 import { useItemCost } from "./CostContext";
-import { HOOK_EVENTS } from "./CreateFlow";
 
 interface ItemProps {
   item: SetupItem;
@@ -26,13 +25,20 @@ const MAX_CHIPS = 3;
 
 /**
  * The chips a card shows. A hook's own chips are its event and its type, which its title
- * ("PreToolUse - Bash") and first line ("command: ...") already say, so the card says when it
- * runs in plain words instead ("Before a tool runs"). Every other kind shows its chips as given.
+ * ("Before a tool runs - Bash") and first line ("Runs ...") already say in plain words, so a hook
+ * card carries none. Every other kind shows its chips as given.
  */
 function cardChips(item: SetupItem): string[] {
-  if (item.kind !== "hook") return item.chips;
-  const event = HOOK_EVENTS.find((h) => item.name.startsWith(h.value));
-  return event ? [event.label] : [];
+  return item.kind === "hook" ? [] : item.chips;
+}
+
+/**
+ * The hover on a name: the name in full (it can be cut short), and for a hook the name Claude's
+ * settings use for it on a second line, so someone who knows "PreToolUse" still finds it.
+ */
+function nameHover(item: SetupItem): string {
+  const shown = displayName(item);
+  return shown === item.name ? shown : `${shown}\n${item.name}`;
 }
 
 /**
@@ -44,7 +50,7 @@ function CornerControl({ item, onDelete }: { item: SetupItem; onDelete?: (item: 
     return (
       <button
         type="button"
-        aria-label={`${item.name} is locked. ${item.locked}`}
+        aria-label={`${displayName(item)} is locked. ${item.locked}`}
         title={item.locked}
         onClick={() => pushToast({ message: item.locked ?? "Atlas will not change this." })}
         className="x-del x-lock"
@@ -59,7 +65,7 @@ function CornerControl({ item, onDelete }: { item: SetupItem; onDelete?: (item: 
     return (
       <button
         type="button"
-        aria-label={`Delete ${item.name}`}
+        aria-label={`Delete ${displayName(item)}`}
         title="Delete"
         onClick={() => onDelete(item)}
         className="x-del opacity-0 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
@@ -80,6 +86,7 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
   const more = chips.length - shown.length;
   const showState = item.enabled.state !== "on" && item.enabled.state !== "none" && item.enabled.label;
   const cost = useItemCost(item.id);
+  const description = displayDescription(item);
   return (
     <div className="item-wrap group relative h-full">
       <Card
@@ -87,21 +94,21 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
         data-id={item.id}
         onClick={() => onOpen(item.id)}
         onKeyDown={(e) => onCopyKey(e, item)}
-        aria-label={`${KIND_BY_ID[item.kind].singular} ${item.name}, ${item.scopeLabel}${item.enabled.label ? `, ${item.enabled.label}` : ""}`}
+        aria-label={`${KIND_BY_ID[item.kind].singular} ${displayName(item)}, ${item.scopeLabel}${item.enabled.label ? `, ${item.enabled.label}` : ""}`}
         hitClassName="h-full min-h-[104px]"
         className="flex min-h-[104px] gap-3 p-3.5"
       >
         <ItemIcon item={item} />
         <span className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span className="flex items-start justify-between gap-2 pr-6">
-            <span title={item.name} className="truncate text-body font-semibold text-ink">
-              {item.name}
+            <span title={nameHover(item)} className="truncate text-body font-semibold text-ink">
+              {displayName(item)}
             </span>
             {showState ? <StateChip enabled={item.enabled} /> : null}
           </span>
-          {item.description ? (
-            <span title={item.description} className="line-clamp-2 text-body text-ink-2">
-              {item.description}
+          {description ? (
+            <span title={description} className="line-clamp-2 text-body text-ink-2">
+              {description}
             </span>
           ) : (
             <span className="text-body text-ink-2 opacity-70">No description</span>
@@ -147,11 +154,11 @@ export const ItemRow = memo(function ItemRow({ item, onOpen, mono }: ItemProps &
       data-id={item.id}
       onClick={() => onOpen(item.id)}
       onKeyDown={(e) => onCopyKey(e, item)}
-      aria-label={`${KIND_BY_ID[item.kind].singular} ${item.name}, ${item.scopeLabel}`}
+      aria-label={`${KIND_BY_ID[item.kind].singular} ${displayName(item)}, ${item.scopeLabel}`}
       className="flex min-h-9 w-full cursor-pointer items-center gap-3 border-b border-line px-4 py-1.5 text-left transition-colors duration-[var(--dur-fast)] [contain-intrinsic-size:auto_36px] [content-visibility:auto] last:border-b-0 hover:bg-raised active:bg-raised"
     >
-      <span title={item.name} className={`min-w-0 flex-1 truncate text-body text-ink ${mono ? "mono" : "font-medium"}`}>
-        {item.name}
+      <span title={nameHover(item)} className={`min-w-0 flex-1 truncate text-body text-ink ${mono ? "mono" : "font-medium"}`}>
+        {displayName(item)}
       </span>
       {/* A counted row (a hook script) says how many hooks use it once, in words; its description is the same count. */}
       {item.usedBy !== null ? (
@@ -160,8 +167,8 @@ export const ItemRow = memo(function ItemRow({ item, onOpen, mono }: ItemProps &
         </span>
       ) : (
         item.description && (
-          <span title={item.description} className="hidden max-w-[34%] truncate text-caption text-ink-2 md:block">
-            {item.description}
+          <span title={displayDescription(item)} className="hidden max-w-[34%] truncate text-caption text-ink-2 md:block">
+            {displayDescription(item)}
           </span>
         )
       )}
