@@ -146,6 +146,8 @@ export type LibraryRow =
   | { type: "item"; key: string; row: InstalledRow };
 
 export const ROW_H = 56;
+/** A heading over a run of rows (see buildList). */
+export const HEAD_H = 32;
 
 const ITEM_WORD: Record<string, string> = {
   skill: "Skill",
@@ -191,8 +193,58 @@ export function buildRows({ idx, installed, source, query }: RowInput): LibraryR
   }
   const scope = source.startsWith("mp:") ? idx.filter((x) => x.e.marketplace === source.slice(3)) : idx;
   // Typed words rank by match; nothing typed keeps the catalog's own order (see catalogOrder).
-  const list = tokens(query).length ? searchEntries(scope, query) : catalogOrder(scope);
-  return list.map((entry) => ({ type: "plugin", key: entry.pluginId, entry, installed: have.get(entry.pluginId) ?? null }));
+  const typed = tokens(query).length > 0;
+  const list = typed ? searchEntries(scope, query) : catalogOrder(scope);
+  const rows: LibraryRow[] = list.map((entry) => ({ type: "plugin", key: entry.pluginId, entry, installed: have.get(entry.pluginId) ?? null }));
+  if (source !== ALL || typed) return rows;
+  // All, nothing typed: what is installed leads (what changed first), then each marketplace as one
+  // run, the directory before the others in the rail's order. Inside a run the catalog's order holds
+  // (the sort is stable), so buildList can put one heading over each.
+  const rank = (r: LibraryRow) => (r.type === "plugin" && r.installed ? (r.installed.changed ? 0 : 1) : 2);
+  const market = (r: LibraryRow) => (r.type === "plugin" ? r.entry.marketplace : "");
+  return rows.sort((x, y) => {
+    const d = rank(x) - rank(y);
+    if (d || rank(x) < 2) return d;
+    const mx = market(x);
+    const my = market(y);
+    if (mx === my) return 0;
+    return mx === DIRECTORY ? -1 : my === DIRECTORY ? 1 : mx.localeCompare(my);
+  });
+}
+
+/** A heading over a run of rows: it sits above row `at`. */
+export interface ListHead {
+  at: number;
+  label: string;
+}
+
+export interface ListModel {
+  rows: LibraryRow[];
+  /** All with nothing typed: "Installed", then one heading per marketplace. Empty when one heading would say it all. */
+  heads: ListHead[];
+  /**
+   * A row may name where it comes from: only when sources are mixed and no heading says it (a
+   * search under All, the Installed filter). Even then the row stays quiet for the directory.
+   */
+  showSource: boolean;
+}
+
+export const INSTALLED_HEAD = "Installed";
+
+/** The rows, and what frames them: headings under All, the source on a row only where it adds something. */
+export function buildList(input: RowInput): ListModel {
+  const rows = buildRows(input);
+  const typed = tokens(input.query).length > 0;
+  if (input.source !== ALL || typed) return { rows, heads: [], showSource: input.source === ALL || input.source === INSTALLED };
+  const heads: ListHead[] = [];
+  let last: string | null = null;
+  rows.forEach((r, at) => {
+    if (r.type !== "plugin") return;
+    const label = r.installed ? INSTALLED_HEAD : sourceCaption(r.entry.marketplace);
+    if (label !== last) heads.push({ at, label });
+    last = label;
+  });
+  return { rows, heads: heads.length > 1 ? heads : [], showSource: false };
 }
 
 export function rowName(r: LibraryRow): string {

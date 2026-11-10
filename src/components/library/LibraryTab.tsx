@@ -8,7 +8,7 @@ import { AddFromGitHub } from "./AddFromGitHub";
 import { LibraryList, ListSkeleton, type RowActions } from "./LibraryList";
 import { LibrarySheet, type SheetTarget } from "./LibrarySheet";
 import { SourceRail } from "./SourceRail";
-import { NO_CLI, OFFLINE, buildRows, changedCount, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
+import { NO_CLI, OFFLINE, buildList, changedCount, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
 import { openToolkitItemNext, openToolkitTabNext } from "../../lib/nav";
 import { checkThenInstall, openLibrary, refreshLibrary, reportFirstRows, setQuery, setSource, useLibrary } from "../../state/libraryStore";
 import { useSetup } from "../../state/setupStore";
@@ -50,7 +50,7 @@ export function LibraryTab() {
   }, []);
 
   const query = useDeferredValue(lib.query);
-  const rows = useMemo(() => buildRows({ idx: lib.idx, installed: lib.installed, source: lib.source, query }), [lib.idx, lib.installed, lib.source, query]);
+  const { rows, heads, showSource } = useMemo(() => buildList({ idx: lib.idx, installed: lib.installed, source: lib.source, query }), [lib.idx, lib.installed, lib.source, query]);
   const options = useMemo(
     () => sourceOptions(lib.view?.total ?? 0, lib.view?.counts ?? {}, lib.view?.marketplaces ?? [], lib.installed.length, changedCount(lib.idx, lib.installed)),
     [lib.view, lib.idx, lib.installed],
@@ -61,6 +61,14 @@ export function LibraryTab() {
   // The highlighted row follows the filter: when it is gone, nothing is highlighted.
   useEffect(() => {
     if (selectedKey && index < 0) setSelectedKey(null);
+  }, [selectedKey, index]);
+  // A row that moves (installing lifts it under "Installed", undoing sends it back) is followed:
+  // the highlighted row stays in view instead of slipping out from under the pointer.
+  const was = useRef<{ key: string | null; index: number }>({ key: null, index: -1 });
+  useEffect(() => {
+    const moved = was.current.key === selectedKey && was.current.index >= 0 && index >= 0 && was.current.index !== index;
+    was.current = { key: selectedKey, index };
+    if (moved) setScrollTo({ index, n: Date.now() });
   }, [selectedKey, index]);
 
   const move = (to: number) => {
@@ -99,7 +107,10 @@ export function LibraryTab() {
   const actions: RowActions = useMemo(
     () => ({
       open: openRow,
-      quickInstall: (row) => void checkThenInstall(row.entry.pluginId, row.entry.name).then((r) => r === "open" && openRow(row, true)),
+      quickInstall: (row) => {
+        setSelectedKey(row.key);
+        void checkThenInstall(row.entry.pluginId, row.entry.name).then((r) => r === "open" && openRow(row, true));
+      },
       openItem,
     }),
     [openRow, openItem],
@@ -203,7 +214,7 @@ export function LibraryTab() {
     );
   } else {
     body = (
-      <LibraryList rows={rows} selectedKey={selectedKey} cli={cli} busy={lib.busy} actions={actions} scrollTo={scrollTo} onFirstRows={reportFirstRows} />
+      <LibraryList rows={rows} heads={heads} showSource={showSource} installedOnly={lib.source === "installed"} selectedKey={selectedKey} cli={cli} busy={lib.busy} actions={actions} scrollTo={scrollTo} onFirstRows={reportFirstRows} />
     );
   }
 

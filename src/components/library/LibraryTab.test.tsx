@@ -262,6 +262,11 @@ describe("Library tab: installed plugins", () => {
     await openLibraryTab();
     await userEvent.click(await installBtn("pdf-tools")); // checks it, clean, installs at once
     await waitFor(() => expect(lib().installed).toHaveLength(1));
+    // What you have moves to the top under its own heading; the rest sit under where they come from.
+    await waitFor(() => expect(document.querySelector('[data-head="Installed"]')).toBeInTheDocument());
+    expect(document.querySelector('[data-head="Claude plugin directory"]')).toBeInTheDocument();
+    expect(document.querySelector("[data-row]")?.getAttribute("data-row")).toBe("pdf-tools@anthropic-plugin-directory");
+    expect((await row("pdf-tools")).getAttribute("aria-label")).toMatch(/\. Installed$/);
 
     await userEvent.click(await screen.findByRole("button", { name: "Uninstall pdf-tools" }));
     expect(screen.getByText("Uninstall pdf-tools?")).toBeInTheDocument();
