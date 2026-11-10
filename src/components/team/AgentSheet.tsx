@@ -1,9 +1,10 @@
 import { Bars } from "../charts/Bars";
 import { Button } from "../controls";
+import { AgentAvatar } from "../usage/helperKit";
 import { TokenText } from "../usage/TokenText";
 import { SheetSection, SideSheet } from "./SideSheet";
 import { compact, exact, formatDuration, formatWhen, modelWithEffort, plural } from "../../lib/usage";
-import { endRows, finishLine, medianCalls, medianTime, rateSentence, reviewCountsLine, runOutcome, verdictRows, weeklyBars } from "../../lib/teamModel";
+import { HEADLESS_HINT, REVIEWER_WORDS, endRows, finishLine, rateSentence, reviewCountsLine, runOutcome, startedLine, usualLine, verdictRows, weeklyBars } from "../../lib/teamModel";
 import type { RunRow, TypeCard } from "../../lib/teamTypes";
 
 function Count({ label, n, total }: { label: string; n: number; total: number }) {
@@ -68,8 +69,10 @@ export function AgentSheet({
   return (
     <SideSheet
       title={card.displayName}
+      lead={<AgentAvatar type={card.agentType} size={40} />}
       subtitle={
         <span>
+          {card.reviewer ? `${REVIEWER_WORDS} \u00b7 ` : ""}
           {plural(card.runs, "run")}
           {" \u00b7 "}
           <TokenText tokens={card.tokens.total} cost={card.cost} />
@@ -86,7 +89,7 @@ export function AgentSheet({
       <SheetSection title="Runs per week">
         <Bars id={`team-sheet-${card.agentType}`} data={bars} label={`${card.displayName} runs per week`} formatTick={(v) => String(Math.round(v))} height={160} calm highlight={-1} />
         <p className="mt-2 text-body text-ink-2">
-          {medianTime(card)}. {medianCalls(card)}.
+          {usualLine(card)}.
           {card.resumedRuns > 0 ? ` ${plural(card.resumedRuns, "run")} picked up again.` : ""}
         </p>
       </SheetSection>
@@ -131,8 +134,8 @@ export function AgentSheet({
       )}
 
       <SheetSection title="Started from">
-        <p className="text-body text-ink">
-          {plural(card.started.interactive, "run")} from a chat, {plural(card.started.headless, "run")} headless
+        <p title={HEADLESS_HINT} className="text-body text-ink">
+          {startedLine(card.started)}
         </p>
       </SheetSection>
 

@@ -1,6 +1,6 @@
 // Pure helpers for the Team tab: what the cards and themes say, in plain words. No React here.
 
-import { addDays, formatDuration, localDay, plural } from "./usage";
+import { addDays, exact, formatDuration, localDay, plural } from "./usage";
 import type { BarDatum } from "../components/charts/shared";
 import type { EndCounts, ReviewCounts, ReviewTheme, RunRow, ScorecardArgs, StartedFrom, TypeCard, VerdictCounts } from "./teamTypes";
 
@@ -17,7 +17,7 @@ export const RANGES: { value: RangeId; label: string; days: number | null }[] = 
 export const STARTED_OPTIONS: { value: StartedFrom; label: string }[] = [
   { value: "all", label: "Started from: all" },
   { value: "interactive", label: "Started from: a chat" },
-  { value: "headless", label: "Started from: headless" },
+  { value: "headless", label: "Started outside a chat" },
 ];
 
 export interface TeamPrefs {
@@ -102,14 +102,31 @@ export function reviewerLine(v: VerdictCounts): string {
   return `${v.pass} passed, ${v.findings} sent back`;
 }
 
-export const TOO_FEW = "Too few runs yet";
+export const TOO_FEW = "Too few runs for a typical time yet";
 
-export function medianTime(c: TypeCard): string {
-  return c.tooFewRuns || c.durationMsMedian === null ? TOO_FEW : `${formatDuration(c.durationMsMedian)} typical`;
+/** How a typical run goes, as one line: "Usually 9 min and 38 tool calls". Said once, not per number, when there are too few runs. */
+export function usualLine(c: TypeCard): string {
+  if (c.tooFewRuns) return TOO_FEW;
+  const parts: string[] = [];
+  if (c.durationMsMedian !== null) parts.push(formatDuration(c.durationMsMedian));
+  if (c.toolCallsMedian !== null) parts.push(plural(c.toolCallsMedian, "tool call"));
+  return parts.length ? `Usually ${parts.join(" and ")}` : TOO_FEW;
 }
 
-export function medianCalls(c: TypeCard): string {
-  return c.tooFewRuns || c.toolCallsMedian === null ? TOO_FEW : `${plural(c.toolCallsMedian, "tool call")} typical`;
+/** What a reviewer does, in plain words (the card and the sheet say it under the name). */
+export const REVIEWER_WORDS = "Reviews other helpers' work";
+
+/** Runs started outside a chat: by a script, a schedule or another program. "Headless" is the name Claude Code gives them. */
+export const HEADLESS_HINT = "Outside a chat: started by a script, a schedule or another program. Claude Code calls this headless.";
+
+export function startedLine(s: { interactive: number; headless: number }): string {
+  return `${plural(s.interactive, "run")} from a chat, ${exact(s.headless)} outside a chat`;
+}
+
+/** The twelve weekly counts in words, for the hover on the small chart: oldest week first. */
+export function weeklyTitle(weekly: number[]): string {
+  const total = weekly.reduce((a, b) => a + b, 0);
+  return `Runs per week, last ${weekly.length} weeks, oldest first: ${weekly.map((v) => exact(v)).join(", ")}. ${plural(total, "run")} in all.`;
 }
 
 /** How runs ended, as the sheet words it. Unknown runs are said, never hidden. */
@@ -155,17 +172,6 @@ export function madeLabel(madeMs: number): string {
 /** "3 high, 1 medium" most severe first; findings without a severity are "unrated". */
 export function severityLine(t: ReviewTheme): string {
   return t.severities.map((s) => `${s.count} ${s.severity === "none" ? "unrated" : s.severity.toLowerCase()}`).join(", ");
-}
-
-/** Where a theme was found, as one short line: "Found in work by builder (3), tester (1)". */
-export function foundLine(t: ReviewTheme, nameOf: (type: string) => string): string {
-  const parts = t.foundInWorkBy.map((x) => `${nameOf(x.agentType)} (${x.count})`);
-  if (t.notTied > 0) parts.push(`not tied to one helper (${t.notTied})`);
-  return parts.length ? parts.join(", ") : "Not tied to one helper";
-}
-
-export function raisedLine(t: ReviewTheme, nameOf: (type: string) => string): string {
-  return t.reviewers.map((x) => `${nameOf(x.agentType)} (${x.count})`).join(", ");
 }
 
 /** What a run row says about how it went, in a few words. */
