@@ -243,6 +243,21 @@ export function agentLook(type: string | null): Look {
   return kindLook(helperKind(type));
 }
 
+/**
+ * A hover tip earns its place by adding something the eye cannot already read (Will, 2026-11-10:
+ * "if you hover over it, it shouldn't just say general purpose"). Pass the words that already
+ * stand on or beside the element; a tip that only repeats one of them is refused (undefined),
+ * so the element gets no tip at all. A tip for text that may be cut short, or for a mark with no
+ * words, is not run through this: it adds the words themselves.
+ */
+export function hoverTip(tip: string | null | undefined, ...visible: (string | null | undefined)[]): string | undefined {
+  if (!tip) return undefined;
+  const flat = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+  const want = flat(tip);
+  if (!want) return undefined;
+  return visible.some((v) => v && flat(v) === want) ? undefined : tip;
+}
+
 /** Where a thread sits in the chat: the chat itself, a helper it started, or a helper started by another helper. */
 export type AvatarLevel = "main" | "helper" | "nested";
 

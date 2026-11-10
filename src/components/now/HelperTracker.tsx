@@ -74,7 +74,7 @@ function HelperRow({ helper, now }: { helper: NowHelper; now: number }) {
   const goal = helper.goal ?? helper.name;
   return (
     <li className="ht-row card" data-done={helper.done || undefined}>
-      <AgentAvatar type={helper.agentType} size={32} />
+      <AgentAvatar type={helper.agentType} size={32} quiet />
       <div className="ht-id">
         <p className="ht-head">
           <span className="ht-name" title={name}>

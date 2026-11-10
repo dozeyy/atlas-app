@@ -214,10 +214,10 @@ export function ReceiptPane({
 
   // The same avatar the map and the helper list give each thread; the folded line gets the stack.
   const whoMark = (line: SpendLine): ReactNode => {
-    if (line.kind === "main") return <AgentAvatar type={null} size={24} level="main" />;
+    if (line.kind === "main") return <AgentAvatar type={null} size={24} level="main" quiet />;
     if (line.kind === "helper") {
       const nested = !!r.threads.find((t) => t.agentId === line.agentId)?.parentAgentId;
-      return <AgentAvatar type={types?.get(line.agentId ?? "") ?? null} size={24} level={nested ? "nested" : "helper"} />;
+      return <AgentAvatar type={types?.get(line.agentId ?? "") ?? null} size={24} level={nested ? "nested" : "helper"} quiet />;
     }
     return (
       <span

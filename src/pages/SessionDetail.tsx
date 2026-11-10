@@ -115,7 +115,7 @@ function HelperCard({
   );
   return (
     <Card onClick={() => onOpen(agent.agentId)} className="flex items-center gap-3 px-4 py-3">
-      <AgentAvatar type={agent.agentType} level={parentName ? "nested" : "helper"} />
+      <AgentAvatar type={agent.agentType} level={parentName ? "nested" : "helper"} quiet />
       <div className="min-w-0 flex-1">
         <div className="truncate text-body font-semibold text-ink" title={shownName(agent)}>
           {shownName(agent)}

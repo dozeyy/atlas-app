@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Package } from "@phosphor-icons/react";
-import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, helperName, helperOfFile, kindLook, MainChatIcon, shownName, tileCorners, tilePath, type HelperKind } from "./helperKit";
+import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, helperName, helperOfFile, hoverTip, kindLook, MainChatIcon, shownName, tileCorners, tilePath, type HelperKind } from "./helperKit";
 import { typeName } from "../../lib/helperProgress";
 import { typeLabel } from "../../pages/AgentDetail";
 import { KINDS as SETUP_KINDS } from "../../lib/setup-model";
@@ -244,5 +244,21 @@ describe("helper avatar", () => {
     const av = container.querySelector(".helper-av")!;
     expect(av.getAttribute("aria-hidden")).toBe("true");
     expect(av.hasAttribute("title")).toBe(false);
+  });
+});
+
+describe("hover tips", () => {
+  it("refuses a tip that only repeats the words already on or beside the element", () => {
+    expect(hoverTip("General purpose", "General purpose")).toBeUndefined();
+    expect(hoverTip("  general   purpose ", "General purpose")).toBeUndefined();
+    expect(hoverTip("Code reviewer", "Reviews", "Code reviewer")).toBeUndefined();
+    expect(hoverTip("", "anything")).toBeUndefined();
+    expect(hoverTip(null, "anything")).toBeUndefined();
+  });
+
+  it("keeps a tip that says more than the label", () => {
+    expect(hoverTip("Before tool use\nPreToolUse", "Before tool use")).toBe("Before tool use\nPreToolUse");
+    expect(hoverTip("general-purpose", "General purpose")).toBe("general-purpose");
+    expect(hoverTip("Agent", undefined)).toBe("Agent");
   });
 });

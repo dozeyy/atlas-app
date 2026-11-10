@@ -109,7 +109,7 @@ export function AgentDetailView({
     <div className="@container pb-[var(--gutter-y)]">
       {back}
       <div className="flex items-center gap-4">
-        <AgentAvatar type={agent.agentType} size={48} level={d.data.parentName ? "nested" : level} />
+        <AgentAvatar type={agent.agentType} size={48} level={d.data.parentName ? "nested" : level} quiet />
         <div className="min-w-0 flex-1">
           {/* A name made from the type gets its short forms in capitals; one that was written stays as written. */}
           <h1 className="h-page break-words">{shownName(agent)}</h1>
