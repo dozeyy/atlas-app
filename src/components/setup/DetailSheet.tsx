@@ -660,13 +660,14 @@ export function DetailSheet({
           </div>
         )}
 
+        {/* What it costs stays first, so it is on screen without scrolling the sheet. */}
+        {costRow && cost && <CostSection row={costRow} report={cost} />}
+
         {rows.length > 0 && (
           <Section title="About">
             <Facts rows={rows} />
           </Section>
         )}
-
-        {costRow && cost && <CostSection row={costRow} report={cost} />}
 
         {conflict && (
           <Section title="Also defined elsewhere">
