@@ -184,13 +184,72 @@ pub fn entry_components(location: &Path, name: &str) -> Result<Value, String> {
     let bytes = fs::read(&file).map_err(|_| unread())?;
     let v: Value = serde_json::from_slice(bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&bytes)).map_err(|_| unread())?;
     let entry = v.get("plugins").and_then(Value::as_array).into_iter().flatten().find(|p| p.get("name").and_then(Value::as_str) == Some(name)).ok_or_else(unread)?;
+    Ok(components_of(entry))
+}
+
+fn components_of(entry: &Value) -> Value {
     let mut out = serde_json::Map::new();
     for k in COMPONENT_FIELDS {
         if let Some(x) = entry.get(k) {
             out.insert(k.to_string(), x.clone());
         }
     }
-    Ok(Value::Object(out))
+    Value::Object(out)
+}
+
+/// A folder name as a marketplace writes it as a source (`./plugins/x`) and as a repo path
+/// (`plugins/x`): the same place.
+fn same_place(a: &str, b: &str) -> bool {
+    let n = |s: &str| {
+        let s = s.replace('\\', "/");
+        let s = s.trim_start_matches("./").trim_matches('/');
+        if s == "." { String::new() } else { s.to_string() }
+    };
+    n(a) == n(b)
+}
+
+/// The component fields of a built-in directory plugin's own entry. The directory has no
+/// marketplace file on this computer, but the repo the plugin is fetched from (at its pinned
+/// commit) can hold one, and its entry for the plugin's folder can be the whole manifest
+/// (`strict: false`, inline `lspServers`): `repo_root` is that fetched repo, `base` the plugin's
+/// folder in it, `path` the folder's name in the repo (`None` = the repo root).
+///
+/// `Ok(Some(fields))`: the entry that names this folder. `Ok(None)`: the repo lists no entry for it
+/// but the plugin has its own manifest, so the manifest says what it loads. `Err`: neither exists
+/// (or the marketplace file cannot be read, or two entries claim the folder), so nothing it names
+/// can be vouched for and the check must not call it clean.
+pub fn entry_components_in_repo(repo_root: &Path, base: &Path, name: &str, path: Option<&str>) -> Result<Option<Value>, String> {
+    const MAX_BYTES: u64 = 16 * 1024 * 1024;
+    let file = repo_root.join(".claude-plugin").join("marketplace.json");
+    let unread = || "Atlas could not read the marketplace's own entry for this plugin".to_string();
+    let mut found: Vec<Value> = Vec::new();
+    match fs::metadata(&file) {
+        Ok(md) => {
+            if !md.is_file() || md.len() > MAX_BYTES {
+                return Err(unread());
+            }
+            let bytes = fs::read(&file).map_err(|_| unread())?;
+            let v: Value = serde_json::from_slice(bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&bytes)).map_err(|_| unread())?;
+            let here = path.unwrap_or("");
+            let all = v.get("plugins").and_then(Value::as_array).into_iter().flatten();
+            found = all.filter(|p| p.get("source").and_then(Value::as_str).is_some_and(|s| same_place(s, here))).cloned().collect();
+            if found.len() > 1 {
+                found.retain(|p| p.get("name").and_then(Value::as_str) == Some(name));
+                if found.len() != 1 {
+                    return Err(unread());
+                }
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err(unread()),
+    }
+    if let Some(entry) = found.first() {
+        return Ok(Some(components_of(entry)));
+    }
+    if base.join(".claude-plugin").join("plugin.json").is_file() {
+        return Ok(None);
+    }
+    Err("Atlas found no manifest or marketplace entry for this plugin, so it could not tell what it loads".to_string())
 }
 
 pub fn cache_path(data: &Path) -> PathBuf {
@@ -308,6 +367,51 @@ mod tests {
 
     fn e(id: &str, name: &str, desc: &str, mp: &str) -> Entry {
         Entry { plugin_id: id.into(), name: name.into(), description: desc.into(), marketplace: mp.into(), version: String::new(), source: Source::Command }
+    }
+
+    #[test]
+    fn a_directory_plugins_entry_is_found_in_the_repo_it_is_fetched_from() {
+        // The gopls-lsp shape: the plugin folder holds no manifest at all, the repo's own
+        // marketplace file names the language server inline (strict: false).
+        let t = tempfile::tempdir().unwrap();
+        let root = t.path();
+        fs::create_dir_all(root.join(".claude-plugin")).unwrap();
+        fs::create_dir_all(root.join("plugins/gopls-lsp/.claude-plugin")).unwrap();
+        fs::write(root.join("plugins/gopls-lsp/README.md"), "x").unwrap();
+        fs::create_dir_all(root.join("plugins/plain")).unwrap();
+        fs::create_dir_all(root.join("plugins/self/.claude-plugin")).unwrap();
+        fs::write(root.join("plugins/self/.claude-plugin/plugin.json"), r#"{"name":"self"}"#).unwrap();
+        fs::write(
+            root.join(".claude-plugin/marketplace.json"),
+            r#"{"plugins":[
+              {"name":"gopls-lsp","source":"./plugins/gopls-lsp","strict":false,"lspServers":{"gopls":{"command":"gopls"}}},
+              {"name":"plain","source":"./plugins/plain","description":"d"}]}"#,
+        )
+        .unwrap();
+        let base = |p: &str| root.join(p);
+        // Inline fields come back, however the path is written.
+        for p in ["plugins/gopls-lsp", "./plugins/gopls-lsp/", "plugins\\gopls-lsp"] {
+            let v = entry_components_in_repo(root, &base("plugins/gopls-lsp"), "gopls-lsp", Some(p)).unwrap().unwrap();
+            assert_eq!(v["lspServers"]["gopls"]["command"], "gopls", "{p}");
+        }
+        // An entry with no component fields is an empty object (read, and nothing in it).
+        assert_eq!(entry_components_in_repo(root, &base("plugins/plain"), "plain", Some("plugins/plain")).unwrap(), Some(serde_json::json!({})));
+        // No entry for the folder, but the plugin has its own manifest: that says what it loads.
+        assert_eq!(entry_components_in_repo(root, &base("plugins/self"), "self", Some("plugins/self")).unwrap(), None);
+        // No entry and no manifest: never "nothing to read".
+        assert!(entry_components_in_repo(root, &base("plugins/gopls-lsp"), "other", Some("plugins/other")).is_err());
+        // A repo with no marketplace file: the manifest decides; without one it is unreadable.
+        let bare = tempfile::tempdir().unwrap();
+        assert!(entry_components_in_repo(bare.path(), bare.path(), "x", None).is_err());
+        fs::create_dir_all(bare.path().join(".claude-plugin")).unwrap();
+        fs::write(bare.path().join(".claude-plugin/plugin.json"), "{}").unwrap();
+        assert_eq!(entry_components_in_repo(bare.path(), bare.path(), "x", None).unwrap(), None);
+        // A marketplace file that is not JSON, or two entries claiming one folder, are never clean.
+        fs::write(root.join(".claude-plugin/marketplace.json"), "not json").unwrap();
+        assert!(entry_components_in_repo(root, &base("plugins/self"), "self", Some("plugins/self")).is_err());
+        fs::write(root.join(".claude-plugin/marketplace.json"), r#"{"plugins":[{"name":"a","source":"./p"},{"name":"b","source":"./p","hooks":{}}]}"#).unwrap();
+        assert!(entry_components_in_repo(root, &base("plugins/self"), "c", Some("p")).is_err());
+        assert!(entry_components_in_repo(root, &base("plugins/self"), "b", Some("p")).unwrap().is_some());
     }
 
     #[test]

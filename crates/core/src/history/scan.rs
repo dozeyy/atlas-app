@@ -10,6 +10,7 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
+use rusqlite::OptionalExtension;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -270,7 +271,16 @@ pub fn scan_marked(store: &Store, tracked: &[Tracked], claude_json: Option<&Path
             }
             let new_text = text_of(&s.bytes);
             // A Library install or removal says so in plain words instead of the raw diff.
-            let label = if baseline { None } else { marks.label(&t.key, &s.sha, at_of(s.mtime)) };
+            let label = if baseline {
+                None
+            } else if let Some((made, l)) = marks.label_made(&t.key, &s.sha, at_of(s.mtime)) {
+                // Only the first change after a Library backup takes its sentence: a later hand
+                // edit that lands on the same contents has an event with it already.
+                let taken = tx.query_row("SELECT 1 FROM events WHERE item_key = ?1 AND kind = 'changed' AND summary = ?2 AND at >= ?3 LIMIT 1", rusqlite::params![t.key, l, made - Marks::SLACK_MS], |_| Ok(())).optional()?.is_some();
+                (!taken).then_some(l)
+            } else {
+                None
+            };
             let summary = match (&old_text, &new_text) {
                 _ if label.is_some() => label.unwrap_or_default().to_string(),
                 (Some(o), Some(n)) => diff::one_line(&t.path.to_string_lossy(), Some(o), n),
@@ -315,15 +325,18 @@ fn relabel(store: &Store, marks: &Marks, now_ms: i64) -> Result<usize, String> {
             let mut st = tx.prepare(
                 "SELECT e.event_id, e.item_key, e.at, e.kind, e.source, e.summary, v.sha256, v.version_id, i.kind, i.name
                  FROM events e JOIN items i ON i.item_key = e.item_key LEFT JOIN versions v ON v.version_id = e.to_version
-                 WHERE e.at >= ?1 AND e.kind IN ('changed','added','removed')",
+                 WHERE e.at >= ?1 AND e.kind IN ('changed','added','removed') ORDER BY e.at, e.event_id",
             )?;
             let it = st.query_map([since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?)))?;
             it.collect::<Result<_, _>>()?
         };
         let mut n = 0;
+        // (file, contents, backup) already taken by an earlier row: the first change after a
+        // backup is the Library's, a later edit that restores the same contents is not.
+        let mut claimed: HashSet<(String, i64)> = HashSet::new();
         for (id, key, at, kind, src, summary, sha, vid, ikind, name) in rows {
             let label = match kind.as_str() {
-                "changed" => sha.as_deref().and_then(|s| marks.label(&key, s, at)),
+                "changed" => sha.as_deref().and_then(|s| marks.label_made(&key, s, at).map(|(made, l)| (format!("{key}|{s}"), made, l))).and_then(|(ks, made, l)| claimed.insert((ks, made)).then_some(l)),
                 "added" if ikind == "plugin" => marks.plugin_label(&name, "install", at),
                 "removed" if ikind == "plugin" => marks.plugin_label(&name, "uninstall", at),
                 _ => None,
@@ -547,12 +560,14 @@ mod tests {
                 store::upsert_item(tx, k, "settings", "user", None, "settings", "C:/c/settings.json", 1)?;
                 let v = store::add_version(tx, &NewVersion { item_key: k, sha: Some("SHA-A"), bytes: 1, captured_at: 1, observed_mtime: 1, source: source::SNAPSHOT, origin_ref: None, session_id: None, agent_id: None })?;
                 store::add_event(tx, &NewEvent { item_key: k, at: 61_000, kind: "changed", from_version: None, to_version: v, source: source::SNAPSHOT, summary: "Changed." })?;
+                // A hand edit ten minutes later that lands on the same contents is inside the window too.
+                store::add_event(tx, &NewEvent { item_key: k, at: 61_000 + 10 * 60 * 1000, kind: "changed", from_version: None, to_version: v, source: source::SNAPSHOT, summary: "Changed." })?;
                 store::add_event(tx, &NewEvent { item_key: k, at: 2 * 60 * 60 * 1000, kind: "changed", from_version: None, to_version: v, source: source::SNAPSHOT, summary: "Changed." })?;
                 Ok(())
             })
             .unwrap();
         let marks = Marks::default().with_label(k, "SHA-A", 60_000, "Installed fd from the Library");
-        assert_eq!(relabel(&store, &marks, now).unwrap(), 1, "only the row right after the backup");
+        assert_eq!(relabel(&store, &marks, now).unwrap(), 1, "only the first row after the backup");
         let sums: Vec<String> = store
             .with(|c| {
                 let mut st = c.prepare("SELECT summary FROM events ORDER BY event_id")?;
@@ -560,6 +575,7 @@ mod tests {
                 it.collect::<rusqlite::Result<_>>()
             })
             .unwrap();
-        assert_eq!(sums, ["Installed fd from the Library", "Changed."]);
+        assert_eq!(sums, ["Installed fd from the Library", "Changed.", "Changed."], "only the first change after the backup is the Library's");
+        assert_eq!(relabel(&store, &marks, now).unwrap(), 0, "and a second look keeps it that way");
     }
 }

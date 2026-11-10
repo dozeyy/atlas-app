@@ -197,17 +197,41 @@ fn entry_of(env: &Env, plugin_id: &str) -> Option<catalog::Entry> {
 
 /// What the marketplace's own entry for `entry` names (hooks, servers, commands...): read from the
 /// marketplace files Claude Code keeps, the same ones it installs from. `Err` is why it could not
-/// be read, which the check shows as "can't read", never as clean. `Ok(None)`: the entry's source
-/// carries no such fields at all (the built-in plugin directory has no marketplace file on disk;
-/// its listing from `claude plugin list --available --json` names only id, name, description,
-/// version and where the plugin lives), so there is nothing to check beyond the plugin's own files.
-fn entry_fields_of(env: &Env, entry: &catalog::Entry) -> Result<Option<serde_json::Value>, String> {
+/// be read, which the check shows as "can't read", never as clean.
+///
+/// The built-in plugin directory has no marketplace file on disk (and no record in
+/// known_marketplaces.json), and its listing from `claude plugin list --available --json` carries
+/// no component fields. A directory plugin's own entry lives in the repo it is fetched from, so
+/// that is read instead: `repo` is (the fetched repo's root, the plugin's folder in it). `Ok(None)`
+/// = the repo lists no entry for the folder but the plugin has its own manifest, which the check
+/// reads with the files. A directory plugin with neither is `Err`, never "nothing to read".
+fn entry_fields_of(env: &Env, entry: &catalog::Entry, repo: Option<(&Path, &Path)>) -> Result<Option<serde_json::Value>, String> {
     let record = ledger::marketplaces(&env.root.dir).into_iter().find(|m| m.name == entry.marketplace);
-    match record.and_then(|m| m.install_location) {
-        Some(loc) => catalog::entry_components(Path::new(&loc), &entry.name).map(Some),
-        None if entry.marketplace == catalog::DIRECTORY => Ok(None),
+    match record {
+        Some(m) => match m.install_location {
+            Some(loc) => catalog::entry_components(Path::new(&loc), &entry.name).map(Some),
+            None => Err("Atlas could not find the marketplace's files, so it could not read the plugin's own entry".to_string()),
+        },
+        None if entry.marketplace == catalog::DIRECTORY => match (&entry.source, repo) {
+            (catalog::Source::Github { path, .. }, Some((root, base))) => catalog::entry_components_in_repo(root, base, &entry.name, path.as_deref()),
+            _ => Err("Atlas could not read the plugin's own entry in the catalog".to_string()),
+        },
         None => Err("Atlas could not find the marketplace's files, so it could not read the plugin's own entry".to_string()),
     }
+}
+
+/// The plugin's entry is read from the repo it is fetched from (the built-in directory, which has
+/// no record on this computer), not from a marketplace folder Claude Code keeps.
+fn entry_is_in_repo(env: &Env, entry: &catalog::Entry) -> bool {
+    entry.marketplace == catalog::DIRECTORY && !ledger::marketplaces(&env.root.dir).iter().any(|m| m.name == entry.marketplace)
+}
+
+/// What is kept with the token: the look as a comparable string. An entry read from the fetched
+/// repo is marked, because it cannot be read again at install (the commit it came from is what is
+/// installed, and the listing is compared separately).
+fn staged_fields_key(env: &Env, entry: &catalog::Entry, r: &Result<Option<serde_json::Value>, String>) -> String {
+    let k = entry_fields_key(r);
+    if entry_is_in_repo(env, entry) { format!("repo:{k}") } else { k }
 }
 
 /// The same look as a comparable string, kept with the token and compared again at install.
@@ -515,25 +539,25 @@ pub async fn library_inspect_plugin(app: AppHandle, state: Info<'_>, lib: Lib<'_
         return Err(m.into());
     }
     let name = entry.name.clone();
-    let (base, repo, sha, subpath) = match &entry.source {
+    let (base, repo, sha, subpath, repo_root) = match &entry.source {
         catalog::Source::Github { repo, sha, path, .. } => {
             // Exactly what Claude Code installs: the pinned commit, else the named branch or tag, else HEAD.
             let want = install::fetch_target(&entry.source).unwrap_or("HEAD");
             let un = fetch(&app, &lib, env.fetch_dir(), repo, want, sha.as_deref()).await?;
             let base = install::resolve_base(&un.dir, path.as_deref())?;
-            (Some(base), repo.clone(), un.sha.or_else(|| sha.clone()).unwrap_or_default(), path.clone())
+            (Some(base), repo.clone(), un.sha.or_else(|| sha.clone()).unwrap_or_default(), path.clone(), Some(un.dir.clone()))
         }
         catalog::Source::Local { path } => {
             let (dir, mp, p) = (env.root.dir.clone(), entry.marketplace.clone(), path.clone());
             let base = blocking(move || install::local_base(&dir, &mp, &p)).await?;
-            (Some(base), String::new(), String::new(), Some(path.clone()))
+            (Some(base), String::new(), String::new(), Some(path.clone()), None)
         }
         // Another git host or a source Atlas can't read: nothing to look at, a deliberate two-click install.
-        _ => (None, String::new(), String::new(), None),
+        _ => (None, String::new(), String::new(), None, None),
     };
     // The marketplace's own entry can name hooks and servers too (strict: false); they are
     // checked with the files, and an entry Atlas can't read is never "clean".
-    let fields = base.as_ref().map(|_| entry_fields_of(&env, &entry));
+    let fields = base.as_ref().map(|b| entry_fields_of(&env, &entry, repo_root.as_deref().map(|r| (r, b.as_path()))));
     let inspected = match base.clone() {
         Some(b2) => {
             let fields = fields.clone();
@@ -559,7 +583,7 @@ pub async fn library_inspect_plugin(app: AppHandle, state: Info<'_>, lib: Lib<'_
             shaped: inspected.shaped.clone(),
             plugin_id: Some(plugin_id),
             market_source: None,
-            entry_fields: fields.as_ref().map(entry_fields_key),
+            entry_fields: fields.as_ref().map(|f| staged_fields_key(&env, &entry, f)),
         }),
         repo,
         sha,
@@ -675,10 +699,11 @@ fn install_checked(st: &Arc<AppState>, lib: &Library, plugin_id: &str, token: &s
     let checked_source = checked_source.ok_or("Check it again first.")?;
     install::same_listing(&checked_source, source.as_ref())?;
     // ... and so does what the marketplace's own entry says the plugin loads.
-    if let (Some(was), Some(e)) = (checked_fields, entry.as_ref())
-        && was != entry_fields_key(&entry_fields_of(&env, e))
-    {
-        return Err(install::LISTING_MOVED.into());
+    if let (Some(was), Some(e)) = (checked_fields, entry.as_ref()) {
+        let moved = if was.starts_with("repo:") { !entry_is_in_repo(&env, e) } else { was != entry_fields_key(&entry_fields_of(&env, e, None)) };
+        if moved {
+            return Err(install::LISTING_MOVED.into());
+        }
     }
     let source = source.ok_or("That plugin is not in the catalog. Press Refresh.")?;
     let runner = env.runner()?;
@@ -834,12 +859,36 @@ mod tests {
         let env = env_at(t.path());
         std::fs::create_dir_all(t.path().join("plugins")).unwrap();
         std::fs::write(t.path().join("plugins/known_marketplaces.json"), r#"{"claude-plugins-official":{"source":{"source":"github","repo":"a/b"},"installLocation":"C:/nowhere"}}"#).unwrap();
-        // The directory: the listing carries no component fields, so there is nothing to read.
-        assert_eq!(entry_fields_of(&env, &entry(catalog::DIRECTORY)), Ok(None));
-        assert_eq!(entry_fields_key(&Ok(None)), "none");
+        // The directory: its entry is read from the repo the plugin is fetched from.
+        let repo = t.path().join("repo");
+        let base = repo.join("plugins/fd");
+        std::fs::create_dir_all(repo.join(".claude-plugin")).unwrap();
+        std::fs::create_dir_all(base.join(".claude-plugin")).unwrap();
+        std::fs::write(repo.join(".claude-plugin/marketplace.json"), r#"{"plugins":[{"name":"fd","source":"./plugins/fd","strict":false,"lspServers":{"fd":{"command":"fd-server"}}}]}"#).unwrap();
+        let mut gopls = entry(catalog::DIRECTORY);
+        gopls.source = catalog::Source::Github { repo: "o/r".into(), sha: Some("abc1234".into()), path: Some("plugins/fd".into()), git_ref: None };
+        let fields = entry_fields_of(&env, &gopls, Some((&repo, &base)));
+        assert_eq!(fields.as_ref().unwrap().as_ref().unwrap()["lspServers"]["fd"]["command"], "fd-server");
+        assert!(entry_is_in_repo(&env, &gopls));
+        assert!(staged_fields_key(&env, &gopls, &fields).starts_with("repo:"));
+        // ... the check of those files is flagged (a language server runs a program), not clean.
+        let c = atlas_core::library::check::check_tree_entry(&base, &[], atlas_core::library::check::EntryFields::Fields(fields.as_ref().unwrap().as_ref().unwrap()));
+        assert!(c.flags.iter().any(|f| f.code == "commands"), "{:?}", c.flags.iter().map(|f| &f.code).collect::<Vec<_>>());
+        assert!(c.summary.is_empty());
+        // No repo to read, or no entry and no manifest in it: unreadable, never Absent.
+        assert!(entry_fields_of(&env, &gopls, None).is_err());
+        let mut other = gopls.clone();
+        other.name = "other".into();
+        other.source = catalog::Source::Github { repo: "o/r".into(), sha: Some("abc1234".into()), path: Some("plugins/other".into()), git_ref: None };
+        std::fs::create_dir_all(repo.join("plugins/other")).unwrap();
+        assert!(entry_fields_of(&env, &other, Some((&repo, &repo.join("plugins/other")))).is_err());
         // Any other marketplace Atlas cannot find stays an honest failure (the entry may hold hooks).
-        let err = entry_fields_of(&env, &entry("some-other")).unwrap_err();
+        let err = entry_fields_of(&env, &entry("some-other"), None).unwrap_err();
         assert!(err.contains("could not find the marketplace"), "{err}");
         assert!(entry_fields_key(&Err(err)).starts_with('!'));
+        // A record that names the directory but has no folder is not "no record at all".
+        std::fs::write(t.path().join("plugins/known_marketplaces.json"), r#"{"anthropic-plugin-directory":{"source":{"source":"github","repo":"a/b"}}}"#).unwrap();
+        assert!(!entry_is_in_repo(&env, &gopls));
+        assert!(entry_fields_of(&env, &gopls, Some((&repo, &base))).is_err());
     }
 }

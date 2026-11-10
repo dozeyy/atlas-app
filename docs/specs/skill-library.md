@@ -557,6 +557,21 @@ so `atlas-repeats` ships; Will has run 32 and 33.
   only, user-typed only, nothing logged (D44); the reviewer checks the filters and the masking.
 - The search schema bump re-reads the whole corpus once (background, existing budget).
 
+## Known, accepted risks (security review, 2026-11-09)
+- **Gap between the last look and Claude Code's copy.** A plugin inside a marketplace folder
+  (Local source) is re-hashed right before the install and refused if it is not the one that was
+  checked (`install::local_unchanged`), but Claude Code copies the folder a moment later, and a
+  process that can write the user's own Claude folder could change it in between. Not closed:
+  whoever can write that folder can already edit settings and hooks directly. The backstop is the
+  rollback: after the install the landed files are hashed again, and any difference from the
+  checked ones (`files_differ`) takes the plugin out again (`take_out_again`), both steps in
+  History. A pinned commit has the same backstop through the landed sha (`commit_differs`).
+- **A directory plugin's own entry is read from the repo it is fetched from**, at the pinned
+  commit (the built-in directory has no marketplace file on this computer). No entry for the
+  folder and no plugin manifest means "can't read" (two clicks), never clean. It is not read
+  again at install: the pinned commit is what is installed, and a changed listing is refused
+  (`same_listing`).
+
 ## Suggested agent chain
 Unit A coder (sonnet; Rust + React; primary skill `ui-ux-pro-max`) and Unit B coder (sonnet;
 Rust + skill text) in parallel worktrees -> per unit code-reviewer (A: opus + security

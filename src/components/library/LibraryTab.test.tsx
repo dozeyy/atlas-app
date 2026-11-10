@@ -164,8 +164,14 @@ describe("Library tab: installing (D20, D24, D19 words)", () => {
     await within(sheet).findByText(/follows a branch, not one exact version/);
     expect(lib().installed).toHaveLength(0);
     expect(lib().calls.some((c) => c.startsWith("install:"))).toBe(false);
+    // Focus is on what must be read, not on Install: Enter does not install it.
+    const install = within(sheet).getByRole("button", { name: "Install" });
+    expect(install).not.toHaveFocus();
+    expect(within(sheet).getByLabelText("What Atlas found")).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    expect(lib().installed).toHaveLength(0);
     // The second click is the sheet's own Install.
-    await userEvent.click(within(sheet).getByRole("button", { name: "Install" }));
+    await userEvent.click(install);
     await waitFor(() => expect(lib().installed.map((r) => r.id)).toEqual(["code-review@anthropic-plugin-directory"]));
   });
 
@@ -178,6 +184,9 @@ describe("Library tab: installing (D20, D24, D19 words)", () => {
     const sheet = await screen.findByRole("dialog");
     expect(await within(sheet).findByText("Runs commands on your computer when it is used.")).toBeInTheDocument();
     expect(within(sheet).getByText("Can reach the internet.")).toBeInTheDocument();
+    // Focus starts on the findings, so the deliberate second click is not one Enter away.
+    expect(within(sheet).getByLabelText("What Atlas found")).toHaveFocus();
+    expect(within(sheet).getByRole("button", { name: "Install" })).not.toHaveFocus();
     // Back on the list, the row's Install still does not install by itself.
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

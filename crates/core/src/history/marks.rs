@@ -109,6 +109,13 @@ impl Marks {
     /// that happens to leave the same contents is not the Library's doing). A version that came
     /// back later gets the sentence of the change that brought it back.
     pub fn label(&self, key: &str, sha: &str, at_ms: i64) -> Option<&str> {
+        self.label_made(key, sha, at_ms).map(|(_, l)| l)
+    }
+
+    /// `label`, with the time of the backup it comes from: only the first change after a backup
+    /// may take its sentence, so the caller claims `(key, sha, made)` once. A later edit that
+    /// leaves the same contents is not the Library's doing, window or not.
+    pub fn label_made(&self, key: &str, sha: &str, at_ms: i64) -> Option<(i64, &str)> {
         // The backup is made first and the file written after it; a little slack covers clocks.
         const SLACK_MS: i64 = 500;
         const WITHIN_MS: i64 = 30 * 60 * 1000;
@@ -117,8 +124,12 @@ impl Marks {
             .iter()
             .filter(|(made, _)| *made <= at_ms + SLACK_MS && at_ms - *made <= WITHIN_MS)
             .max_by_key(|(made, _)| *made)
-            .map(|(_, l)| l.as_str())
+            .map(|(made, l)| (*made, l.as_str()))
     }
+
+    /// How far before its event a backup's own change may be taken in (the file's time can read a
+    /// little earlier than the backup's clock).
+    pub const SLACK_MS: i64 = 500;
 
     #[cfg(test)]
     pub(super) fn with_label(mut self, key: &str, sha: &str, made_ms: i64, label: &str) -> Marks {

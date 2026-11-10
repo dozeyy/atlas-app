@@ -94,6 +94,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
   const installBtn = useRef<HTMLButtonElement>(null);
+  const checkBox = useRef<HTMLDivElement>(null);
   const lib = useLibrary();
   const cli = lib.view?.cli ?? false;
   const installed: InstalledRow | undefined = lib.installed.find((r) => r.kind === "plugin" && r.id === target.pluginId);
@@ -159,7 +160,11 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
   }, []);
 
   useEffect(() => {
-    if (detail && target.focusInstall) installBtn.current?.focus();
+    if (!detail || !target.focusInstall) return;
+    // The deliberate second click is never one Enter away: when the check flagged something, could
+    // not read something, or the plugin follows a branch, focus goes to what must be read first.
+    if (!isClean(detail.inspected) || detail.confirmNote) checkBox.current?.focus();
+    else installBtn.current?.focus();
   }, [detail, target.focusInstall]);
 
   useEffect(() => {
@@ -358,7 +363,9 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
               </Section>
 
               <Section title="Before you install">
-                <SafetyCheck report={detail.inspected.check} notInstalled={shaped.notInstalled} />
+                <div ref={checkBox} tabIndex={-1} aria-label="What Atlas found" className="rounded-card outline-none">
+                  <SafetyCheck report={detail.inspected.check} notInstalled={shaped.notInstalled} />
+                </div>
                 {installed?.changed && (
                   <div role="note" className="mt-3 flex items-center gap-3 rounded-card bg-warning-tint px-4 py-3 text-body text-warning">
                     <span className="min-w-0 flex-1">Changed since you checked it.</span>
