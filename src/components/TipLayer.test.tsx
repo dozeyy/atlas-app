@@ -110,6 +110,24 @@ describe("TipLayer", () => {
     expect(tipBox().querySelector(".tt-head")).toHaveTextContent("commit-helper");
   });
 
+  it("a name faded out to an icon (the folded sidebar) is new again, so its tip shows", () => {
+    mount(
+      <nav title="Go somewhere">
+        <button title="Dashboard" aria-label="Dashboard">
+          <svg aria-hidden="true" />
+          <span className="nav-label" style={{ opacity: 0 }}>
+            Dashboard
+          </span>
+        </button>
+      </nav>,
+    );
+    const item = screen.getByRole("button", { name: "Dashboard" });
+    fireEvent.pointerOver(item);
+    act(() => void vi.advanceTimersByTime(500));
+    expect(tipBox()).toHaveAttribute("data-open");
+    expect(tipBox().querySelector(".tt-head")).toHaveTextContent("Dashboard");
+  });
+
   it("puts the title back when the pointer leaves, and hides", () => {
     mount();
     const btn = screen.getByRole("button", { name: "Open" });

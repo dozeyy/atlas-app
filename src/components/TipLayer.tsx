@@ -40,15 +40,38 @@ function isCut(el: Element): boolean {
 }
 
 /**
+ * The text of `el` a person can see: text inside anything faded out (opacity 0), hidden or not
+ * displayed does not count. A folded sidebar keeps each name in the DOM at opacity 0 so it can
+ * fade back in; to the eye the button is icon-only, and its name is new again.
+ */
+function visibleText(el: Element): string {
+  const hidden = (e: Element) => {
+    const s = getComputedStyle(e);
+    return s.display === "none" || s.visibility === "hidden" || Number(s.opacity) === 0;
+  };
+  if (hidden(el)) return "";
+  let out = "";
+  const walk = (node: Node) => {
+    for (const c of node.childNodes) {
+      if (c.nodeType === Node.TEXT_NODE) out += c.textContent ?? "";
+      else if (c.nodeType === Node.ELEMENT_NODE && !hidden(c as Element)) walk(c);
+    }
+  };
+  walk(el);
+  return out;
+}
+
+/**
  * The one rule for a tip that says what is already under the pointer (Will, 2026-11-10): a tip
  * that only repeats a name shown in full adds nothing and stays away; the same tip on a name cut
- * short with an ellipsis is the only way to read it, so it shows. A name that needs no tip hands
- * the hover on to the next thing above it that has one (the row's own tip).
+ * short with an ellipsis, or on a control whose name is faded out to an icon, is the only way to
+ * read it, so it shows. A name that needs no tip hands the hover on to the next thing above it
+ * that has one (the row's own tip).
  */
 function worthShowing(el: Element): boolean {
   const text = flat(textOf(el));
   if (!text) return false;
-  return text !== flat(el.textContent ?? "") || isCut(el);
+  return text !== flat(visibleText(el)) || isCut(el);
 }
 
 /** The element whose tip a pointer or focus on `from` should show, if any. */
