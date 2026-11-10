@@ -105,7 +105,9 @@ export function ActivityCard({ today }: { today: string }) {
       ) : tl.error ? (
         <EmptyState compact variant="error" title="Could not load activity" reason={tl.error} action={{ onClick: () => tl.reload(false) }} />
       ) : asTable ? (
-        <div className="max-h-[300px] overflow-auto rounded-control border border-line">
+        <div className="rounded-control border border-line">
+          {/* The rows scroll inside the frame and fade out at its bottom; the heading stays. */}
+          <div className="scroll-fade max-h-[300px] overflow-auto">
           <table className="w-full text-body">
             <caption className="sr-only">{`${RANGE_NAME[range]}, one row per ${span.bucket}`}</caption>
             <thead className="sticky top-0 bg-surface text-left text-caption text-ink-2">
@@ -129,6 +131,7 @@ export function ActivityCard({ today }: { today: string }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       ) : (
         <Bars

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  labelStep,
   MIN_BAR,
   axisMax,
   ZERO_STUB,
@@ -198,5 +199,17 @@ describe("barTop", () => {
   it("an empty scale draws nothing", () => {
     expect(h(NaN)).toBe(0);
     expect(base - barTop(5, 0, base, top)).toBe(0);
+  });
+});
+
+describe("labelStep", () => {
+  it("keeps four or five labels on a round step, never five apart", () => {
+    expect(labelStep(24, 5)).toBe(6); // hours: 12 AM, 6 AM, 12 PM, 6 PM
+    expect(labelStep(30, 5)).toBe(6); // days: five labels
+    expect(labelStep(12, 5)).toBe(3); // weeks: four labels
+    expect(labelStep(7, 5)).toBe(2);
+    expect(labelStep(3, 5)).toBe(1);
+    expect(labelStep(60, 4)).toBe(15);
+    for (let n = 1; n <= 120; n++) expect(Math.ceil(n / labelStep(n, 5))).toBeLessThanOrEqual(5);
   });
 });

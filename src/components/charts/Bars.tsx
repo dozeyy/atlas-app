@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ZERO_STUB, axisMax, barPath, barTop } from "../../lib/chartPaths";
+import { ZERO_STUB, axisMax, barPath, barTop, labelStep } from "../../lib/chartPaths";
 import { useIntro } from "../../lib/motion";
 import { ChartTooltip } from "./ChartTooltip";
 import type { TipAt } from "./ChartTooltip";
@@ -68,7 +68,12 @@ export function Bars({
   }, [data]);
   const peak = useMemo(() => clearPeak(data.map((d) => d.value)), [data]);
 
-  const labelEvery = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 64))));
+  // Four or five labels across the axis (three when narrow), stepping by a count that reads well
+  // (every 6 hours, every 6 days, every 3 weeks), never by 5.
+  const labelEvery = labelStep(n, Math.min(5, Math.max(3, Math.floor(plotW / 150))));
+  // A range with nothing in it shows its baseline and no ticks: "2 / 1 / 0" on an empty day was
+  // a made-up scale.
+  const empty = !data.some((d) => d.value > 0);
   const cx = (i: number) => LEFT + i * slot + slot / 2;
   const labelled = (i: number) => (anchor === "end" ? n - 1 - i : i) % labelEvery === 0;
   // Counting from the end, the newest bar's label ends at the plot's right edge (the first one
@@ -105,18 +110,21 @@ export function Bars({
       className={`chart-wrap${intro ? " intro" : ""}`}
     >
       <svg className="chart" width={width} height={height} aria-hidden="true">
-        {[0.5, 1].map((f) => (
-          <g key={f}>
-            <line className="grid-line" x1={LEFT} x2={width - RIGHT} y1={yOf(max * f)} y2={yOf(max * f)} />
-            <text className="axis-label" x={LEFT - 8} y={yOf(max * f) + 4} textAnchor="end">
-              {formatTick(max * f)}
-            </text>
-          </g>
-        ))}
+        {!empty &&
+          [0.5, 1].map((f) => (
+            <g key={f}>
+              <line className="grid-line" x1={LEFT} x2={width - RIGHT} y1={yOf(max * f)} y2={yOf(max * f)} />
+              <text className="axis-label" x={LEFT - 8} y={yOf(max * f) + 4} textAnchor="end">
+                {formatTick(max * f)}
+              </text>
+            </g>
+          ))}
         <line className="base-line" x1={LEFT} x2={width - RIGHT} y1={base} y2={base} />
-        <text className="axis-label" x={LEFT - 8} y={base + 4} textAnchor="end">
-          0
-        </text>
+        {!empty && (
+          <text className="axis-label" x={LEFT - 8} y={base + 4} textAnchor="end">
+            0
+          </text>
+        )}
 
         {data.map((d, i) => {
           const x = LEFT + i * slot + (slot - bw) / 2;

@@ -497,7 +497,9 @@
 }
 
 .sm-bar {
-  fill: var(--heat-2);
+  /* Bars at rest take the chart token tuned for 3:1 on every surface (the heat band under it
+     read as pale peach on white). */
+  fill: var(--bar-rest);
   transform-box: fill-box;
   transform-origin: 50% 100%;
   animation: sm-rise 520ms var(--ease-expo) backwards;

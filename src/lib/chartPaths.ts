@@ -241,3 +241,15 @@ export function stackFlex(values: number[]): number[] {
   if (total <= 0) return values.map(() => 0);
   return values.map((v) => (Math.max(0, v) / total) * 100);
 }
+
+/** Steps that read well under an axis: hours, days and weeks all land on a round count. */
+const LABEL_STEPS = [1, 2, 3, 4, 6, 7, 8, 10, 12, 14, 15, 20, 30];
+
+/**
+ * How many bars apart the x labels sit so that at most `maxLabels` are drawn: the smallest
+ * step from `LABEL_STEPS` that does it (24 hours at 5 labels: every 6 hours, four labels).
+ */
+export function labelStep(n: number, maxLabels: number): number {
+  const need = Math.max(1, Math.ceil(n / Math.max(1, maxLabels)));
+  return LABEL_STEPS.find((s) => s >= need) ?? need;
+}
