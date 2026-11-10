@@ -68,7 +68,7 @@ describe("Toolkit: what the setup costs", () => {
   it("ranks the biggest costs in tokens under the tiles and opens an item with its own figures", async () => {
     await open(backend);
     const panel = await screen.findByRole("region", { name: "What your setup costs" });
-    expect(panel).toHaveTextContent(/tokens per message, in every session/);
+    expect(panel).toHaveTextContent(/tokens a week, across all sessions/);
     // The layout: the tiles are the way in, so they come before any numbers.
     const tile = document.querySelector("[data-tile]")!;
     expect(tile.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

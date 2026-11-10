@@ -50,7 +50,9 @@ describe("CostPanel", () => {
     render(<CostPanel report={report(rows)} items={items} />);
     expect(screen.getByRole("heading", { name: "What your setup costs" })).toBeInTheDocument();
     const head = document.querySelector("[data-cost-headline]")!;
-    expect(head).toHaveTextContent("30k tokens per message, in every session");
+    // G6: one unit. The headline is the week's total (114M + 107M + 62M), the rows its parts.
+    expect(head).toHaveTextContent("283M tokens a week, across all sessions");
+    expect(head).not.toHaveTextContent("per message");
 
     const lis = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(lis).toHaveLength(3);
@@ -75,7 +77,11 @@ describe("CostPanel", () => {
   it("shows no dollars on screen: they live in the hover", () => {
     const { container } = render(<CostPanel report={report(rows)} items={items} />);
     expect(container.textContent).not.toContain("$");
-    expect(document.querySelector("[data-cost-headline]")).toHaveAttribute("title", "Estimate: about $287 a week at API prices, last 7 days.");
+    // What every message carries is the size, not the week: it stays one hover away.
+    expect(document.querySelector("[data-cost-headline]")).toHaveAttribute(
+      "title",
+      "29,702 tokens with every message, in every session. Estimate: about $287 a week at API prices, last 7 days.",
+    );
     expect(document.querySelector('[data-cost-row="i1"]')?.getAttribute("title")).toMatch(/8,804 tokens with every message.*Estimate: about \$21 a week/);
   });
 
@@ -108,7 +114,8 @@ describe("CostPanel", () => {
     expect(container.textContent).not.toContain("$");
     expect(container.textContent).not.toContain("a week");
     const lis = within(screen.getByRole("list")).getAllByRole("listitem");
-    expect(lis[0]).toHaveTextContent("900 each");
+    expect(lis[0]).toHaveTextContent("900 per message");
+    expect(document.querySelector("[data-cost-headline]")).toHaveTextContent("30k tokens per message, in every session");
     expect(document.querySelector("[data-cost-headline]")).not.toHaveAttribute("title");
   });
 

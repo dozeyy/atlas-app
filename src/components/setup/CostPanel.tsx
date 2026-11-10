@@ -1,4 +1,4 @@
-import { fmtUsd, loadsWhere, rowTitle, titleCount, topRows, usdHover, weeklyTokens, windowLabel } from "../../lib/setup-cost";
+import { fmtUsd, loadsWhere, rowTitle, titleCount, topRows, usdHover, weekTotal, weeklyTokens, windowLabel } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
 import type { CostReport, SetupItem } from "../../lib/setup-types";
 import { MiniKind } from "./parts";
@@ -18,7 +18,10 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
   const known = new Set(items.map((i) => i.id));
   const weekly = report.turns > 0;
   const max = Math.max(...rows.map(weeklyTokens), 1);
-  const total = report.usdWeek > 0 ? `Estimate: about ${fmtUsd(report.usdWeek)} a week at API prices, ${windowLabel(report)}.` : "";
+  // One unit on the card: with sessions to count, the headline is the week's total and every row
+  // is a part of that week. What each message carries (the size, not the week) is in the hovers.
+  const usd = report.usdWeek > 0 ? `Estimate: about ${fmtUsd(report.usdWeek)} a week at API prices, ${windowLabel(report)}.` : "";
+  const total = [weekly ? `${exact(report.globalTokens)} tokens with every message, in every session.` : "", usd].filter(Boolean).join(" ");
 
   return (
     <section aria-labelledby="cost-title" className="@container flex min-w-0 flex-col rounded-card border border-line bg-surface px-5 py-4">
@@ -26,14 +29,14 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
         What your setup costs
       </h2>
       <p data-cost-headline title={total || undefined} className="mt-1 flex items-baseline gap-2 text-body text-ink-2">
-        <span className="d d-tile text-ink">{compact(report.globalTokens)}</span>{" "}
-        tokens per message, in every session
+        <span className="d d-tile text-ink">{compact(weekly ? weekTotal(report) : report.globalTokens)}</span>{" "}
+        {weekly ? "tokens a week, across all sessions" : "tokens per message, in every session"}
       </p>
 
-      {/* The headline is what every chat carries with each message; the list ranks by the week
-          and says where each row loads. No second per-message figure sits on the surface: a row
-          that loads in some chats only can be bigger per message than the headline, and the two
-          read as a contradiction side by side. The exact per-message size is in each row's hover. */}
+      {/* Headline and rows speak one unit. With sessions to count it is the week: the total, then
+          the biggest parts of it, each saying where it loads. Before any session it is the size
+          per message. No second unit sits on the surface: the exact per-message size of a row
+          (which can be bigger than what every session carries) is in its hover. */}
       <ol aria-label={weekly ? `Biggest over the ${windowLabel(report)}` : "Biggest"} className="mt-3 space-y-2.5">
         {rows.map((r, i) => {
           const share = weeklyTokens(r) / max;
@@ -62,7 +65,7 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
                 {name}
                 <span className="ml-auto shrink-0 text-body text-ink">
                   <span className="d d-small">{compact(weekly ? weeklyTokens(r) : r.tokens)}</span>
-                  <span className="text-caption text-ink-2">{weekly ? " a week" : " each"}</span>
+                  <span className="text-caption text-ink-2">{weekly ? " a week" : " per message"}</span>
                 </span>
               </div>
               <p className="mt-0.5 truncate text-caption text-ink-2">{loadsWhere(r)}</p>

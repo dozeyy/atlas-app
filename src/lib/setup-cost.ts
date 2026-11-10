@@ -77,6 +77,14 @@ export function topRows(report: CostReport | null, n: number): CostRow[] {
     .slice(0, n);
 }
 
+/**
+ * Everything the setup added to messages over the window, in tokens: every row that loads with a
+ * message, not only the few the ranking shows. The cost card's headline, in the rows' own unit.
+ */
+export function weekTotal(report: CostReport): number {
+  return report.rows.reduce((sum, r) => (r.tokens > 0 ? sum + weeklyTokens(r) : sum), 0);
+}
+
 /** The cost row for one setup item, if it has one. */
 export function rowFor(report: CostReport | null, id: string): CostRow | null {
   return report?.rows.find((r) => r.id === id) ?? null;
