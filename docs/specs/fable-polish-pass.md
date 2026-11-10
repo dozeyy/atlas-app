@@ -157,6 +157,10 @@ you saw, what you propose, and why it helps at a glance. Rank them. Do not build
 - No new npm or cargo dependency without asking Will.
 - Never `--no-verify`; never commit `crates/setup/gen/schemas/*.json` or `verify-bin/`;
   never force-push.
+- The source repo (`dozeyy/atlas-app`) is **public**. Nothing personal goes into a committed
+  file: no real usage data, real chat titles, real project names or real paths from this PC.
+  Screenshots stay on this PC: `docs/shots/` is in `.gitignore`, never force-add it. Use the
+  fixtures and the MockBackend for anything that gets committed.
 
 ## How to work
 
@@ -170,7 +174,7 @@ you saw, what you propose, and why it helps at a glance. Rank them. Do not build
    components and its CSS; shared primitives (`controls.tsx`, `tokens.css`) only when the
    same problem appears on several pages, and then check every page that uses them.
 3. **Prove each page.** Before/after screenshots at 900 x 600 and 1180 x 780 in Dark and
-   Light, saved under `docs/shots/fable-pass/<page>/`. Then:
+   Light, saved under `docs/shots/fable-pass/<page>/` (local only, gitignored). Then:
    - `npx tsc --noEmit`
    - `npx vitest run` (all green; update a test only when the behaviour it checks
      intentionally changed, never to make a failure go away)
