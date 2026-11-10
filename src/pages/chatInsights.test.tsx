@@ -129,8 +129,11 @@ describe("Chat receipt and helper map", () => {
     expect(plate).not.toBeNull();
     expect((plate?.textContent ?? "").replace(/\s+/g, "")).toContain(a.name.replace(/\s+/g, ""));
     expect(plate?.querySelector(".map-plate-detail")?.textContent).toMatch(/ tokens/);
+    // The plate replaces that node's short name: the two never sit on top of each other.
+    expect(node.querySelector(".map-rest")).toBeNull();
     await userEvent.unhover(node);
     expect(map.querySelector(".map-plate")).toBeNull();
+    expect(map.querySelectorAll(".map-rest").length).toBe(rest.length);
     // The keyboard gets the same plate.
     act(() => node.focus());
     expect(map.querySelector(".map-plate")).not.toBeNull();

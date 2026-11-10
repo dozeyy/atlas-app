@@ -196,7 +196,8 @@ export function HelperMap({
                         Main chat
                       </text>
                     )}
-                    {label && (
+                    {/* While the node is pointed at, its plate says the whole name: the short one steps aside, never half under it. */}
+                    {label && hover !== n.id && (
                       <g className="map-rest" transform={`translate(${label.x - n.x} 0) scale(${1 / zoom})`} aria-hidden="true">
                         <text className="map-name" textAnchor={label.anchor} y={-3}>
                           {label.name}
