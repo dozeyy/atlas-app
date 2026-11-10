@@ -27,6 +27,11 @@ export function helperName(name: string): string {
   return name.replace(/(^|[^A-Za-z0-9])(ui|qa|api|mcp|ci|pr)(?![A-Za-z0-9])/gi, (_, before: string, word: string) => before + word.toUpperCase());
 }
 
+/** A helper's name for the page: `helperName` when the name was made from its type, else as written. */
+export function shownName(agent: { name: string; nameSource?: string }): string {
+  return agent.nameSource === "type" ? helperName(agent.name) : agent.name;
+}
+
 // ---- model chips -------------------------------------------------------------
 
 /** Which chart colour a model family wears: the same dot on the Dashboard, Sessions and here. */

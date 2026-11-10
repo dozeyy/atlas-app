@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Package } from "@phosphor-icons/react";
-import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, helperName, kindLook, MainChatIcon, type HelperKind } from "./helperKit";
+import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, helperName, kindLook, MainChatIcon, shownName, type HelperKind } from "./helperKit";
 import { typeName } from "../../lib/helperProgress";
 import { typeLabel } from "../../pages/AgentDetail";
 import { KINDS as SETUP_KINDS } from "../../lib/setup-model";
@@ -108,6 +108,9 @@ describe("helper names", () => {
       expect(helperName(name)).toBe(name);
     }
     expect(helperName("ui2 and api3")).toBe("ui2 and api3");
+    // Only a name made from the type is touched; what a person or Claude wrote stays as written.
+    expect(shownName({ name: "Ui builder", nameSource: "type" })).toBe("UI builder");
+    expect(shownName({ name: "check the ui again", nameSource: "description" })).toBe("check the ui again");
   });
 
   it("is what the type labels on Now, Sessions and Team go through", () => {

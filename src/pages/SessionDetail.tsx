@@ -20,7 +20,7 @@ import { TokenText } from "../components/usage/TokenText";
 import { Breakdown, ClampText, ModelSplit, Stat } from "../components/usage/detailParts";
 import { HelperMap } from "../components/usage/HelperMap";
 import { HelperSlice } from "../components/usage/HelperSlice";
-import { AgentAvatar, ModelDots, OutcomeMark, sessionName, TokenFigure } from "../components/usage/helperKit";
+import { AgentAvatar, ModelDots, OutcomeMark, sessionName, shownName, TokenFigure } from "../components/usage/helperKit";
 import { ReceiptPane } from "../components/usage/ReceiptPane";
 import { SessionTools, useSessionItems } from "../components/usage/SessionTools";
 import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
@@ -110,8 +110,8 @@ function HelperCard({
     <Card onClick={() => onOpen(agent.agentId)} className="flex items-center gap-3 px-4 py-3">
       <AgentAvatar type={agent.agentType} level={parentName ? "nested" : "helper"} />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-body font-semibold text-ink" title={agent.name}>
-          {agent.name}
+        <div className="truncate text-body font-semibold text-ink" title={shownName(agent)}>
+          {shownName(agent)}
         </div>
         {/* The facts stay; the model leaves the line whole when there is no room (.sl-meta). */}
         <div className="sl-meta mt-0.5 min-w-0 text-caption text-ink-2">

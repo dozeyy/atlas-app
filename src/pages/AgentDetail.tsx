@@ -5,7 +5,7 @@ import { Button, Card } from "../components/controls";
 import { Bars } from "../components/charts/Bars";
 import { IconMotion } from "../components/IconMotion";
 import { Breakdown, ClampText, ModelSplit } from "../components/usage/detailParts";
-import { AgentAvatar, helperName, ModelChip, OutcomeMark, TokenFigure, type AvatarLevel } from "../components/usage/helperKit";
+import { AgentAvatar, helperName, ModelChip, OutcomeMark, shownName, TokenFigure, type AvatarLevel } from "../components/usage/helperKit";
 import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
 import { timelineBars } from "../components/usage/timelineBars";
 import { getBackend } from "../lib/ipc";
@@ -104,7 +104,7 @@ export function AgentDetailView({
         <AgentAvatar type={agent.agentType} size={48} level={d.data.parentName ? "nested" : level} />
         <div className="min-w-0">
           {/* A name made from the type gets its short forms in capitals; one that was written stays as written. */}
-          <h2 className="d d-figure break-words text-ink">{agent.nameSource === "type" ? helperName(agent.name) : agent.name}</h2>
+          <h2 className="d d-figure break-words text-ink">{shownName(agent)}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-body text-ink-2">
             {outcome && <OutcomeMark outcome={outcome} />}
             {type && <span title={agent.agentType ?? undefined}>{type}</span>}
