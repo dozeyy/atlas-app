@@ -1,6 +1,6 @@
 {
   "name": "atlas",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Claude Code token usage in chat (this chat, a day, a week, a project, comparisons) with the same numbers as the Atlas app. /atlas or just ask. Also offers, once and only after the task, to turn a request you keep making into a skill.",
   "author": { "name": "Will Henry" },
   "homepage": "https://github.com/dozeyy/atlas",
