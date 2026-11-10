@@ -183,3 +183,64 @@ Looked at again and left:
   minimised and closed while one is open (item 25; four files, three of them not this area's).
 - C. A sort choice in the Filters menu (Name / Last changed / Most used) for skills and agents,
   if dozens of them make A to Z slow to scan. Name stays the default.
+
+## Round two: easy to read, icons that say what they are
+
+Will, 2026-11-09: no big word dumps, and an icon has to say what it stands for. Four redesigns,
+one commit each. Pictures: `<stop>/b2-before-*.png` and `<stop>/b2-after-*.png` at 900x600 and
+1180x780, Dark and Light. Clip: `for-will/setup-walk-dark.mp4` (1180x780, 18.6 s).
+
+- R4. Agents wear their avatar (`421651c`). Principle: one face per agent kind everywhere.
+  An agent's card, its sheet and its rows in the two panels use `AgentAvatar` from
+  `helperKit.tsx` as exported (no second mapping). Every other kind keeps its icon, now with
+  its name on hover ("Skill", "Hook", "Agent: Review"); panel rows carry a small kind icon.
+  Stops `toolkit-agent`, `toolkit-agent-item`, `toolkit`. Files: `parts.tsx`, `ItemViews.tsx`,
+  `DetailSheet.tsx`, `CostPanel.tsx`, `UsagePanel.tsx`.
+- R5. Hooks lead with plain words (`394e22f`). Principle: recognition before recall. The card
+  and sheet read "Before a tool runs · Bash" and "Runs fmt.sh --check"; the settings name
+  ("PreToolUse · Bash") is in the card's hover, the sheet's "In settings" row and search, so
+  typing the real name still finds it. Stops `toolkit-hook`, `toolkit-hook-item`. Files:
+  `setup-model.ts`, `ItemViews.tsx`, `DetailSheet.tsx`, `ConfirmDelete.tsx`, `ItemEditor.tsx`.
+- R6. The sheet opens on what the item is (`7149960`, order fix `9f221bd`). Principle:
+  progressive disclosure. Order: actions, a two-line lead ("Show all" when cut), cost, the
+  short facts, then the text as it reads. Path, size, date, header settings and raw text sit
+  behind one "File details" row, closed by default and remembered. Chips that repeated a fact
+  row are gone; the "Where" row went (the scope chip says it). Stops `toolkit-item`,
+  `toolkit-agent-item`, `toolkit-agent-file` (the row open). File: `DetailSheet.tsx`.
+- R7. One count form (`9c80e42`). Principle: consistency. A count is the number after the
+  label in the secondary ink ("Global 3", "Worktrees 3", "Other connected tools 19"), never
+  in brackets. Stops `toolkit-filters`, `toolkit`. Files: `Toolbar.tsx`, `CostPanel.tsx`,
+  `setup-cost.ts`, `DetailSheet.tsx`.
+
+Words on the first screen of the sheet at 1180x780 (all visible words / words above the text
+viewer), counted in the browser on the mock data:
+
+| Sheet | Before | After |
+|---|---|---|
+| Agent, mock description | 83 / 72 | 50 / 39 |
+| Agent, 80-word description | 153 / 152 | 78 / 67 |
+| Skill, mock description | 91 / 76 | 72 / 55 |
+| Skill, 80-word description | 153 / 152 | 94 / 77 |
+| Hook | 45 / 44 | 33 / 26 |
+
+The agent's whole sheet now fits 780 px with no scroll; its text starts at y 330, was 631.
+
+Also shortened: the create flow's note, the editor's secrets gate, the hidden-values note.
+
+Tests changed on purpose: `Setup.test.tsx` (path, date, model and tools are read after
+opening File details), `CostPanel.test.tsx` (count without brackets), `setup-model.test.ts`
+(three new tests for the plain hook names).
+
+Left as it is: the count pill beside a section title (group headers, "Projects no longer on
+disk") is the section-level form; the checklist's reasons are hover text already; the
+editor's conflict dialog (a destructive choice, the words are the safety).
+
+For other areas:
+
+- `helperKit.tsx`: the "General purpose" look is a lightning bolt in the accent tint, the same
+  glyph as the Skills kind icon. One of the two should change so they never sit side by side
+  meaning different things.
+- `helperKit.tsx`: agent names such as "bug-hunter" or "lane-agent" fall to the grey "Other
+  helper" robot. A wider name match (hunt, debug, fix; build, lane) would give more agents a
+  face of their own, on every page at once.
+- Sheets still cover the title bar (suggestion B above).
