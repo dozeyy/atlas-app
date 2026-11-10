@@ -1,7 +1,8 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowLeft, Plus } from "@phosphor-icons/react";
+import { ArrowLeft, Plus, SquaresFour } from "@phosphor-icons/react";
 import { Button } from "../controls";
+import { EmptyState } from "../EmptyState";
 import { IconMotion } from "../IconMotion";
 import { GroupBody, GroupSection } from "./GroupSection";
 import { NoMatches } from "./states";
@@ -11,8 +12,10 @@ import {
   gridMove,
   groupItems,
   KIND_BY_ID,
+  searchPlaceholder,
+  tileBlurb,
   tileKinds,
-  tileTitle,
+  tileNoun,
   visibleItems,
   type Filters,
   type TileId,
@@ -139,7 +142,7 @@ export function CollectionView({
 
   return (
     <div className="fade-in flex min-h-0 flex-1 flex-col">
-      <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-3">
+      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-3">
         <Button onClick={onBack}>
           <IconMotion motion="nudge">
             <ArrowLeft />
@@ -166,15 +169,25 @@ export function CollectionView({
         shortcut={showKeys ? (mac ? "Cmd F" : "Ctrl F") : undefined}
         shown={visible.length}
         total={items.length}
-        placeholder={`Search ${tileTitle(tile).toLowerCase()}`}
+        placeholder={searchPlaceholder(tile)}
       />
 
       <div ref={list} onKeyDown={onListKey} className="-mx-2 -mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pt-2">
         {items.length === 0 ? (
-          <p className="rounded-card border border-dashed border-line-strong px-5 py-8 text-center text-body text-ink-2">
-            Nothing here yet.
-            {creatable ? ` Use New ${KIND_BY_ID[creatable].singular} to make the first one.` : ""}
-          </p>
+          <EmptyState
+            fill
+            icon={tile === "more" ? SquaresFour : KIND_BY_ID[tile].icon}
+            seed={73}
+            title={tile === "more" ? "Nothing here yet" : `No ${tileNoun(tile)} yet`}
+            body={tileBlurb(tile)}
+          >
+            {creatable && (
+              <Button onClick={() => onCreate(creatable)}>
+                <Plus />
+                New {KIND_BY_ID[creatable].singular}
+              </Button>
+            )}
+          </EmptyState>
         ) : groups.length === 0 ? (
           <NoMatches onClear={clearAll} />
         ) : single ? (

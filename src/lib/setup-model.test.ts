@@ -5,6 +5,8 @@ import {
   countByKind,
   countByScope,
   DEFAULT_FILTERS,
+  displayDescription,
+  displayName,
   enabledTone,
   gridMove,
   groupItems,
@@ -144,5 +146,33 @@ describe("small helpers", () => {
     expect(enabledTone("rejected")).toBe("bad");
     expect(enabledTone("shadowed")).toBe("warn");
     expect(enabledTone("none")).toBe("muted");
+  });
+});
+
+describe("hooks in plain words", () => {
+  const hook = () => snap.items.find((i) => i.kind === "hook")!;
+
+  it("leads with when the hook runs and keeps the settings name searchable", () => {
+    const h = hook();
+    expect(h.name).toBe("PreToolUse · Bash");
+    expect(displayName(h)).toBe("Before a tool runs · Bash");
+    expect(displayDescription(h)).toBe("Runs fmt.sh --check");
+    expect(matchesQuery(h, "pretooluse")).toBe(true);
+    expect(matchesQuery(h, "before a tool")).toBe(true);
+  });
+
+  it("spells several matchers as a list, drops a catch-all, and leaves an unknown event alone", () => {
+    const h = hook();
+    expect(displayName({ ...h, name: "PostToolUse · Edit|Write" })).toBe("After a tool runs · Edit, Write");
+    expect(displayName({ ...h, name: "Stop · any" })).toBe("When Claude finishes");
+    expect(displayName({ ...h, name: "SomethingNew · Bash" })).toBe("SomethingNew · Bash");
+    expect(displayDescription({ ...h, description: "prompt: Is this safe?" })).toBe("Asks Claude: Is this safe?");
+    expect(displayDescription({ ...h, description: "something else" })).toBe("something else");
+  });
+
+  it("leaves every other kind exactly as it is named", () => {
+    const skill = snap.items.find((i) => i.kind === "skill")!;
+    expect(displayName(skill)).toBe(skill.name);
+    expect(displayDescription(skill)).toBe(skill.description);
   });
 });

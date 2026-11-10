@@ -55,7 +55,9 @@ describe("CostPanel", () => {
     const lis = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(lis).toHaveLength(3);
     // Ranked by tokens over the window: tools 114M, then CLAUDE.md 107M, then the rule 62M.
-    expect(lis[0]).toHaveTextContent("Other connected tools (19)");
+    // A count is set the way the headings set one ("Global 3"): after the label, no brackets.
+    expect(lis[0]).toHaveTextContent("Other connected tools19");
+    expect(lis[0]).not.toHaveTextContent("(19)");
     expect(lis[0]).toHaveTextContent("114M a week");
     expect(lis[0]).toHaveTextContent("Chats that connect them - 7.3k per message");
     // A project's file carries the project name in its title, so same-named files differ.

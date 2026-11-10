@@ -114,6 +114,43 @@ export const SCOPE_NAME: Record<ScopeKind, string> = {
   connector: "claude.ai",
 };
 
+/** Claude Code's hook events in plain words. The create flow offers them; cards and the sheet title read them. */
+export const HOOK_EVENTS: { value: string; label: string }[] = [
+  { value: "PostToolUse", label: "After a tool runs" },
+  { value: "PreToolUse", label: "Before a tool runs" },
+  { value: "UserPromptSubmit", label: "When you send a message" },
+  { value: "Stop", label: "When Claude finishes" },
+  { value: "SessionStart", label: "When a session starts" },
+  { value: "Notification", label: "When Claude needs you" },
+  { value: "SubagentStop", label: "When an agent finishes" },
+  { value: "PreCompact", label: "Before the chat is trimmed" },
+];
+
+const SEP = /\s+·\s+/;
+
+/**
+ * The name a person reads. A hook's stored name is its event and its matcher as the settings
+ * file spells them ("PreToolUse - Edit|Write" with a middle dot); on the surface that becomes
+ * "Before a tool runs - Edit, Write", and the stored name stays in the hover, the sheet's facts
+ * and the search. An event Atlas has no words for, and every other kind, keep their own name.
+ */
+export function displayName(i: SetupItem): string {
+  if (i.kind !== "hook") return i.name;
+  const [event, ...rest] = i.name.split(SEP);
+  const words = HOOK_EVENTS.find((h) => h.value === event)?.label;
+  if (!words) return i.name;
+  const matcher = rest.join(" · ").trim();
+  return !matcher || matcher === "any" || matcher === "*" ? words : `${words} · ${matcher.split("|").join(", ")}`;
+}
+
+/** A hook's first line in words: "command: fmt.sh --check" reads "Runs fmt.sh --check". Other kinds: their description. */
+export function displayDescription(i: SetupItem): string {
+  if (i.kind !== "hook") return i.description;
+  const m = /^(command|prompt)\s*(?::|·)\s*(.*)$/s.exec(i.description);
+  if (!m || !m[2]) return i.description;
+  return m[1] === "command" ? `Runs ${m[2]}` : `Asks Claude: ${m[2]}`;
+}
+
 const keys = new WeakMap<SetupItem, string>();
 
 function searchKey(i: SetupItem): string {
@@ -121,6 +158,7 @@ function searchKey(i: SetupItem): string {
   if (k === undefined) {
     k = [
       i.name,
+      i.kind === "hook" ? displayName(i) : "",
       i.description,
       i.scopeLabel,
       KIND_BY_ID[i.kind].singular,
@@ -356,6 +394,17 @@ export function tileKinds(id: TileId): ItemKind[] {
 
 export function tileTitle(id: TileId): string {
   return id === "more" ? "More" : KIND_BY_ID[id].plural;
+}
+
+/** A tile's name as it reads in the middle of a sentence: "skills", "output styles", but "MCP servers". */
+export function tileNoun(id: TileId): string {
+  const t = tileTitle(id);
+  return /^[A-Z]{2}/.test(t) ? t : t.charAt(0).toLowerCase() + t.slice(1);
+}
+
+/** What the search box of an open tile says. The More tile holds several kinds, so it has its own words. */
+export function searchPlaceholder(id: TileId): string {
+  return id === "more" ? "Search everything else" : `Search ${tileNoun(id)}`;
 }
 
 export function tileBlurb(id: TileId): string {

@@ -8,6 +8,7 @@ import { ConfirmDelete } from "../components/setup/ConfirmDelete";
 import { CreateFlow } from "../components/setup/CreateFlow";
 import { DetailSheet } from "../components/setup/DetailSheet";
 import { ItemRow } from "../components/setup/ItemViews";
+import { PathText } from "../components/setup/parts";
 import { NoSetup, SetupError, SetupSkeleton } from "../components/setup/states";
 import { TopSlot } from "../components/setup/TopSlot";
 import { TypeTiles } from "../components/setup/TypeTiles";
@@ -51,7 +52,7 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <h2 id="missing-title" className="d d-figure text-ink">
+            <h2 id="missing-title" className="text-lead font-semibold text-ink">
               Projects no longer on disk
             </h2>
             <span className="chip">{projects.length}</span>
@@ -67,8 +68,8 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
               <li key={p.id} className="border-b border-line last:border-b-0">
                 <div className="px-4 py-2.5">
                   <div className="text-body font-medium text-ink">{p.name}</div>
-                  <div className="mono selectable truncate text-ink-2" title={p.path}>
-                    {p.path}
+                  <div className="selectable text-ink-2">
+                    <PathText path={p.path} />
                   </div>
                 </div>
                 {mine.map((i) => (

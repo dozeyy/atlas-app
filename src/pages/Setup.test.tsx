@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
@@ -7,6 +7,8 @@ import { setBackend } from "../lib/ipc";
 import { MockBackend } from "../lib/mock";
 import { mockSetupSnapshot } from "../lib/setup-mock";
 import { reloadSetup, resetSetupStore } from "../state/setupStore";
+import { CHECKLIST_FOLDED_KEY } from "../components/setup/Checklist";
+import { FILE_DETAILS_KEY } from "../components/setup/DetailSheet";
 import { CELEBRATE_MS, CHECKLIST_DONE_KEY } from "../components/setup/TopSlot";
 import { resetToasts } from "../state/toastStore";
 import { resetUnsaved } from "../state/unsavedStore";
@@ -68,7 +70,8 @@ async function open(b: Backend) {
 async function openTile(label: string) {
   await userEvent.click(await screen.findByRole("button", { name: new RegExp(`^${label}, \\d+$`) }));
   // A tile has no page header: the search box ("Search skills") is what says which one is open.
-  return screen.findByPlaceholderText(`Search ${label.toLowerCase()}`);
+  // The name reads as in a sentence: lower-case, except a leading acronym ("Search MCP servers").
+  return screen.findByPlaceholderText(`Search ${/^[A-Z]{2}/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1)}`);
 }
 
 async function openTilesReady() {
@@ -134,7 +137,7 @@ describe("Setup page: main view", () => {
       [...root.querySelectorAll<HTMLElement>(".press")].filter((e) => /content-visibility|overflow-hidden|\btruncate\b/.test(e.className)).map((e) => e.getAttribute("aria-label") ?? e.textContent);
     expect(bad(document)).toEqual([]);
     await userEvent.click(await screen.findByRole("button", { name: /^More, \d+$/ }));
-    await screen.findByPlaceholderText("Search more");
+    await screen.findByPlaceholderText("Search everything else");
     expect(bad(document)).toEqual([]);
     await userEvent.click(screen.getByRole("button", { name: "Back to Toolkit" }));
     await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
@@ -289,7 +292,19 @@ describe("Setup page: detail", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByRole("heading", { level: 2, name: "commit-helper" })).toBeInTheDocument();
     expect(within(dialog).getByText("references/style.md")).toBeInTheDocument();
+    // The sheet opens on the text as it reads; the path and the raw text wait behind one row.
+    expect(await within(dialog).findByText("Preview")).toBeInTheDocument();
+    expect(within(dialog).queryByTestId("source")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Changed")).not.toBeInTheDocument();
+    const more = within(dialog).getByRole("button", { name: "File details" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
     expect(await within(dialog).findByTestId("source")).toBeInTheDocument();
+    expect(within(dialog).getByText("Raw text")).toBeInTheDocument();
+    expect(within(dialog).getByText("Changed")).toBeInTheDocument();
+    expect(localStorage.getItem(FILE_DETAILS_KEY)).toBe("1");
+    localStorage.removeItem(FILE_DETAILS_KEY);
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(card).toHaveFocus();
@@ -310,9 +325,13 @@ describe("Setup page: detail", () => {
     await openTile("Agents");
     await userEvent.click(await screen.findByRole("button", { name: /agent code-reviewer/ }));
     const dialog = await screen.findByRole("dialog");
+    // The text as it reads comes first; the header's settings are one row away.
+    expect(await within(dialog).findByText("Preview")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Model")).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "File details" }));
     expect(await within(dialog).findByText("Model")).toBeInTheDocument();
     expect(within(dialog).getByText("Tools")).toBeInTheDocument();
-    expect(within(dialog).getByText("Preview")).toBeInTheDocument();
+    localStorage.removeItem(FILE_DETAILS_KEY);
     expect(within(dialog).getByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
 
@@ -789,6 +808,28 @@ describe("Setup page: checklist and create", () => {
     await waitFor(() => expect(screen.queryByRole("progressbar", { name: "Toolkit progress" })).not.toBeInTheDocument());
     expect(screen.getByRole("button", { name: /^Skills, \d+$/ })).toBeInTheDocument();
     expect(localStorage.getItem(CHECKLIST_DONE_KEY)).toBe("1");
+  });
+
+  it("puts the steps away on request, keeps the progress in view and remembers the choice", async () => {
+    const snap = await mockSetupSnapshot(false);
+    backend.snapshot = async () => ({ ...snap, items: snap.items.filter((i) => i.kind !== "agent") });
+    await open(backend);
+    expect(await screen.findByRole("button", { name: "Add an agent: Add your first agent" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide steps" }));
+    expect(screen.queryByRole("button", { name: "Add an agent: Add your first agent" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Finish your toolkit" })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Toolkit progress" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show steps" })).toHaveAttribute("aria-expanded", "false");
+    expect(localStorage.getItem(CHECKLIST_FOLDED_KEY)).toBe("1");
+
+    // Coming back to the page finds it as it was left.
+    cleanup();
+    await open(backend);
+    expect(await screen.findByRole("button", { name: "Show steps" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show steps" }));
+    expect(screen.getByRole("button", { name: "Add an agent: Add your first agent" })).toBeInTheDocument();
+    expect(localStorage.getItem(CHECKLIST_FOLDED_KEY)).toBeNull();
   });
 
   it("does not celebrate a second time, and the card returns when a step becomes undone", async () => {

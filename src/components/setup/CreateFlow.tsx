@@ -1,23 +1,14 @@
 import { useEffect, useState } from "react";
 import { Button } from "../controls";
 import { Dialog } from "../Dialog";
+import { PathText } from "./parts";
 import { TextEditor } from "./TextEditor";
 import { getBackend } from "../../lib/ipc";
 import { errorText } from "../../lib/setup-actions";
+import { HOOK_EVENTS } from "../../lib/setup-model";
 import type { CreateKind, Draft } from "../../lib/setup-types";
 import { reloadSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
-
-export const HOOK_EVENTS: { value: string; label: string }[] = [
-  { value: "PostToolUse", label: "After a tool runs" },
-  { value: "PreToolUse", label: "Before a tool runs" },
-  { value: "UserPromptSubmit", label: "When you send a message" },
-  { value: "Stop", label: "When Claude finishes" },
-  { value: "SessionStart", label: "When a session starts" },
-  { value: "Notification", label: "When Claude needs you" },
-  { value: "SubagentStop", label: "When an agent finishes" },
-  { value: "PreCompact", label: "Before the chat is trimmed" },
-];
 
 const NAME_HELP: Record<CreateKind, { label: string; placeholder: string; hint: string } | null> = {
   instructions: null,
@@ -146,9 +137,7 @@ export function CreateFlow({ kind, onClose }: { kind: CreateKind; onClose: () =>
               </select>
             </label>
           )}
-          <p className="text-body text-ink-2">
-            Next you will see a starting text to change. Nothing is written until you press Create, and Atlas never replaces something you already have.
-          </p>
+          <p className="text-caption text-ink-2">Next: a starting text to change. Nothing is written until you press Create.</p>
           {error && (
             <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-body text-danger">
               {error}
@@ -159,7 +148,7 @@ export function CreateFlow({ kind, onClose }: { kind: CreateKind; onClose: () =>
       ) : draft ? (
         <div className="flex flex-col gap-2">
           <p className="text-body text-ink-2">
-            Goes in <span className="mono selectable break-all text-ink">{draft.whereNote || draft.path}</span>
+            Goes in <PathText path={draft.whereNote || draft.path} className="selectable text-ink" />
           </p>
           <TextEditor
             initial={draft.text}

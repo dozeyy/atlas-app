@@ -1,24 +1,66 @@
 import { useState } from "react";
-import { CaretDown, CaretRight, CheckCircle, Circle, Sparkle } from "@phosphor-icons/react";
-import { Button } from "../controls";
+import { CaretDown, CaretRight, CaretUp, CheckCircle, Circle, Sparkle } from "@phosphor-icons/react";
+import { Button, IconButton } from "../controls";
 import { useIntro } from "../../lib/motion";
 import { progress, progressTitle, SETUP_STEPS, type SetupStep } from "../../lib/setup-steps";
 import type { CreateKind, SetupItem } from "../../lib/setup-types";
 
+/** Set while the person has put the steps away; the card is then one line until they open it again. */
+export const CHECKLIST_FOLDED_KEY = "atlas.setup.checklistFolded";
+
+function storedFold(): boolean {
+  try {
+    return localStorage.getItem(CHECKLIST_FOLDED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberFold(folded: boolean) {
+  try {
+    if (folded) localStorage.setItem(CHECKLIST_FOLDED_KEY, "1");
+    else localStorage.removeItem(CHECKLIST_FOLDED_KEY);
+  } catch {
+    // A convenience only: without it the steps are simply open again next time.
+  }
+}
+
 /**
  * "Finish your toolkit", with "4 of 6" beside a growing bar. Steps tick themselves from what the
  * scan finds; done ones fold away, the rest each get a button that opens the create flow. The
- * reason for a step is its tooltip, not a sentence.
+ * reason for a step is its tooltip, not a sentence. The caret in the corner puts the steps away
+ * (remembered), so a step someone never wants does not hold the top of the page for good.
  */
 export function Checklist({ items, onCreate, steps = SETUP_STEPS }: { items: SetupItem[]; onCreate: (kind: CreateKind) => void; steps?: SetupStep[] }) {
   const [showDone, setShowDone] = useState(false);
+  const [foldedPref, setFoldedPref] = useState(storedFold);
   const p = progress(items, steps);
   const pct = Math.round((p.doneCount / p.total) * 100);
   const intro = useIntro("toolkit:checklist");
   const Caret = showDone ? CaretDown : CaretRight;
+  // The finished card (its short moment before it goes) is always whole.
+  const folded = foldedPref && !p.complete;
+  const fold = (next: boolean) => {
+    setFoldedPref(next);
+    rememberFold(next);
+  };
+
+  const bar = (
+    <div
+      role="progressbar"
+      aria-label="Toolkit progress"
+      aria-valuemin={0}
+      aria-valuemax={p.total}
+      aria-valuenow={p.doneCount}
+      aria-valuetext={`${p.doneCount} of ${p.total} done`}
+      className={`share-bar ${folded ? "min-w-12 flex-1" : "mt-3"}${intro ? " intro" : ""}`}
+    >
+      <i style={{ width: `${pct}%` }} />
+    </div>
+  );
 
   return (
-    <section aria-labelledby="checklist-title" className="card px-5 py-4">
+    <section aria-labelledby="checklist-title" className={`card px-5 ${folded ? "py-3" : "py-4"}`}>
       <div className="flex items-center gap-3">
         <span
           aria-hidden="true"
@@ -26,28 +68,32 @@ export function Checklist({ items, onCreate, steps = SETUP_STEPS }: { items: Set
         >
           {p.complete ? <CheckCircle size={20} weight="fill" /> : <Sparkle size={18} weight="duotone" />}
         </span>
-        <div className="min-w-0 flex-1">
-          <h2 id="checklist-title" className="d d-figure text-ink">
+        <div className={folded ? "min-w-0 shrink" : "min-w-0 flex-1"}>
+          <h2 id="checklist-title" className="d d-figure truncate text-ink">
             {progressTitle(p)}
           </h2>
         </div>
+        {/* Put away, the card is one line: what it is, how far along, and the way back. */}
+        {folded && bar}
         <span className="chip chip-clay shrink-0 tabular-nums">{`${p.doneCount} of ${p.total}`}</span>
+        {!p.complete && (
+          <IconButton
+            aria-label={folded ? "Show steps" : "Hide steps"}
+            title={folded ? "Show steps" : "Hide steps"}
+            aria-expanded={!folded}
+            aria-controls={folded ? undefined : "checklist-steps"}
+            onClick={() => fold(!folded)}
+            className="-mr-1.5 shrink-0"
+          >
+            {folded ? <CaretDown /> : <CaretUp />}
+          </IconButton>
+        )}
       </div>
 
-      <div
-        role="progressbar"
-        aria-label="Toolkit progress"
-        aria-valuemin={0}
-        aria-valuemax={p.total}
-        aria-valuenow={p.doneCount}
-        aria-valuetext={`${p.doneCount} of ${p.total} done`}
-        className={`share-bar mt-3${intro ? " intro" : ""}`}
-      >
-        <i style={{ width: `${pct}%` }} />
-      </div>
+      {!folded && bar}
 
-      {p.todo.length > 0 && (
-        <ul className="mt-3 divide-y divide-line">
+      {!folded && p.todo.length > 0 && (
+        <ul id="checklist-steps" className="mt-3 divide-y divide-line">
           {p.todo.map((s) => (
             <li key={s.id} className="flex items-center gap-3 py-2.5">
               <Circle size={18} aria-hidden="true" className="shrink-0 text-ink-2" />
@@ -64,7 +110,7 @@ export function Checklist({ items, onCreate, steps = SETUP_STEPS }: { items: Set
         </ul>
       )}
 
-      {p.done.length > 0 && (
+      {!folded && p.done.length > 0 && (
         <div className={p.todo.length > 0 ? "border-t border-line pt-2" : "mt-2"}>
           <button
             type="button"

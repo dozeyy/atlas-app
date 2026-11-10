@@ -7,6 +7,7 @@ import { cacheNotReady } from "../../lib/useUsage";
 import { joinUsage, usageWindow } from "../../lib/usage-join";
 import type { SetupItem } from "../../lib/setup-types";
 import type { UsageRow } from "../../lib/usage-types";
+import { MiniKind } from "./parts";
 
 // A glance, not an inventory: the full lists are one tile away. These caps keep the panel short
 // enough that the whole Toolkit page fits a 1280x800 window beside the cost ranking. The dust
@@ -197,10 +198,10 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
         <h2 id="usage-title" className="text-lead font-semibold text-ink">
           Used and never used
         </h2>
-        <p className="ml-auto text-caption text-ink-2">last 30 days</p>
+        <p className="ml-auto text-caption text-ink-2">Last 30 days</p>
       </div>
 
-      <div className="mt-3 grid gap-x-8 gap-y-4 @min-[500px]:grid-cols-2">
+      <div className="mt-3 grid gap-x-8 gap-y-4 @min-[560px]:grid-cols-2">
         <div className="flex min-w-0 items-center gap-4">
           <Ring
             id="usage:ring"
@@ -211,7 +212,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
           >
             <div className="flex flex-col items-center leading-none">
               <span className="d d-figure text-ink">{used.length}</span>
-              <span className="mt-1 text-caption text-ink-2">of {total}</span>
+              <span className="mt-1 text-caption text-ink-2">of {total} used</span>
             </div>
           </Ring>
           <div className="min-w-0 flex-1">
@@ -225,6 +226,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
                   return (
                     <li key={r.id} title={`${it.name}: ${r.uses30d.toLocaleString()} ${r.uses30d === 1 ? "time" : "times"}${r.lastUsed ? `, last ${relativeTime(r.lastUsed)}` : ""}`}>
                       <div className="flex items-baseline gap-2">
+                        <MiniKind kind={it.kind} name={it.name} />
                         {open(r.id, it.name)}
                         <span className="ml-auto shrink-0 text-caption text-ink-2">
                           <span className="d d-small text-ink">{r.uses30d.toLocaleString()}</span>x
