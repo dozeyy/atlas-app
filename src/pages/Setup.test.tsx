@@ -602,6 +602,26 @@ describe("Setup page: edit", () => {
     expect(dialog.querySelector("[data-wide]")).toBeNull();
   });
 
+  it("an Escape the editor used itself never reaches the sheet: it stays open, in and out of full window", async () => {
+    const { dialog, ta } = await openEditor("Skills", /skill deep-research/);
+    // Stands in for the code editor taking the key (simplifying a selection, or leaving full window):
+    // it marks the event used before it bubbles to the dialog.
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") e.preventDefault();
+    });
+    ta.focus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(screen.queryByText("Discard your changes?")).toBeNull();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Full window" }));
+    expect(dialog.querySelector("[data-wide]")).not.toBeNull();
+    await userEvent.keyboard("{Escape}");
+    expect(dialog.querySelector("[data-wide]")).toBeNull();
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(screen.queryByText("Discard your changes?")).toBeNull();
+  });
+
   it("disables Save and says what is wrong, with the line, while the text is invalid", async () => {
     await open(backend);
     await openTile("MCP servers");

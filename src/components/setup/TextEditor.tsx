@@ -54,7 +54,6 @@ export function TextEditor({
   const wideRef = useRef(wide);
   wideRef.current = wide;
   // Set when the editor's own Escape binding leaves full window, read by the key handler below.
-  const escTaken = useRef(false);
 
   const textRef = useRef(initial);
   const seq = useRef(0);
@@ -90,14 +89,10 @@ export function TextEditor({
         },
         onSave: () => submitRef.current(),
         // Escape leaves full window even when the editor would have used it (a selection to
-        // simplify); the key then reaches onKey already taken. Not wide: the editor keeps it.
+        // simplify). The editor marks the key as used (preventDefault), and onKey stops a used
+        // Escape from reaching the sheet behind. Not wide: the editor keeps it.
         onEscape: () => {
           if (!wideRef.current) return false;
-          escTaken.current = true;
-          // The same key event reaches onKey while it bubbles, before this runs.
-          queueMicrotask(() => {
-            escTaken.current = false;
-          });
           setWide(false);
           return true;
         },
@@ -151,13 +146,13 @@ export function TextEditor({
   }, [wide]);
 
   const onKey = (e: KeyboardEvent) => {
-    // The editor's own Escape binding (above) may have taken this key for leaving full window
-    // already; the sheet behind must still not see it.
-    if (e.key === "Escape" && (wide || escTaken.current)) {
-      escTaken.current = false;
+    // An Escape the editor already used (leaving full window above, or simplifying a selection)
+    // ends here: the sheet behind must not close on it. In full window, Escape from anywhere in
+    // the dialog leaves it, and nothing else.
+    if (e.key === "Escape" && (e.defaultPrevented || wideRef.current)) {
       e.preventDefault();
       e.stopPropagation();
-      setWide(false);
+      if (wideRef.current) setWide(false);
       return;
     }
     if (e.defaultPrevented) return;
