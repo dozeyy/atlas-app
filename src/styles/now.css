@@ -792,12 +792,6 @@ html.reduced .nc-sweep.is-on::after {
   }
 }
 
-@container nowcard (max-height: 150px) and (max-width: 720px) {
-  .nc-head .now-chips {
-    display: none;
-  }
-}
-
 /* Very short and wide (a small window with several chats): one row, the trail is dropped. */
 @container nowcard (max-height: 150px) and (min-width: 721px) {
   .nc-body {
@@ -843,6 +837,11 @@ html.reduced .nc-sweep.is-on::after {
   }
   .now-card .nc-title {
     font-size: 15px;
+  }
+  /* The folder and the model stay under the title: three chats with the same kind of name are
+     told apart by where they run. Title 18 + 4 + chips 24 fits the 50 px the card has. */
+  .nc-head .now-chips {
+    margin-top: 4px;
   }
 }
 
