@@ -24,10 +24,15 @@ import { dismissPageToasts } from "../state/toastStore";
 import { guardLeave } from "../state/unsavedStore";
 import { Team } from "./Team";
 
+/*
+ * One line about Claude Code's own settings file, in the app's words: what it means for this
+ * page and what makes it right. The file's name and path stay behind the hover (V5: a fresh,
+ * empty folder has no such file yet, and "could not find your .claude.json" read as a fault).
+ */
 const CLAUDE_JSON_NOTE: Record<string, string> = {
-  missing: "Atlas could not find your .claude.json, so the project list and per-project MCP servers may be incomplete.",
-  stale: "Your .claude.json looks out of date, so the project list may be incomplete.",
-  unreadable: "Atlas could not read your .claude.json, so the project list and per-project MCP servers may be incomplete.",
+  missing: "Claude Code has not written its own settings file yet, so no projects or per-project MCP servers are listed. It appears after Claude Code runs once.",
+  stale: "Claude Code's settings file looks out of date, so the project list may be incomplete.",
+  unreadable: "Atlas could not read Claude Code's settings file, so the project list and per-project MCP servers may be incomplete.",
 };
 
 function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]; items: SetupItem[]; onOpen: (id: string) => void }) {
@@ -176,7 +181,7 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
       ) : (
         <>
           {jsonNote && (
-            <p role="note" className="mb-4 flex items-start gap-2 rounded-card bg-raised px-4 py-3 text-body text-ink-2">
+            <p role="note" title={snap.root.claudeJson} className="mb-4 flex items-start gap-2 rounded-card bg-raised px-4 py-3 text-body text-ink-2">
               <Info size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
               {jsonNote}
             </p>
