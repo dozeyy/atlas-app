@@ -69,6 +69,45 @@ describe("helper icons", () => {
     expect(helperKind("")).toBe("other");
   });
 
+  it("matches a short word as a word, never as letters inside a longer one", () => {
+    const expected: [string, HelperKind][] = [
+      // "spec" in "specialist", "doc" in "docker", "port" in "support" and "report".
+      ["security-specialist", "other"],
+      ["frontend-specialist", "design"],
+      ["docker-deployer", "ops"],
+      ["support-agent", "other"],
+      ["report-builder", "docs"],
+      // The same slip with the other short words.
+      ["information-gatherer", "other"],
+      ["explanation-writer", "docs"],
+      ["latest-news-fetcher", "explore"],
+      ["profile-manager", "other"],
+      ["reconciler", "other"],
+      ["model-router", "other"],
+      ["device-manager", "other"],
+      ["splinter-finder", "explore"],
+      // And the words still count where they are words.
+      ["spec-writer", "plan"],
+      ["specs", "plan"],
+      ["specification-author", "plan"],
+      ["docs", "docs"],
+      ["documentation-helper", "docs"],
+      ["mc-port-parity", "build"],
+      ["porter", "build"],
+      ["game-modder", "build"],
+      ["fabric-mod-dev", "build"],
+      ["web-developer", "build"],
+      ["code-formatter", "chore"],
+      ["lint-fixer", "chore"],
+      ["pytest-runner", "test"],
+      ["devops-engineer", "ops"],
+      ["sprint-planner", "plan"],
+      ["performance-tuner", "perf"],
+      ["recon", "explore"],
+    ];
+    for (const [type, kind] of expected) expect([type, helperKind(type)]).toEqual([type, kind]);
+  });
+
   it("keeps the shape other pages rely on: an icon, colour classes and a word", () => {
     const look = agentLook("code-reviewer");
     expect(look.Icon).toBeTruthy();

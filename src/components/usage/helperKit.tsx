@@ -16,21 +16,9 @@ export function sessionName(row: Pick<SessionRow, "name" | "projectName">): stri
   return row.name?.trim() || `Session in ${row.projectName}`;
 }
 
-/**
- * A helper's name as it is shown: a name made from a type ("ui-builder" becomes "Ui builder")
- * gets its short forms back in capitals, "UI builder". Only these six, only as whole words, and
- * nothing else in the name is touched ("Build" keeps its "ui", "price" its "pr"). Every page that
- * shows a name made from a helper's type passes it through here; a name a person or Claude wrote
- * (a description, a prompt) is left as written.
- */
-export function helperName(name: string): string {
-  return name.replace(/(^|[^A-Za-z0-9])(ui|qa|api|mcp|ci|pr)(?![A-Za-z0-9])/gi, (_, before: string, word: string) => before + word.toUpperCase());
-}
-
-/** A helper's name for the page: `helperName` when the name was made from its type, else as written. */
-export function shownName(agent: { name: string; nameSource?: string }): string {
-  return agent.nameSource === "type" ? helperName(agent.name) : agent.name;
-}
+// The name rules are plain text and live in src/lib (model code uses them without loading React);
+// they are handed on from here so every page keeps one import.
+export { helperName, shownName } from "../../lib/helperName";
 
 // ---- model chips -------------------------------------------------------------
 
@@ -154,21 +142,26 @@ export const HELPER_KINDS = Object.keys(KINDS) as HelperKind[];
  * wins, so "code-reviewer" reviews (it does not build), "ui-builder" designs, "crash-investigator"
  * debugs, "verify-auditor" tests and "spec-writer" plans. Only a name with none of these words is
  * "other".
+ *
+ * A short word is matched as a word, never as letters inside a longer one: "spec" is not in
+ * "specialist", "doc" not in "docker", "port" not in "support" or "report", "format" not in
+ * "information", "plan" not in "explanation", "test" not in "latest". (`\b` sits at a hyphen, so a
+ * word inside "a-b-c" still counts as a word.)
  */
 const RULES: [RegExp, HelperKind][] = [
-  [/bug|crash|debug|diagnos|troubleshoot|hunt|investigat/, "debug"],
-  [/perf|profil|optimi[sz]|benchmark/, "perf"],
-  [/test|verif|\bqa\b|valid/, "test"],
-  [/review|audit|critic|critique/, "review"],
-  [/explor|search|research|find|fetch|lookup|look-up|scout|recon/, "explore"],
-  [/\bspec/, "plan"],
-  [/doc|writ|guide|changelog|readme/, "docs"],
-  [/plan|architect|advis|strateg/, "plan"],
-  [/releas|deploy|packag|publish|\bops\b|infra/, "ops"],
-  [/design|\bui\b|\bux\b|styl|brand|asset|visual|frontend/, "design"],
-  [/chore|mechanic|cleanup|clean-up|tidy|format|lint|rename|housekeep/, "chore"],
-  [/general/, "general"],
-  [/code|coder|coding|build|\bdev|engineer|implement|refactor|program|\bmod|port/, "build"],
+  [/bug|crash|debug|diagnos|troubleshoot|\bhunt|investigat/, "debug"],
+  [/\bperf(ormance)?\b|profil(er|ing)|optimi[sz]|benchmark/, "perf"],
+  [/\btest|pytest|unittest|verif|\bqa\b|\bvalidat/, "test"],
+  [/review|audit|\bcriti(c|que)/, "review"],
+  [/explor|search|research|\bfind|\bfetch|lookup|look-up|\bscout|\brecon\b/, "explore"],
+  [/\bspec(s|ification\w*)?\b/, "plan"],
+  [/\bdoc(s|ument\w*)?\b|writ|\bguide|changelog|readme|\breport/, "docs"],
+  [/\bplan(s|ner|ning)?\b|architect|\badvis|strateg/, "plan"],
+  [/releas|deploy|packag|publish|\b(dev-?)?ops\b|\binfra/, "ops"],
+  [/design|\bui\b|\bux\b|\bstyl|\bbrand|\bassets?\b|visual|frontend/, "design"],
+  [/\bchores?\b|mechanic|clean-?up|\btidy|\bformat|\blint|\brenam|housekeep/, "chore"],
+  [/\bgeneral/, "general"],
+  [/\bcod(e|er|ing)\b|build|\bdev(s|elop\w*)?\b|engineer|implement|refactor|\bprogram|\bmod(s|der|ding)?\b|\bport(s|er|ing)?\b/, "build"],
 ];
 
 export function helperKind(type: string | null): HelperKind {
