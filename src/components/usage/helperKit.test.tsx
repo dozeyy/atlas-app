@@ -1,6 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, kindLook, MainChatIcon, type HelperKind } from "./helperKit";
+import { KINDS as SETUP_KINDS } from "../../lib/setup-model";
 
 describe("helper icons", () => {
   it("covers every kind of work a helper does", () => {
@@ -14,6 +15,12 @@ describe("helper icons", () => {
     expect(new Set(icons).size).toBe(HELPER_KINDS.length);
     expect(icons).not.toContain(MainChatIcon);
     expect(new Set(HELPER_KINDS.map((k) => kindLook(k).label)).size).toBe(HELPER_KINDS.length);
+  });
+
+  it("shares no icon with a kind of setup item in the Toolkit", () => {
+    const taken = new Set<unknown>(SETUP_KINDS.map((k) => k.icon));
+    for (const k of HELPER_KINDS) expect([k, taken.has(kindLook(k).Icon)]).toEqual([k, false]);
+    expect(taken.has(MainChatIcon)).toBe(false);
   });
 
   it("a kind's own name lands on that kind", () => {
@@ -39,7 +46,15 @@ describe("helper icons", () => {
       ["release-packager", "ops"],
       ["origin-deployer", "ops"],
       ["chore-runner", "chore"],
-      ["spec-writer", "docs"],
+      ["spec-writer", "plan"],
+      ["impeccable-documenter", "docs"],
+      ["investigator", "debug"],
+      ["docs-lookup", "explore"],
+      ["game-design-advisor", "plan"],
+      ["asset-designer", "design"],
+      ["pc-optimizer", "perf"],
+      ["playtest-triage", "test"],
+      ["lane-agent", "other"],
       ["perf-profiler", "perf"],
       ["desktop-app-dev", "build"],
       ["batch-refactorer", "build"],

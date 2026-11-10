@@ -3,7 +3,7 @@
 // (tokens.css); nothing here invents a value.
 
 import type { ComponentType } from "react";
-import { Broom, Bug, ChatCircleText, Compass, Eye, Flask, Gauge, Hammer, Lightning, MapTrifold, Package, PaintBrush, PencilLine, Robot } from "@phosphor-icons/react";
+import { Broom, Bug, ChatCircleText, Compass, Eye, Flask, Gauge, Hammer, HeadCircuit, MapTrifold, Package, Palette, PencilLine, Shapes } from "@phosphor-icons/react";
 import type { IconProps } from "@phosphor-icons/react";
 import { CountUp } from "../CountUp";
 import { compact, costView, formatUsd, modelLabel, modelWithEffort, tokenHint } from "../../lib/usage";
@@ -108,21 +108,25 @@ const TONES = {
   plain: { tone: "bg-raised text-ink-2", fg: "var(--ink-2)", bg: "var(--raised)" },
 } as const;
 
-/** Each kind's icon, colour and name. Thirteen kinds, thirteen different icons (a test holds that). */
+/**
+ * Each kind's icon, colour and name. Thirteen kinds, thirteen different icons, and none is an icon
+ * the Toolkit already uses for a kind of setup item (the lightning bolt is Skills, the robot is
+ * Agents, the paint brush is Themes). A test holds both.
+ */
 const KINDS: Record<HelperKind, { Icon: ComponentType<IconProps>; label: string; tone: keyof typeof TONES }> = {
   explore: { Icon: Compass, label: "Explore", tone: "slate" },
   plan: { Icon: MapTrifold, label: "Plan", tone: "amber" },
   review: { Icon: Eye, label: "Review", tone: "green" },
   test: { Icon: Flask, label: "Test", tone: "blue" },
   build: { Icon: Hammer, label: "Build", tone: "clay" },
-  design: { Icon: PaintBrush, label: "Design", tone: "blue" },
+  design: { Icon: Palette, label: "Design", tone: "blue" },
   debug: { Icon: Bug, label: "Debug", tone: "amber" },
   docs: { Icon: PencilLine, label: "Writing", tone: "slate" },
   ops: { Icon: Package, label: "Release", tone: "green" },
   chore: { Icon: Broom, label: "Chores", tone: "plain" },
   perf: { Icon: Gauge, label: "Speed", tone: "blue" },
-  general: { Icon: Lightning, label: "General", tone: "clay" },
-  other: { Icon: Robot, label: "Other", tone: "plain" },
+  general: { Icon: Shapes, label: "General", tone: "clay" },
+  other: { Icon: HeadCircuit, label: "Other", tone: "plain" },
 };
 
 /** The kinds in the order a legend lists them. */
@@ -131,14 +135,16 @@ export const HELPER_KINDS = Object.keys(KINDS) as HelperKind[];
 /**
  * Which kind a helper type is, from the words in its name. Order matters: the more telling word
  * wins, so "code-reviewer" reviews (it does not build), "ui-builder" designs, "crash-investigator"
- * debugs and "verify-auditor" tests.
+ * debugs, "verify-auditor" tests and "spec-writer" plans. Only a name with none of these words is
+ * "other".
  */
 const RULES: [RegExp, HelperKind][] = [
-  [/bug|crash|debug|diagnos|troubleshoot/, "debug"],
+  [/bug|crash|debug|diagnos|troubleshoot|hunt|investigat/, "debug"],
   [/perf|profil|optimi[sz]|benchmark/, "perf"],
   [/test|verif|\bqa\b|valid/, "test"],
   [/review|audit|critic|critique/, "review"],
-  [/explor|search|research|find|fetch|investigat|recon/, "explore"],
+  [/explor|search|research|find|fetch|lookup|look-up|scout|recon/, "explore"],
+  [/\bspec/, "plan"],
   [/doc|writ|guide|changelog|readme/, "docs"],
   [/plan|architect|advis|strateg/, "plan"],
   [/releas|deploy|packag|publish|\bops\b|infra/, "ops"],
