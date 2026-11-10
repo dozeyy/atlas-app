@@ -1,10 +1,11 @@
-//! Chat-ready markdown in Atlas's voice: a headline, then the app's own chart shapes drawn
-//! in text (bars, and the terrain grid for 15 days to 12 weeks) inside ```text blocks so
-//! columns line up in any monospace font, and a few short tables.
+//! Chat-ready replies in Atlas's voice, the short answer: a few plain sentences and at most
+//! one small chart. A chart sits in a ```text block so its columns line up in any monospace
+//! font, and no chart line is much wider than 40 columns, so nothing scrolls sideways in a
+//! chat window.
 //!
-//! Names follow the app (Sessions, Models, Projects, Activity, Helpers, "Today"). Tokens are
-//! the figure; the one dollar number is the closing estimate line, always called an
-//! estimate. No filler sentences: the numbers and the chart are the answer.
+//! Names follow the app (sessions, helpers, "today"). Tokens are the figure; the one dollar
+//! number is the closing line, an estimate at API prices. No filler: every sentence carries a
+//! number or a name.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -13,10 +14,20 @@ use atlas_core::usage::query::{EffortUse, ScopeReport, SessionDetail, SessionRow
 use atlas_core::usage::time::Tz;
 use chrono::{Duration, NaiveDate, NaiveDateTime, Timelike};
 
-use crate::fmt::{bar, cell, change, compact, dot, duration, effort_mix, heat, heat_band, heat_cuts, model, plain, summit, usd};
+use crate::fmt::{bar, cell, change, compact, duration, heat, heat_band, heat_cuts, model, plain, summit, usd};
 use crate::scope::{BARS_DAYS, Span, short};
 
-const BAR: usize = 24;
+/// Bar cells at full scale.
+const BAR: usize = 16;
+/// Chart labels are cut to this many characters, so label + bar + value stays near 40 columns.
+const LABEL: usize = 13;
+/// Most names one sentence lists before "and N more".
+const NAMED: usize = 3;
+/// Most rows one chart draws.
+const ROWS: usize = 14;
+
+const MODEL_WORDS: (&str, &str, &str) = ("All on", "Mostly", "Spread over");
+const PROJECT_WORDS: (&str, &str, &str) = ("All in", "Most went to", "Spread over");
 
 /// Index of the busiest row, only when it is a clear peak: three or more rows and one
 /// strict maximum above zero. A tie has no summit.
@@ -31,19 +42,18 @@ fn peak(values: &[u64]) -> Option<usize> {
     values.iter().position(|v| *v == max)
 }
 
-/// Rows of `label  bar  value [extra]` inside a ```text block. With `mark_peak` the busiest
-/// row carries the summit mark, the app's spark planted on the peak.
-fn bars(rows: &[(String, u64, String)], mark_peak: bool) -> String {
+/// Rows of `label  bar  value` inside a ```text block. Labels are cut at LABEL characters and
+/// the bar is BAR cells, so a line stays near 40 columns. With `mark_peak` the busiest row
+/// carries the summit mark, the app's spark planted on the peak.
+fn bars(rows: &[(String, u64)], mark_peak: bool) -> String {
+    let rows: Vec<(String, u64)> = rows.iter().map(|(l, v)| (cell(l, LABEL), *v)).collect();
     let max = rows.iter().map(|r| r.1).max().unwrap_or(0);
     let lw = rows.iter().map(|r| r.0.chars().count()).max().unwrap_or(0);
     let vw = rows.iter().map(|r| compact(r.1).len()).max().unwrap_or(0);
     let top = if mark_peak { peak(&rows.iter().map(|r| r.1).collect::<Vec<_>>()) } else { None };
     let mut s = String::from("```text\n");
-    for (i, (label, v, extra)) in rows.iter().enumerate() {
+    for (i, (label, v)) in rows.iter().enumerate() {
         let mut line = format!("{label:<lw$}  {}  {:>vw$}", bar(*v, max, BAR), compact(*v));
-        if !extra.is_empty() {
-            let _ = write!(line, "  {extra}");
-        }
         if top == Some(i) {
             let _ = write!(line, "  {}", summit());
         }
@@ -86,10 +96,10 @@ fn grid(days: &[(NaiveDate, u64)], today: NaiveDate) -> Option<String> {
         }
         let _ = writeln!(s, "{}", line.trim_end());
     }
-    let ramp: Vec<String> = (1..=5).map(|b| heat(b).to_string()).collect();
-    let mut legend = format!("{} idle  {} busier", heat(0), ramp.join(" "));
-    if let Some(i) = top {
-        let _ = write!(legend, "  {} busiest day, {}: {}", summit(), days[i].0.format("%a %b %-d"), compact(days[i].1));
+    let ramp: String = (1..=5).map(heat).collect();
+    let mut legend = format!("{} idle  {ramp} busy", heat(0));
+    if top.is_some() {
+        let _ = write!(legend, "  {} peak", summit());
     }
     let _ = writeln!(s, "{legend}");
     s.push_str("```\n");
@@ -107,29 +117,74 @@ fn sessions(n: u64) -> String {
     if n == 1 { "1 session".into() } else { format!("{n} sessions") }
 }
 
-fn bucket_label(start: &str, bucket: &str, today: NaiveDate) -> String {
-    let Some(d) = NaiveDate::parse_from_str(start, "%Y-%m-%d").ok() else { return start.to_string() };
-    match bucket {
-        "week" => format!("Wk of {}", short(d, today)),
-        "month" => d.format("%b %Y").to_string(),
-        _ if d == today => "Today".to_string(),
-        _ => d.format("%a %b %-d").to_string(),
+/// "a", "a and b", "a, b and c".
+fn and_list(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [a] => a.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
     }
 }
 
-fn series(points: &[TimelinePoint], bucket: &str, today: NaiveDate) -> Vec<(String, u64, String)> {
-    points.iter().map(|p| (bucket_label(&p.start, bucket, today), p.tokens.total, String::new())).collect()
+/// One named share of a whole: a model or a project, with short notes for its parentheses
+/// ("mostly high", "not priced").
+struct Share {
+    name: String,
+    tokens: u64,
+    notes: Vec<String>,
 }
 
-/// Models under the names the app shows. Ids that share a name (a dated and an undated id of
-/// the same model) are one row with their tokens added, biggest first; this runs before any
-/// row limit so the limit counts rows as displayed.
-///
-/// Each row's label is the full model name, then its reasoning effort when the transcripts gave
-/// one: one effort alone ("Opus 5.5 · high"), several as a share of replies ("Sonnet 5.5 · high
-/// 80%, medium 20%") so a mixed model never reads as all one effort; then "(not priced)" for a
-/// model the price list does not know.
-fn by_label<'a>(items: impl Iterator<Item = (&'a str, u64, &'a [EffortUse], bool)>) -> Vec<(String, u64)> {
+fn phrase(it: &Share, total: u64, with_pct: bool) -> String {
+    let mut parts = Vec::new();
+    if with_pct {
+        parts.push(pct(it.tokens, total));
+    }
+    parts.extend(it.notes.iter().cloned());
+    if parts.is_empty() { it.name.clone() } else { format!("{} ({})", it.name, parts.join(", ")) }
+}
+
+/// One sentence naming the biggest shares, biggest first: "All on X." when there is one,
+/// "Mostly X (71%), then Y (29%)." when the first is half or more, else "Spread over X (45%),
+/// Y (30%) and Z (25%).". At most `named` names, then "and N more".
+fn ranked(words: (&str, &str, &str), items: &[Share], total: u64, named: usize) -> Option<String> {
+    let (all, mostly, spread) = words;
+    let items: Vec<&Share> = items.iter().filter(|i| i.tokens > 0).collect();
+    let first = *items.first()?;
+    if items.len() == 1 {
+        return Some(format!("{all} {}.", phrase(first, total, false)));
+    }
+    let named = named.max(1);
+    let mut listed: Vec<String> = items.iter().take(named).map(|i| phrase(i, total, true)).collect();
+    if items.len() > named {
+        listed.push(format!("{} more", items.len() - named));
+    }
+    if first.tokens.saturating_mul(2) >= total {
+        let head = listed.remove(0);
+        Some(format!("{mostly} {head}, then {}.", and_list(&listed)))
+    } else {
+        Some(format!("{spread} {}.", and_list(&listed)))
+    }
+}
+
+/// The effort as one word or two: a single effort is its name ("high"); a mix is "mostly
+/// high" when one effort has half the replies or more, else "mixed effort".
+fn effort_word(uses: &[EffortUse]) -> Option<String> {
+    let used: Vec<&EffortUse> = uses.iter().filter(|e| e.replies > 0).collect();
+    let all: u64 = used.iter().map(|e| e.replies).sum();
+    let top = *used.iter().max_by(|a, b| a.replies.cmp(&b.replies).then_with(|| b.effort.cmp(&a.effort)))?;
+    Some(if used.len() == 1 {
+        plain(&top.effort)
+    } else if top.replies * 2 >= all {
+        format!("mostly {}", plain(&top.effort))
+    } else {
+        "mixed effort".into()
+    })
+}
+
+/// Models under the names the app shows, biggest first. Ids that share a name (a dated and an
+/// undated id of the same model) are one share with their tokens and efforts added; a model
+/// the price list does not know says "not priced".
+fn models<'a>(items: impl Iterator<Item = (&'a str, u64, &'a [EffortUse], bool)>) -> Vec<Share> {
     #[derive(Default)]
     struct Row {
         tokens: u64,
@@ -145,23 +200,39 @@ fn by_label<'a>(items: impl Iterator<Item = (&'a str, u64, &'a [EffortUse], bool
             *r.efforts.entry(e.effort.clone()).or_default() += e.replies;
         }
     }
-    let mut rows: Vec<(String, u64)> = m
+    let mut out: Vec<Share> = m
         .into_iter()
         .map(|(name, r)| {
             let uses: Vec<EffortUse> = r.efforts.into_iter().map(|(effort, replies)| EffortUse { effort, replies }).collect();
-            let mix = effort_mix(&uses);
-            let mut label = name;
-            if !mix.is_empty() {
-                label = format!("{label}{}{mix}", dot());
-            }
+            let mut notes: Vec<String> = effort_word(&uses).into_iter().collect();
             if r.unpriced {
-                label.push_str(" (not priced)");
+                notes.push("not priced".into());
             }
-            (label, r.tokens)
+            Share { name, tokens: r.tokens, notes }
         })
         .collect();
-    rows.sort_by_key(|r| std::cmp::Reverse(r.1));
-    rows
+    out.sort_by_key(|s| std::cmp::Reverse(s.tokens));
+    out
+}
+
+/// A models chart, only when there are two or more to compare.
+fn models_chart(models: &[Share]) -> Option<String> {
+    let rows: Vec<(String, u64)> = models.iter().filter(|m| m.tokens > 0).take(5).map(|m| (m.name.clone(), m.tokens)).collect();
+    (rows.len() >= 2).then(|| bars(&rows, false))
+}
+
+fn bucket_label(start: &str, bucket: &str, today: NaiveDate) -> String {
+    let Some(d) = NaiveDate::parse_from_str(start, "%Y-%m-%d").ok() else { return plain(start) };
+    match bucket {
+        "week" => short(d, today),
+        "month" => d.format("%b %Y").to_string(),
+        _ if d == today => "Today".to_string(),
+        _ => d.format("%a %b %-d").to_string(),
+    }
+}
+
+fn series(points: &[TimelinePoint], bucket: &str, today: NaiveDate) -> Vec<(String, u64)> {
+    points.iter().map(|p| (bucket_label(&p.start, bucket, today), p.tokens.total)).collect()
 }
 
 pub struct RangeView<'a> {
@@ -178,113 +249,119 @@ fn dates(s: &Span, today: NaiveDate) -> String {
     if s.from == s.to { short(s.from, today) } else { format!("{} - {}", short(s.from, today), short(s.to, today)) }
 }
 
-/// The closing line: the one dollar figure, called an estimate, never a bill.
+/// A range's name in bold, with its dates unless the name already is them ("Today" gets
+/// "(Nov 8)", "Nov 2 - Nov 7" stays as it is).
+fn side(s: &Span, today: NaiveDate) -> String {
+    let when = dates(s, today);
+    if when == s.label { format!("**{}**", plain(&s.label)) } else { format!("**{}** ({when})", plain(&s.label)) }
+}
+
+/// The closing line: the one dollar figure, an estimate at API prices.
 fn estimate(parts: &[(&str, Option<f64>, bool)]) -> String {
-    let priced: Vec<String> = parts
-        .iter()
-        .filter(|p| p.1.is_some())
-        .map(|p| if parts.len() > 1 { format!("{} {}", p.0, usd(p.1, p.2)) } else { usd(p.1, p.2) })
-        .collect();
+    let priced: Vec<&(&str, Option<f64>, bool)> = parts.iter().filter(|p| p.1.is_some()).collect();
     if priced.is_empty() {
         return "_No API price known for these models._".into();
     }
-    if parts.len() > 1 {
-        format!("_Estimated at API prices, not a bill: {}._", priced.join(", "))
-    } else {
-        format!("_Estimated at API prices: {}. Not a bill._", priced.join(", "))
+    if parts.len() == 1 {
+        return format!("_Estimated {} at API prices._", usd(parts[0].1, parts[0].2));
     }
+    let each: Vec<String> = priced.iter().map(|p| format!("{} for {}", usd(p.1, p.2), cell(p.0, 40))).collect();
+    format!("_Estimated {} at API prices._", and_list(&each))
 }
 
-fn activity(r: &ScopeReport, today: NaiveDate) -> String {
-    let days = r.points.len() as i64;
+/// The range's chart, its busiest-bucket sentence, and a sentence when the chart had to drop
+/// older rows. Up to 14 days are bars, 15 to 84 consecutive days the terrain grid, weeks and
+/// months bars of the last 14.
+fn activity(r: &ScopeReport, today: NaiveDate) -> (Option<String>, Option<String>, Option<String>) {
+    if r.points.len() < 2 {
+        return (None, None, None);
+    }
+    let vals: Vec<u64> = r.points.iter().map(|p| p.tokens.total).collect();
+    let busiest = peak(&vals).map(|i| {
+        let p = &r.points[i];
+        let v = compact(p.tokens.total);
+        match (r.bucket.as_str(), NaiveDate::parse_from_str(&p.start, "%Y-%m-%d").ok()) {
+            ("week", Some(d)) => format!("Busiest week started {} with {v}.", short(d, today)),
+            ("month", Some(d)) => format!("Busiest month was {} with {v}.", d.format("%b %Y")),
+            (_, Some(d)) if d == today => format!("Busiest day was today with {v}."),
+            (_, Some(d)) => format!("Busiest day was {} with {v}.", d.format("%a %b %-d")),
+            _ => format!("Busiest was {} with {v}.", plain(&p.start)),
+        }
+    });
     let dated: Vec<(NaiveDate, u64)> =
         r.points.iter().filter_map(|p| NaiveDate::parse_from_str(&p.start, "%Y-%m-%d").ok().map(|d| (d, p.tokens.total))).collect();
     if r.bucket == "day"
-        && days > BARS_DAYS
+        && r.points.len() as i64 > BARS_DAYS
         && dated.len() == r.points.len()
         && let Some(g) = grid(&dated, today)
     {
-        return format!("Activity{}7 days per row\n{g}\n", dot());
+        return (Some(g), busiest, None);
     }
-    let mut s = String::from("Activity\n");
-    s.push_str(&bars(&series(&r.points, &r.bucket, today), true));
-    s.push('\n');
-    s
+    let rows = series(&r.points, &r.bucket, today);
+    let skip = rows.len().saturating_sub(ROWS);
+    let unit = match r.bucket.as_str() {
+        "week" => "weeks",
+        "month" => "months",
+        _ => "days",
+    };
+    let cut = (skip > 0).then(|| format!("The chart shows the last {ROWS} {unit}."));
+    // A cut chart marks no summit: the busiest bucket may be one it left out.
+    (Some(bars(&rows[skip..], skip == 0)), busiest, cut)
 }
 
 pub fn range(v: &RangeView) -> String {
+    if let Some((cs, cr)) = v.compare {
+        return compare(v.span, v.report, cs, cr, v.today, v.project);
+    }
     let r = v.report;
     let t = &r.total;
-    let mut s = String::new();
-    let where_ = v.project.map(|p| format!("project **{}**", cell(p, 40))).unwrap_or_else(|| "all projects".into());
-
-    if let Some((cs, cr)) = v.compare {
-        s.push_str(&compare(v.span, r, cs, cr, v.today, v.project, v.top));
-        return s;
-    }
-
-    let when = dates(v.span, v.today);
-    if when == v.span.label {
-        let _ = writeln!(s, "**{}**{}{}", v.span.label, dot(), where_);
-    } else {
-        let _ = writeln!(s, "**{}**{}{}{}{}", v.span.label, dot(), when, dot(), where_);
+    let mut head = side(v.span, v.today);
+    if let Some(p) = v.project {
+        let _ = write!(head, " in **{}**", cell(p, 40));
     }
     if t.tokens.total == 0 {
-        s.push_str("\nNo Claude Code usage recorded in this range.\n");
-        return s;
+        return format!("{head}\n\nNo Claude Code usage recorded in this range.\n");
     }
-    let _ = writeln!(s, "**{} tokens** plus {} cache reads{}{}\n", compact(t.tokens.total), compact(t.tokens.cache_read), dot(), sessions(t.sessions));
-
-    if r.points.len() > 1 {
-        s.push_str(&activity(r, v.today));
+    let mut s = format!("{head}: **{} tokens** over {}.", compact(t.tokens.total), sessions(t.sessions));
+    let (chart, busiest, cut) = activity(r, v.today);
+    if let Some(b) = busiest {
+        s.push(' ');
+        s.push_str(&b);
     }
-
-    s.push_str("Models\n");
-    let rows: Vec<_> = by_label(r.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total, m.efforts.as_slice(), m.known)))
-        .into_iter()
-        .take(v.top)
-        .map(|(label, tokens)| (label, tokens, pct(tokens, t.tokens.total)))
-        .collect();
-    s.push_str(&bars(&rows, false));
     s.push('\n');
+    let ms = models(r.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total, m.efforts.as_slice(), m.known)));
+    if let Some(c) = chart.or_else(|| models_chart(&ms)) {
+        s.push_str(&c);
+    }
 
+    let named = v.top.min(NAMED);
+    let mut tail: Vec<String> = cut.into_iter().collect();
+    tail.extend(ranked(MODEL_WORDS, &ms, t.tokens.total, named));
     if v.project.is_none() && r.projects.len() > 1 {
-        s.push_str("| Project | Tokens | Sessions |\n|---|--:|--:|\n");
-        for p in r.projects.iter().take(v.top) {
-            let _ = writeln!(s, "| {} | {} | {} |", cell(&p.name, 40), compact(p.tokens.total), p.sessions);
+        // Two folders with the same name are one name in a sentence, never "X, then X".
+        let mut by_name: BTreeMap<String, u64> = BTreeMap::new();
+        for p in &r.projects {
+            *by_name.entry(cell(&p.name, 40)).or_default() += p.tokens.total;
         }
-        s.push('\n');
+        let mut ps: Vec<Share> = by_name.into_iter().map(|(name, tokens)| Share { name, tokens, notes: Vec::new() }).collect();
+        ps.sort_by_key(|p| std::cmp::Reverse(p.tokens));
+        tail.extend(ranked(PROJECT_WORDS, &ps, t.tokens.total, named));
     }
-
-    if !v.top_chats.is_empty() {
-        if v.project.is_some() {
-            s.push_str("| Biggest sessions | Tokens |\n|---|--:|\n");
-        } else {
-            s.push_str("| Biggest sessions | Project | Tokens |\n|---|---|--:|\n");
-        }
-        for c in v.top_chats {
-            let name = cell(c.name.as_deref().unwrap_or("(untitled)"), 48);
-            if v.project.is_some() {
-                let _ = writeln!(s, "| {} | {} |", name, compact(c.tokens.total));
-            } else {
-                let _ = writeln!(s, "| {} | {} | {} |", name, cell(&c.project_name, 28), compact(c.tokens.total));
-            }
-        }
-        s.push('\n');
+    if t.sessions > 1
+        && let Some(c) = v.top_chats.first()
+    {
+        let name = cell(c.name.as_deref().unwrap_or("(untitled)"), 48);
+        tail.push(match v.project {
+            Some(_) => format!("Biggest session: \"{name}\", {}.", compact(c.tokens.total)),
+            None => format!("Biggest session: \"{name}\" in {}, {}.", cell(&c.project_name, 28), compact(c.tokens.total)),
+        });
     }
-    s.push_str(&estimate(&[("", t.cost.usd, t.cost.complete)]));
-    s
-}
-
-/// Tokens by name for two ranges side by side, biggest combined first.
-fn pair_table(head: &str, e: &str, l: &str, rows: Vec<(String, u64, u64)>, top: usize) -> String {
-    let mut rows: Vec<_> = rows.into_iter().filter(|r| r.1 > 0 || r.2 > 0).collect();
-    rows.sort_by_key(|r| std::cmp::Reverse(r.1 + r.2));
-    let mut s = format!("| {head} | {e} | {l} | Change |\n|---|--:|--:|--:|\n");
-    for (name, x, y) in rows.into_iter().take(top) {
-        let _ = writeln!(s, "| {} | {} | {} | {} |", cell(&name, 40), compact(x), compact(y), change(x, y));
+    if !tail.is_empty() {
+        s.push_str(&tail.join(" "));
+        s.push('\n');
     }
     s.push('\n');
+    s.push_str(&estimate(&[("", t.cost.usd, t.cost.complete)]));
     s
 }
 
@@ -299,63 +376,60 @@ fn merged<'a>(early: impl Iterator<Item = (&'a str, u64)>, late: impl Iterator<I
     m.into_iter().map(|(k, (x, y))| (k, x, y)).collect()
 }
 
-/// A range's name in the compare headline, with its dates unless the name already is them
-/// ("Today", "Nov 2 - Nov 7").
-fn side(s: &Span, today: NaiveDate) -> String {
-    let when = dates(s, today);
-    if when == s.label { format!("**{}**", s.label) } else { format!("**{}** ({when})", s.label) }
+/// "Biggest model change: Sonnet 4.5, 1k to 500 (-50%)." for the row that moved the most;
+/// nothing when nothing moved.
+fn biggest_change(kind: &str, rows: &[(String, u64, u64)]) -> Option<String> {
+    let (name, x, y) = rows.iter().filter(|r| r.1 != r.2).max_by_key(|r| r.1.abs_diff(r.2))?;
+    Some(format!("Biggest {kind} change: {name}, {} to {} ({}).", compact(*x), compact(*y), change(*x, *y)))
 }
 
-/// Earlier range is the baseline; the change column is the later range against it. Only the
-/// comparison is shown: the single-range lists would belong to one side and mislead.
-fn compare(a: &Span, ar: &ScopeReport, b: &Span, br: &ScopeReport, today: NaiveDate, project: Option<&str>, top: usize) -> String {
+/// The later range against the earlier one: how it moved in words, two bars (earlier first),
+/// then sessions and the biggest changes.
+fn compare(a: &Span, ar: &ScopeReport, b: &Span, br: &ScopeReport, today: NaiveDate, project: Option<&str>) -> String {
     let ((e, er), (l, lr)) = if (b.from, b.to) < (a.from, a.to) { ((b, br), (a, ar)) } else { ((a, ar), (b, br)) };
-    let mut s = format!("{} vs {}", side(l, today), side(e, today));
+    let (x, y) = (er.total.tokens.total, lr.total.tokens.total);
+    let mut s = side(l, today);
     if let Some(p) = project {
-        let _ = write!(s, "{}project **{}**", dot(), cell(p, 40));
+        let _ = write!(s, " in **{}**", cell(p, 40));
     }
-    s.push_str("\n\n");
-    let rows: [(&str, String, String, String); 3] = [
-        ("Tokens", compact(er.total.tokens.total), compact(lr.total.tokens.total), change(er.total.tokens.total, lr.total.tokens.total)),
-        ("Cache reads", compact(er.total.tokens.cache_read), compact(lr.total.tokens.cache_read), change(er.total.tokens.cache_read, lr.total.tokens.cache_read)),
-        ("Sessions", er.total.sessions.to_string(), lr.total.sessions.to_string(), change(er.total.sessions, lr.total.sessions)),
-    ];
-    let _ = writeln!(s, "| | {} | {} | Change |\n|---|--:|--:|--:|", e.label, l.label);
-    for (k, x, y, c) in rows {
-        let _ = writeln!(s, "| {k} | {x} | {y} | {c} |");
-    }
-    s.push('\n');
+    let earlier = side(e, today);
+    let versus = if x == 0 && y == 0 {
+        format!("the same as {earlier}")
+    } else if x == 0 {
+        format!("against none in {earlier}")
+    } else {
+        let p = (y as f64 - x as f64) / x as f64 * 100.0;
+        let words = if p.abs() < 0.5 {
+            "about the same as".to_string()
+        } else if p > 0.0 {
+            format!("{}% more than", p.round())
+        } else {
+            format!("{}% less than", (-p).round())
+        };
+        format!("{words} {earlier} at {}", compact(x))
+    };
+    let _ = writeln!(s, ": **{} tokens**, {versus}.", compact(y));
+    s.push_str(&bars(&[(plain(&e.label), x), (plain(&l.label), y)], false));
 
-    if er.total.tokens.total + lr.total.tokens.total > 0 {
-        let models = merged(
-            er.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total)),
-            lr.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total)),
-            model,
+    let (sx, sy) = (er.total.sessions, lr.total.sessions);
+    let mut tail = vec![if sx == sy { format!("Sessions held at {sy}.") } else { format!("Sessions went from {sx} to {sy}.") }];
+    let ms = merged(
+        er.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total)),
+        lr.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total)),
+        model,
+    );
+    tail.extend(biggest_change("model", &ms));
+    if project.is_none() {
+        let ps = merged(
+            er.projects.iter().map(|p| (p.name.as_str(), p.tokens.total)),
+            lr.projects.iter().map(|p| (p.name.as_str(), p.tokens.total)),
+            |n| cell(n, 40),
         );
-        s.push_str(&pair_table("Model", &e.label, &l.label, models, top));
-        if project.is_none() {
-            let projects = merged(
-                er.projects.iter().map(|p| (p.name.as_str(), p.tokens.total)),
-                lr.projects.iter().map(|p| (p.name.as_str(), p.tokens.total)),
-                |n| n.to_string(),
-            );
-            if projects.len() > 1 {
-                s.push_str(&pair_table("Project", &e.label, &l.label, projects, top));
-            }
+        if ps.len() > 1 {
+            tail.extend(biggest_change("project", &ps));
         }
     }
-
-    let n = er.points.len();
-    if er.bucket == "day" && lr.bucket == "day" && n == lr.points.len() && n > 1 && n as i64 <= BARS_DAYS {
-        s.push_str("Day by day\n");
-        let mut rows = Vec::new();
-        for (p, q) in lr.points.iter().zip(&er.points) {
-            rows.push((bucket_label(&p.start, "day", today), p.tokens.total, String::new()));
-            rows.push((bucket_label(&q.start, "day", today), q.tokens.total, String::new()));
-        }
-        s.push_str(&bars(&rows, false));
-        s.push('\n');
-    }
+    let _ = writeln!(s, "{}\n", tail.join(" "));
     s.push_str(&estimate(&[(&e.label, er.total.cost.usd, er.total.cost.complete), (&l.label, lr.total.cost.usd, lr.total.cost.complete)]));
     s
 }
@@ -366,86 +440,67 @@ fn local(ts: i64) -> Option<NaiveDateTime> {
 
 pub fn chat(d: &SessionDetail, note: Option<&str>, top: usize) -> String {
     let r = &d.row;
+    let total = r.tokens.total;
     let mut s = String::new();
-    let _ = writeln!(s, "**This chat**{}**{} tokens** plus {} cache reads", dot(), compact(r.tokens.total), compact(r.tokens.cache_read));
-    let mut meta = Vec::new();
-    if let Some(n) = r.name.as_deref() {
-        meta.push(format!("\"{}\"", cell(n, 60)));
-    }
-    if !r.project_name.is_empty() {
-        meta.push(cell(&r.project_name, 40));
-    }
-    if !r.main_model.is_empty() {
-        let mix = effort_mix(&r.efforts);
-        meta.push(if mix.is_empty() { model(&r.main_model) } else { format!("{}{}{}", model(&r.main_model), dot(), mix) });
-    }
-    meta.push(duration(r.duration_ms));
-    meta.push(format!("{} messages", r.messages));
-    let helpers = d.agents.len();
-    meta.push(format!("{helpers} helper{}", if helpers == 1 { "" } else { "s" }));
-    let _ = writeln!(s, "{}", meta.join(dot()));
     if let Some(n) = note {
         let _ = writeln!(s, "_{}_", plain(n));
     }
+    // The chat's name only when the program had to pick the chat itself.
+    let who = match (note, r.name.as_deref()) {
+        (Some(_), Some(n)) => format!("This chat, \"{}\",", cell(n, 60)),
+        _ => "This chat".to_string(),
+    };
+    let _ = write!(s, "{who} has used **{} tokens** over {}.", compact(total), duration(r.duration_ms));
+
+    let helpers = d.agents.len();
+    let helper_total: u64 = d.agents.iter().map(|a| a.tokens.total).sum();
+    let main = d.main.tokens.total;
+    if helpers > 0 {
+        let n = if helpers == 1 { "1 helper".to_string() } else { format!("{helpers} helpers") };
+        if helper_total.saturating_mul(2) >= total {
+            let _ = write!(s, " {n} did {} of it; the main chat only {}.", pct(helper_total, total), compact(main));
+        } else {
+            let _ = write!(s, " The main chat did {} of it; {n} used {}.", pct(main, total), compact(helper_total));
+        }
+    }
     s.push('\n');
 
-    if helpers > 0 {
-        let helper_total: u64 = d.agents.iter().map(|a| a.tokens.total).sum();
-        s.push_str("Where it went\n");
-        s.push_str(&bars(
-            &[
-                ("Main chat".into(), d.main.tokens.total, pct(d.main.tokens.total, r.tokens.total)),
-                (format!("Helpers ({helpers})"), helper_total, pct(helper_total, r.tokens.total)),
-            ],
-            false,
-        ));
-        s.push('\n');
+    let ms = models(d.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total, m.efforts.as_slice(), m.known)));
+    let (act, hourly) = activity_rows(d);
+    let chart = if helpers > 0 {
+        Some(bars(&[("Main chat".into(), main), ("Helpers".into(), helper_total)], false))
+    } else if (2..=ROWS).contains(&act.len()) {
+        Some(bars(&act, true))
+    } else {
+        models_chart(&ms)
+    };
+    if let Some(c) = chart {
+        s.push_str(&c);
     }
 
-    let models = by_label(d.by_model.iter().map(|m| (m.model.as_str(), m.tokens.total, m.efforts.as_slice(), m.known)));
-    if !models.is_empty() {
-        s.push_str("Models\n");
-        let rows: Vec<_> = models.into_iter().take(top).map(|(label, tokens)| (label, tokens, pct(tokens, r.tokens.total))).collect();
-        s.push_str(&bars(&rows, false));
+    let mut tail: Vec<String> = ranked(MODEL_WORDS, &ms, total, top.min(NAMED)).into_iter().collect();
+    if let Some(i) = peak(&act.iter().map(|a| a.1).collect::<Vec<_>>()) {
+        tail.push(format!("Busiest {} was {} with {}.", if hourly { "hour" } else { "day" }, act[i].0, compact(act[i].1)));
+    }
+    if helpers >= 2
+        && let Some(big) = d.agents.iter().max_by_key(|a| a.tokens.total)
+    {
+        tail.push(format!("Biggest helper: {}, {}.", cell(&big.name, 48), compact(big.tokens.total)));
+    }
+    if !tail.is_empty() {
+        s.push_str(&tail.join(" "));
         s.push('\n');
     }
-
-    if helpers > 0 {
-        let mut agents: Vec<_> = d.agents.iter().collect();
-        agents.sort_by_key(|a| std::cmp::Reverse(a.tokens.total));
-        s.push_str("| Helper | Type | Model | Effort | Tokens |\n|---|---|---|---|--:|\n");
-        for a in agents.iter().take(top) {
-            let mix = effort_mix(&a.efforts);
-            let _ = writeln!(
-                s,
-                "| {} | {} | {} | {} | {} |",
-                cell(&a.name, 40),
-                cell(a.agent_type.as_deref().unwrap_or("-"), 24),
-                model(&a.model),
-                if mix.is_empty() { "-" } else { mix.as_str() },
-                compact(a.tokens.total)
-            );
-        }
-        if agents.len() > top {
-            let _ = writeln!(s, "\n_+{} more helpers_", agents.len() - top);
-        }
-        s.push('\n');
-    }
-
-    let activity = activity_rows(d);
-    if activity.len() > 1 {
-        s.push_str("Activity\n");
-        s.push_str(&bars(&activity, true));
-        s.push('\n');
-    }
+    s.push('\n');
     s.push_str(&estimate(&[("", r.cost.usd, r.cost.complete)]));
     s
 }
 
-/// Tokens per local hour (a chat within a day) or per local day (longer), zero-filled.
-fn activity_rows(d: &SessionDetail) -> Vec<(String, u64, String)> {
+/// Tokens per local hour (a chat within a day) or per local day (longer), zero-filled, and
+/// whether the rows are hours. Hours read "2 pm" ("Mon 2 pm" across midnight), days "Mon Nov 3".
+fn activity_rows(d: &SessionDetail) -> (Vec<(String, u64)>, bool) {
     let pts: Vec<(NaiveDateTime, u64)> = d.timeline.iter().filter_map(|p| local(p.ts).map(|t| (t, p.tokens.total))).collect();
-    let (Some(lo), Some(hi)) = (pts.iter().map(|p| p.0).min(), pts.iter().map(|p| p.0).max()) else { return Vec::new() };
+    let (Some(lo), Some(hi)) = (pts.iter().map(|p| p.0).min(), pts.iter().map(|p| p.0).max()) else { return (Vec::new(), true) };
     let hourly = (hi - lo) <= Duration::hours(24);
     let key = |t: NaiveDateTime| if hourly { t.date().and_hms_opt(t.hour(), 0, 0).unwrap_or(t) } else { t.date().and_hms_opt(0, 0, 0).unwrap_or(t) };
     let mut sums: BTreeMap<NaiveDateTime, u64> = BTreeMap::new();
@@ -463,16 +518,16 @@ fn activity_rows(d: &SessionDetail) -> Vec<(String, u64, String)> {
         .into_iter()
         .map(|(k, v)| {
             let label = match (hourly, multi_day) {
-                (true, false) => k.format("%H:00").to_string(),
-                (true, true) => k.format("%a %H:00").to_string(),
+                (true, false) => k.format("%-I %P").to_string(),
+                (true, true) => k.format("%a %-I %P").to_string(),
                 _ => k.format("%a %b %-d").to_string(),
             };
-            (label, v, String::new())
+            (label, v)
         })
         .collect();
     // Keep the most recent month when a chat ran for longer.
     let skip = rows.len().saturating_sub(31);
-    rows.into_iter().skip(skip).collect()
+    (rows.into_iter().skip(skip).collect(), hourly)
 }
 
 #[cfg(test)]
@@ -502,16 +557,25 @@ mod tests {
     #[test]
     fn bars_mark_the_busiest_row_and_never_pass_the_baseline() {
         let _g = glyph_lock();
-        let rows: Vec<_> = [("Mon", 10u64), ("Tue", 0), ("Today", 40)].iter().map(|(l, v)| (l.to_string(), *v, String::new())).collect();
+        let rows: Vec<_> = [("Mon", 10u64), ("Tue", 0), ("Today", 40)].iter().map(|(l, v)| (l.to_string(), *v)).collect();
         let out = bars(&rows, true);
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[0], "```text");
         // label (padded to the widest, 5), two spaces, a BAR-cell bar, two spaces, the value.
         let blank = |n: usize| " ".repeat(n);
-        assert_eq!(lines[1], format!("Mon    {}{}  10", "\u{2588}".repeat(6), blank(BAR - 6)), "a quarter of the busiest: {out}");
+        assert_eq!(lines[1], format!("Mon    {}{}  10", "\u{2588}".repeat(4), blank(BAR - 4)), "a quarter of the busiest: {out}");
         assert_eq!(lines[2], format!("Tue    \u{00B7}{}   0", blank(BAR - 1)), "idle day keeps its nub: {out}");
         assert_eq!(lines[3], format!("Today  {}  40  \u{25B2}", "\u{2588}".repeat(BAR)), "the peak fills the bar and carries the summit: {out}");
         assert_eq!(out.matches('\u{25B2}').count(), 1);
+    }
+
+    #[test]
+    fn a_long_chart_label_is_cut_so_the_line_stays_narrow() {
+        let _g = glyph_lock();
+        let out = bars(&[("A very long project name indeed".into(), 5), ("b".into(), 1)], false);
+        let first = out.lines().nth(1).unwrap();
+        assert!(first.starts_with("A very long \u{2026}  "), "{out}");
+        assert!(first.chars().count() <= 41, "{out}");
     }
 
     #[test]
@@ -524,15 +588,12 @@ mod tests {
         assert!(lines[1].starts_with("Oct 30"), "first row is labelled by its first real day: {g}");
         assert!(lines[2].starts_with("Nov 2"), "{g}");
         assert!(lines[2].ends_with("Today"), "{g}");
-        // The first row has three real cells (Oct 30, 31, Nov 1... = 10 - 7 = 3 in row one).
         let first: Vec<&str> = lines[1].split_whitespace().skip(2).collect();
         assert_eq!(first.len(), 3, "{g}");
-        // The busiest day (40, today) is the summit, once, and is in the last row.
-        assert_eq!(g.matches('\u{25B2}').count(), 2, "one in the grid, one in the legend: {g}");
+        // The busiest day (40, today) is the summit, once in the grid and once in the legend.
+        assert_eq!(g.matches('\u{25B2}').count(), 2, "{g}");
         assert!(lines[2].contains('\u{25B2}'), "{g}");
-        assert!(g.contains("busiest day, Sun Nov 8: 40"), "{g}");
-        assert!(g.contains("idle") && g.contains("busier"), "{g}");
-        // Only block glyphs, dots, spaces, digits and letters: no row is wider than 7 cells.
+        assert_eq!(lines[3], "\u{00B7} idle  \u{2582}\u{2583}\u{2585}\u{2586}\u{2588} busy  \u{25B2} peak", "{g}");
         assert!(lines[2].chars().filter(|c| "\u{00B7}\u{2582}\u{2583}\u{2585}\u{2586}\u{2588}\u{25B2}".contains(*c)).count() == 7);
     }
 
@@ -545,6 +606,7 @@ mod tests {
         assert!(lines[2].starts_with("Oct 12"), "{g}");
         assert!(lines[2].ends_with("Oct 18"), "range ended in the past, so the last cell shows its date: {g}");
         assert_eq!(g.matches('\u{25B2}').count(), 0, "a flat range has no summit");
+        assert!(!g.contains("peak"), "{g}");
     }
 
     /// Whole fixtures for the three views, built the way the engine builds them.
@@ -634,50 +696,68 @@ mod tests {
         RangeView { span, today: d(TODAY), report: rep, project, top_chats: &rep.chats, compare: None, top }
     }
 
+
     #[test]
-    fn range_reads_tokens_first_merges_model_ids_and_ends_on_one_estimate() {
+    fn range_is_sentences_one_chart_and_one_estimate() {
         let _g = glyph_lock();
         let (sp, rep) = (span("2026-11-02", TODAY, "This week"), week_report());
         let out = range(&range_of(&sp, &rep, None, 2));
-        assert!(out.starts_with("**This week** \u{00B7} Nov 2 - Nov 8 \u{00B7} all projects\n**1.4k tokens** plus 5.2M cache reads \u{00B7} 4 sessions\n"), "{out}");
-        assert!(out.contains("Activity\n```text\n"), "a week is bars: {out}");
-        assert!(!out.contains("7 days per row"), "{out}");
-        // Two Sonnet 4.5 ids are one row (800 of 1400), counted before the row limit of 2.
-        assert_eq!(out.matches("Sonnet 4.5").count(), 1, "{out}");
-        assert!(out.lines().any(|l| l.starts_with("Sonnet 4.5") && l.contains("800") && l.ends_with("57%")), "{out}");
-        assert!(out.contains("Opus 5.5"), "the second row survives the merge: {out}");
-        assert!(!out.contains("Haiku 5.5"), "the third is cut by the limit: {out}");
-        assert!(out.contains("| Project | Tokens | Sessions |\n|---|--:|--:|\n| atlas | 900 | 3 |\n"), "{out}");
-        assert!(out.contains("| Biggest sessions | Project | Tokens |\n|---|---|--:|\n| Fix the grid | atlas | 700 |\n"), "{out}");
-        assert!(out.ends_with("_Estimated at API prices: $1.23. Not a bill._"), "{out}");
+        assert!(
+            out.starts_with("**This week** (Nov 2 - Nov 8): **1.4k tokens** over 4 sessions. Busiest day was today with 40.\n```text\n"),
+            "{out}"
+        );
+        assert!(out.lines().any(|l| l.starts_with("Today ") && l.ends_with("40  \u{25B2}")), "a week is bars, today last: {out}");
+        // Two Sonnet 4.5 ids are one share (800 of 1400), counted before the limit of 2 names.
+        assert!(out.contains("Mostly Sonnet 4.5 (57%), then Opus 5.5 (36%) and 1 more."), "{out}");
+        assert!(!out.contains("Haiku"), "{out}");
+        assert!(out.contains("Most went to atlas (64%), then other (36%)."), "{out}");
+        assert!(out.contains("Biggest session: \"Fix the grid\" in atlas, 700."), "{out}");
+
+        // Two folders that share a name are one name in the sentence.
+        let mut twin = week_report();
+        twin.projects = vec![project_use("atlas", 700, 2), project_use("other", 500, 1), project_use("atlas", 200, 1)];
+        let out = range(&range_of(&sp, &twin, None, 5));
+        assert!(out.contains("Most went to atlas (64%), then other (36%)."), "{out}");
+        assert!(out.ends_with("\n\n_Estimated $1.23 at API prices._"), "{out}");
         assert_eq!(out.matches('$').count(), 1, "one dollar figure: {out}");
-        assert!(!out.contains('!') && !out.contains("Live"), "{out}");
+        assert!(!out.contains('|') && !out.contains("cache") && !out.contains('!') && !out.contains("Live"), "{out}");
     }
 
     #[test]
-    fn a_project_range_drops_the_project_table_and_column() {
+    fn a_project_range_names_the_project_and_skips_the_project_sentence() {
         let _g = glyph_lock();
         let (sp, rep) = (span("2026-11-02", TODAY, "This week"), week_report());
         let out = range(&range_of(&sp, &rep, Some("atlas"), 5));
-        assert!(out.starts_with("**This week** \u{00B7} Nov 2 - Nov 8 \u{00B7} project **atlas**\n"), "{out}");
-        assert!(!out.contains("| Project |"), "{out}");
-        assert!(out.contains("| Biggest sessions | Tokens |\n|---|--:|\n| Fix the grid | 700 |\n"), "{out}");
+        assert!(out.starts_with("**This week** (Nov 2 - Nov 8) in **atlas**: **1.4k tokens** over 4 sessions."), "{out}");
+        assert!(!out.contains("Most went to"), "{out}");
+        assert!(out.contains("Biggest session: \"Fix the grid\", 700."), "{out}");
+        assert!(out.contains("Mostly Sonnet 4.5 (57%), then Opus 5.5 (36%) and Haiku 5.5 (7%)."), "top 5 still names at most 3: {out}");
     }
 
     #[test]
-    fn an_empty_range_says_so_and_shows_no_token_line() {
+    fn an_empty_range_says_so() {
         let _g = glyph_lock();
         let sp = span("2026-11-02", TODAY, "This week");
         let mut rep = week_report();
         rep.total.tokens.total = 0; // cache reads stay (5.2M): they are not usage
         let out = range(&range_of(&sp, &rep, None, 5));
-        assert_eq!(out, "**This week** \u{00B7} Nov 2 - Nov 8 \u{00B7} all projects\n\nNo Claude Code usage recorded in this range.\n");
+        assert_eq!(out, "**This week** (Nov 2 - Nov 8)\n\nNo Claude Code usage recorded in this range.\n");
     }
 
-    /// The lines of the first ```text block after `marker`, up to the legend.
-    fn grid_rows<'a>(out: &'a str, marker: &str) -> Vec<&'a str> {
-        let after = out.split(marker).nth(1).expect(marker);
-        after.lines().skip(2).take_while(|l| !l.contains("idle")).collect()
+    #[test]
+    fn a_single_day_gets_a_models_chart() {
+        let _g = glyph_lock();
+        let rep = report("day", points_to(TODAY, &[1400]), &[(SONNET, 800), ("claude-opus-5-5", 600)], vec![], vec![]);
+        let sp = span(TODAY, TODAY, "Today");
+        let out = range(&range_of(&sp, &rep, None, 5));
+        assert!(out.starts_with("**Today** (Nov 8): **1.4k tokens** over 4 sessions.\n```text\nSonnet 4.5  "), "{out}");
+        assert!(!out.contains("Busiest"), "{out}");
+    }
+
+    /// The rows of the first ```text block, up to the grid legend when there is one.
+    fn chart_rows(out: &str) -> Vec<&str> {
+        let after = out.split("```text\n").nth(1).expect("a chart");
+        after.lines().take_while(|l| !l.starts_with("```") && !l.contains("idle")).collect()
     }
 
     #[test]
@@ -688,20 +768,18 @@ mod tests {
             let rep = report("day", points_to(TODAY, &vec![7; n]), &[(SONNET, 700)], vec![], vec![]);
             let sp = span("2026-01-01", TODAY, "A range");
             let out = range(&range_of(&sp, &rep, None, 5));
-            assert_eq!(out.contains("Activity \u{00B7} 7 days per row\n```text\n"), expect_grid, "{n} days: {out}");
+            assert_eq!(out.contains(" idle "), expect_grid, "{n} days: {out}");
+            let rows = chart_rows(&out);
             if expect_grid {
-                let rows = grid_rows(&out, "7 days per row");
                 assert_eq!(rows.len(), n.div_ceil(7), "{n} days: {out}");
                 assert!(rows.last().unwrap().ends_with("Today"), "{n} days: today is bottom-right: {out}");
                 // Whole weeks have no empty slot; 15 days leaves 6 empty slots in row one.
                 let first_cells = rows[0].split_whitespace().skip(2).count();
                 assert_eq!(first_cells, if n == 84 { 7 } else { 1 }, "{n} days: {out}");
             } else {
-                assert!(out.contains("Activity\n```text\n"), "{n} days: {out}");
-                assert_eq!(out.lines().filter(|l| l.ends_with("  7")).count(), n, "{n} bars, a row per day: {out}");
+                assert_eq!(rows.len(), n, "{n} bars, a row per day: {out}");
             }
         }
-        // The same at the grid's edges when drawn directly.
         for n in [15usize, 84] {
             let g = grid(&days("2026-08-01", &vec![3; n]), today).unwrap();
             assert_eq!(g.lines().count(), 2 + n.div_ceil(7) + 1, "fence, rows, legend, fence: {g}");
@@ -709,7 +787,7 @@ mod tests {
     }
 
     #[test]
-    fn days_that_are_not_consecutive_get_bars_not_a_misleading_grid() {
+    fn days_that_are_not_consecutive_get_the_last_14_as_bars() {
         let _g = glyph_lock();
         let mut pts = points_to(TODAY, &[5; 16]);
         pts.remove(6); // 15 points but a missing day: every later cell would sit under the wrong date
@@ -719,12 +797,23 @@ mod tests {
         assert!(grid(&[], d(TODAY)).is_none());
         let rep = report("day", pts, &[(SONNET, 70)], vec![], vec![]);
         let out = range(&range_of(&span("2026-10-25", TODAY, "A range"), &rep, None, 5));
-        assert!(!out.contains("7 days per row"), "{out}");
-        assert!(out.contains("Activity\n```text\n"), "{out}");
+        assert!(!out.contains(" idle "), "{out}");
+        assert_eq!(chart_rows(&out).len(), 14, "{out}");
+        assert!(out.contains("The chart shows the last 14 days."), "{out}");
     }
 
     #[test]
-    fn compare_names_each_side_once_and_merges_model_ids() {
+    fn weeks_say_when_the_busiest_started() {
+        let _g = glyph_lock();
+        let pts = vec![point("2026-08-03", 5), point("2026-08-10", 90), point("2026-08-17", 7)];
+        let rep = report("week", pts, &[(SONNET, 102)], vec![], vec![]);
+        let out = range(&range_of(&span("2026-08-03", "2026-08-23", "A range"), &rep, None, 5));
+        assert!(out.contains("Busiest week started Aug 10 with 90."), "{out}");
+        assert!(out.lines().any(|l| l.starts_with("Aug 10 ")), "{out}");
+    }
+
+    #[test]
+    fn compare_says_how_it_moved_then_two_bars_earlier_first() {
         let _g = glyph_lock();
         let yesterday = report("day", points_to("2026-11-07", &[1000]), &[(SONNET, 700), (SONNET_DATED, 300)], vec![], vec![]);
         let mut today = report("day", points_to(TODAY, &[500]), &[(SONNET, 500)], vec![], vec![]);
@@ -732,19 +821,27 @@ mod tests {
         let (a, b) = (span("2026-11-08", TODAY, "Today"), span("2026-11-07", "2026-11-07", "Yesterday"));
         let view = RangeView { compare: Some((&b, &yesterday)), ..range_of(&a, &today, None, 5) };
         let out = range(&view);
-        assert!(out.starts_with("**Today** (Nov 8) vs **Yesterday** (Nov 7)\n\n"), "{out}");
-        assert!(out.contains("| | Yesterday | Today | Change |\n|---|--:|--:|--:|\n| Tokens | 1k | 500 | -50% |\n"), "{out}");
-        assert_eq!(out.matches("| Sonnet 4.5 |").count(), 1, "{out}");
-        assert!(out.contains("| Sonnet 4.5 | 1k | 500 | -50% |"), "{out}");
-        assert!(!out.contains("Day by day"), "one day each has no day-by-day: {out}");
-        assert!(out.ends_with("_Estimated at API prices, not a bill: Yesterday $1.23, Today $1.23._"), "{out}");
+        assert!(out.starts_with("**Today** (Nov 8): **500 tokens**, 50% less than **Yesterday** (Nov 7) at 1k.\n```text\n"), "{out}");
+        let rows = chart_rows(&out);
+        assert!(rows[0].starts_with("Yesterday  ") && rows[0].ends_with("1k"), "{out}");
+        assert!(rows[1].starts_with("Today      ") && rows[1].ends_with("500"), "{out}");
+        assert!(out.contains("Sessions went from 4 to 2."), "{out}");
+        assert!(out.contains("Biggest model change: Sonnet 4.5, 1k to 500 (-50%)."), "ids merged: {out}");
+        assert!(out.ends_with("_Estimated $1.23 for Yesterday and $1.23 for Today at API prices._"), "{out}");
 
         // A range whose label already is its dates is not named twice.
         let (c, e) = (span("2026-11-04", "2026-11-04", "Nov 4"), span("2026-11-03", "2026-11-03", "Nov 3"));
         let view = RangeView { compare: Some((&e, &yesterday)), ..range_of(&c, &today, None, 5) };
-        assert!(range(&view).starts_with("**Nov 4** vs **Nov 3**\n\n"), "{}", range(&view));
-    }
+        assert!(range(&view).starts_with("**Nov 4**: **500 tokens**, 50% less than **Nov 3** at 1k."), "{}", range(&view));
 
+        // Against an empty range.
+        let mut none = report("day", points_to("2026-11-07", &[0]), &[], vec![], vec![]);
+        none.total.cost = Cost::default();
+        let view = RangeView { compare: Some((&b, &none)), ..range_of(&a, &today, None, 5) };
+        let out = range(&view);
+        assert!(out.starts_with("**Today** (Nov 8): **500 tokens**, against none in **Yesterday** (Nov 7).\n"), "{out}");
+        assert!(out.ends_with("_Estimated $1.23 for Today at API prices._"), "{out}");
+    }
     fn agent(name: &str, total: u64) -> AgentSummary {
         AgentSummary {
             agent_id: "a1".into(),
@@ -792,40 +889,69 @@ mod tests {
     }
 
     #[test]
-    fn chat_splits_main_from_helpers_and_merges_model_ids() {
+    fn chat_is_two_short_paragraphs_around_the_main_and_helpers_chart() {
         let _g = glyph_lock();
         let out = chat(&detail("caf\u{e9}", "\u{65e5}\u{672c}\u{8a9e}", "scout|x"), None, 5);
-        assert!(out.starts_with("**This chat** \u{00B7} **1k tokens** plus 0 cache reads\n\"caf\u{e9}\" \u{00B7} \u{65e5}\u{672c}\u{8a9e} \u{00B7} "), "{out}");
-        assert!(out.contains("12 messages \u{00B7} 1 helper\n"), "{out}");
-        assert!(out.lines().any(|l| l.starts_with("Main chat") && l.ends_with("700  70%")), "{out}");
-        assert!(out.lines().any(|l| l.starts_with("Helpers (1)") && l.ends_with("300  30%")), "{out}");
-        assert_eq!(out.matches("Sonnet 4.5").count(), 2, "one model row, one helper row: {out}");
-        assert!(out.lines().any(|l| l.starts_with("Sonnet 4.5") && l.contains("800") && l.ends_with("80%")), "{out}");
-        assert!(
-            out.contains("| Helper | Type | Model | Effort | Tokens |\n|---|---|---|---|--:|\n| scout x | Explore | Sonnet 4.5 | - | 300 |\n"),
-            "pipes never break a table; no effort recorded shows a dash, not a guess: {out}"
-        );
-        assert!(out.contains("Activity\n```text\n"), "three hours: {out}");
-        assert!(out.ends_with("_Estimated at API prices: $1.00. Not a bill._"), "{out}");
+        assert!(out.starts_with("This chat has used **1k tokens** over 1m. The main chat did 70% of it; 1 helper used 300.\n```text\n"), "{out}");
+        let rows = chart_rows(&out);
+        assert!(rows[0].starts_with("Main chat  ") && rows[0].ends_with("700"), "{out}");
+        assert!(rows[1].starts_with("Helpers    ") && rows[1].ends_with("300"), "{out}");
+        assert!(out.contains("Mostly Sonnet 4.5 (80%), then Opus 5.5 (20%)."), "ids merged: {out}");
+        assert!(out.contains("Busiest hour was ") && out.contains(" with 600."), "{out}");
+        assert!(!out.contains("Biggest helper"), "one helper is already named by the sentence: {out}");
+        assert!(!out.contains("caf") && !out.contains('|'), "no name without a note, no table: {out}");
+        assert!(out.ends_with("\n\n_Estimated $1.00 at API prices._"), "{out}");
     }
 
     #[test]
-    fn chat_names_the_model_with_its_effort_and_flags_unpriced_models() {
+    fn helpers_doing_most_of_it_lead_and_the_biggest_is_named() {
+        let _g = glyph_lock();
+        let mut dt = detail("x", "p", "scout");
+        dt.main.tokens = tok(100, 0);
+        dt.agents = vec![agent("Build the library tab", 600), agent("Review it", 300)];
+        let out = chat(&dt, None, 5);
+        assert!(out.contains("2 helpers did 90% of it; the main chat only 100."), "{out}");
+        assert!(out.contains("Biggest helper: Build the library tab, 600."), "{out}");
+    }
+
+    #[test]
+    fn a_chat_without_helpers_charts_its_hours() {
+        let _g = glyph_lock();
+        let mut dt = detail("x", "p", "scout");
+        dt.agents.clear();
+        let out = chat(&dt, None, 5);
+        assert!(out.starts_with("This chat has used **1k tokens** over 1m.\n```text\n"), "{out}");
+        let rows = chart_rows(&out);
+        assert_eq!(rows.len(), 3, "three hours: {out}");
+        assert!(rows.iter().all(|r| r.contains(" am ") || r.contains(" pm ")), "hours read like 2 pm: {out}");
+        assert!(rows.iter().any(|r| r.ends_with("600  \u{25B2}")), "{out}");
+    }
+
+    #[test]
+    fn a_fallback_chat_keeps_the_note_first_and_names_the_chat() {
+        let _g = glyph_lock();
+        let out = chat(&detail("Fix the grid", "atlas", "scout"), Some("No session id was given, so this is the newest chat in atlas."), 5);
+        assert!(out.starts_with("_No session id was given, so this is the newest chat in atlas._\nThis chat, \"Fix the grid\", has used **1k tokens**"), "{out}");
+    }
+
+    #[test]
+    fn the_models_sentence_names_effort_and_unpriced_models() {
         let _g = glyph_lock();
         let e = |effort: &str, replies| EffortUse { effort: effort.into(), replies };
         let mut dt = detail("x", "p", "scout");
-        dt.row.main_model = "claude-opus-5-5".into();
-        dt.row.efforts = vec![e("high", 9), e("medium", 1)];
         dt.by_model[0].efforts = vec![e("medium", 2)];
-        dt.by_model[1].efforts = vec![e("high", 5)]; // the dated id: same row, mixes merge
+        dt.by_model[1].efforts = vec![e("high", 5)]; // the dated id: same model, mixes merge
         dt.by_model.push(ByModel { model: "claude-nova-9-1".into(), known: false, tokens: tok(50, 0), cost: Cost::default(), efforts: Vec::new() });
-        dt.agents[0].efforts = vec![e("xhigh", 4)];
         let out = chat(&dt, None, 5);
-        assert!(out.contains("\"x\" \u{00B7} p \u{00B7} Opus 5.5 \u{00B7} high 90%, medium 10% \u{00B7} "), "{out}");
-        assert!(out.lines().any(|l| l.starts_with("Sonnet 4.5 \u{00B7} high 71%, medium 29% ")), "merged mix shows both: {out}");
-        assert!(out.lines().any(|l| l.starts_with("Opus 5.5 ") && !l.contains("\u{00B7} ")), "no effort, no suffix: {out}");
-        assert!(out.lines().any(|l| l.starts_with("Nova 9.1 (not priced)")), "{out}");
-        assert!(out.contains("| scout | Explore | Sonnet 4.5 | xhigh | 300 |"), "{out}");
+        assert!(out.contains("Mostly Sonnet 4.5 (80%, mostly high), then Opus 5.5 (20%) and Nova 9.1 (5%, not priced)."), "{out}");
+
+        dt.by_model = vec![ByModel { efforts: vec![e("high", 3)], ..by_model("claude-opus-5-5", 1000) }];
+        assert!(chat(&dt, None, 5).contains("All on Opus 5.5 (high)."), "{}", chat(&dt, None, 5));
+        dt.by_model[0].efforts = vec![e("low", 1), e("medium", 1), e("high", 1)];
+        assert!(chat(&dt, None, 5).contains("All on Opus 5.5 (mixed effort)."), "{}", chat(&dt, None, 5));
+
+        dt.by_model = vec![by_model("claude-opus-5-5", 400), by_model(SONNET, 350), by_model("claude-haiku-5-5", 250)];
+        assert!(chat(&dt, None, 5).contains("Spread over Opus 5.5 (40%), Sonnet 4.5 (35%) and Haiku 5.5 (25%)."), "{}", chat(&dt, None, 5));
     }
 
     #[test]
@@ -835,8 +961,8 @@ mod tests {
         // e.g. Opus 4.7 in fast mode: known to the price list, no rate for that speed.
         dt.by_model.push(ByModel { model: "claude-opus-4-7".into(), known: true, tokens: tok(50, 0), cost: Cost::default(), efforts: Vec::new() });
         let out = chat(&dt, None, 5);
-        assert!(out.lines().any(|l| l.starts_with("Opus 4.7 ")), "{out}");
-        assert!(!out.contains("Opus 4.7 (not priced)"), "{out}");
+        assert!(out.contains("Opus 4.7 (5%)"), "{out}");
+        assert!(!out.contains("not priced"), "{out}");
     }
 
     /// Switches ASCII mode on and puts it back even when an assert fails.
@@ -860,9 +986,9 @@ mod tests {
         let _g = glyph_lock();
         let _on = AsciiOn::new();
         let g = grid(&days("2026-10-30", &[0, 5, 9, 2, 0, 0, 7, 1, 3, 40]), d(TODAY)).unwrap();
-        let b = bars(&[("Mon".into(), 3, String::new()), ("Tue".into(), 0, String::new()), ("Wed".into(), 9, String::new())], true);
+        let b = bars(&[("Mon".into(), 3), ("Tue".into(), 0), ("A label far too long".into(), 9)], true);
         assert!(g.is_ascii(), "{g}");
-        assert!(b.is_ascii(), "{b}");
+        assert!(b.is_ascii() && b.contains("..."), "{b}");
 
         // Names that come from the user's own data: a title, a project, a model id.
         let (cafe, nihongo, odd_model) = ("caf\u{e9}", "\u{65e5}\u{672c}\u{8a9e}", "claude-fable-\u{e9}-1");
@@ -871,32 +997,62 @@ mod tests {
         let sp = span("2026-10-20", TODAY, "Last 20 days");
         let out = range(&range_of(&sp, &rep, None, 5));
         assert!(out.is_ascii(), "range: {out}");
-        assert!(out.contains("| caf? | ???") && out.contains("claude-fable-?-1"), "non-ASCII became ?: {out}");
+        assert!(out.contains("\"caf?\" in ???") && out.contains("claude-fable-?-1"), "non-ASCII became ?: {out}");
         let by_project = range(&range_of(&sp, &rep, Some(nihongo), 5));
-        assert!(by_project.is_ascii() && by_project.contains("project **???**"), "{by_project}");
+        assert!(by_project.is_ascii() && by_project.contains(" in **???**"), "{by_project}");
 
         let view = RangeView { compare: Some((&sp, &rep)), ..range_of(&sp, &rep, None, 5) };
         let versus = range(&view);
-        assert!(versus.is_ascii() && versus.contains("claude-fable-?-1"), "compare: {versus}");
+        assert!(versus.is_ascii(), "compare: {versus}");
 
         let mut dt = detail(cafe, nihongo, "h\u{e9}lper");
         dt.by_model.push(by_model(odd_model, 100));
-        dt.agents[0].agent_type = Some("\u{65e5}".into());
-        dt.agents[0].model = odd_model.into();
+        dt.agents.push(agent("other", 10));
         let note = format!("newest chat in {nihongo}.");
         let c = chat(&dt, Some(&note), 5);
         assert!(c.is_ascii(), "chat: {c}");
-        assert!(c.contains("\"caf?\"") && c.contains("| h?lper | ? | claude-fable-?-1 |") && c.contains("_newest chat in ???._"), "{c}");
+        assert!(c.contains("\"caf?\"") && c.contains("claude-fable-?-1") && c.contains("Biggest helper: h?lper") && c.contains("_newest chat in ???._"), "{c}");
     }
 
     #[test]
-    fn the_estimate_line_is_always_an_estimate() {
-        assert_eq!(estimate(&[("", Some(2.02), true)]), "_Estimated at API prices: $2.02. Not a bill._");
+    fn the_estimate_line_is_an_estimate_at_api_prices() {
+        assert_eq!(estimate(&[("", Some(2.02), true)]), "_Estimated $2.02 at API prices._");
+        assert_eq!(estimate(&[("", Some(2.02), false)]), "_Estimated $2.02+ at API prices._");
         assert_eq!(estimate(&[("", None, true)]), "_No API price known for these models._");
         assert_eq!(
             estimate(&[("Last week", Some(9.0), true), ("This week", Some(2.02), false)]),
-            "_Estimated at API prices, not a bill: Last week $9.00, This week $2.02+._"
+            "_Estimated $9.00 for Last week and $2.02+ for This week at API prices._"
         );
+    }
+
+    #[test]
+    fn every_chart_line_fits_a_chat_window_and_nothing_says_bill() {
+        let _g = glyph_lock();
+        let today = report("day", points_to(TODAY, &[500]), &[(SONNET, 500)], vec![], vec![]);
+        let long = report("day", points_to(TODAY, &[9; 30]), &[(SONNET, 600), ("claude-opus-5-5", 400)], vec![project_use("atlas", 600, 2), project_use("b", 400, 1)], vec![row("x", "atlas", 700)]);
+        let (wk, mo) = (span("2026-11-02", TODAY, "Last 30 days with a long name"), span("2026-10-10", TODAY, "Last 30 days"));
+        let (sp_wk, rep_wk) = (span("2026-11-02", TODAY, "This week"), week_report());
+        let mut no_helpers = detail("x", "p", "scout");
+        no_helpers.agents.clear();
+        let outs = [
+            range(&range_of(&sp_wk, &rep_wk, None, 5)),
+            range(&range_of(&mo, &long, None, 5)),
+            range(&RangeView { compare: Some((&wk, &today)), ..range_of(&mo, &long, None, 5) }),
+            chat(&detail("x", "p", "scout"), None, 5),
+            chat(&no_helpers, None, 5),
+        ];
+        for out in &outs {
+            let mut inside = false;
+            for line in out.lines() {
+                if line.starts_with("```") {
+                    inside = !inside;
+                } else if inside {
+                    assert!(line.chars().count() <= 41, "{} columns: {line}\n{out}", line.chars().count());
+                }
+            }
+            assert!(!out.to_lowercase().contains("bill"), "{out}");
+            assert_eq!(out.matches("```text").count(), 1, "one chart: {out}");
+        }
     }
 
     #[test]
@@ -904,8 +1060,8 @@ mod tests {
         let t = d("2026-11-08");
         assert_eq!(bucket_label("2026-11-08", "day", t), "Today");
         assert_eq!(bucket_label("2026-11-07", "day", t), "Sat Nov 7");
-        assert_eq!(bucket_label("2026-08-09", "week", t), "Wk of Aug 9");
-        assert_eq!(bucket_label("2025-12-28", "week", t), "Wk of Dec 28 2025");
+        assert_eq!(bucket_label("2026-08-09", "week", t), "Aug 9");
+        assert_eq!(bucket_label("2025-12-28", "week", t), "Dec 28 2025");
         assert_eq!(bucket_label("2026-03-01", "month", t), "Mar 2026");
         assert_eq!(t.year(), 2026);
     }

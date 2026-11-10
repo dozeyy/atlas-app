@@ -15,10 +15,6 @@ pub fn ascii() -> bool {
     ASCII.load(Ordering::Relaxed)
 }
 
-/// Separator between the facts of a headline.
-pub fn dot() -> &'static str {
-    if ascii() { " | " } else { " \u{00B7} " }
-}
 
 /// The mark planted on the busiest day: the app's summit spark.
 pub fn summit() -> char {
@@ -176,25 +172,6 @@ pub fn share_text(p: f64) -> String {
     }
 }
 
-/// The reasoning-effort mix as the app words it: one effort is just its name ("high"); a mix
-/// is each effort's share of the replies that had one, most used first ("high 93%, medium 7%").
-/// Empty when no reply said (never a guess).
-pub fn effort_mix(e: &[atlas_core::usage::query::EffortUse]) -> String {
-    let total: u64 = e.iter().map(|x| x.replies).sum();
-    match e {
-        [] => String::new(),
-        [one] => one.effort.clone(),
-        _ => e
-            .iter()
-            .map(|x| {
-                let p = x.replies as f64 * 100.0 / total.max(1) as f64;
-                format!("{} {}", x.effort, share_text(p))
-            })
-            .collect::<Vec<_>>()
-            .join(", "),
-    }
-}
-
 /// Text from the user's own data (chat titles, project names, model ids) for output: in ASCII
 /// mode every non-ASCII character becomes `?`, so `--ascii` really is ASCII-only.
 pub fn plain(s: &str) -> String {
@@ -287,13 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn effort_mix_is_named_and_never_guessed() {
-        use atlas_core::usage::query::EffortUse;
-        let e = |effort: &str, replies| EffortUse { effort: effort.into(), replies };
-        assert_eq!(effort_mix(&[]), "");
-        assert_eq!(effort_mix(&[e("high", 40)]), "high");
-        assert_eq!(effort_mix(&[e("high", 93), e("medium", 7)]), "high 93%, medium 7%");
-        assert_eq!(effort_mix(&[e("high", 999), e("max", 1)]), "high >99%, max <1%");
+    fn shares_never_round_to_nothing_or_everything() {
         assert_eq!(share_text(0.0), "0%");
         assert_eq!(share_text(0.4), "<1%");
         assert_eq!(share_text(45.6), "46%");
@@ -335,7 +306,7 @@ mod tests {
     fn ascii_mode_has_no_unicode() {
         let _g = glyph_lock();
         set_ascii(true);
-        let all = format!("{}{}{}{}{}", bar(3, 10, 8), bar(0, 10, 8), dot(), summit(), (0..=5).map(heat).collect::<String>());
+        let all = format!("{}{}{}{}", bar(3, 10, 8), bar(0, 10, 8), summit(), (0..=5).map(heat).collect::<String>());
         let cut = cell("abcdefghij", 6);
         set_ascii(false);
         assert!(all.is_ascii(), "{all:?}");

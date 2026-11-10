@@ -40,7 +40,7 @@ OPTIONS
                       chat in this folder's project, which the output says)
   --project=NAME|PATH a project by folder name or path instead of the current folder
   --cwd DIR           folder that decides \"this project\" (default: $CLAUDE_PROJECT_DIR, else .)
-  --top N             rows in the top chats / projects / helpers lists (default 5)
+  --top N             how many models and projects a reply names (at most 3; --json lists N)
   --json              JSON instead of markdown
   --ascii             plain ASCII bars (# and .) for a terminal that draws boxes for blocks
                       (also: ATLAS_ASCII=1)
@@ -50,7 +50,7 @@ OPTIONS
                       <local app data>/atlas/cli)
 
 Tokens = input + output + cache writes; cache reads are shown apart. The one dollar figure
-is an API-price estimate, not a bill. Transcripts are only read, never written.";
+is an estimate at API prices. Transcripts are only read, never written.";
 
 struct Quiet;
 impl EventSink for Quiet {

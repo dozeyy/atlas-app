@@ -9,9 +9,10 @@ allowed-tools: Bash(sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" *), PowerShell(p
 # Atlas usage in chat
 
 The `atlas-usage` program reads this computer's Claude Code transcripts (read-only) with
-the Atlas app's own engine and prints finished markdown in the app's voice: a headline in
-tokens, a text chart (bars, or the terrain grid for a month), the models, and a few short
-tables. Your job is to pick the scope, run it once, and show its output.
+the Atlas app's own engine and prints a finished short answer in the app's voice: a few
+plain sentences in tokens, at most one small text chart (bars, or the terrain grid for a
+month), and a closing estimate line. Your job is to pick the scope, run it once, and show
+its output.
 
 The user asked: `$ARGUMENTS`
 (Empty means `/atlas` with nothing after it, or you were invoked from a plain question:
@@ -63,15 +64,16 @@ sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" <words> --session ${CLAUDE_SESSION_I
 - Your reply starts with the program's stdout, copied character for character: same
   lines, same order, same words, bold and ```text blocks kept (the bars only line up inside
   them). No preamble, no headings of your own, no rewording, no re-rounding.
-- After it, at most one short sentence of your own, and only if it adds something the
-  output does not say (a big change, the busiest day's cause). Usually none. No extra
-  tables. Do not mention which copy of the program ran.
+- The output is the whole reply. Add nothing of your own, before or after it: no
+  "Here's your usage", no intro, no closing sentence, no recap or summary, no advice, no
+  "let me know", no filler or hype ("Great question", "Nice!", "Wow"). No extra tables or
+  charts. Do not mention which copy of the program ran.
 - Voice, the app's: plain, numbers first, sentence case. No greeting, no exclamation marks,
   no emoji, no jokes, no "Live". Say tokens, sessions and helpers, as the app does.
-- Tokens are the figure. The one dollar number is the closing line, an API-price estimate;
-  never lead with it, repeat it, or call it a charge or a bill.
+- Tokens are the figure. The one dollar number is the closing line, an estimate at API
+  prices; never lead with it, repeat it, or call it a charge.
 - The chart glyphs (`█ ▏ ▂ ▃ ▅ ▆ · ▲`) are part of the output: keep them, and keep each
-  chart inside its ```text block. `▲` marks the busiest day, `·` an idle one, and
+  chart inside its ```text block. `▲` marks the busiest day or hour, `·` an idle one, and
   "Today" is the last row or cell.
 - If the output says no session id was given or it fell back to the newest chat in the
   project, keep that line.

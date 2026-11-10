@@ -493,3 +493,10 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Sessions "Pick up where you left off": the token strip now hides below a 760 px container (was 640), so the title keeps its room.
 - Swept every page and Toolkit tab at 900x600 and 1040x640, sidebar open and closed, with an in-page overlap/clip detector: no other overlaps (Library rows overlap their Install button by design).
 - `docs/specs/fable-polish-pass.md` is the brief for the Fable polish pass (enhance, never redesign; readability first; order lists by what people want; no invented popularity numbers).
+
+## 2026-11-09 - Atlas chat replies: the short answer
+- Will picked style 1 ("Short answer") of five mockups. `crates/cli/src/render.rs` now prints a few plain sentences plus at most one ```text chart (BAR 16, labels cut at 13, every chart line <= 41 columns, so nothing scrolls sideways). No tables, no cache-read figures.
+- Closing line is "_Estimated $X at API prices._" (compare: "$A for X and $B for Y"). The word "bill" is gone everywhere; a test fails if any reply contains it.
+- Sentences name at most 3 models/projects, then "and N more". Projects with the same folder name merge in the sentence (all-time showed "Origin Client" twice before).
+- skill/skills/atlas/SKILL.md section 3: the program's output is the whole reply; Claude adds no intro, closing line, recap, advice or hype.
+- Real outputs checked for chat, today, week, 30d, last-week --vs week, all (release build). Not yet in a public release: the skill downloads the CLI from the public repo, so dad's copy changes only after the next release.
