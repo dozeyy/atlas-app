@@ -42,7 +42,7 @@ export function LeaveGuard() {
           <Button autoFocus onClick={cancelLeave}>
             Keep editing
           </Button>
-          <Button variant="danger" onClick={confirmLeave}>
+          <Button variant="danger-solid" onClick={confirmLeave}>
             Discard
           </Button>
         </>

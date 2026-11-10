@@ -458,12 +458,18 @@ export function Settings() {
             </Button>
           )}
         </Row>
-        <Row label="Build">
-          <span className="text-body text-ink-2">{info.build === "release" ? "Release" : "Debug"}</span>
-        </Row>
-        <Row label="Started in" tip="Time from launch to the first screen.">
-          <span className="text-body text-ink-2">{info.firstPaintMs === null ? "Not measured" : `${info.firstPaintMs} ms`}</span>
-        </Row>
+        {/* Facts only when there is one to tell: a release build is the normal case, and a start
+            that was not timed says nothing. */}
+        {info.build !== "release" && (
+          <Row label="Build">
+            <span className="text-body text-ink-2">Debug</span>
+          </Row>
+        )}
+        {info.firstPaintMs !== null && (
+          <Row label="Started in" tip="Time from launch to the first screen.">
+            <span className="text-body text-ink-2">{`${info.firstPaintMs} ms`}</span>
+          </Row>
+        )}
         <Row label="Privacy" tip="Atlas sends none of your sessions or files anywhere. It goes online only to look for a new version and to load the Library.">
           <span className="text-body text-ink-2">Your sessions and files are not sent</span>
         </Row>

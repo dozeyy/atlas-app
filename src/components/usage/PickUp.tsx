@@ -81,7 +81,7 @@ export function PickUp({ row, onOpen }: { row: SessionRow; onOpen: (id: string) 
       </svg>
       <div className="pick-actions">
         {resume && (
-          <IconButton aria-label="Copy resume command" title="Copy resume command" onClick={() => void copyResume(resume)}>
+          <IconButton className="framed" aria-label="Copy resume command" title={"Copy resume command\nPaste it in a terminal to reopen this session."} onClick={() => void copyResume(resume)}>
             <Copy size={16} aria-hidden="true" />
           </IconButton>
         )}

@@ -294,6 +294,25 @@ html[data-input="keyboard"] :focus-within {
 .sheet-enter {
   animation: sheet-in var(--dur-slow) var(--ease-out) both;
 }
+/* The way out: the same path back, in 180 ms (`useClosing` holds the unmount that long), so a
+   sheet never vanishes inside one frame after animating in. The scrim fades with it. */
+@keyframes sheet-out {
+  to {
+    opacity: 0;
+    transform: translateX(calc(var(--travel) * 3));
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+.sheet-enter[data-closing] {
+  animation: sheet-out 180ms var(--ease-out) forwards;
+}
+.fade-in[data-closing] {
+  animation: fade-out 180ms var(--ease-out) forwards;
+}
 
 /* Dialogs rise in place; the checklist's finish gives one small, warm pop. */
 @keyframes pop-in {
@@ -362,6 +381,11 @@ html[data-input="keyboard"] :focus-within {
   .celebrate,
   .fade-in {
     animation-duration: 1ms;
+  }
+  /* Leaving with reduced motion: a short fade in place, no slide. */
+  .sheet-enter[data-closing],
+  .fade-in[data-closing] {
+    animation: fade-out 120ms var(--ease-out) forwards;
   }
 }
 html.reduced .pulse-dot,

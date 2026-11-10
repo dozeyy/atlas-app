@@ -253,6 +253,7 @@ function Palette() {
             compact
             variant="no-match"
             query={query}
+            body="Try fewer words."
             action={{
               onClick: () => {
                 type("");
