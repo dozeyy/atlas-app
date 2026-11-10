@@ -385,3 +385,8 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Per-run counts restart only on a message or new calls after the helper's turn ended; mid-turn steering and meta lines are not restarts; a line with no message id never restarts. Verified: 6/6 real helpers' tool calls equal a resume-aware recount; finished rows leave in ~8 s; 0 remounts over 330 s live.
 - typical_runs: skip files with gaps > 30 min or begun before the look-back; `INDEXED BY messages_ts` (7-day 224 -> 60 ms, 90-day 388 -> 252 ms, background thread every 30 min). Killed runs still count until the helper ledger merges.
 - Flaky under load: `fsutil::a_read_only_target_fails_at_once_with_a_clear_message` (300 ms timing) failed once in a full workspace run, passed 3/3 alone.
+
+## 2026-11-09 - Resize fix merged
+- Frame-synced resize (crates/app/src/winframe.rs + src/lib/frameSync.ts): the window waits for the page to draw the new size before moving, capped at ~160 ms (cap proven by dropping answers). The old shift and flash are gone; what's left is the moving edge showing a 12 px strip of background for one frame on 3-6 of 8 frames per edge.
+- Tried answering at frame commit (`ATLAS_FRAME_SYNC_ANSWER=commit`, debug switch): gap frames fell 34/80 -> 8/91 continuous, 107/647 -> 50/648 stepped, but 1 clipped frame appeared, so the default stays answer-when-presented. Re-measure on an idle machine before switching.
+- Measuring traps: other windows over the magenta backdrop fake 12-40 px shifts (resize-drag.ps1 now re-raises it; the judge skips covered frames); a rect read before the screen copy is 8-16 px newer than the picture; `head -20` cut the test totals (493 is real, not 453).
