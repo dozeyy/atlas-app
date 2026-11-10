@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use atlas_core::usage::query::{EffortUse, ScopeReport, SessionDetail, SessionRow, TimelinePoint, effort_rank};
+use atlas_core::usage::query::{EffortUse, ScopeReport, SessionDetail, SessionRow, TimelinePoint};
 use atlas_core::usage::time::Tz;
 use chrono::{Duration, NaiveDate, NaiveDateTime, Timelike};
 
@@ -125,9 +125,10 @@ fn series(points: &[TimelinePoint], bucket: &str, today: NaiveDate) -> Vec<(Stri
 /// the same model) are one row with their tokens added, biggest first; this runs before any
 /// row limit so the limit counts rows as displayed.
 ///
-/// Each row's label is the full model name, then its most used reasoning effort when the
-/// transcripts gave one ("Opus 5.5 · high"), then "(not priced)" for a model the price list
-/// does not know.
+/// Each row's label is the full model name, then its reasoning effort when the transcripts gave
+/// one: one effort alone ("Opus 5.5 · high"), several as a share of replies ("Sonnet 5.5 · high
+/// 80%, medium 20%") so a mixed model never reads as all one effort; then "(not priced)" for a
+/// model the price list does not know.
 fn by_label<'a>(items: impl Iterator<Item = (&'a str, u64, &'a [EffortUse], bool)>) -> Vec<(String, u64)> {
     #[derive(Default)]
     struct Row {
@@ -147,10 +148,11 @@ fn by_label<'a>(items: impl Iterator<Item = (&'a str, u64, &'a [EffortUse], bool
     let mut rows: Vec<(String, u64)> = m
         .into_iter()
         .map(|(name, r)| {
-            let top = r.efforts.iter().max_by(|a, b| a.1.cmp(b.1).then_with(|| effort_rank(b.0).cmp(&effort_rank(a.0)))).map(|e| e.0.clone());
+            let uses: Vec<EffortUse> = r.efforts.into_iter().map(|(effort, replies)| EffortUse { effort, replies }).collect();
+            let mix = effort_mix(&uses);
             let mut label = name;
-            if let Some(e) = top {
-                label = format!("{label}{}{e}", dot());
+            if !mix.is_empty() {
+                label = format!("{label}{}{mix}", dot());
             }
             if r.unpriced {
                 label.push_str(" (not priced)");
@@ -820,7 +822,7 @@ mod tests {
         dt.agents[0].efforts = vec![e("xhigh", 4)];
         let out = chat(&dt, None, 5);
         assert!(out.contains("\"x\" \u{00B7} p \u{00B7} Opus 5.5 \u{00B7} high 90%, medium 10% \u{00B7} "), "{out}");
-        assert!(out.lines().any(|l| l.starts_with("Sonnet 4.5 \u{00B7} high ")), "merged mix picks high: {out}");
+        assert!(out.lines().any(|l| l.starts_with("Sonnet 4.5 \u{00B7} high 71%, medium 29% ")), "merged mix shows both: {out}");
         assert!(out.lines().any(|l| l.starts_with("Opus 5.5 ") && !l.contains("\u{00B7} ")), "no effort, no suffix: {out}");
         assert!(out.lines().any(|l| l.starts_with("Nova 9.1 (not priced)")), "{out}");
         assert!(out.contains("| scout | Explore | Sonnet 4.5 | xhigh | 300 |"), "{out}");
