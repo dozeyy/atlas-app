@@ -1422,7 +1422,8 @@ html[data-platform="macos"] .side {
    A toast sits at the bottom of the page pane, centred in it (not under the sidebar). While one
    is up the pane ends above it (--toast-room, set by the host), so a toast never lies over a
    list row or a button: the list is a little shorter for a few seconds and still scrolls. With
-   a side sheet open the toast centres in the sheet instead (--toast-inset, set by the sheet). */
+   a side sheet open the toast centres in the sheet instead (--toast-inset, set by the sheet) and
+   rises over the sheet's buttons; the sheet does not move. */
 .app-shell {
   --toast-left: var(--sidebar-w);
 }
@@ -1433,11 +1434,14 @@ html[data-platform="macos"] .side {
   position: fixed;
   left: var(--toast-inset, var(--toast-left, 0px));
   right: 0;
-  bottom: 20px;
+  /* --toast-lift: over a sheet or a dialog the pile rises clear of its buttons (Toasts.tsx). */
+  bottom: calc(20px + var(--toast-lift, 0px));
   z-index: 70;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  /* One column as wide as the longest toast (520 px at most): every toast in the pile takes that
+     width, so the pile has one left and one right edge however long each line is. */
+  display: grid;
+  grid-template-columns: fit-content(min(520px, 100%));
+  justify-content: center;
   gap: 8px;
   padding: 0 16px;
   pointer-events: none;
@@ -1445,16 +1449,12 @@ html[data-platform="macos"] .side {
 .page-pane {
   padding-bottom: var(--toast-room, 0px);
 }
-/* A short window has no room for a pile: there only the newest toast is drawn in full and the
-   older ones wait behind it as thin plates, so the page gives up one row, never a panel. Resting
-   the pointer on the pile (or tabbing into it) fans it out over the page for as long as you stay;
-   the page under it does not move. A taller window keeps the open pile. */
 .toast-card {
   position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: min(520px, 100%);
+  min-width: 0;
   padding: 10px 8px 10px 16px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-card);
@@ -1462,37 +1462,39 @@ html[data-platform="macos"] .side {
   box-shadow: var(--shadow-pop);
   pointer-events: auto;
 }
-@media (max-height: 719px) {
-  .toast-host > .toast-card {
-    width: min(440px, 100%);
-  }
-  /* Bridges the gap to the toast above, so the fanned-out pile does not fold while the pointer crosses it. */
-  .toast-host > .toast-card::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 100%;
-    height: 9px;
-  }
-  .toast-host:not(:hover):not(:focus-within) > .toast-card:not(:last-child) {
-    height: 7px;
-    margin-bottom: -8px; /* takes back the gap: the plate sits on the toast under it */
-    padding: 0;
-    overflow: hidden;
-    border-bottom-width: 0;
-    border-radius: var(--r-card) var(--r-card) 0 0;
-    box-shadow: none;
-  }
-  .toast-host:not(:hover):not(:focus-within) > .toast-card:not(:last-child) > * {
-    visibility: hidden;
-  }
-  .toast-host:not(:hover):not(:focus-within) > .toast-card:nth-last-child(2) {
-    width: min(416px, calc(100% - 24px));
-  }
-  .toast-host:not(:hover):not(:focus-within) > .toast-card:nth-last-child(3) {
-    width: min(392px, calc(100% - 48px));
-  }
+/* Folded (data-fold, set by the host): a short window, or a sheet or dialog open, has no room for a
+   pile. Only the newest toast is drawn in full and the older ones wait behind it as thin plates, so
+   the page (or the sheet) gives up one row, never a panel. Resting the pointer on the pile (or
+   tabbing into it) fans it out for as long as you stay; what is under it does not move. A toast
+   with an action (Undo) is never a plate: it stays in full, in reach, for as long as it lives. */
+.toast-host[data-fold] {
+  grid-template-columns: min(440px, 100%);
+}
+/* Bridges the gap to the toast above, so the fanned-out pile does not fold while the pointer crosses it. */
+.toast-host[data-fold] > .toast-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 9px;
+}
+.toast-host[data-fold]:not(:hover):not(:focus-within) > .toast-card:not(:last-child):not([data-action]) {
+  justify-self: center;
+  width: calc(100% - 48px);
+  height: 7px;
+  margin-bottom: -8px; /* takes back the gap: the plate sits on the toast under it */
+  padding: 0;
+  overflow: hidden;
+  border-bottom-width: 0;
+  border-radius: var(--r-card) var(--r-card) 0 0;
+  box-shadow: none;
+}
+.toast-host[data-fold]:not(:hover):not(:focus-within) > .toast-card:not(:last-child):not([data-action]) > * {
+  visibility: hidden;
+}
+.toast-host[data-fold]:not(:hover):not(:focus-within) > .toast-card:nth-last-child(2):not([data-action]) {
+  width: calc(100% - 24px);
 }
 
 /* ---- Hover tip for every title (components/TipLayer.tsx) ----------------------------------
