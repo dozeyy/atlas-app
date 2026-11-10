@@ -114,7 +114,9 @@ function AboutNumbers({ data, status }: { data: DashboardData; status: UsageStat
  * sessions across). Narrow: one column in that reading order.
  */
 const PAGE_GRID =
-  "grid grid-cols-1 gap-4 @[740px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] @[900px]:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]";
+  "grid grid-cols-1 gap-4 @[600px]:grid-cols-2 @[740px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] @[900px]:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]";
+/** A card that runs the full width while the grid is two equal columns (600 to 739 px). */
+const PAGE_WIDE = "@[600px]:col-span-2 @[740px]:col-span-1";
 /** A column of the wide grid; below it the column dissolves and its cards join the page grid. */
 const PAGE_COLUMN = "contents @[900px]:block @[900px]:min-w-0 @[900px]:space-y-4";
 
@@ -123,7 +125,7 @@ function DashboardSkeleton({ firstIndex }: { firstIndex: boolean }) {
     <div role="status" aria-label="Loading your usage">
       {/* The same grid as the page it stands in for, so nothing jumps when the numbers land. */}
       <div className={PAGE_GRID}>
-        <Card className="px-6 py-5">
+        <Card className={`px-6 py-5 ${PAGE_WIDE}`}>
           <Skeleton className="h-4 w-24" />
           <Skeleton className="mt-4 h-14 w-56 max-w-full" />
           <Skeleton className="mt-3 h-4 w-48 max-w-full" />
@@ -132,12 +134,12 @@ function DashboardSkeleton({ firstIndex }: { firstIndex: boolean }) {
           <Skeleton className="h-4 w-16" />
           <Skeleton className="mt-4 size-[88px] !rounded-full" />
         </Card>
-        {/* One column has no room for these two: the line below must stay on the first screen. */}
+        {/* A small window has no room for the Activity card: the line below must stay on the first screen. */}
         <Card className="hidden px-5 py-4 @[740px]:block">
           <Skeleton className="h-4 w-20" />
           <Skeleton className="mt-4 h-[144px] w-full" />
         </Card>
-        <Card className="hidden px-5 py-4 @[740px]:block">
+        <Card className="hidden px-5 py-4 @[600px]:block">
           <Skeleton className="h-4 w-20" />
           <Skeleton className="mt-4 h-[120px] w-full" />
         </Card>
@@ -287,7 +289,7 @@ export function Dashboard() {
       ) : (
         <div className={`${PAGE_GRID} @[900px]:items-start`}>
           <div className={PAGE_COLUMN}>
-            <section aria-label="Last 7 days" className="rise @container order-1 min-w-0" style={{ ["--i" as string]: 1 }}>
+            <section aria-label="Last 7 days" className={`rise @container order-1 min-w-0 ${PAGE_WIDE}`} style={{ ["--i" as string]: 1 }}>
               <Card className="flex h-full flex-col gap-3 px-6 pb-4 pt-4 @[460px]:flex-row @[460px]:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -322,11 +324,11 @@ export function Dashboard() {
               </Card>
             </section>
 
-            <section aria-label="Activity" className="rise order-3 min-w-0" style={{ ["--i" as string]: 3 }}>
+            <section aria-label="Activity" className={`rise order-4 min-w-0 @[740px]:order-3 ${PAGE_WIDE}`} style={{ ["--i" as string]: 3 }}>
               <ActivityCard today={today} />
             </section>
 
-            <div className="order-5 grid min-w-0 grid-cols-1 gap-4 @[620px]:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] @[740px]:col-span-2">
+            <div className="order-5 grid min-w-0 grid-cols-1 gap-4 @[600px]:col-span-2 @[620px]:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
             <section aria-label="Models" className="rise" style={{ ["--i" as string]: 5 }}>
               <Card className="h-full px-5 py-4">
                 <div className="flex items-baseline justify-between">
@@ -378,12 +380,12 @@ export function Dashboard() {
           </div>
           <div className={PAGE_COLUMN}>
             <section aria-label="Today" className="rise order-2 min-w-0" style={{ ["--i" as string]: 2 }}>
-              <Card className="h-full px-5 py-3.5">
+              <Card className="flex h-full flex-col px-5 py-3.5">
                 <div className="flex items-baseline justify-between">
                   <h2 className="d d-figure text-ink">Today</h2>
                   <span className="text-caption text-ink-2">so far</span>
                 </div>
-                <div className="mt-2.5 flex items-center gap-[18px]">
+                <div className="mt-2.5 flex flex-1 items-center gap-[18px]">
                   <Ring
                     id="dash:ring"
                     size={88}
@@ -418,7 +420,7 @@ export function Dashboard() {
               </Card>
             </section>
 
-            <section aria-label="On a roll" className="rise order-4 min-w-0" style={{ ["--i" as string]: 4 }}>
+            <section aria-label="On a roll" className="rise order-3 min-w-0 @[740px]:order-4" style={{ ["--i" as string]: 4 }}>
               <Card className="h-full px-5 py-3.5">
                 <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <div className="flex items-center gap-2">
@@ -449,7 +451,7 @@ export function Dashboard() {
               </Card>
             </section>
 
-          <section aria-label="Recent sessions" className="rise @container order-6 min-w-0 @[740px]:col-span-2" style={{ ["--i" as string]: 7 }}>
+          <section aria-label="Recent sessions" className="rise @container order-6 min-w-0 @[600px]:col-span-2" style={{ ["--i" as string]: 7 }}>
             <SectionTitle
               aside={
                 <Button onClick={() => setView("sessions")}>
