@@ -184,6 +184,11 @@ describe("Sessions: the first view", () => {
     expect(bands.length).toBeGreaterThan(0);
     expect(bands[0].querySelector(".day-name")?.textContent).toMatch(/^(Today|Yesterday|[A-Z][a-z]+( \d+)?(, \d{4})?)$/);
     expect(bands[0].querySelectorAll(".session-grid > li").length).toBeGreaterThan(0);
+    // The band names the day once; its rows say the time only, with the whole date in the hover.
+    const row = bands[0].querySelector(".session-grid > li")!;
+    expect(row.textContent).not.toMatch(/(Today|Yesterday|[A-Z][a-z]{2} \d+), \d\d:\d\d/);
+    const clock = [...row.querySelectorAll("[title]")].find((e) => /^\d\d:\d\d$/.test(e.textContent ?? ""));
+    expect(clock?.getAttribute("title")).toMatch(/^(Today|Yesterday|[A-Z][a-z]{2} \d+(, \d{4})?), \d\d:\d\d$/);
   });
 
   it("leaves no stale rows behind when the order goes to Most tokens and back to Newest first", async () => {
@@ -210,6 +215,8 @@ describe("Sessions: the first view", () => {
     await userEvent.type(searchbox(), "export");
     await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBe(0));
     expect(document.querySelectorAll(".session-grid > li").length).toBeGreaterThan(0);
+    // No band names the day any more, so each row says its own date.
+    expect(document.querySelector(".session-grid > li")!.textContent).toMatch(/(Today|Yesterday|[A-Z][a-z]{2} \d+), \d\d:\d\d/);
     await userEvent.clear(searchbox());
     await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBeGreaterThan(0));
   });

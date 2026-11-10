@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { projectTone } from "../../lib/sessionBrowse";
+import { clockOf, projectTone } from "../../lib/sessionBrowse";
 import { effortMix, formatWhen, modelWithEffort, plural, topEffort } from "../../lib/usage";
 import type { SessionRow } from "../../lib/types";
 import type { SnippetPart } from "../../lib/searchTypes";
@@ -64,6 +64,8 @@ function effortTitle(row: SessionRow): string {
  *   line 2  the meta line, 12/16, in Will's order (2026-11-08), left to right:
  *             which project / folder  >  the tokens (bold; the API-price estimate is in its
  *             hover)  >  whether helpers ran (accent-colored text, no chip)  >  when it happened
+ *             (the time alone, "16:42", under a day band that already names the day; the
+ *             whole date is then in its hover)
  *             >  the main model with its most used reasoning effort ("Opus 5.5 · high"; the
  *             full mix is in its hover; no effort recorded shows the model alone)
  *           A removed file adds "File removed" at the end, as plain text.
@@ -78,6 +80,7 @@ export function SessionLine({
   index = 0,
   snippet,
   barShare,
+  dayKnown = false,
 }: {
   row: SessionRow;
   onOpen: (id: string) => void;
@@ -85,6 +88,8 @@ export function SessionLine({
   snippet?: SnippetPart[];
   /** This chat's tokens as a share (0 to 1) of the biggest chat in view: draws a hairline bar by the count. */
   barShare?: number;
+  /** The row sits under a band that names its day: it says the time only, never the day twice. */
+  dayKnown?: boolean;
 }) {
   const name = sessionName(row);
   return (
@@ -125,7 +130,7 @@ export function SessionLine({
           )}
           <span className="shrink-0">
             {DOT}
-            {formatWhen(row.startedAt)}
+            {dayKnown ? <span title={formatWhen(row.startedAt)}>{clockOf(row.startedAt)}</span> : formatWhen(row.startedAt)}
           </span>
           {row.mainModel && (
             <span className="min-w-0 truncate" title={effortTitle(row)}>

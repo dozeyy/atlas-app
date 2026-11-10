@@ -196,6 +196,7 @@ export function Sessions() {
         index={i < PAGE ? i : 0}
         snippet={chat.snippets.get(r.sessionId)}
         barShare={shareOfMax(r.tokens.total, maxRow)}
+        dayKnown={byTime}
       />
     );
   };
