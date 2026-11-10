@@ -97,8 +97,11 @@ describe("Library tab: opening", () => {
     expect(localStorage.getItem("atlas.toolkit.tab")).toBe("library");
     const mine = screen.getByRole("radio", { name: "Your setup" });
     mine.focus();
+    // The row is Your setup, Library, Team: Right from Library is Team, and Right again wraps to Your setup.
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    expect(await screen.findByRole("radio", { name: "Your setup" })).toHaveAttribute("aria-checked", "true");
     await userEvent.keyboard("{ArrowRight}");
-    expect(screen.getByRole("radio", { name: "Library" })).toHaveAttribute("aria-checked", "true");
+    expect(await screen.findByRole("radio", { name: "Library" })).toHaveAttribute("aria-checked", "true");
     await userEvent.keyboard("{ArrowLeft}");
     expect(await screen.findByRole("radio", { name: "Your setup" })).toHaveAttribute("aria-checked", "true");
     expect(screen.queryByRole("searchbox", { name: "Search plugins and skills" })).not.toBeInTheDocument();
