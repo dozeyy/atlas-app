@@ -21,7 +21,10 @@ Bands only cover content that is pinned to that edge in Atlas's layout:
 Content that reflows with the size (charts, text, the clipped bottom of the page) is left out:
 comparing it with the settled layout measures the reflow, not a shift.
 
-Without a backdrop (older captures) it falls back to the window rect and says so.
+Without a backdrop (older captures) it falls back to the window rect and says so. Stepped runs
+(no sub 97) use step 0 sub 99 as the start reference. A frame where another window covers the
+backdrop is skipped (a whole run when a reference is covered): another agent's Atlas window behind
+this one once read as part of it and faked 12-40 px shifts.
 
   python tools/analyze-continuous.py <frames-root> [band-px]
 """
@@ -70,6 +73,18 @@ def drawn_rect(rgb, m):
     return {"L": dl, "T": dt, "R": dr, "B": db}
 
 
+def foreign(rgb, w, margin=SEARCH):
+    """Pixels more than `margin` outside the window rect that are not the backdrop: another window
+    covers it, so the drawn edge cannot be trusted (another agent's Atlas window behind this one
+    once read as part of it)."""
+    win = ~backdrop(rgb)
+    win[max(0, w["T"] - margin):w["B"] + margin, max(0, w["L"] - margin):w["R"] + margin] = False
+    return int(win.sum())
+
+
+FOREIGN = 400   # pixels; corner anti-aliasing and the shadow stay well under this
+
+
 def band(gray, w, side, size, ref_w, ref_h):
     """(y0, y1, x0, x1) of the band pinned to `side` of drawn rect w, sized to fit both frames."""
     h = min(w["B"] - w["T"], ref_h)
@@ -111,16 +126,26 @@ def run(d, size):
     meta = json.load(open(os.path.join(d, "meta.json"), encoding="utf-8-sig"))
     sides = os.path.basename(d).split("-")[-1]
     refs = []
-    for m in sorted((m for m in meta if m["sub"] in (97, 98)), key=lambda m: -m["sub"]):
+    # The start reference: the settled frame before the press (sub 97 in continuous runs, step 0
+    # sub 99 in stepped runs).
+    start = [m for m in meta if m["sub"] == 97] or [m for m in meta if m["step"] == 0 and m["sub"] == 99]
+    for m in sorted([m for m in meta if m["sub"] == 98] + start[:1], key=lambda m: m["sub"] != 98):
         rgb = load(d, m["file"])
         refs.append((m, rgb))
     mask = has_backdrop(refs[0][1])
-    refs = [(drawn_rect(rgb, m) if mask else {k: m[k] for k in "LTRB"}, rgb.mean(axis=2), "rs"[m["sub"] == 97]) for m, rgb in refs]
+    if mask and any(foreign(rgb, m) > FOREIGN for m, rgb in refs):
+        print(f"{os.path.basename(d)}: SKIPPED, another window covers the backdrop in a reference frame")
+        return
+    refs = [(drawn_rect(rgb, m) if mask else {k: m[k] for k in "LTRB"}, rgb.mean(axis=2), "rs"[m["sub"] != 98]) for m, rgb in refs]
     frames = [m for m in meta if m["sub"] < 97]
     rows = []
+    covered = 0
     for m in frames:
         rgb = load(d, m["file"])
         cw = drawn_rect(rgb, m) if mask else {k: m[k] for k in "LTRB"}
+        if mask and foreign(rgb, m) > FOREIGN:
+            covered += 1
+            continue
         gray = rgb.mean(axis=2)
         per = []
         for s in sides:
@@ -129,7 +154,10 @@ def run(d, size):
             per.append((s, dd, e, lag, which))
         rows.append(per)
     name = os.path.basename(d)
-    print(f"{name}: {'drawn edge from the backdrop' if mask else 'NO BACKDROP: window rect used, rect-vs-picture lag reads as a shift'}")
+    print(f"{name}: {'drawn edge from the backdrop' if mask else 'NO BACKDROP: window rect used, rect-vs-picture lag reads as a shift'}"
+          + (f"; {covered} frames skipped: another window covers the backdrop" if covered else ""))
+    if not rows:
+        return
     for i, s in enumerate(sides):
         off = [abs(r[i][1]) for r in rows]
         bad = sum(1 for r in rows if abs(r[i][1]) >= 2 or r[i][2] > NO_MATCH)

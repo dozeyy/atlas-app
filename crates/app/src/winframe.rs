@@ -24,7 +24,9 @@
 //! Every decision lives in `Machine`, which talks to the window only through `Host`; the tests
 //! drive it with a fake host. Nothing here runs outside an edge drag; moves, snaps, maximize and
 //! code-driven resizes take the normal path. `ATLAS_FRAME_SYNC=0` turns it off (A/B),
-//! `ATLAS_FRAME_SYNC_LOG=1` traces it.
+//! `ATLAS_FRAME_SYNC_LOG=1` traces it. `ATLAS_FRAME_SYNC_ANSWER=commit` is an experiment: the
+//! page answers a live step once its frame is committed instead of presented (a frame sooner;
+//! measured 2026-11-09: fewer gap frames, but a frame can show clipped content), not the default.
 
 // Every function here is a thin wrapper over Win32 and WebView2 calls on the UI thread.
 #![allow(unsafe_op_in_unsafe_fn)]
@@ -495,6 +497,7 @@ impl<H: Host> Machine<H> {
         let how = match via {
             1 => "presented",
             2 => "presentation not reported",
+            3 => "committed",
             _ => "two frames",
         };
         let waited = since.elapsed();
@@ -728,6 +731,9 @@ struct Win {
     webview: ICoreWebView2,
     overlay: Option<HWND>,
     overlay_up: bool,
+    /// When the page answers a live step: `None` once the frame is presented (the default),
+    /// `Some("commit")` right after the frame carrying it is committed (`ATLAS_FRAME_SYNC_ANSWER`).
+    answer: Option<&'static str>,
     /// The cover's picture, shrunk, to tell the page's new frame from the old one moved.
     cover: Option<Cover>,
     tick: usize,
@@ -757,7 +763,14 @@ unsafe fn attach(controller: ICoreWebView2Controller) -> windows::core::Result<(
     // stops WebView2 from calling the handlers after it (proven 2026-11-09), and a string would
     // reach Tauri's IPC parser and come back as a console error on every step.
     let overlay = create_overlay(top);
-    let host = Win { top, container, controller, webview, overlay, overlay_up: false, cover: None, tick: 0, confirm: 0 };
+    let answer = match std::env::var("ATLAS_FRAME_SYNC_ANSWER").as_deref() {
+        Ok("commit") => {
+            eprintln!("[atlas] frame sync: page answers at frame commit (ATLAS_FRAME_SYNC_ANSWER=commit)");
+            Some("commit")
+        }
+        _ => None,
+    };
+    let host = Win { top, container, controller, webview, overlay, overlay_up: false, answer, cover: None, tick: 0, confirm: 0 };
     let log = std::env::var("ATLAS_FRAME_SYNC_LOG").as_deref() == Ok("1");
     SYNC.with(|c| *c.borrow_mut() = Some(Machine::new(host, step_cap(), log)));
     if !SetWindowSubclass(top, Some(subclass_proc), SUBCLASS_ID, 0).as_bool() {
@@ -1020,8 +1033,12 @@ impl Host for Win {
     }
 
     fn post(&mut self, f: &Frame) -> bool {
+        let answer = match self.answer {
+            Some(a) if f.live => format!(r#","answer":"{a}""#),
+            _ => String::new(),
+        };
         let json = format!(
-            r#"{{"atlasFrame":{{"seq":{},"live":{},"x":{},"y":{},"w":{},"h":{},"vw":{},"vh":{}}}}}"#,
+            r#"{{"atlasFrame":{{"seq":{},"live":{},"x":{},"y":{},"w":{},"h":{},"vw":{},"vh":{}{answer}}}}}"#,
             f.seq,
             f.live,
             f.frame.left,

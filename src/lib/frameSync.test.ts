@@ -105,6 +105,27 @@ describe("frameSync", () => {
     expect(host.posted).toEqual([{ atlasFrameAck: 3 }]);
   });
 
+  it("answers in the task after the next frame when asked to answer at commit", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      host.send({ atlasFrame: { ...msg(5, true).atlasFrame, answer: "commit" } });
+      expect(host.posted).toEqual([]);
+      flush();
+      expect(host.posted).toEqual([]);
+      vi.runAllTimers();
+      expect(host.posted).toEqual([{ atlasFrameAck: 5, via: 3 }]);
+      // An ending step still waits for its frames.
+      host.send({ atlasFrame: { ...msg(6, false, 1200, 900).atlasFrame, answer: "commit" } });
+      flush();
+      vi.runAllTimers();
+      expect(host.posted).toEqual([{ atlasFrameAck: 5, via: 3 }]);
+      flush();
+      expect(host.posted).toEqual([{ atlasFrameAck: 5, via: 3 }, { atlasFrameAck: 6 }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("puts the presentation marker outside the window's rect, or nowhere", () => {
     const f = (x: number, y: number, w: number, h: number, vw: number, vh: number) => ({ seq: 1, live: true, x, y, w, h, vw, vh });
     expect(hiddenSpot(f(300, 150, 1200, 900, 2560, 1440), 1.5)).toEqual({ left: 0, top: 100 });

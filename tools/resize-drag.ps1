@@ -221,6 +221,29 @@ foreach ($edge in $Edges) {
     [Drag]::SetWindowPos($h, [IntPtr](-1), 0, 0, 0, 0, 0x0003) | Out-Null   # back on top of the backdrop
     [Drag]::SetForegroundWindow($h) | Out-Null
     Start-Sleep -Milliseconds 400
+    # Another window over the backdrop (another Atlas, a terminal) reads as part of this one in
+    # the judge. Raise the backdrop and the window again until the area around the window is all
+    # backdrop; the judge skips any frame where it still is not.
+    for ($try = 1; $try -le 6; $try++) {
+      $bmp = New-Object System.Drawing.Bitmap($reg.Width, $reg.Height)
+      $gfx = [System.Drawing.Graphics]::FromImage($bmp); $gfx.CopyFromScreen($reg.X, $reg.Y, 0, 0, $reg.Size); $gfx.Dispose()
+      $covered = 0
+      for ($py = 0; $py -lt $reg.Height; $py += 12) {
+        for ($px = 0; $px -lt $reg.Width; $px += 12) {
+          $sx = $reg.X + $px; $sy = $reg.Y + $py
+          if ($sx -ge $r.L - 40 -and $sx -lt $r.R + 40 -and $sy -ge $r.T - 40 -and $sy -lt $r.B + 40) { continue }
+          $c = $bmp.GetPixel($px, $py)
+          if (-not ($c.R - $c.G -gt 60 -and $c.B - $c.G -gt 60)) { $covered++ }
+        }
+      }
+      $bmp.Dispose()
+      if ($covered -le 2) { break }
+      Write-Output "$Mode-$edge backdrop covered by another window ($covered samples), raising again ($try)"
+      [Drag]::SetWindowPos($bd.Handle, [IntPtr](-1), 0, 0, 0, 0, 0x0013) | Out-Null
+      [Drag]::SetWindowPos($h, [IntPtr](-1), 0, 0, 0, 0, 0x0003) | Out-Null
+      [Drag]::SetForegroundWindow($h) | Out-Null
+      Start-Sleep -Milliseconds 300
+    }
   }
   $shots = if ($MoveMs -gt 0) { [Drag]::RunContinuous($h, $x, $y, $dx, $dy, $Steps, $MoveMs, $reg) }
            else { [Drag]::Run($h, $x, $y, $dx, $dy, $Steps, $PerStep, $reg) }

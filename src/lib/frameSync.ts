@@ -11,15 +11,21 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 
-export type FrameMsg = { seq: number; live: boolean; x: number; y: number; w: number; h: number; vw: number; vh: number };
+export type FrameMsg = {
+  seq: number; live: boolean; x: number; y: number; w: number; h: number; vw: number; vh: number;
+  /** "commit": answer right after the frame that carries the layout is committed (an experiment,
+   * `ATLAS_FRAME_SYNC_ANSWER=commit`), not once it is presented. */
+  answer?: "commit";
+};
 
 type WebviewHost = {
   addEventListener(type: "message", cb: (e: { data: unknown }) => void): void;
   removeEventListener(type: "message", cb: (e: { data: unknown }) => void): void;
 };
 
-/** How the answer was reached (traced by Rust): 0 two animation frames, 1 presented, 2 gave up waiting. */
-export type AckVia = 0 | 1 | 2;
+/** How the answer was reached (traced by Rust): 0 two animation frames, 1 presented, 2 gave up
+ * waiting, 3 committed. */
+export type AckVia = 0 | 1 | 2 | 3;
 
 const sendAck = (seq: number, via: AckVia) => void invoke("frame_ack", { seq, via }).catch(() => {});
 
@@ -140,7 +146,11 @@ export function installFrameSync(win: Window = window, ack: (seq: number, via: A
   // when the machine is busy, so where it can, the page waits for the frame's presentation instead.
   const twoFrames = (seq: number) =>
     win.requestAnimationFrame(() => win.requestAnimationFrame(() => ack(seq, 0)));
+  // The task after the frame's animation-frame callback runs once that frame's paint has been
+  // committed to the compositor, a frame before it is reported presented.
+  const committed = (seq: number) => win.requestAnimationFrame(() => win.setTimeout(() => ack(seq, 3), 0));
   const answer = (m: FrameMsg) => {
+    if (m.live && m.answer === "commit") return committed(m.seq);
     const spot = m.live ? hiddenSpot(m, win.devicePixelRatio || 1) : null;
     if (!spot || !presentedSupported(win)) return twoFrames(m.seq);
     awaitPresented(win, m.seq, spot, ack);
