@@ -12,7 +12,7 @@ function ToastCard({ toast }: { toast: Toast }) {
   return (
     <div
       role={toast.tone === "error" ? "alert" : "status"}
-      className="fade-in pointer-events-auto flex max-w-[min(520px,100%)] items-center gap-3 rounded-card border border-line-strong bg-surface py-2.5 pl-4 pr-2 shadow-float"
+      className="toast-card fade-in"
     >
       <Icon size={18} weight="fill" aria-hidden="true" className={`shrink-0 ${TONE[toast.tone]}`} />
       <p className="selectable min-w-0 flex-1 text-body text-ink">{toast.message}</p>
@@ -51,6 +51,7 @@ function ToastCard({ toast }: { toast: Toast }) {
  * sets --toast-inset (the width the sheet leaves free), so toasts centre inside the sheet and
  * never straddle its edge. With no sheet open the toasts centre in the page pane, and the pane
  * ends above them (--toast-room, `.page-pane` in trail.css): a toast never covers a row or a button.
+ * In a short window the pile folds to its newest toast (trail.css), so that room is one row.
  */
 export function ToastHost() {
   const toasts = useToasts();
