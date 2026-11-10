@@ -92,19 +92,24 @@ export function HeatGrid({
       style={{ width }}
     >
       <svg className="chart" width={width} height={height} aria-hidden="true">
-        {layout.cells.map((c) => (
-          <rect
-            key={c.index}
-            className={`cell${active === c.index ? " on" : ""}`}
-            x={c.x}
-            y={c.y}
-            width={CELL}
-            height={CELL}
-            rx={3.5}
-            style={{ fill: `var(--heat-${c.band})`, ["--c" as string]: c.col }}
-            onPointerEnter={() => setActive(c.index)}
-          />
-        ))}
+        {layout.cells.map((c) => {
+          // An empty day wears a 1 px hairline inside its edge (the fill alone is a whisper on
+          // the card), so the rect sits half a pixel in and the stroke stays within the cell.
+          const inset = c.band === 0 ? 0.5 : 0;
+          return (
+            <rect
+              key={c.index}
+              className={`cell${c.band === 0 ? " empty" : ""}${active === c.index ? " on" : ""}`}
+              x={c.x + inset}
+              y={c.y + inset}
+              width={CELL - inset * 2}
+              height={CELL - inset * 2}
+              rx={3.5 - inset}
+              style={{ fill: `var(--heat-${c.band})`, ["--c" as string]: c.col }}
+              onPointerEnter={() => setActive(c.index)}
+            />
+          );
+        })}
         {layout.cells.map((c) =>
           inStreak(c.index) ? (
             <rect
@@ -129,7 +134,7 @@ export function HeatGrid({
         <span aria-hidden="true" className={`heat-key${width >= LEGEND_INLINE_MIN ? " in-row" : ""}`}>
           Less
           {[0, 1, 2, 3, 4, 5].map((b) => (
-            <i key={b} style={{ background: `var(--heat-${b})` }} />
+            <i key={b} className={b === 0 ? "empty" : undefined} style={{ background: `var(--heat-${b})` }} />
           ))}
           More
         </span>

@@ -405,7 +405,7 @@ export function Dashboard() {
           </div>
           <div className={PAGE_COLUMN}>
             <section aria-label="Today" className="rise order-2 min-w-0" style={{ ["--i" as string]: 2 }}>
-              <Card className="flex h-full flex-col px-5 py-3.5">
+              <Card className="flex h-full flex-col px-5 py-4">
                 <div className="flex items-baseline justify-between">
                   <h2 className="h-section">Today</h2>
                   <span className="text-caption text-ink-2">so far</span>
@@ -446,7 +446,7 @@ export function Dashboard() {
             </section>
 
             <section aria-label="On a roll" className="rise order-3 min-w-0 @[740px]:order-4" style={{ ["--i" as string]: 4 }}>
-              <Card className="h-full px-5 py-3.5">
+              <Card className="h-full px-5 py-4">
                 <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <div className="flex items-center gap-2">
                     <h2 className="h-section">On a roll</h2>

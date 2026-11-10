@@ -88,6 +88,10 @@ export function Ridge({
             <circle className="ridge-dot" cx={g.pts[g.peak][0]} cy={g.pts[g.peak][1]} r={4.5} />
           </g>
         )}
+        {/* Today: a solid 3.5 px dot on the last point, unless the summit already stands there. */}
+        {any && n > 1 && !(summit && g.peak === n - 1) && (
+          <circle className="ridge-end" cx={g.pts[n - 1][0]} cy={g.pts[n - 1][1]} r={3.5} />
+        )}
         {active !== null && g.pts[active] && (
           <circle className="ridge-dot" cx={g.pts[active][0]} cy={g.pts[active][1]} r={4.5} />
         )}
@@ -118,8 +122,9 @@ export function Ridge({
       {any && summit && (
         <span
           aria-hidden="true"
-          className="spark summit"
-          style={{ position: "absolute", left: g.pts[g.peak][0] - 9, top: Math.max(0, g.pts[g.peak][1] - 46), pointerEvents: "none" }}
+          // The ridge wears the 22 px spark: it sits 4 px above the pole's top (peak - 24).
+          className="spark summit ridge-spark"
+          style={{ position: "absolute", left: g.pts[g.peak][0] - 11, top: Math.max(0, g.pts[g.peak][1] - 50), pointerEvents: "none" }}
         />
       )}
       <ChartTooltip tip={tip} width={width} />

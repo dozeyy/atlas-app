@@ -68,9 +68,10 @@ export function Bars({
   }, [data]);
   const peak = useMemo(() => clearPeak(data.map((d) => d.value)), [data]);
 
-  // Four or five labels across the axis (three when narrow), stepping by a count that reads well
-  // (every 6 hours, every 6 days, every 3 weeks), never by 5.
-  const labelEvery = labelStep(n, Math.min(5, Math.max(3, Math.floor(plotW / 150))));
+  // Four or five labels across the axis (three when narrow: one per ~100 px of plot, so a 480 px
+  // Dashboard chart gets four, not three), stepping by a count that reads well (every 6 hours,
+  // every 6 days, every 3 weeks), never by 5.
+  const labelEvery = labelStep(n, Math.min(5, Math.max(3, Math.floor(plotW / 100))));
   // A range with nothing in it shows its baseline and no ticks: "2 / 1 / 0" on an empty day was
   // a made-up scale.
   const empty = !data.some((d) => d.value > 0);
@@ -140,7 +141,9 @@ export function Bars({
                   style={{ ["--hs" as string]: Math.min(1.6, (h + 4) / Math.max(h, 1)), ["--i" as string]: i }}
                 />
               ) : (
-                <rect className="bar zero" x={x} y={base - ZERO_STUB} width={bw} height={ZERO_STUB} rx={1.5} style={{ ["--i" as string]: i }} />
+                // Half a pixel in on every side: the stub's 1 px hairline (trail.css) then sits inside
+                // the 3 px nub instead of straddling its edge and the baseline.
+                <rect className="bar zero" x={x + 0.5} y={base - ZERO_STUB + 0.5} width={bw - 1} height={ZERO_STUB - 1} rx={1} style={{ ["--i" as string]: i }} />
               )}
               {/* The pointer target never moves: a full-height slot, not the bar. */}
               <rect
@@ -170,7 +173,8 @@ export function Bars({
         <span
           aria-hidden="true"
           className="spark summit"
-          style={{ position: "absolute", left: cx(peak) - 9, top: Math.max(0, yOf(data[peak].value) - 28), pointerEvents: "none" }}
+          // The 18 px spark floats 12 px above the busiest bar's top.
+          style={{ position: "absolute", left: cx(peak) - 9, top: Math.max(0, yOf(data[peak].value) - 30), pointerEvents: "none" }}
         />
       )}
       <ChartTooltip tip={tip} width={width} />
