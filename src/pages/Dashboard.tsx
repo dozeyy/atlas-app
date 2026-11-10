@@ -322,7 +322,7 @@ export function Dashboard() {
                     {week?.delta != null && <Delta pct={week.delta} />}
                   </div>
                   <div
-                    className="my-2 flex flex-wrap items-baseline gap-x-2.5"
+                    className="my-2 flex flex-wrap items-baseline gap-x-2"
                     title={
                       data.week.tokens.cacheRead > 0
                         ? `${tokenHint(weekTokens, data.week.cost)}\nPlus ${exact(data.week.tokens.cacheRead)} reused (cache reads), counted apart.`
@@ -379,12 +379,12 @@ export function Dashboard() {
                 {projects.rows.length === 0 ? (
                   <p className="mt-3 text-body text-ink-2">No project has been used in the last 30 days.</p>
                 ) : (
-                  <ul className="mt-2.5">
+                  <ul className="mt-2">
                     {projects.rows.map(({ p, spark }) => (
                       <li
                         key={p.projectKey}
                         title={p.path}
-                        className="grid grid-cols-[minmax(0,1fr)_56px_52px] items-center gap-3 rounded-control px-2 py-1.5 transition-colors duration-[var(--dur-fast)] hover:bg-raised"
+                        className="grid grid-cols-[minmax(0,1fr)_56px_52px] items-center gap-3 rounded-control px-2 py-2 transition-colors duration-[var(--dur-fast)] hover:bg-raised"
                       >
                         <span className="flex min-w-0 items-center gap-2 font-semibold text-ink">
                           <FolderSimple size={16} aria-hidden="true" className="shrink-0 text-ink-2" />
@@ -410,7 +410,7 @@ export function Dashboard() {
                   <h2 className="h-section">Today</h2>
                   <span className="text-caption text-ink-2">so far</span>
                 </div>
-                <div className="mt-2.5 flex flex-1 items-center gap-[18px]">
+                <div className="mt-2 flex flex-1 items-center gap-[18px]">
                   <Ring
                     id="dash:ring"
                     size={88}
@@ -429,7 +429,7 @@ export function Dashboard() {
                       <div className="text-caption text-ink-2">tokens</div>
                     </div>
                   </Ring>
-                  <div className="flex min-w-0 flex-col gap-2.5">
+                  <div className="flex min-w-0 flex-col gap-2">
                     <div>
                       <b className="d d-figure block text-ink">
                         {week && week.usual > 0 ? `${Math.round((week.todayTokens / week.usual) * 100)}%` : "None yet"}
@@ -447,7 +447,7 @@ export function Dashboard() {
 
             <section aria-label="On a roll" className="rise order-3 min-w-0 @[740px]:order-4" style={{ ["--i" as string]: 4 }}>
               <Card className="h-full px-5 py-4">
-                <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <div className="flex items-center gap-2">
                     <h2 className="h-section">On a roll</h2>
                     {daily && daily.streak >= 2 && daily.streak === daily.longest && (
@@ -457,7 +457,7 @@ export function Dashboard() {
                       </span>
                     )}
                   </div>
-                  <div className="flex items-baseline gap-1.5">
+                  <div className="flex items-baseline gap-2">
                     <span className="d d-stat text-ink">{daily ? daily.streak : 0}</span>
                     <span className="font-semibold text-ink-2">{daily && daily.streak === 1 ? "day in a row" : "days in a row"}</span>
                   </div>

@@ -25,9 +25,9 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 function Who({ list, nameOf, extra, none }: { list: { agentType: string; count: number }[]; nameOf: (type: string) => string; extra?: { label: string; count: number }; none: string }) {
   if (list.length === 0 && !extra) return <>{none}</>;
   return (
-    <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
+    <ul className="flex flex-wrap gap-x-4 gap-y-2">
       {list.map((x) => (
-        <li key={x.agentType} className="flex min-w-0 max-w-full items-center gap-1.5">
+        <li key={x.agentType} className="flex min-w-0 max-w-full items-center gap-2">
           <AgentAvatar type={x.agentType} size={20} quiet />
           <span title={nameOf(x.agentType)} className="min-w-0 truncate">
             {nameOf(x.agentType)}
@@ -38,7 +38,7 @@ function Who({ list, nameOf, extra, none }: { list: { agentType: string; count: 
         </li>
       ))}
       {extra && (
-        <li className="flex min-w-0 max-w-full items-center gap-1.5 text-ink-2">
+        <li className="flex min-w-0 max-w-full items-center gap-2 text-ink-2">
           <span className="min-w-0">{extra.label}</span>
           <span title={plural(extra.count, "time")} className="shrink-0 tabular-nums">
             {exact(extra.count)}
@@ -95,7 +95,7 @@ function ThemeRow({
           </span>
         </button>
         {made ? (
-          <span title={made.path} className="mt-1 flex shrink-0 items-center gap-1.5 text-body text-success">
+          <span title={made.path} className="mt-1 flex shrink-0 items-center gap-2 text-body text-success">
             <Check size={14} weight="bold" aria-hidden="true" />
             {madeLabel(made.madeMs)}
           </span>

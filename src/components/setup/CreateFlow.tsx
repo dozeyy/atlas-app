@@ -111,7 +111,7 @@ export function CreateFlow({ kind, onClose }: { kind: CreateKind; onClose: () =>
           {/* Labels as the Duplicate dialog writes them: a regular line in the second ink, the field under it. */}
           {help && (
             <label className="block">
-              <span className="mb-1.5 block text-body text-ink-2">{help.label}</span>
+              <span className="mb-2 block text-body text-ink-2">{help.label}</span>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -127,7 +127,7 @@ export function CreateFlow({ kind, onClose }: { kind: CreateKind; onClose: () =>
             <div>
               {/* The app's own picker (SelectField names itself for the screen reader); the visible
                   line is the same label style as the name above, and the field is the inputs' 36 px. */}
-              <span aria-hidden="true" className="mb-1.5 block text-body text-ink-2">
+              <span aria-hidden="true" className="mb-2 block text-body text-ink-2">
                 When should it run?
               </span>
               <SelectField label="When should it run?" value={event} onChange={setEvent} options={HOOK_EVENTS} wide tall />

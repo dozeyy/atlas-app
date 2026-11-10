@@ -83,7 +83,7 @@ export function Checklist({ items, onCreate, steps = SETUP_STEPS }: { items: Set
             aria-expanded={!folded}
             aria-controls={folded ? undefined : "checklist-steps"}
             onClick={() => fold(!folded)}
-            className="-mr-1.5 shrink-0"
+            className="-mr-2 shrink-0"
           >
             {folded ? <CaretDown /> : <CaretUp />}
           </IconButton>
@@ -95,7 +95,7 @@ export function Checklist({ items, onCreate, steps = SETUP_STEPS }: { items: Set
       {!folded && p.todo.length > 0 && (
         <ul id="checklist-steps" className="mt-3 divide-y divide-line">
           {p.todo.map((s) => (
-            <li key={s.id} className="flex items-center gap-3 py-2.5">
+            <li key={s.id} className="flex items-center gap-3 py-2">
               <Circle size={18} aria-hidden="true" className="shrink-0 text-ink-2" />
               <div className="min-w-0 flex-1">
                 <div className="text-body font-medium text-ink" title={s.why}>
@@ -124,7 +124,7 @@ export function Checklist({ items, onCreate, steps = SETUP_STEPS }: { items: Set
           {showDone && (
             <ul className="fade-in pb-1">
               {p.done.map((s) => (
-                <li key={s.id} className="flex items-center gap-3 py-1.5 text-body text-ink-2">
+                <li key={s.id} className="flex items-center gap-3 py-2 text-body text-ink-2">
                   <CheckCircle size={18} weight="fill" aria-hidden="true" className="shrink-0 text-success" />
                   {s.title}
                 </li>

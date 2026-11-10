@@ -129,12 +129,12 @@ export function Breakdown({ t, main }: { t: Tokens; main?: Tokens }) {
         <tbody>
           {rows.map(([name, pick, hover, note]) => (
             <tr key={name} className="border-b border-line last:border-b-0">
-              <th scope="row" className="px-5 py-2.5 text-left font-normal text-ink" title={hover}>
+              <th scope="row" className="px-5 py-2 text-left font-normal text-ink" title={hover}>
                 {name}
                 {note && <span className="ml-2 text-caption text-ink-2">{note}</span>}
               </th>
               {cols.map(([col, x]) => (
-                <td key={col} className="px-5 py-2.5 text-right tabular-nums text-ink">
+                <td key={col} className="px-5 py-2 text-right tabular-nums text-ink">
                   {exact(pick(x))}
                 </td>
               ))}

@@ -250,7 +250,7 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
                 {sheet.targets.map((t) => (
                   <label
                     key={t.id}
-                    className={`team-target flex items-start gap-3 rounded-control border px-3 py-2.5 ${
+                    className={`team-target flex items-start gap-3 rounded-control border px-3 py-2 ${
                       t.blocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-raised"
                     } ${targetId === t.id ? "border-accent bg-accent-tint" : "border-line"}`}
                   >

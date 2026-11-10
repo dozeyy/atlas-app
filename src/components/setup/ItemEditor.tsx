@@ -12,7 +12,7 @@ import { reloadSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
 
 const FIELD_INPUT =
-  "h-8 w-full min-w-0 rounded-control border border-line-strong bg-surface px-2.5 text-body text-ink outline-none focus:border-ink-2 disabled:cursor-default disabled:text-ink-2";
+  "h-8 w-full min-w-0 rounded-control border border-line-strong bg-surface px-3 text-body text-ink outline-none focus:border-ink-2 disabled:cursor-default disabled:text-ink-2";
 
 /** The header's name and description as fields; they read and change the same text the editor holds. */
 function HeaderFields({ item, text, setText }: { item: SetupItem; text: string; setText: (next: string) => void }) {
@@ -82,7 +82,7 @@ function FileTabs({ files, current, onPick }: { files: SkillFile[]; current: str
               if (e.key === "ArrowRight") (e.preventDefault(), move(i + 1));
               else if (e.key === "ArrowLeft") (e.preventDefault(), move(i - 1));
             }}
-            className={`press mono inline-flex h-7 max-w-[220px] cursor-pointer items-center rounded-control px-2.5 text-body disabled:cursor-default disabled:opacity-50 ${
+            className={`press mono inline-flex h-7 max-w-[220px] cursor-pointer items-center rounded-control px-2 text-body disabled:cursor-default disabled:opacity-50 ${
               on ? "bg-raised font-medium text-ink" : "text-ink-2 hover:bg-raised hover:text-ink"
             }`}
           >

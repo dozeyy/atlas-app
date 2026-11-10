@@ -335,7 +335,7 @@ export function Sessions() {
             <Card>
               <div className="divide-y divide-line">
                 {[0, 1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="px-5 py-3.5">
+                  <div key={i} className="px-5 py-3">
                     <Skeleton className="h-4" style={{ width: `${62 - (i % 3) * 14}%` }} />
                     <Skeleton className="mt-2 h-3" style={{ width: `${34 + (i % 2) * 10}%` }} />
                   </div>

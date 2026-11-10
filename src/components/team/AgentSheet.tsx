@@ -27,7 +27,7 @@ function RunLine({ run, onOpen }: { run: RunRow; onOpen: (r: RunRow) => void }) 
         type="button"
         onClick={() => onOpen(run)}
         title="Open this run"
-        className="press team-run flex w-full cursor-pointer items-baseline gap-3 rounded-control px-2 py-1.5 text-left text-body hover:bg-raised"
+        className="press team-run flex w-full cursor-pointer items-baseline gap-3 rounded-control px-2 py-2 text-left text-body hover:bg-raised"
       >
         {/* "Yesterday, 11:55 PM" is the longest this gets: it stays on one line. */}
         <span className="w-36 shrink-0 whitespace-nowrap text-ink-2">{formatWhen(run.started)}</span>

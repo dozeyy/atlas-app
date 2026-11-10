@@ -434,7 +434,7 @@ export function ListSkeleton({ label }: { label: string }) {
             <span className="skeleton mt-2 block h-2.5 rounded-control" style={{ width: `${44 + ((i * 23) % 36)}%` }} />
           </span>
           {/* Install is a quiet word at rest, so its stand-in is a short bar, not a button block. */}
-          <span className="skeleton mr-3.5 h-2.5 w-10 shrink-0 rounded-control" />
+          <span className="skeleton mr-3 h-2.5 w-10 shrink-0 rounded-control" />
         </div>
       ))}
     </div>
@@ -545,7 +545,7 @@ export function LibraryList({
             role="presentation"
             data-head={head.label}
             style={{ top: (yOf[head.at] ?? 0) - HEAD_H, height: HEAD_H }}
-            className="absolute inset-x-0 flex items-end border-b border-line px-3 pb-1.5"
+            className="absolute inset-x-0 flex items-end border-b border-line px-3 pb-2"
           >
             <span title={head.label} className="min-w-0 truncate text-caption font-semibold text-ink-2">
               {head.label}

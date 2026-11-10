@@ -81,10 +81,14 @@ const LINE_H = 16;
 const PAD_X = 10;
 const PAD_Y = 8;
 const WRAP_AT = 26;
-const PLATE_MAX_W = WRAP_AT * CHAR_W + PAD_X * 2;
-const PLATE_ROOM_H = LINE_H * 5 + PAD_Y * 2; // four lines of name and the detail
-const MARGIN_X = PLATE_MAX_W + 24;
-const MARGIN_Y = PLATE_ROOM_H + 24;
+/**
+ * Room kept beyond the outermost bubble: beside it, a resting name (`restLabels`); above and
+ * below, half a name. The plate finds its own spot inside the canvas and the pane (`placePlate`),
+ * so the canvas no longer reserves a whole plate on every side: that left a three-helper tree
+ * zoomed out to 0.75 in the middle of an empty pane at 1180 wide (design review, 2026-11-10).
+ */
+const MARGIN_X = 22 * 6.6 + 8 + 16; // REST_NAME_MAX * REST_CHAR_W + REST_GAP, and a little air
+const MARGIN_Y = 30 / 2 + 16; // REST_H / 2, and a little air
 /** A few helpers are spread out to use the pane, but never past this stretch. */
 const MAX_SCALE = 1.6;
 const MAX_ASPECT = 1.6;
@@ -298,16 +302,20 @@ export function layoutMap(threads: ReceiptThread[], size: { width: number; heigh
     ring.forEach((n, i) => (n.rho = best.base + (i % best.tracks) * TRACK_STEP));
     outer = best.outer;
   }
-  const needed = deepest > 0 ? outer : 0;
 
   // A short tree is stretched to use the pane (never past MAX_SCALE); a big one stays at its
-  // natural size and the canvas grows.
+  // natural size and the canvas grows. The room is measured against where the tree really
+  // reaches (from the angles), so a tree that hangs straight down is not held to the width a
+  // full ring would need.
   const roomY = Math.max(1, paneH / 2 - MARGIN_Y - R_MAX);
   const roomX = Math.max(1, paneW / 2 - MARGIN_X - R_MAX);
-  const scale = deepest > 0 ? clamp(Math.min(roomX, roomY) / needed, 1, MAX_SCALE) : 1;
-  const ratio = deepest > 0 && scale > 1 ? clamp(roomX / (needed * scale), 1, MAX_ASPECT) : 1;
-  const extentX = needed * scale * ratio + R_MAX + MARGIN_X;
-  const extentY = needed * scale + R_MAX + MARGIN_Y;
+  const reachX = all.reduce((m, n) => Math.max(m, Math.abs(Math.cos(n.angle)) * n.rho), 0);
+  const reachY = all.reduce((m, n) => Math.max(m, Math.abs(Math.sin(n.angle)) * n.rho), 0);
+  const fit = Math.min(reachX > 1 ? roomX / reachX : Infinity, reachY > 1 ? roomY / reachY : Infinity);
+  const scale = deepest > 0 && Number.isFinite(fit) ? clamp(fit, 1, MAX_SCALE) : 1;
+  const ratio = deepest > 0 && scale > 1 && reachX > 1 ? clamp(roomX / (reachX * scale), 1, MAX_ASPECT) : 1;
+  const extentX = reachX * scale * ratio + R_MAX + MARGIN_X;
+  const extentY = reachY * scale + R_MAX + MARGIN_Y;
   const width = Math.max(paneW, Math.ceil(2 * extentX));
   const height = Math.max(paneH, Math.ceil(2 * extentY));
   const cx = width / 2;

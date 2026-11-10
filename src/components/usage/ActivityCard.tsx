@@ -122,11 +122,11 @@ export function ActivityCard({ today }: { today: string }) {
             <tbody className="tabular-nums">
               {points.map((p) => (
                 <tr key={p.start} className="border-t border-line">
-                  <th scope="row" className="px-3 py-1.5 text-left font-normal text-ink">
+                  <th scope="row" className="px-3 py-2 text-left font-normal text-ink">
                     {bucketTitle(p.start, span.bucket)}
                   </th>
-                  <td className="px-3 py-1.5 text-right" title={tokenHint(headline(p.tokens), p.cost)}>{compact(headline(p.tokens))}</td>
-                  <td className="px-3 py-1.5 text-right">{exact(p.sessions)}</td>
+                  <td className="px-3 py-2 text-right" title={tokenHint(headline(p.tokens), p.cost)}>{compact(headline(p.tokens))}</td>
+                  <td className="px-3 py-2 text-right">{exact(p.sessions)}</td>
                 </tr>
               ))}
             </tbody>

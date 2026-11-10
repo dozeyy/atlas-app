@@ -17,7 +17,7 @@ function Flag({ flag }: { flag: SafetyFlag }) {
         disabled={!has}
         onClick={() => setOpen((v) => !v)}
         title={open ? undefined : flag.words}
-        className="flex w-full cursor-pointer items-start gap-2.5 rounded-control px-2 py-1.5 text-left text-body text-ink enabled:hover:bg-raised disabled:cursor-default"
+        className="flex w-full cursor-pointer items-start gap-2 rounded-control px-2 py-2 text-left text-body text-ink enabled:hover:bg-raised disabled:cursor-default"
       >
         <span aria-hidden="true" className="mt-[7px] size-1.5 shrink-0 rounded-full bg-warning" />
         {/* Two lines at rest; the whole finding once it is opened (or on hover when there is nothing to open). */}
@@ -27,9 +27,9 @@ function Flag({ flag }: { flag: SafetyFlag }) {
         )}
       </button>
       {open && has && (
-        <ul id={id} className="mx-2 mb-1.5 ml-9 grid gap-1">
+        <ul id={id} className="mx-2 mb-2 ml-9 grid gap-1">
           {flag.evidence.map((e, i) => (
-            <li key={i} className="min-w-0 rounded-control bg-raised px-2.5 py-1.5">
+            <li key={i} className="min-w-0 rounded-control bg-raised px-2 py-2">
               <div title={`${e.path}${e.line !== null ? `:${e.line}` : ""}`} className="mono truncate text-caption text-ink-2">
                 {e.path}
                 {e.line !== null ? `:${e.line}` : ""}
@@ -49,7 +49,7 @@ export function SafetyCheck({ report, notInstalled }: { report: SafetyReport; no
   return (
     <div className="overflow-hidden rounded-card border border-line bg-surface">
       {/* The verdict: the one line to read before the button, so it is the strongest thing in the sheet after the name. */}
-      <p className={`flex items-center gap-2.5 px-4 py-3 text-lead font-semibold text-ink ${clean ? "bg-success-tint" : "bg-warning-tint"}`}>
+      <p className={`flex items-center gap-2 px-4 py-3 text-lead font-semibold text-ink ${clean ? "bg-success-tint" : "bg-warning-tint"}`}>
         {clean ? (
           <CheckCircle size={22} weight="fill" aria-hidden="true" className="shrink-0 text-success" />
         ) : (
@@ -68,7 +68,7 @@ export function SafetyCheck({ report, notInstalled }: { report: SafetyReport; no
           stays true ("nothing here runs": the hook is not copied, so it never runs), not as a
           second list of things that sound installed. */}
       {notInstalled && notInstalled.length > 0 && (
-        <ul className="grid grid-cols-[minmax(0,1fr)] gap-1 border-t border-line px-4 py-2.5" aria-label="Left out">
+        <ul className="grid grid-cols-[minmax(0,1fr)] gap-1 border-t border-line px-4 py-2" aria-label="Left out">
           {notInstalled.map((n) => (
             <li key={n.path} className="flex flex-wrap items-center gap-2 text-caption text-ink-2">
               <Chip tone="muted" title={badge("leftOut").tip}>
@@ -81,7 +81,7 @@ export function SafetyCheck({ report, notInstalled }: { report: SafetyReport; no
           ))}
         </ul>
       )}
-      <p className="border-t border-line px-4 py-2.5 text-caption text-ink-2">{report.caption}</p>
+      <p className="border-t border-line px-4 py-2 text-caption text-ink-2">{report.caption}</p>
     </div>
   );
 }

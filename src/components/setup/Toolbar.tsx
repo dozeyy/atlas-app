@@ -14,7 +14,7 @@ function Labeled({ label, checked, onChange, count }: { label: string; checked: 
       <Toggle checked={checked} onChange={onChange} label={label} />
       <span>
         {label}
-        {count ? <span className="ml-1.5 text-ink-2">{count}</span> : null}
+        {count ? <span className="ml-2 text-ink-2">{count}</span> : null}
       </span>
     </label>
   );
@@ -97,7 +97,7 @@ export function Toolbar({
               <X size={14} aria-hidden="true" />
             </button>
           ) : shortcut ? (
-            <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded-[4px] border border-line bg-raised px-1.5 text-caption text-ink-2">
+            <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded-[4px] border border-line bg-raised px-2 text-caption text-ink-2">
               {shortcut}
             </kbd>
           ) : null}

@@ -40,7 +40,7 @@ export function SessionTools({ groups }: { groups: ItemGroup[] }) {
         return (
           <div key={g.kind} className="min-w-0">
             <h4 className="rcpt-head">{g.label}</h4>
-            <ul className="flex flex-col gap-1.5">
+            <ul className="flex flex-col gap-2">
               {g.items.slice(0, SHOWN).map((i) => (
                 <li key={i.id} className="min-w-0">
                   <div className="flex items-baseline gap-2 text-caption">
