@@ -487,3 +487,9 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - atlas-debrief skill runs only when the user asks for helper detail; a plain "debrief me" is Claude's own recap (99844fe, da40e99). Frontmatter values must not contain ": " (YAML), the skill test catches it.
 - Sidebar Today readout removed (TodayStat + useTodayStat deleted). The update button (icon + "Update", text colour, not blue) fills that spot and pops its offer once per launch on a quiet check, without taking focus; a find from Settings' "Check for updates" does not pop it (204e7f9, d135405).
 - Why no update ever showed: dozeyy/atlas has no releases (latest.json 404) and the `release` environment with TAURI_SIGNING_PRIVATE_KEY was never created on dozeyy/atlas-app (404). Updates reach installed copies only after that one-time setup (docs/releasing.md) and a tagged release published with tools/publish-public.ps1.
+
+## 2026-11-09 - Small-window fixes; Fable polish brief
+- History at 900 px (sidebar collapsed, change open): the filter chips slid under the project picker. Cause: the right-hand block was `flex-1 min-w-[240px] justify-end`, so when the picker + search needed more than 240 px they overflowed leftwards over the chips. Fix: chips group `flex-none max-w-full`, right block `min-w-max`; the row now wraps the picker and search onto their own line.
+- Sessions "Pick up where you left off": the token strip now hides below a 760 px container (was 640), so the title keeps its room.
+- Swept every page and Toolkit tab at 900x600 and 1040x640, sidebar open and closed, with an in-page overlap/clip detector: no other overlaps (Library rows overlap their Install button by design).
+- `docs/specs/fable-polish-pass.md` is the brief for the Fable polish pass (enhance, never redesign; readability first; order lists by what people want; no invented popularity numbers).

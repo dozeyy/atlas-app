@@ -901,7 +901,7 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   align-items: center;
   gap: 8px;
 }
-@container (max-width: 640px) {
+@container (max-width: 760px) {
   .pick-strip {
     display: none;
   }

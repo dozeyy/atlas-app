@@ -209,14 +209,14 @@ export function History() {
           <Hero o={o} now={view.now} onPick={setWantDay} />
 
           <div className="rise flex flex-wrap items-center gap-x-1 gap-y-2" style={rise(2)}>
-            <div role="group" aria-label="Show" className="flex flex-wrap items-center gap-0.5">
+            <div role="group" aria-label="Show" className="flex max-w-full flex-none flex-wrap items-center gap-0.5">
               {GROUP_CHIPS.map((c) => (
                 <button key={c.id} type="button" className="hx-filter text-body" aria-pressed={group === c.id} onClick={() => setGroup(c.id)}>
                   {c.label}
                 </button>
               ))}
             </div>
-            <div className="ml-auto flex min-w-[240px] flex-1 items-center justify-end gap-2">
+            <div className="ml-auto flex min-w-max flex-1 items-center justify-end gap-2">
               {o.projects.length > 0 && (
                 <SelectField
                   label="Project"
