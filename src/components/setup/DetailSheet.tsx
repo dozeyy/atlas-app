@@ -11,7 +11,7 @@ import { pushToast } from "../../state/toastStore";
 import { Preview } from "./Preview";
 import { getBackend } from "../../lib/ipc";
 import { splitFrontmatter } from "../../lib/markdown";
-import { displayDescription, displayName, KIND_BY_ID, relativeTime } from "../../lib/setup-model";
+import { connectionWords, displayChips, displayDescription, displayName, KIND_BY_ID, relativeTime, splitSummary, toolsWords } from "../../lib/setup-model";
 import { isPerCall, rowFor, usdHover } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
 import type { CostReport, CostRow, MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
@@ -222,7 +222,16 @@ function CodeView({ src }: { src: SourceView }) {
       destroy();
     };
   }, [src]);
-  return <div ref={host} className="h-[min(420px,calc(var(--app-h)*0.5))] overflow-hidden rounded-card border border-line bg-surface" />;
+  // As tall as its text (19 px a line, as the viewer sets them, plus its padding and room for a
+  // sideways scrollbar), up to the cap: a seven-line file is not shown in a box made for a hundred.
+  const lines = src.text.replace(/\n$/, "").split("\n").length;
+  return (
+    <div
+      ref={host}
+      style={{ height: `min(420px, calc(var(--app-h) * 0.5), ${lines * 19 + 38}px)` }}
+      className="overflow-hidden rounded-card border border-line bg-surface"
+    />
+  );
 }
 
 /** A frontmatter key as the scan reports it (lowercase); every other detail label starts with a capital. */
@@ -328,14 +337,13 @@ function Lead({ text }: { text: string }) {
 
 /** The tags worth a place beside the title: the ones nothing else on the sheet already says. */
 function sheetChips(item: SetupItem): string[] {
-  // A hook's tags are its event and its type; the title and the lead line say both in words.
-  if (item.kind === "hook") return [];
   const said = new Set(
     [item.mcp?.transport, ...item.detail.filter((d) => !RAW_KEY.test(d.label)).map((d) => d.value)]
       .filter((v): v is string => Boolean(v))
       .map((v) => v.toLowerCase()),
   );
-  return item.chips.filter((c) => !said.has(c.toLowerCase()));
+  // displayChips drops the tags the title and the lead line already say in words.
+  return displayChips(item).filter((c) => !said.has(c.toLowerCase()));
 }
 
 function SourceSection({ item, loads, fileRows }: { item: SetupItem; loads: number; fileRows: FactRow[] }) {
@@ -383,11 +391,12 @@ function SourceSection({ item, loads, fileRows }: { item: SetupItem; loads: numb
   const raw = src && (
     <>
       <CodeView src={src} />
-      <p className="mt-2 text-caption text-ink-2">
-        {formatSize(src.size)} - {src.lineEnding}
-        {src.truncated ? " - only the start is shown" : ""}
-        {src.maskedRanges.length ? ` - ${src.maskedRanges.length} hidden ${src.maskedRanges.length === 1 ? "value" : "values"}` : ""}
-      </p>
+      {/* Only what changes how the text reads; the file's size and line endings wait under "File details". */}
+      {(src.truncated || src.maskedRanges.length > 0) && (
+        <p className="mt-2 text-caption text-ink-2">
+          {[src.truncated ? "Only the start is shown." : "", src.maskedRanges.length ? `${src.maskedRanges.length} hidden ${src.maskedRanges.length === 1 ? "value" : "values"}.` : ""].filter(Boolean).join(" ")}
+        </p>
+      )}
     </>
   );
 
@@ -398,7 +407,7 @@ function SourceSection({ item, loads, fileRows }: { item: SetupItem; loads: numb
       <Section title={markdown ? "Preview" : "Contents"}>{waiting ?? (parsed ? <Preview body={parsed.body} /> : raw)}</Section>
       {(fileRows.length > 0 || parsed) && (
         <FileDetails>
-          {fileRows.length > 0 && <Facts rows={fileRows} />}
+          {fileRows.length > 0 && <Facts rows={src ? [...fileRows, { label: "Line endings", value: src.lineEnding === "CRLF" ? "Windows (CRLF)" : "Unix (LF)" }] : fileRows} />}
           {fields.length > 0 && (
             <div>
               <h4 className="mb-2 text-body font-medium text-ink">Settings in the file's header</h4>
@@ -539,6 +548,8 @@ export function DetailSheet({
   };
 
   const { mcp, conflict } = item;
+  // "stdio: npx -y pkg" is the scan's one line; the sheet shows the command or address on its own.
+  const link = splitSummary(mcp?.summary ?? "");
   const lead = displayDescription(item);
   const costRow = useMemo(() => rowFor(cost, item.id), [cost, item.id]);
   // Where the file is and when it changed: exact and long, so they wait under "File details".
@@ -554,11 +565,19 @@ export function DetailSheet({
     ...(item.plugin ? [{ label: "Plugin", value: item.plugin }] : []),
     ...(item.usedBy !== null ? [{ label: "Used by", value: item.usedBy === 0 ? "No hook uses this script" : `${item.usedBy} ${item.usedBy === 1 ? "hook" : "hooks"}` }] : []),
     // Raw header keys (lowercase: name, model, ...) are shown once, under "Settings in the file's header".
-    ...item.detail.filter((d) => !RAW_KEY.test(d.label)).map((d) => ({ label: d.label, value: d.value })),
+    // A permission's list and tool are the settings file's own words; its heading and title say both.
+    ...item.detail
+      .filter((d) => !RAW_KEY.test(d.label) && item.kind !== "permission")
+      // A rule such as "Bash(git:*)" reads in words and a plugin goes by its name, not "name@marketplace";
+      // the value as written is in the hover.
+      .map((d) => {
+        const words = d.label === "Allowed tools" ? toolsWords(d.value) : d.label === "Plugin" ? d.value.replace(/^(.+)@[^@]+$/, "$1") : d.value;
+        return { label: d.label, value: words !== d.value ? <span title={d.value}>{words}</span> : d.value };
+      }),
     // A hook's title is in plain words; the name the settings file uses stays findable here
     // (the scan's own Event and Matcher rows say it when they are present).
     ...(displayName(item) !== item.name && !item.detail.some((d) => d.label === "Event")
-      ? [{ label: "In settings", value: <span className="mono">{item.name}</span> }]
+      ? [{ label: "In settings", value: <span className="mono [overflow-wrap:anywhere]">{item.name}</span>, copy: item.name }]
       : []),
   ];
 
@@ -701,8 +720,9 @@ export function DetailSheet({
           <Section title="Connection">
             <Facts
               rows={[
-                { label: "Type", value: mcp.transport },
-                ...(mcp.summary ? [{ label: "Runs", value: <span className="mono break-all">{mcp.summary}</span> }] : []),
+                // How it connects is the lead line, in words; the settings' own word shows only when Atlas has none.
+                ...(connectionWords(mcp.transport, link.target) ? [] : [{ label: "Type", value: mcp.transport }]),
+                ...(link.target ? [{ label: mcp.transport === "stdio" ? "Command" : "Address", value: <span className="mono break-all">{link.target}</span>, copy: link.target }] : []),
                 ...(mcp.envKeys.length ? [{ label: "Environment", value: <span className="mono">{mcp.envKeys.join(", ")}</span> }] : []),
                 ...(mcp.headerKeys.length ? [{ label: "Headers", value: <span className="mono">{mcp.headerKeys.join(", ")}</span> }] : []),
               ]}
@@ -732,7 +752,7 @@ export function DetailSheet({
           <Section title="Files that come with it">
             <ul className="space-y-1">
               {item.attachments.map((a) => (
-                <li key={a} className="mono flex items-center gap-2 text-ink">
+                <li key={a} className="flex items-center gap-2 text-body text-ink">
                   <PathText path={a} className="selectable min-w-0 flex-1" />
                   {item.kind === "skill" && item.editable && (
                     <button

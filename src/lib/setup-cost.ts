@@ -88,11 +88,11 @@ export function windowLabel(report: CostReport): string {
 
 /**
  * The name a ranking row shows. Something that only loads in one project's chats carries that
- * project's name ("CLAUDE.md · pixel-garden"), so two files with the same name never look alike.
+ * project's name ("CLAUDE.md", a middle dot, "pixel-garden"), so two files with the same name never look alike.
  */
 export function rowTitle(r: CostRow): string {
   const project = /^Chats in (.+)$/.exec(r.loadsIn)?.[1];
-  return project ? `${r.name} · ${project}` : r.name;
+  return project ? `${r.name} \u00b7 ${project}` : r.name;
 }
 
 /**

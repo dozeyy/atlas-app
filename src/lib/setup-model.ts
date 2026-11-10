@@ -126,29 +126,158 @@ export const HOOK_EVENTS: { value: string; label: string }[] = [
   { value: "PreCompact", label: "Before the chat is trimmed" },
 ];
 
-const SEP = /\s+·\s+/;
+// The middle dot is written as an escape: source strings stay ASCII.
+const DOT = "\u00b7";
+const SEP = /\s+\u00b7\s+/;
+/** Tool names joined with a bar and nothing else ("Edit|Write"). A pattern such as "Bash(npm test|lint)" is not that. */
+const PLAIN_NAMES = /^[A-Za-z_][\w-]*(\|[A-Za-z_][\w-]*)+$/;
 
 /**
- * The name a person reads. A hook's stored name is its event and its matcher as the settings
- * file spells them ("PreToolUse - Edit|Write" with a middle dot); on the surface that becomes
- * "Before a tool runs - Edit, Write", and the stored name stays in the hover, the sheet's facts
- * and the search. An event Atlas has no words for, and every other kind, keep their own name.
+ * A permission rule in words. The settings file spells a rule "Bash(git status:*)"; under its
+ * "Allowed" or "Blocked" heading that reads "Commands that start with git status". Only shapes
+ * Atlas is sure of get words; any other rule is shown as written.
+ */
+export function ruleWords(rule: string): string {
+  const r = rule.trim();
+  const mcp = /^mcp__([A-Za-z0-9-]+(?:_[A-Za-z0-9-]+)*?)(?:__([\w-]+))?$/.exec(r);
+  if (mcp) return mcp[2] ? `${mcp[2]}, from ${mcp[1]}` : `Every tool from ${mcp[1]}`;
+  const m = /^([A-Za-z]+)(?:\((.*)\))?$/s.exec(r);
+  if (!m) return rule;
+  const [, tool, inside] = m;
+  const any = inside === undefined || inside === "*" || inside === "**";
+  switch (tool) {
+    case "Bash": {
+      if (any) return "Any command";
+      const start = /^(.+?)(?::\*| \*)$/.exec(inside);
+      if (start && !/[*|&;]/.test(start[1])) return `Commands that start with ${start[1]}`;
+      return /[*|&;]/.test(inside) ? rule : `The command ${inside}`;
+    }
+    case "Read":
+      return any ? "Read any file" : `Read ${inside}`;
+    case "Edit":
+    case "Write":
+    case "MultiEdit":
+      return any ? "Change any file" : `Change ${inside}`;
+    case "WebFetch": {
+      if (any) return "Open any web page";
+      const d = /^domain:(.+)$/.exec(inside);
+      return d ? `Open pages on ${d[1]}` : rule;
+    }
+    case "WebSearch":
+      return any ? "Search the web" : rule;
+    default:
+      return rule;
+  }
+}
+
+/**
+ * The name a person reads; the stored name stays in the hover, the sheet's facts and the search.
+ * - A hook's stored name is its event and its matcher as the settings file spells them
+ *   ("PreToolUse", a middle dot, "Edit|Write"): it reads "Before a tool runs", the dot,
+ *   "Edit, Write". A matcher that is a pattern, not a list of names, is shown as written.
+ * - A plugin is stored as "name@marketplace": it reads as its name.
+ * - A permission is a rule ("Bash(git:*)"): it reads in words where Atlas is sure of them.
+ * Anything Atlas has no words for, and every other kind, keeps its own name.
  */
 export function displayName(i: SetupItem): string {
+  if (i.kind === "plugin") {
+    const at = i.name.lastIndexOf("@");
+    return at > 0 ? i.name.slice(0, at) : i.name;
+  }
+  if (i.kind === "permission") return ruleWords(i.name);
   if (i.kind !== "hook") return i.name;
   const [event, ...rest] = i.name.split(SEP);
   const words = HOOK_EVENTS.find((h) => h.value === event)?.label;
   if (!words) return i.name;
-  const matcher = rest.join(" · ").trim();
-  return !matcher || matcher === "any" || matcher === "*" ? words : `${words} · ${matcher.split("|").join(", ")}`;
+  const matcher = rest.join(` ${DOT} `).trim();
+  if (!matcher || matcher === "any" || matcher === "*") return words;
+  return `${words} ${DOT} ${PLAIN_NAMES.test(matcher) ? matcher.split("|").join(", ") : matcher}`;
 }
 
-/** A hook's first line in words: "command: fmt.sh --check" reads "Runs fmt.sh --check". Other kinds: their description. */
+const WEB_KINDS = new Set(["http", "sse", "ws", "streamable-http"]);
+
+/** How a connected tool is reached, in words: a program on this computer, or a web address. */
+export function connectionWords(transport: string, target: string): string {
+  if (transport === "stdio") return "Runs on this computer";
+  if (WEB_KINDS.has(transport)) {
+    const host = /^[a-z][a-z0-9+.-]*:\/\/([^/?#:@\s]+)/i.exec(target)?.[1];
+    return host ? `Connects to ${host}` : "Connects over the web";
+  }
+  return "";
+}
+
+/** An MCP server's one-line summary split into how it connects and what exactly ("stdio: npx -y pkg"). */
+export function splitSummary(summary: string): { transport: string; target: string } {
+  const m = /^([a-z][a-z-]*)\s*(?::(?!\/\/)|\u00b7)\s*(.*)$/s.exec(summary);
+  return m ? { transport: m[1], target: m[2] } : { transport: "", target: summary };
+}
+
+/**
+ * An item's first line in words. A hook's "command: fmt.sh --check" reads "Runs fmt.sh --check";
+ * an MCP server's "stdio: npx -y pkg" reads "Runs on this computer" (the exact command is in the
+ * hover and in the sheet's Connection facts). Other kinds: their description.
+ */
 export function displayDescription(i: SetupItem): string {
-  if (i.kind !== "hook") return i.description;
-  const m = /^(command|prompt)\s*(?::|·)\s*(.*)$/s.exec(i.description);
+  if (i.kind === "mcpServer") {
+    const { transport, target } = splitSummary(i.description);
+    return connectionWords(transport || (i.mcp?.transport ?? ""), target) || i.description;
+  }
+  if (i.kind !== "hook" && i.kind !== "statusLine") return i.description;
+  const m = /^(command|prompt)\s*(?::|\u00b7)\s*(.*)$/s.exec(i.description);
+  // The status line's description is its command, with or without the type in front.
+  if (i.kind === "statusLine") return (m ? m[2] : i.description) ? `Runs ${m ? m[2] : i.description}` : i.description;
   if (!m || !m[2]) return i.description;
   return m[1] === "command" ? `Runs ${m[2]}` : `Asks Claude: ${m[2]}`;
+}
+
+/**
+ * A list of tools from a file's header ("Read, Bash(git:*)") with each rule in words where Atlas
+ * has them. Commas inside a rule's brackets belong to the rule.
+ */
+export function toolsWords(list: string): string {
+  const parts: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of list) {
+    if (ch === "(") depth += 1;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    if (ch === "," && depth === 0) {
+      parts.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  parts.push(cur);
+  return parts
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => (p.includes("(") ? ruleWords(p) : p))
+    .join(", ");
+}
+
+/** "1 skills" (as the scan counts a plugin's parts) reads "1 skill". Every other tag is kept. */
+function oneOf(tag: string): string {
+  const m = /^1 (.+)s$/.exec(tag);
+  return m ? `1 ${m[1]}` : tag;
+}
+
+/**
+ * The tags an item shows. A hook's are its event and type, an MCP server's its transport, a
+ * permission's its list and tool, the status line's its type: the title, the first line or the
+ * group heading already say those in words, so those kinds show none. A plugin's counts are put
+ * in the singular.
+ */
+export function displayChips(i: SetupItem): string[] {
+  if (i.kind === "hook" || i.kind === "mcpServer" || i.kind === "permission" || i.kind === "statusLine") return [];
+  return i.kind === "plugin" ? i.chips.map(oneOf) : i.chips;
+}
+
+/**
+ * The words on an item's state chip, and what they mean on hover. "Shadowed" is the scan's word
+ * for a copy that loses to another with the same name: it reads "Not in use".
+ */
+export function stateWords(e: SetupItem["enabled"]): { label: string; hint?: string } {
+  if (e.state === "shadowed") return { label: "Not in use", hint: "Another copy with the same name is used instead of this one." };
+  return { label: e.label };
 }
 
 const keys = new WeakMap<SetupItem, string>();
@@ -158,7 +287,8 @@ function searchKey(i: SetupItem): string {
   if (k === undefined) {
     k = [
       i.name,
-      i.kind === "hook" ? displayName(i) : "",
+      displayName(i),
+      displayDescription(i),
       i.description,
       i.scopeLabel,
       KIND_BY_ID[i.kind].singular,

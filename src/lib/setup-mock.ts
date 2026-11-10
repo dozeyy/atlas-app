@@ -35,7 +35,7 @@ function item(kind: ItemKind, scope: ScopeKind, name: string, extra: Partial<Set
     plugin: scope === "plugin" ? "helpers@market" : null,
     name,
     description: "",
-    path: `C:/Users/you/.claude/${kind}s/${name}.md`,
+    path: kind === "skill" ? `C:/Users/you/.claude/skills/${name}/SKILL.md` : `C:/Users/you/.claude/${kind}s/${name}.md`,
     linkTarget: null,
     size: 1800 + n * 37,
     modifiedMs: Date.now() - n * 3_600_000,
