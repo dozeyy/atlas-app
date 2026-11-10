@@ -700,6 +700,7 @@ export function SessionDetailView({
             state={receipt}
             sessionId={id}
             onOpenHelper={showOnMap}
+            types={helperTypes}
             effortOf={(m) => topEffort(d.data?.byModel.find((b) => b.model === m)?.efforts)}
           />}
 

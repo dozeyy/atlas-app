@@ -51,8 +51,16 @@ describe("Chat receipt and helper map", () => {
     expect(screen.getByRole("region", { name: "What it used" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Biggest line items" })).toBeInTheDocument();
     expect(screen.queryAllByText(/All figures are estimates/)).toHaveLength(0);
-    // Each list ends in a total, so the sum is visible.
-    expect(within(screen.getByRole("region", { name: "Who used it" })).getByText("Total")).toBeInTheDocument();
+    // A list of shares ends in a total, so the sum is visible; each of its lines wears the avatar the map gives that thread.
+    const who = screen.getByRole("region", { name: "Who used it" });
+    expect(within(who).getByText("Total")).toBeInTheDocument();
+    expect(within(who).getByRole("img", { name: "Main chat" })).toBeInTheDocument();
+    expect(within(who).getAllByRole("img", { name: /helper$/i }).length).toBeGreaterThan(0);
+    // The line items are rough sizes, not shares: no total under them, one note that says what "~" is.
+    const big = screen.getByRole("region", { name: "Biggest line items" });
+    expect(within(big).queryByText("Total")).toBeNull();
+    expect(within(big).queryByText("Everything else")).toBeNull();
+    expect(within(big).getByText(/^~ is a rough size/)).toBeInTheDocument();
     // Tokens are the figure everywhere; dollars live only in hover text.
     for (const name of ["Who used it", "What it used", "Biggest line items"]) {
       const region = screen.getByRole("region", { name });
