@@ -14,6 +14,7 @@ import {
   REST_NAME_MAX,
   restBox,
   restLabels,
+  nameLines,
   shortName,
   startedBy,
   wrapName,
@@ -266,6 +267,24 @@ describe("helper map: names", () => {
     expect(cut.length).toBeLessThanOrEqual(REST_NAME_MAX);
     expect(cut.endsWith("...")).toBe(true);
     expect(cut).not.toMatch(/\s\.\.\.$/);
+  });
+
+  it("breaks a long name onto two lines at a space, and cuts only the second", () => {
+    expect(nameLines("Find the config")).toEqual(["Find the config"]);
+    const two = nameLines("Review the sidebar changes for release");
+    expect(two).toHaveLength(2);
+    expect(two[0]).toBe("Review the sidebar");
+    expect(two[1]).toBe("changes for release");
+    const long = nameLines("Count how many places read the old settings key and say whether it is safe");
+    expect(long[0].length).toBeLessThanOrEqual(REST_NAME_MAX);
+    expect(long[1]!.length).toBeLessThanOrEqual(REST_NAME_MAX);
+    expect(long[1]!.endsWith("...")).toBe(true);
+    // No space to break on: one cut line, as before.
+    expect(nameLines("a".repeat(40))).toEqual([shortName("a".repeat(40))]);
+    // A two-line label takes a taller box than a one-line one.
+    const one = restBox({ id: "x", x: 0, anchor: "start", name: "Short", detail: "1k tokens" }, 100);
+    const tall = restBox({ id: "x", x: 0, anchor: "start", name: "Short", name2: "and more", detail: "1k tokens" }, 100);
+    expect(tall.h).toBeGreaterThan(one.h);
   });
 
   it("names the biggest helpers at rest, beside them, covering no node and no other name", () => {

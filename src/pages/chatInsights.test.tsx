@@ -54,16 +54,23 @@ describe("Chat receipt and helper map", () => {
     // The sum is the one figure at the top of the page, so no list repeats it as a total row.
     // Each line of "Who used it" wears the avatar the map gives that thread.
     expect(document.querySelectorAll(".d-hero")).toHaveLength(1);
-    expect(document.querySelector(".d-hero")?.textContent).toMatch(/tokens$/);
+    // The unit sits beside the figure in body type, not inside the 56 px number.
+    const hero = document.querySelector(".d-hero")!;
+    expect(hero.textContent).toMatch(/^\d+(\.\d+)?[kMB]?$/);
+    expect(hero.nextElementSibling?.textContent).toBe("tokens");
+    expect(hero.nextElementSibling?.classList.contains("d")).toBe(false);
     expect(screen.queryByText("Total")).toBeNull();
     const who = screen.getByRole("region", { name: "Who used it" });
     expect(within(who).getByRole("img", { name: "Main session" })).toBeInTheDocument();
     expect(within(who).getAllByRole("img", { name: /helper$/i }).length).toBeGreaterThan(0);
-    // The line items wait behind one row, closed until asked; opening it is remembered.
+    // The line items are open from the start (the tab is theirs to fill); closing them is remembered.
     const big = screen.getByRole("region", { name: "Biggest line items" });
     const more = within(big).getByRole("button", { name: "Biggest line items" });
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    await userEvent.click(more);
     expect(more).toHaveAttribute("aria-expanded", "false");
     expect(within(big).queryByText(/^~ is a rough size/)).toBeNull();
+    expect(localStorage.getItem("atlas.chat.lineItems")).toBe("0");
     await userEvent.click(more);
     expect(more).toHaveAttribute("aria-expanded", "true");
     expect(localStorage.getItem("atlas.chat.lineItems")).toBe("1");
@@ -80,13 +87,13 @@ describe("Chat receipt and helper map", () => {
     expect(titled.some((t) => /an estimate of about \$/.test(t))).toBe(true);
   });
 
-  it("opens the line items by itself when they were left open, and says token kinds in plain words", async () => {
+  it("keeps the line items closed when they were closed last time, and says token kinds in plain words", async () => {
     const backend = sessionsBackend();
-    localStorage.setItem("atlas.chat.lineItems", "1");
+    localStorage.setItem("atlas.chat.lineItems", "0");
     const { row } = await chatWithHelpers(backend);
     mountDetail(backend, row.sessionId);
     const big = await screen.findByRole("region", { name: "Biggest line items" });
-    expect(within(big).getByRole("button", { name: "Biggest line items" })).toHaveAttribute("aria-expanded", "true");
+    expect(within(big).getByRole("button", { name: "Biggest line items" })).toHaveAttribute("aria-expanded", "false");
     // Plain words on the surface; the exact term is the first words of the hover.
     const used = screen.getByRole("region", { name: "What it used" });
     expect(used.textContent).not.toMatch(/cache/i);
@@ -144,9 +151,12 @@ describe("Chat receipt and helper map", () => {
     expect(rest.length).toBeGreaterThan(0);
     expect(rest.length).toBeLessThanOrEqual(8);
     for (const r of rest) {
-      const [name, tokens] = Array.from(r.querySelectorAll("text")).map((t) => t.textContent ?? "");
-      expect(name.length).toBeLessThanOrEqual(22);
-      expect(tokens).toMatch(/^\S+ tokens$/);
+      // One or two name lines, then the tokens line.
+      const lines = Array.from(r.querySelectorAll("text")).map((t) => t.textContent ?? "");
+      expect(lines.length).toBeGreaterThanOrEqual(2);
+      expect(lines.length).toBeLessThanOrEqual(3);
+      for (const name of lines.slice(0, -1)) expect(name.length).toBeLessThanOrEqual(22);
+      expect(lines[lines.length - 1]).toMatch(/^\S+ tokens$/);
     }
     const writing = Array.from(map.querySelectorAll("text")).filter((t) => !t.closest(".map-rest") && !t.closest(".map-body"));
     expect(writing.map((t) => t.textContent)).toEqual(["Main session"]);

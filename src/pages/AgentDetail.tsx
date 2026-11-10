@@ -110,7 +110,7 @@ export function AgentDetailView({
       {back}
       <div className="flex items-center gap-4">
         <AgentAvatar type={agent.agentType} size={48} level={d.data.parentName ? "nested" : level} />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           {/* A name made from the type gets its short forms in capitals; one that was written stays as written. */}
           <h1 className="h-page break-words">{shownName(agent)}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-body text-ink-2">
@@ -190,7 +190,8 @@ export function AgentDetailView({
         <section aria-label="Tokens through the run" className="mt-8">
           <SectionTitle>Through its run</SectionTitle>
           <Card className="px-5 py-4">
-            <Bars id={`agent:${sessionId}:${agentId}:bars`} data={bars} label="Tokens through the helper's run" formatTick={compact} />
+            {/* A finished run has no "now": no bar wears the accent. */}
+            <Bars id={`agent:${sessionId}:${agentId}:bars`} data={bars} label="Tokens through the helper's run" formatTick={compact} highlight={-1} />
           </Card>
         </section>
       )}

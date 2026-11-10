@@ -469,8 +469,9 @@ export interface RestLabel {
   /** Where the text starts (anchor "start") or ends (anchor "end"), in canvas pixels; it sits level with its node. */
   x: number;
   anchor: "start" | "end";
-  /** The name, shortened with "..." when it is long. */
+  /** The name's first line; a long name continues on `name2` and is cut there with "...". */
   name: string;
+  name2?: string;
   detail: string;
 }
 
@@ -480,6 +481,7 @@ export const REST_NAME_MAX = 22;
 export const REST_LIMIT = 8;
 const REST_CHAR_W = 6.6; // one 12 px semibold character, a little generous
 const REST_H = 30; // two lines: name and detail
+const REST_LINE = 15; // one more line when the name takes two
 const REST_GAP = 8; // between a node and its name
 
 /** Cut a name to one short line. Never mid-air: no trailing space before the dots. */
@@ -488,10 +490,22 @@ export function shortName(name: string, max = REST_NAME_MAX): string {
   return n.length <= max ? n : `${n.slice(0, max - 3).trimEnd()}...`;
 }
 
+/**
+ * A name on up to two short lines: the break falls on the last space that fits the first line,
+ * and what is still too long for the second is cut there with "...". A name that fits stays one line.
+ */
+export function nameLines(name: string, max = REST_NAME_MAX): [string] | [string, string] {
+  const n = name.trim();
+  if (n.length <= max) return [n];
+  const cut = n.lastIndexOf(" ", max);
+  if (cut < Math.floor(max / 2)) return [shortName(n, max)];
+  return [n.slice(0, cut), shortName(n.slice(cut + 1), max)];
+}
+
 /** The box a resting label takes, in canvas pixels (text is drawn at full size, so a zoomed-out canvas gives it more room). */
 export function restBox(l: RestLabel, y: number, zoom = 1): { x: number; y: number; w: number; h: number } {
-  const w = (Math.max(l.name.length, l.detail.length) * REST_CHAR_W) / zoom;
-  const h = REST_H / zoom;
+  const w = (Math.max(l.name.length, l.name2?.length ?? 0, l.detail.length) * REST_CHAR_W) / zoom;
+  const h = (REST_H + (l.name2 ? REST_LINE : 0)) / zoom;
   return { x: l.anchor === "start" ? l.x : l.x - w, y: y - h / 2, w, h };
 }
 
@@ -512,11 +526,12 @@ export function restLabels(layout: MapLayout, detailOf: (n: MapNode) => string, 
   const helpers = layout.nodes.filter((n) => n.kind === "helper").sort((a, b) => b.tokens - a.tokens || a.index - b.index);
   for (const n of helpers) {
     if (out.length >= limit) break;
-    const name = shortName(n.name);
+    const [name, name2] = nameLines(n.name);
     const detail = detailOf(n);
     const right = n.x >= cx;
     for (const side of right ? (["start", "end"] as const) : (["end", "start"] as const)) {
       const label: RestLabel = { id: n.id, x: side === "start" ? n.x + n.r + REST_GAP : n.x - n.r - REST_GAP, anchor: side, name, detail };
+      if (name2) label.name2 = name2;
       const box = restBox(label, n.y, zoom);
       if (box.x < 4 || box.y < 4 || box.x + box.w > layout.width - 4 || box.y + box.h > layout.height - 4) continue;
       if (layout.nodes.some((o) => o.id !== n.id && rectHitsCircle(box, o, 4))) continue;

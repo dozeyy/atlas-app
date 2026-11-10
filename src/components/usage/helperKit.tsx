@@ -322,8 +322,11 @@ export function OutcomeMark({ outcome }: { outcome: Outcome }) {
 export function TokenFigure({ tokens, cost, id, note, className = "" }: { tokens: number; cost: Cost; id: string; note?: string; className?: string }) {
   const v = costView(cost);
   return (
-    <span className="tabular-nums" title={note ? `${tokenHint(tokens, cost)}\n${note}` : tokenHint(tokens, cost)}>
-      <CountUp value={tokens} id={id} format={(n) => `${compact(Math.round(n))} tokens`} className={className} />
+    // The unit sits beside the figure in body type, never inside the display size (the Dashboard
+    // hero's pattern): "203k" large, "tokens" small on the same baseline.
+    <span className="inline-flex flex-wrap items-baseline gap-x-2.5 tabular-nums" title={note ? `${tokenHint(tokens, cost)}\n${note}` : tokenHint(tokens, cost)}>
+      <CountUp value={tokens} id={id} format={(n) => compact(Math.round(n))} className={className} />
+      <span className="text-lead font-semibold text-ink-2">tokens</span>
       {!v.none && <span className="sr-only">{`, about ${formatUsd(cost.usd ?? 0)} at API prices, estimated${v.partial ? ", incomplete" : ""}`}</span>}
     </span>
   );

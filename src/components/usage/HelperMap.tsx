@@ -242,10 +242,16 @@ export function HelperMap({
                     {/* While the node is pointed at, its plate says the whole name: the short one steps aside, never half under it. */}
                     {label && hover !== n.id && (
                       <g className="map-rest" transform={`translate(${label.x - n.x} 0) scale(${1 / zoom})`} aria-hidden="true">
-                        <text className="map-name" textAnchor={label.anchor} y={-3}>
+                        {/* A long name takes two lines; the three lines stay centred on the node. */}
+                        <text className="map-name" textAnchor={label.anchor} y={label.name2 ? -10 : -3}>
                           {label.name}
                         </text>
-                        <text className="map-rest-detail" textAnchor={label.anchor} y={12}>
+                        {label.name2 && (
+                          <text className="map-name" textAnchor={label.anchor} y={5}>
+                            {label.name2}
+                          </text>
+                        )}
+                        <text className="map-rest-detail" textAnchor={label.anchor} y={label.name2 ? 20 : 12}>
                           {label.detail}
                         </text>
                       </g>

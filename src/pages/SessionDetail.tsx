@@ -302,7 +302,7 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
           ) : items.length === 0 && !busy ? (
             <EmptyState compact fill title="No messages to show" body="This session has no messages Atlas can read." />
           ) : (
-            <ClampList className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
+            <ClampList className="scroll-fade min-h-0 flex-1 divide-y divide-line overflow-y-auto">
               {items.map((m, i) => (
                 <li key={i} className="px-5 py-3">
                   <div className="flex items-baseline gap-3 text-caption text-ink-2">
@@ -358,13 +358,41 @@ function DetailsTab({
   jumps.push({ key: "files", label: "Files" });
 
   const jump = (key: string) => document.getElementById(`sd-${key}`)?.scrollIntoView({ block: "start" });
+  // The chip for the section under the sticky row is held: the last section whose top has passed
+  // the row. Any scroll (the pane's, caught on the way down) re-reads the five positions.
+  const nav = useRef<HTMLElement>(null);
+  const keys = jumps.map((j) => j.key).join(" ");
+  const [atKey, setAtKey] = useState(jumps[0].key);
+  useEffect(() => {
+    const ids = keys.split(" ");
+    let raf = 0;
+    const read = () => {
+      raf = 0;
+      const edge = (nav.current?.getBoundingClientRect().bottom ?? 0) + 8;
+      let at = ids[0];
+      for (const k of ids) {
+        const el = document.getElementById(`sd-${k}`);
+        if (el && el.getBoundingClientRect().top <= edge) at = k;
+      }
+      setAtKey(at);
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(read);
+    };
+    read();
+    document.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("scroll", onScroll, true);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [keys]);
 
   return (
     <>
       {jumps.length >= 4 && (
-        <nav aria-label="Jump to" className="jump-row">
+        <nav ref={nav} aria-label="Jump to" className="jump-row">
           {jumps.map((j) => (
-            <button key={j.key} type="button" className="jump-chip" onClick={() => jump(j.key)}>
+            <button key={j.key} type="button" className="jump-chip" aria-current={atKey === j.key ? "true" : undefined} onClick={() => jump(j.key)}>
               {j.label}
             </button>
           ))}
@@ -398,7 +426,7 @@ function DetailsTab({
         </div>
 
         <section id="sd-tokens" aria-label="Token breakdown" className="jump-target min-w-0">
-          <h3 className="rcpt-head">Token breakdown</h3>
+          <h3 className="h-section mb-3">Token breakdown</h3>
           {/* With helpers, the main chat and the whole chat stand side by side: no switch to flip. */}
           <Breakdown t={total} main={agents.length > 0 ? main.tokens : undefined} />
         </section>
@@ -407,7 +435,7 @@ function DetailsTab({
             (A dollar ridge used to sit here: in tokens it would be this same chart again.) */}
         {bins.length > 0 && (
           <section id="sd-timeline" aria-label="Tokens through the session" className="jump-target min-w-0">
-            <h3 className="rcpt-head">Tokens through the session</h3>
+            <h3 className="h-section mb-3">Tokens through the session</h3>
             <Card className="px-4 py-3">
               <Bars id={`session:${id}:bars`} data={bins} label="Tokens through the session" formatTick={compact} />
             </Card>
@@ -416,20 +444,22 @@ function DetailsTab({
 
         {byModel.length > 1 && (
           <section id="sd-models" aria-label="By model" className="jump-target min-w-0">
-            <h3 className="rcpt-head">By model</h3>
+            <h3 className="h-section mb-3">By model</h3>
             <ModelSplit rows={byModel} />
           </section>
         )}
 
         {hasItems && (
           <section id="sd-tools" aria-label="Tools and skills" className="jump-target min-w-0 @3xl:col-span-2">
-            <h3 className="rcpt-head">Tools and skills</h3>
+            <h3 className="h-section mb-3">Tools and skills</h3>
             <SessionTools groups={groups} />
           </section>
         )}
 
         <section id="sd-files" aria-label="Files" className="jump-target min-w-0 @3xl:col-span-2">
-          <h3 className="rcpt-head" title="The saved session files these figures were read from">{`Files (${files.length})`}</h3>
+          <h3 className="h-section mb-3" title="The saved session files these figures were read from">
+            Files <span className="text-ink-2">{files.length}</span>
+          </h3>
           {/* A row says whose file it is; the path is its hover and one press away on the clipboard.
               (The project folder is the first fact on the page's line and behind "Open folder".) */}
           <Card>
@@ -685,6 +715,7 @@ export function SessionDetailView({
           {onJump && siblings && at >= 0 && (
             <>
               <IconButton
+                className="framed"
                 aria-label="Previous session"
                 title={tip("Previous session", "Alt+Up")}
                 disabled={!prevId}
@@ -692,7 +723,7 @@ export function SessionDetailView({
               >
                 <CaretUp size={16} aria-hidden="true" />
               </IconButton>
-              <IconButton aria-label="Next session" title={tip("Next session", "Alt+Down")} disabled={!nextId} onClick={() => nextId && onJump(nextId)}>
+              <IconButton className="framed" aria-label="Next session" title={tip("Next session", "Alt+Down")} disabled={!nextId} onClick={() => nextId && onJump(nextId)}>
                 <CaretDown size={16} aria-hidden="true" />
               </IconButton>
             </>

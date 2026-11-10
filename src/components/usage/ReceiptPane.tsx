@@ -141,7 +141,8 @@ export interface ReceiptState {
 const ITEMS_KEY = "atlas.chat.lineItems";
 function readItemsOpen(): boolean {
   try {
-    return localStorage.getItem(ITEMS_KEY) === "1";
+    // Open unless it was closed on purpose: the lower half of the tab is theirs to fill.
+    return localStorage.getItem(ITEMS_KEY) !== "0";
   } catch {
     return false;
   }
@@ -149,7 +150,7 @@ function readItemsOpen(): boolean {
 
 /**
  * Where the chat's tokens went: who used them, what they were, and anything worth a look. The
- * biggest line items wait behind one row, closed until asked (and left as they were last time).
+ * biggest line items wait behind one row, open until closed (and left as they were last time).
  * "Who used it", "What it used" and "By model" each add up to the figure at the top of the page;
  * what no line explains is "Everything else". Kinds of token wear plain words, with the exact
  * term in the hover. Dollars are only estimates and show up in the hover text. The items and
@@ -270,7 +271,7 @@ export function ReceiptPane({
             </section>
           )}
 
-          {/* The long list waits behind its own heading: one row, closed until asked. */}
+          {/* The long list waits behind its own heading: one row, open until it is closed. */}
           <section aria-label="Biggest line items">
             <h3>
               <button type="button" className="rcpt-item rcpt-line-btn slice-more" aria-expanded={itemsOpen} aria-controls={itemsId} onClick={toggleItems}>

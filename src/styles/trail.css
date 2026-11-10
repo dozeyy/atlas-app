@@ -342,6 +342,15 @@
   cursor: not-allowed;
   opacity: 0.5;
 }
+/* An icon button that stands in a row of framed buttons (the session's previous / next, the copy
+   beside Open) wears the same frame, so one row has one border style. */
+.btn-icon.framed .btn-face {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.btn-icon.framed:hover:not(:disabled) .btn-face {
+  background: var(--raised);
+}
 
 /* Segmented control: one thumb that slides (320 ms spring) behind the labels. */
 .seg {
@@ -582,9 +591,13 @@ html.reduced .app-menu {
 .qj-list {
   max-height: min(432px, calc(var(--app-h) * 0.88 - 56px - 32px));
   margin: 0;
-  padding: 8px;
+  padding: 8px 8px 24px;
   overflow-y: auto;
   list-style: none;
+  /* A list taller than the sheet fades out at the bottom instead of cutting a row in half; the
+     padding lets the last row scroll clear of the fade. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
 }
 .qj-row {
   position: relative;
@@ -879,6 +892,11 @@ html.reduced .side-main {
 }
 .jump-chip:active {
   background: color-mix(in srgb, var(--raised) 85%, var(--ink));
+}
+/* The section under the row: the selection tint, as a chosen row has elsewhere. */
+.jump-chip[aria-current="true"] {
+  background: var(--accent-tint);
+  color: var(--accent-text);
 }
 .jump-target {
   scroll-margin-top: 44px;
@@ -1276,8 +1294,11 @@ html[data-platform="macos"] .side {
 .theme-card:hover .theme-card-face {
   box-shadow: none;
 }
+/* The chosen theme: a clay ring drawn on the card's own 14 px corners (the face's border alone
+   drew a square-cornered rectangle). */
 .theme-card[aria-checked="true"] .theme-card-face {
   border-color: var(--accent);
+  border-radius: var(--r-card);
   box-shadow: 0 0 0 1px var(--accent);
 }
 .theme-card-label {
@@ -2213,6 +2234,13 @@ html.reduced .nav-item:active .nav-face {
   overflow-y: auto;
   /* A heading never ends up cut in half at the edge: what runs past the bottom fades out, and the
      padding lets the last row scroll clear of the fade. */
+  padding-bottom: 24px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+}
+/* The same fade for any list that scrolls inside a card (the Activity table, the Messages tab):
+   a cut last row reads as "there is more", never as a slip. */
+.scroll-fade {
   padding-bottom: 24px;
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
