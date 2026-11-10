@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import type { ComponentType, ReactNode } from "react";
 import {
-  Binoculars,
   CheckCircle,
   Coffee,
   DotsThree,
@@ -20,8 +19,10 @@ import {
   type IconProps,
 } from "@phosphor-icons/react";
 import { PageTitle } from "../components/controls";
-import { Topo } from "../components/Topo";
+import { EmptyState } from "../components/EmptyState";
 import { HelperTracker } from "../components/now/HelperTracker";
+import { useAtlas } from "../state/AtlasProvider";
+import { rememberSettingsSection } from "../lib/settingsSection";
 import { ago, clock, groupChats, nowCost, splitPath } from "../lib/nowFormat";
 import type { NowChat, NowLast } from "../lib/nowTypes";
 import { useClimb, useClock, useNowSnapshot } from "../lib/useNow";
@@ -55,18 +56,37 @@ function KindIcon({ kind, size }: { kind: string; size: number }) {
 // ---- the page ------------------------------------------------------------------------
 
 export function Now() {
+  const { info, setView } = useAtlas();
   const snap = useNowSnapshot();
   const groups = useMemo(() => (snap ? groupChats(snap) : null), [snap]);
   // One clock for every "x min ago" on the page; it only ticks when something shows one.
   const idle = !!groups && (groups.waiting.length > 0 || groups.finished.length > 0);
   const now = useClock(idle, 30_000);
+  // "Nothing to watch" has two causes and only one of them is a missing folder. The engine's
+  // `watching` is false for both (it looks for the sessions folder inside the Claude folder); the
+  // app's own look at the Claude folder says which. A folder that is there but has no sessions in
+  // it yet is simply "No sessions yet".
+  const noFolder = !!snap && !snap.watching && info.config?.dirExists === false;
+  const last = groups?.finished[0] ?? null;
 
   return (
     <>
       <PageTitle title="Now" />
       <div className="now-root">
-        {snap === null || groups === null ? null : !snap.watching ? (
-          <Quiet title="No Claude folder found" hint="Choose it in Settings, under Claude folder." />
+        {snap === null || groups === null ? null : noFolder ? (
+          <EmptyState
+            fill
+            seed={21}
+            title="No Claude folder found"
+            body="Choose it in Settings, under Claude folder."
+            action={{
+              label: "Open Settings",
+              onClick: () => {
+                rememberSettingsSection("folder");
+                setView("settings");
+              },
+            }}
+          />
         ) : (
           // One column, read top to bottom in the order it matters: what is waiting for you, what is
           // running, what just finished. Nothing scrolls inside itself; the page does.
@@ -81,11 +101,14 @@ export function Now() {
             {groups.running.length > 0 ? (
               <Running chats={groups.running} />
             ) : groups.waiting.length === 0 ? (
-              <Quiet
-                title={groups.finished.length > 0 ? "Nothing running" : "No sessions yet"}
-                hint={groups.finished.length > 0 ? undefined : "Start a session in Claude Code and it shows up here while it works."}
-                last={groups.finished[0] ?? null}
-                now={now}
+              // The shared empty state: the spark, one title, one plain line (when the last session
+              // ended, or else what to do next). It takes the room the lists leave.
+              <EmptyState
+                fill
+                seed={21}
+                className="min-h-[240px]"
+                title={last ? "Nothing running" : "No sessions yet"}
+                body={last ? `Last session ended ${ago(last.endedMs, now)}` : "Start a session in Claude Code and it shows up here while it works."}
               />
             ) : null}
             {groups.finished.length > 0 && (
@@ -99,23 +122,6 @@ export function Now() {
         )}
       </div>
     </>
-  );
-}
-
-// ---- nothing running -----------------------------------------------------------------
-
-/** One title and one plain second line: when the last chat ended, or else what to do next. */
-function Quiet({ title, hint, last, now }: { title: string; hint?: string; last?: NowLast | null; now?: number }) {
-  const line = last && now !== undefined ? `Last session ended ${ago(last.endedMs, now)}` : hint;
-  return (
-    <section className="now-quiet card" aria-label={title}>
-      <Topo seed={21} />
-      <div className="now-quiet-tile">
-        <Binoculars size={28} weight="duotone" aria-hidden="true" />
-      </div>
-      <h2 className="d d-title now-quiet-title">{title}</h2>
-      {line && <p className="now-quiet-when">{line}</p>}
-    </section>
   );
 }
 

@@ -238,9 +238,31 @@ describe("Now", () => {
     expect(document.body.textContent).not.toMatch(/\blive\b/i);
   });
 
-  it("says so when there is no Claude folder", async () => {
-    mount(snap({ watching: false }));
+  it("says so when there is no Claude folder, with the one way out: Settings, on Claude folder", async () => {
+    localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "now" }));
+    const backend = new MockBackend();
+    const info = backend.boot();
+    if (info.config) info.config.dirExists = false;
+    backend.now.push(snap({ watching: false }));
+    setBackend(backend);
+    render(
+      <AtlasProvider>
+        <App />
+      </AtlasProvider>,
+    );
     expect(await screen.findByRole("heading", { level: 2, name: "No Claude folder found" })).toBeInTheDocument();
+    const main = screen.getByRole("main");
+    expect(within(main).getAllByRole("button")).toHaveLength(1);
+    await act(async () => within(main).getByRole("button", { name: "Open Settings" }).click());
+    expect(await screen.findByRole("button", { name: "Claude folder" })).toHaveAttribute("aria-current", "true");
+  });
+
+  it("a Claude folder that is there but empty is not a missing folder: no sessions yet", async () => {
+    // The engine watches nothing in both cases; only the folder itself tells them apart.
+    mount(snap({ watching: false }));
+    expect(await screen.findByRole("heading", { level: 2, name: "No sessions yet" })).toBeInTheDocument();
+    expect(screen.queryByText(/No Claude folder found/)).toBeNull();
+    expect(within(screen.getByRole("main")).queryByRole("button")).toBeNull();
   });
 
   it("draws the same row for one running chat as for thirty", async () => {

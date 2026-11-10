@@ -209,55 +209,6 @@
   }
 }
 
-/* ---- Nothing running --------------------------------------------------------------- */
-
-.now-quiet {
-  flex: 1 1 0;
-  /* It takes the room the lists leave, and keeps this much when they leave none (the page scrolls). */
-  min-height: 240px;
-  isolation: isolate;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 32px;
-  text-align: center;
-}
-
-.now-quiet > :not(svg) {
-  position: relative;
-}
-
-.now-quiet .now-chips {
-  justify-content: center;
-}
-
-.now-quiet-tile {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: var(--r-card);
-  border: 1px solid var(--line);
-  background: var(--bg);
-  color: var(--accent-text);
-}
-
-.now-card .now-quiet-title,
-.now-quiet .now-quiet-title {
-  margin: 6px 0 0;
-  max-width: 32ch;
-  overflow-wrap: anywhere;
-}
-
-.now-quiet-when {
-  margin: 0;
-  font-size: 14px;
-  color: var(--ink-2);
-}
-
 /* ---- A running chat ---------------------------------------------------------------- */
 
 /* One 72 px row: the chat and where it runs, what it is doing now, its tokens, its clock. The

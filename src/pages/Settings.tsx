@@ -12,6 +12,7 @@ import { describeSource, formatBytes } from "../lib/labels";
 import { longDate } from "../lib/dashboardModel";
 import { agoText } from "../lib/historyModel";
 import { plural } from "../lib/usage";
+import { rememberSettingsSection, savedSettingsSection } from "../lib/settingsSection";
 import { useFetched, useUsageStatus } from "../lib/useUsage";
 import { useWidth } from "../lib/useWidth";
 import { checkForUpdate, startInstall, useUpdate } from "../lib/updateStore";
@@ -48,14 +49,9 @@ function Path({ children }: { children: string }) {
 }
 
 // The section last looked at, so Settings reopens where you left it (kept like the Toolkit tab).
-const SECTION_KEY = "atlas.settings.section";
 function savedSection(): SectionId {
-  try {
-    const saved = window.localStorage.getItem(SECTION_KEY);
-    return SECTIONS.find((s) => s.id === saved)?.id ?? "appearance";
-  } catch {
-    return "appearance";
-  }
+  const saved = savedSettingsSection();
+  return SECTIONS.find((s) => s.id === saved)?.id ?? "appearance";
 }
 
 /** Fewer / more with the number between. Steps of ten, never outside the range. */
@@ -236,11 +232,7 @@ export function Settings() {
   const [active, setActiveState] = useState<SectionId>(savedSection);
   const setActive = (id: SectionId) => {
     setActiveState(id);
-    try {
-      window.localStorage.setItem(SECTION_KEY, id);
-    } catch {
-      // the section just is not remembered
-    }
+    rememberSettingsSection(id);
   };
   const [confirmRebuild, setConfirmRebuild] = useState(false);
   const [busy, setBusy] = useState<"changed" | "full" | null>(null);
