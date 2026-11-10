@@ -1807,9 +1807,10 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
   cursor: pointer;
 }
 
+/* The track reads at 0 % (--raised on a card was 1.03:1 in Light) and stays quieter than the arc. */
 .ring-track {
   fill: none;
-  stroke: var(--raised);
+  stroke: var(--line-strong);
 }
 .ring-arc {
   fill: none;
