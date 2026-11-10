@@ -1,16 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../App";
 import { AtlasProvider } from "../../state/AtlasProvider";
 import { resetSetupStore } from "../../state/setupStore";
-import { resetLibraryStore } from "../../state/libraryStore";
-import { resetToasts } from "../../state/toastStore";
+import { installPlugin, removeItem, resetLibraryStore } from "../../state/libraryStore";
+import { dismissPageToasts, resetToasts } from "../../state/toastStore";
 import { closePalette } from "../../state/paletteStore";
 import { setBackend } from "../../lib/ipc";
 import { MockBackend } from "../../lib/mock";
 import { clearPendingToolkitItem, clearPendingToolkitTab } from "../../lib/nav";
-import { COMMAND_SOURCE, NO_CLI } from "../../lib/library";
+import { COMMAND_SOURCE, NO_CLI, OFFLINE } from "../../lib/library";
+import { looksOffline } from "./LibraryTab";
 
 // CodeMirror needs real layout; the read-only viewer is checked in the running app.
 vi.mock("../../lib/codemirror", () => ({
@@ -132,6 +133,35 @@ describe("Library tab: opening", () => {
     expect(screen.getByText("Check your connection and press Refresh.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
   });
+
+  it("a failure that is not the network never tells anyone to check their connection (K3)", async () => {
+    const why = "Claude Code's plugin list came back empty, so Atlas kept the list it had.";
+    mount((b) => {
+      b.library.offline = true; // nothing saved yet, so the page (not a toast) has to say it
+      b.library.libraryRefresh = async () => {
+        throw new Error(why);
+      };
+    });
+    await openLibraryTab();
+    expect(await screen.findByText("The Library could not load")).toBeInTheDocument();
+    expect(screen.queryByText(/connection/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Atlas could not reach the plugin catalog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+    // The engine's own words are one click away, never on the surface.
+    expect(screen.queryByText(why)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(screen.getByText(why)).toBeInTheDocument();
+  });
+
+  it("knows the network from the rest by the reason's own words", () => {
+    expect(looksOffline(OFFLINE)).toBe(true);
+    expect(looksOffline("getaddrinfo ENOTFOUND api.github.com")).toBe(true);
+    expect(looksOffline("Atlas could not reach GitHub. Check your connection.")).toBe(true);
+    expect(looksOffline(null)).toBe(false);
+    expect(looksOffline(NO_CLI)).toBe(false);
+    expect(looksOffline("Claude Code's command took too long. Nothing was changed by Atlas; check the plugin list before trying again.")).toBe(false);
+    expect(looksOffline("Another Atlas change is in progress. Please try again in a moment.")).toBe(false);
+  });
 });
 
 describe("Library tab: installing (D20, D24, D19 words)", () => {
@@ -239,6 +269,38 @@ describe("Library tab: installing (D20, D24, D19 words)", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Install 2 items" }));
     await waitFor(() => expect(lib().installed.map((r) => r.name).sort()).toEqual(["reviewer", "tidy-notes"]));
     expect(lib().calls).toContain("items:tidy-notes,reviewer");
+  });
+
+  it("removing a copied item promises only what is true: no Undo in History (K5)", async () => {
+    mount();
+    await openLibraryTab();
+    await screen.findByRole("searchbox", { name: "Search plugins and skills" });
+    const row = { kind: "item", id: "skill:tidy-notes", name: "tidy-notes", itemKind: "skill", enabled: null, version: null, path: null, repo: "owner/tools", backupId: "b-9", changed: false } as const;
+    lib().installed.push({ ...row });
+    await act(async () => void (await removeItem({ ...row })));
+    expect(lib().calls).toContain("remove:b-9");
+    expect(await screen.findByText("Removed tidy-notes. Its files are in the trash, and History keeps the last copy.")).toBeInTheDocument();
+    expect(screen.queryByText(/Undo it in History/)).not.toBeInTheDocument();
+  });
+
+  it("the notice that the installed files differ from the checked ones stays when the page changes (K2)", async () => {
+    mount();
+    await openLibraryTab();
+    await userEvent.click(await installBtn("pdf-tools"));
+    await waitFor(() => expect(lib().installed).toHaveLength(1));
+    expect(await screen.findByText("Installed pdf-tools.")).toBeInTheDocument();
+    // A clean install's toast belongs to the Library and leaves with it.
+    act(() => dismissPageToasts());
+    expect(screen.queryByText("Installed pdf-tools.")).not.toBeInTheDocument();
+
+    const keep = lib().libraryInstallPlugin.bind(lib());
+    lib().libraryInstallPlugin = async (id, token) => ({ ...(await keep(id, token)), changed: true });
+    const d = await lib().libraryInspectPlugin("frontend-design@anthropic-plugin-directory");
+    await act(async () => void (await installPlugin("frontend-design@anthropic-plugin-directory", "frontend-design", d.token)));
+    const notice = "Installed frontend-design. Its files differ from the ones Atlas checked.";
+    expect(await screen.findByText(notice)).toBeInTheDocument();
+    act(() => dismissPageToasts());
+    expect(screen.getByText(notice)).toBeInTheDocument();
   });
 
   it("a marketplace link lists its plugins and adds only the marketplace", async () => {
