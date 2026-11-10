@@ -223,6 +223,26 @@ describe("Library tab: installed plugins", () => {
     expect(await screen.findByRole("button", { name: "Uninstall pdf-tools" })).toBeInTheDocument();
     expect(screen.queryByText("Uninstall pdf-tools?")).not.toBeInTheDocument();
   });
+
+  it("offers Undo after a removal and an install, and Undo brings the plugin back or takes it out", async () => {
+    mount();
+    await openLibraryTab();
+    await userEvent.click(await installBtn("pdf-tools"));
+    const sheet = await screen.findByRole("dialog");
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Install" }));
+    await waitFor(() => expect(lib().installed).toHaveLength(1));
+    await userEvent.click(await screen.findByRole("button", { name: "Uninstall pdf-tools" }));
+    await userEvent.click(screen.getByRole("button", { name: "Uninstall" }));
+    await waitFor(() => expect(lib().installed).toHaveLength(0));
+    // The toast no longer sends people to History: it carries the Undo itself.
+    expect(screen.queryByText(/Undo it in History/)).not.toBeInTheDocument();
+    const toast = await screen.findByText("Removed pdf-tools.");
+    expect(toast).toBeInTheDocument();
+    const undos = await screen.findAllByRole("button", { name: "Undo" });
+    await userEvent.click(undos[undos.length - 1]);
+    await waitFor(() => expect(lib().installed).toHaveLength(1));
+    expect(lib().calls.some((c) => c.startsWith("undo:"))).toBe(true);
+  });
 });
 
 describe("Quick jump: Library", () => {

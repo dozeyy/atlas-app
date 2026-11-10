@@ -9,7 +9,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -103,56 +103,107 @@ impl Exec for RealExec {
             }
         }
         crate::proc::quiet(&mut cmd);
-        let mut child = cmd.spawn().map_err(|e| CliError::Spawn(format!("Could not start Claude Code's command: {e}")))?;
-        let out = child.stdout.take();
-        let err = child.stderr.take();
-        let t_out = std::thread::spawn(move || read_capped(out, STDOUT_CAP));
-        let t_err = std::thread::spawn(move || read_capped(err, 64 * 1024));
-        let start = Instant::now();
-        let mut failure: Option<CliError> = None;
-        let code = loop {
-            match child.try_wait() {
-                Ok(Some(s)) => break s.code().unwrap_or(-1),
-                Ok(None) if start.elapsed() > req.timeout => {
-                    failure = Some(CliError::TimedOut);
-                    break -1;
-                }
-                Ok(None) => std::thread::sleep(Duration::from_millis(25)),
-                Err(e) => {
-                    failure = Some(CliError::Spawn(e.to_string()));
-                    break -1;
-                }
-            }
-            // A reader that hit the cap has stopped reading: the child would block, so stop it.
-            if t_out.is_finished() && child.try_wait().ok().flatten().is_none() {
-                failure = Some(CliError::TooMuch);
-                break -1;
-            }
-        };
-        if failure.is_some() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        let (stdout, over) = t_out.join().unwrap_or_default();
-        let (stderr, _) = t_err.join().unwrap_or_default();
-        if let Some(f) = failure {
-            return Err(f);
-        }
-        if over {
-            return Err(CliError::TooMuch);
-        }
-        Ok(RawOutput { code, stdout, stderr })
+        crate::proc::lead_a_group(&mut cmd);
+        let child = cmd.spawn().map_err(|e| CliError::Spawn(format!("Could not start Claude Code's command: {e}")))?;
+        supervise(child, req.timeout, STDOUT_CAP)
     }
 }
 
-/// (text, hit the cap).
-fn read_capped(r: Option<impl Read>, cap: usize) -> (String, bool) {
-    let Some(r) = r else { return (String::new(), false) };
+/// How long a stopped command's whole tree gets to be gone before Atlas says it could not stop it.
+const TREE_GONE: Duration = Duration::from_secs(10);
+
+/// Watch a started child: read its output (capped), enforce the time limit, and make sure that when
+/// this returns nothing it started is still running. A timeout or too much output ends the whole
+/// tree (the `.cmd` shim's `node`, not only `cmd.exe`), and the caller, which holds the write
+/// lock and the backup, only gets control back once the tree is gone.
+fn supervise(mut child: std::process::Child, timeout: Duration, stdout_cap: usize) -> Result<RawOutput, CliError> {
+    let Some(tree) = crate::proc::Tree::adopt(&child) else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(CliError::Spawn("Atlas could not keep Claude Code's command under control, so it did not run it.".into()));
+    };
+    let out = child.stdout.take();
+    let err = child.stderr.take();
+    // Set by the stdout reader when the output went past the cap (and only then).
+    let over = Arc::new(AtomicBool::new(false));
+    let over_out = over.clone();
+    let t_out = std::thread::spawn(move || read_capped(out, stdout_cap, Some(&over_out)));
+    // stderr keeps what fits and drains the rest, so a noisy command never blocks on a full pipe.
+    let t_err = std::thread::spawn(move || read_capped(err, 64 * 1024, None));
+    let start = Instant::now();
+    let mut failure: Option<CliError> = None;
+    let code = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s.code().unwrap_or(-1),
+            Ok(None) if over.load(Ordering::SeqCst) => {
+                // The reader stopped at the cap: the child would block on a full pipe, so stop it.
+                failure = Some(CliError::TooMuch);
+                break -1;
+            }
+            Ok(None) if start.elapsed() > timeout => {
+                failure = Some(CliError::TimedOut);
+                break -1;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(25)),
+            Err(e) => {
+                failure = Some(CliError::Spawn(e.to_string()));
+                break -1;
+            }
+        }
+    };
+    let gone = if failure.is_some() {
+        tree.kill_all();
+        let _ = child.kill();
+        let _ = child.wait();
+        tree.wait_gone(TREE_GONE)
+    } else {
+        // The command is done: anything it left running gets a moment, then is ended.
+        if !tree.wait_gone(Duration::from_secs(3)) {
+            tree.kill_all();
+        }
+        tree.wait_gone(TREE_GONE)
+    };
+    if !gone {
+        return Err(CliError::Spawn("Claude Code's command did not stop. Please check the plugin list before trying again.".into()));
+    }
+    let stdout = t_out.join().unwrap_or_default();
+    let stderr = t_err.join().unwrap_or_default();
+    if let Some(f) = failure {
+        return Err(f);
+    }
+    if over.load(Ordering::SeqCst) {
+        return Err(CliError::TooMuch);
+    }
+    Ok(RawOutput { code, stdout, stderr })
+}
+
+/// Read up to `cap` bytes. Past the cap: with `over` (stdout), flag it and stop reading; without
+/// (stderr), keep reading and throw the rest away so the writer never blocks.
+fn read_capped(r: Option<impl Read>, cap: usize, over: Option<&AtomicBool>) -> String {
+    let Some(mut r) = r else { return String::new() };
     let mut buf = Vec::new();
-    let _ = r.take(cap as u64 + 1).read_to_end(&mut buf);
-    let over = buf.len() > cap;
-    buf.truncate(cap);
-    (String::from_utf8_lossy(&buf).into_owned(), over)
+    let mut chunk = [0u8; 8192];
+    loop {
+        match r.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                if buf.len() < cap {
+                    let take = n.min(cap - buf.len());
+                    buf.extend_from_slice(&chunk[..take]);
+                    if take < n
+                        && let Some(o) = over
+                    {
+                        o.store(true, Ordering::SeqCst);
+                        break;
+                    }
+                } else if let Some(o) = over {
+                    o.store(true, Ordering::SeqCst);
+                    break;
+                }
+            }
+        }
+    }
+    String::from_utf8_lossy(&buf).into_owned()
 }
 
 /// What a plugin or marketplace command said.
@@ -443,6 +494,81 @@ pub(crate) mod tests {
     fn the_real_runner_only_starts_claude() {
         let req = Request { program: "notepad.exe".into(), args: vec![], config_dir: None, timeout: Duration::from_secs(1) };
         assert!(matches!(RealExec.run(&req), Err(CliError::Refused(_))));
+    }
+
+    // ---- supervise: the real process handling, with real (harmless) child processes ----
+
+    fn shell(script_win: &str, script_unix: &str) -> std::process::Child {
+        let _ = (script_win, script_unix);
+        #[cfg(windows)]
+        let mut c = {
+            let mut c = Command::new("cmd.exe");
+            c.args(["/c", script_win]);
+            c
+        };
+        #[cfg(not(windows))]
+        let mut c = {
+            let _ = script_win;
+            let mut c = Command::new("sh");
+            c.args(["-c", script_unix]);
+            c
+        };
+        c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        crate::proc::quiet(&mut c);
+        crate::proc::lead_a_group(&mut c);
+        c.spawn().unwrap()
+    }
+
+    #[test]
+    fn a_timeout_ends_the_whole_tree_before_it_returns() {
+        // cmd.exe starts ping (the .cmd-shim shape: the process Atlas starts is not the one doing the work).
+        let child = shell("ping -n 30 127.0.0.1 >nul", "sleep 30 & wait");
+        let t = Instant::now();
+        let r = supervise(child, Duration::from_millis(700), STDOUT_CAP);
+        assert!(matches!(r, Err(CliError::TimedOut)), "{r:?}");
+        assert!(t.elapsed() < Duration::from_secs(15), "it did not wait for the 30 s grandchild");
+    }
+
+    #[test]
+    fn stdout_closing_early_is_not_too_much_output() {
+        #[cfg(windows)]
+        let child = {
+            let mut c = Command::new("powershell.exe");
+            c.args(["-NoProfile", "-Command", "[Console]::Out.Write('{\"ok\":true}'); [Console]::Out.Close(); Start-Sleep -Milliseconds 800"]);
+            c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+            crate::proc::quiet(&mut c);
+            crate::proc::lead_a_group(&mut c);
+            c.spawn().unwrap()
+        };
+        #[cfg(not(windows))]
+        let child = shell("", "printf '{\"ok\":true}'; exec 1>&-; sleep 1");
+        let r = supervise(child, Duration::from_secs(60), STDOUT_CAP).expect("a command that closed stdout and then finished is a success");
+        assert_eq!(r.code, 0);
+        assert!(r.stdout.contains("ok"), "{}", r.stdout);
+    }
+
+    #[test]
+    fn noisy_stderr_does_not_block_the_command() {
+        // ~240 KB on stderr, far past the 64 KB kept: the command must still finish at once.
+        let child = shell(
+            "for /L %i in (1,1,3000) do @echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx 1>&2",
+            "yes xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | head -c 300000 >&2",
+        );
+        let t = Instant::now();
+        let r = supervise(child, Duration::from_secs(60), STDOUT_CAP).expect("success");
+        assert_eq!(r.code, 0);
+        assert_eq!(r.stderr.len(), 64 * 1024, "kept the first 64 KB and drained the rest");
+        assert!(t.elapsed() < Duration::from_secs(30));
+    }
+
+    #[test]
+    fn stdout_past_the_cap_is_too_much_and_the_tree_ends() {
+        let child = shell(
+            "for /L %i in (1,1,3000) do @echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "yes xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | head -c 300000",
+        );
+        let r = supervise(child, Duration::from_secs(60), 1000);
+        assert!(matches!(r, Err(CliError::TooMuch)), "{r:?}");
     }
 
     /// Every place Atlas builds a `Command` goes through `proc::quiet`, and the library starts

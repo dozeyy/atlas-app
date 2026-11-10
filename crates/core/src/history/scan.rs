@@ -267,7 +267,10 @@ pub fn scan_marked(store: &Store, tracked: &[Tracked], claude_json: Option<&Path
                 continue;
             }
             let new_text = text_of(&s.bytes);
+            // A Library install or removal says so in plain words instead of the raw diff.
+            let label = if baseline { None } else { marks.label(&t.key, &s.sha) };
             let summary = match (&old_text, &new_text) {
+                _ if label.is_some() => label.unwrap_or_default().to_string(),
                 (Some(o), Some(n)) => diff::one_line(&t.path.to_string_lossy(), Some(o), n),
                 _ => "Changed.".to_string(),
             };

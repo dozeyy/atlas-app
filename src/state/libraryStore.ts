@@ -162,7 +162,11 @@ export async function installPlugin(pluginId: string, name: string, token: strin
   try {
     const out = await getBackend().libraryInstallPlugin(pluginId, token);
     await reloadInstalled();
-    pushToast({ message: out.changed ? `Installed ${name}. Its files differ from the ones Atlas checked.` : `Installed ${name}.`, tone: out.changed ? "info" : "success" });
+    pushToast({
+      message: out.changed ? `Installed ${name}. Its files differ from the ones Atlas checked.` : `Installed ${name}.`,
+      tone: out.changed ? "info" : "success",
+      action: { label: "Undo", onClick: async () => void (await undoPlugin(out.backupId, name)) },
+    });
     return out;
   } catch (e) {
     dropCheck(pluginId);
@@ -177,15 +181,28 @@ export async function uninstallPlugin(id: string, name: string): Promise<boolean
   if (state.busy[id]) return false;
   mark(id, "removing");
   try {
-    await getBackend().libraryUninstallPlugin(id);
+    const backupId = await getBackend().libraryUninstallPlugin(id);
     await reloadInstalled();
-    pushToast({ message: `Removed ${name}. Undo it in History.`, tone: "success" });
+    pushToast({ message: `Removed ${name}.`, tone: "success", action: { label: "Undo", onClick: async () => void (await undoPlugin(backupId, name)) } });
     return true;
   } catch (e) {
     pushToast({ message: errorText(e, "Atlas could not remove that. Nothing changed."), tone: "error" });
     return false;
   } finally {
     mark(id, null);
+  }
+}
+
+/** Undo a plugin install or removal: an install is taken out, a removal comes back at the same version. */
+export async function undoPlugin(backupId: string, name: string): Promise<boolean> {
+  try {
+    const done = await getBackend().libraryUndo(backupId);
+    await reloadInstalled();
+    pushToast({ message: done.did === "uninstall" ? `Took ${name} out again.` : `Put ${name} back.`, tone: "success" });
+    return true;
+  } catch (e) {
+    pushToast({ message: errorText(e, "Atlas could not undo that. Nothing changed."), tone: "error" });
+    return false;
   }
 }
 

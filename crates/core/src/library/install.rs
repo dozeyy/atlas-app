@@ -109,6 +109,14 @@ pub fn inspect_plugin(base: &Path, name: &str) -> Inspected {
     Inspected { shaped, check }
 }
 
+/// A plugin Atlas can't read (another git host, an unusable branch name): nothing inside, one
+/// plain flag, so the install is the deliberate two-click path and nothing is compared after it
+/// (spec D20).
+pub fn inspect_unchecked(name: &str) -> Inspected {
+    let shaped = Shaped { shape: "plugin".into(), name: name.to_string(), description: String::new(), plugins: Vec::new(), items: Vec::new(), not_installed: Vec::new() };
+    Inspected { shaped, check: check::unchecked() }
+}
+
 // ---------------------------------------------------------------------------
 // Plugins (through Claude Code's command)
 // ---------------------------------------------------------------------------
@@ -166,6 +174,33 @@ fn with_snapshot<T>(ctx: &Ctx, label: &str, kind: &str, name: &str, op: impl FnO
     (id, r, before != after)
 }
 
+/// The same commit (a short hash is a prefix of the long one). Both must be known.
+pub fn same_commit(a: &str, b: &str) -> bool {
+    let (a, b) = (a.trim().to_ascii_lowercase(), b.trim().to_ascii_lowercase());
+    !a.is_empty() && (a == b || (a.len() >= 7 && b.len() >= 7 && (a.starts_with(&b) || b.starts_with(&a))))
+}
+
+/// What was checked has to be what the catalog lists now (review finding 3): a refresh between the
+/// look and the click can point the plugin at another commit, branch or place, and Claude Code
+/// would install that unchecked one. Differing listings are refused, never installed.
+pub fn same_listing(checked: &Source, now: Option<&Source>) -> Result<(), String> {
+    match now {
+        Some(n) if n == checked => Ok(()),
+        Some(_) => Err("This plugin was updated in the catalog since you checked it. Check it again first.".into()),
+        None => Err("That plugin is not in the catalog. Press Refresh.".into()),
+    }
+}
+
+/// What Atlas downloads to look at, so that it is what Claude Code installs (review finding 2):
+/// the pinned commit, else the named branch or tag (never HEAD when a ref is listed: a repo's
+/// default branch can hold something else), else HEAD.
+pub fn fetch_target(source: &Source) -> Option<&str> {
+    match source {
+        Source::Github { sha, git_ref, .. } => Some(sha.as_deref().or(git_ref.as_deref()).unwrap_or("HEAD")),
+        _ => None,
+    }
+}
+
 /// Install `id` for the user through Claude Code's command.
 pub fn install_plugin(ctx: &Ctx, runner: &Runner, id: &str, source: &Source, checked: &Checked) -> Result<PluginOutcome, String> {
     if let Some(m) = blocked(source) {
@@ -176,6 +211,18 @@ pub fn install_plugin(ctx: &Ctx, runner: &Runner, id: &str, source: &Source, che
     }
     crate::fsutil::check_write_allowed(&ctx.root.dir).map_err(|e| e.to_string())?;
     let _guard = ctx.lock()?;
+    install_plugin_locked(ctx, runner, id, source, checked)
+}
+
+/// `install_plugin` for a caller that already holds the write lock (it is not re-entrant).
+pub fn install_plugin_locked(ctx: &Ctx, runner: &Runner, id: &str, source: &Source, checked: &Checked) -> Result<PluginOutcome, String> {
+    if let Some(m) = blocked(source) {
+        return Err(m.into());
+    }
+    if !super::cli::valid_plugin_id(id) {
+        return Err("That plugin name can't be used.".into());
+    }
+    crate::fsutil::check_write_allowed(&ctx.root.dir).map_err(|e| e.to_string())?;
     if ledger::user_install(&ctx.root.dir, id).is_some() {
         return Err("That plugin is already installed.".into());
     }
@@ -198,10 +245,26 @@ pub fn install_plugin(ctx: &Ctx, runner: &Runner, id: &str, source: &Source, che
             return Err(e);
         }
     };
-    sw::tag_backup(ctx.backups, &backup_id, "library", &format!("Installed {name} from the Library"));
+    let landed_sha = landed.git_sha.clone().unwrap_or_default();
+    let installed_sha = if landed_sha.is_empty() { checked.sha.to_string() } else { landed_sha.clone() };
+    sw::tag_library_op(
+        ctx.backups,
+        &backup_id,
+        &format!("Installed {name} from the Library"),
+        sw::LibOp { op: "install".into(), id: id.into(), repo: checked.repo.into(), sha: installed_sha, tree_hash: checked.tree_hash.into(), undone: false },
+    );
     let hash = landed.install_path.as_deref().map(Path::new).filter(|p| p.is_dir()).map(check::tree_hash);
     // Nothing was checked (files Atlas can't read): nothing to compare.
-    let changed = !checked.tree_hash.is_empty() && hash.as_deref() != Some(checked.tree_hash);
+    let files_differ = !checked.tree_hash.is_empty() && hash.as_deref() != Some(checked.tree_hash);
+    // The commit that landed is not the one that was checked (a branch moved in between).
+    let commit_differs = !checked.sha.is_empty() && !landed_sha.is_empty() && !same_commit(&landed_sha, checked.sha);
+    let changed = files_differ || commit_differs;
+    if commit_differs {
+        // Claude Code installed a commit nobody looked at (a branch moved after the check): take
+        // it out again rather than leave it running. Both steps stay in History.
+        let _ = uninstall_plugin_locked(ctx, runner, id);
+        return Err("Claude Code installed a newer version than the one Atlas checked, so Atlas took it out again. Check it again and try once more.".into());
+    }
     let entry = LedgerEntry {
         kind: "plugin".into(),
         id: id.into(),
@@ -226,9 +289,28 @@ pub fn uninstall_plugin(ctx: &Ctx, runner: &Runner, id: &str) -> Result<String, 
     }
     crate::fsutil::check_write_allowed(&ctx.root.dir).map_err(|e| e.to_string())?;
     let _guard = ctx.lock()?;
-    if ledger::user_install(&ctx.root.dir, id).is_none() {
-        return Err("That plugin is not installed.".into());
+    uninstall_plugin_locked(ctx, runner, id)
+}
+
+/// `uninstall_plugin` for a caller that already holds the write lock.
+pub fn uninstall_plugin_locked(ctx: &Ctx, runner: &Runner, id: &str) -> Result<String, String> {
+    if !super::cli::valid_plugin_id(id) {
+        return Err("That plugin name can't be used.".into());
     }
+    crate::fsutil::check_write_allowed(&ctx.root.dir).map_err(|e| e.to_string())?;
+    let Some(rec) = ledger::user_install(&ctx.root.dir, id) else {
+        return Err("That plugin is not installed.".into());
+    };
+    // What Undo needs to bring it back as it was, read before it goes.
+    let prior = ledger::find(ctx.data, "plugin", id);
+    let op = sw::LibOp {
+        op: "uninstall".into(),
+        id: id.into(),
+        repo: prior.as_ref().map(|p| p.repo.clone()).unwrap_or_default(),
+        sha: rec.git_sha.clone().or_else(|| prior.as_ref().map(|p| p.sha.clone()).filter(|s| !s.is_empty())).unwrap_or_default(),
+        tree_hash: prior.as_ref().map(|p| p.tree_hash.clone()).unwrap_or_default(),
+        undone: false,
+    };
     let name = id.split('@').next().unwrap_or(id).to_string();
     let (backup_id, result, changed_files) = with_snapshot(ctx, &format!("uninstall-plugin-{name}"), "plugin", id, || {
         let out = runner.uninstall(id).map_err(cli_words)?;
@@ -244,9 +326,91 @@ pub fn uninstall_plugin(ctx: &Ctx, runner: &Runner, id: &str) -> Result<String, 
         }
         return Err(e);
     }
-    sw::tag_backup(ctx.backups, &backup_id, "library", &format!("Uninstalled {name} from the Library"));
+    sw::tag_library_op(ctx.backups, &backup_id, &format!("Uninstalled {name} from the Library"), op);
     let _ = ledger::remove(ctx.data, |e| e.kind == "plugin" && e.id == id);
     Ok(backup_id)
+}
+
+/// What an Undo of a Library plugin change did.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoDone {
+    pub id: String,
+    pub name: String,
+    /// What was done now: `uninstall` (undoing an install) or `install` (undoing an uninstall).
+    pub did: String,
+    /// The backup of this undo (it can itself be undone).
+    pub backup_id: String,
+}
+
+/// Undo a Library plugin install or removal (D21), through the same write path: undoing an install
+/// uninstalls the plugin (only while it is still the commit that was installed); undoing an
+/// uninstall installs it again at the commit it had, and takes it out again if what lands is any
+/// other commit. `source_now` is the catalog's listing of the plugin, when it has one.
+pub fn undo_plugin_backup(ctx: &Ctx, runner: &Runner, backup_id: &str, source_now: Option<&Source>) -> Result<UndoDone, String> {
+    crate::fsutil::check_write_allowed(&ctx.root.dir).map_err(|e| e.to_string())?;
+    let _guard = ctx.lock()?;
+    undo_plugin_backup_locked(ctx, runner, backup_id, source_now)
+}
+
+/// `undo_plugin_backup` for a caller that already holds the write lock.
+pub fn undo_plugin_backup_locked(ctx: &Ctx, runner: &Runner, backup_id: &str, source_now: Option<&Source>) -> Result<UndoDone, String> {
+    let op = sw::library_op(ctx.backups, backup_id).ok_or("That change can't be undone from here.")?;
+    if op.undone {
+        return Err("That change was already undone.".into());
+    }
+    let name = op.id.split('@').next().unwrap_or(&op.id).to_string();
+    let done = match op.op.as_str() {
+        "install" => {
+            let Some(rec) = ledger::user_install(&ctx.root.dir, &op.id) else {
+                return Err("That plugin is already gone.".into());
+            };
+            // Only the commit that was installed is taken out: an update since is left alone.
+            if let Some(now) = rec.git_sha.as_deref().filter(|s| !s.is_empty())
+                && !op.sha.is_empty()
+                && !same_commit(now, &op.sha)
+            {
+                return Err("That plugin has been updated since you installed it, so Atlas left it alone.".into());
+            }
+            let bid = uninstall_plugin_locked(ctx, runner, &op.id)?;
+            sw::tag_library_op(
+                ctx.backups,
+                &bid,
+                &format!("Uninstalled {name} (undo of an install)"),
+                sw::LibOp { op: "uninstall".into(), id: op.id.clone(), repo: op.repo.clone(), sha: op.sha.clone(), tree_hash: op.tree_hash.clone(), undone: false },
+            );
+            UndoDone { id: op.id.clone(), name, did: "uninstall".into(), backup_id: bid }
+        }
+        "uninstall" => {
+            if ledger::user_install(&ctx.root.dir, &op.id).is_some() {
+                return Err("That plugin is already installed.".into());
+            }
+            let source = source_now.cloned().unwrap_or(Source::Other { url: String::new() });
+            // A pinned listing that moved on can't give the old commit back.
+            if let Source::Github { sha: Some(s), .. } = &source
+                && !op.sha.is_empty()
+                && !same_commit(s, &op.sha)
+            {
+                return Err("This plugin has been updated since you removed it, so Atlas can't bring back that exact version. Find it in the Library to check the new one.".into());
+            }
+            let out = install_plugin_locked(ctx, runner, &op.id, &source, &Checked { repo: &op.repo, sha: &op.sha, tree_hash: &op.tree_hash })?;
+            if out.changed {
+                // Not what was removed: take it out again rather than keep an unchecked commit.
+                let _ = uninstall_plugin_locked(ctx, runner, &op.id);
+                return Err("What Claude Code installed is not the version you removed, so Atlas took it out again. Find it in the Library to check the current one.".into());
+            }
+            sw::tag_library_op(
+                ctx.backups,
+                &out.backup_id,
+                &format!("Installed {name} (undo of a removal)"),
+                sw::LibOp { op: "install".into(), id: op.id.clone(), repo: op.repo.clone(), sha: op.sha.clone(), tree_hash: op.tree_hash.clone(), undone: false },
+            );
+            UndoDone { id: op.id.clone(), name, did: "install".into(), backup_id: out.backup_id }
+        }
+        _ => return Err("That change can't be undone from here.".into()),
+    };
+    sw::mark_library_undone(ctx.backups, backup_id);
+    Ok(done)
 }
 
 /// Turn an installed plugin on or off.
@@ -554,7 +718,7 @@ mod tests {
         let fake = fake_claude(e.dir.clone(), TREE);
         let runner = Runner::with_exec("claude".into(), &e.root, fake.clone());
         let good = tree_hash_of(TREE);
-        let o = install_plugin(&e.ctx(), &runner, "fd@mk", &Source::Github { repo: "o/r".into(), sha: Some("abc".into()), path: None }, &Checked { repo: "o/r", sha: "abc", tree_hash: &good }).unwrap();
+        let o = install_plugin(&e.ctx(), &runner, "fd@mk", &Source::Github { repo: "o/r".into(), sha: Some("abc".into()), path: None, git_ref: None }, &Checked { repo: "o/r", sha: "abc", tree_hash: &good }).unwrap();
         assert!(!o.changed);
         assert_eq!(fake.log(), ["plugin install fd@mk --scope user --json"]);
         // The backup holds the three files as they were.
@@ -732,6 +896,135 @@ mod tests {
         let items = picks(repo.path());
         let res = install_items(&e.ctx(), repo.path(), &items, &Origin { repo: "o/r", sha: "abc", tree_hash: "h" }, None).unwrap();
         assert!(res.iter().all(|r| r.ok));
+    }
+
+    fn gh(sha: &str) -> Source {
+        Source::Github { repo: "o/r".into(), sha: Some(sha.into()), path: None, git_ref: None }
+    }
+
+    #[test]
+    fn a_listing_that_moved_since_the_check_is_refused() {
+        // Review finding 3: the sha (or ref) the catalog lists now must be the one that was checked.
+        assert!(same_listing(&gh("aaaaaaa"), Some(&gh("aaaaaaa"))).is_ok());
+        let err = same_listing(&gh("aaaaaaa"), Some(&gh("bbbbbbb"))).unwrap_err();
+        assert!(err.contains("updated in the catalog"), "{err}");
+        let branch = Source::Github { repo: "o/r".into(), sha: None, path: None, git_ref: Some("payload".into()) };
+        assert!(same_listing(&gh("aaaaaaa"), Some(&branch)).is_err());
+        assert!(same_listing(&branch, Some(&branch)).is_ok());
+        assert!(same_listing(&gh("aaaaaaa"), None).is_err());
+        // Hostile fixture: a plugin listed at a branch that holds different files than HEAD. Atlas
+        // has to download that branch (what Claude Code installs), never HEAD.
+        let on_branch = Source::Github { repo: "o/r".into(), sha: None, path: None, git_ref: Some("payload".into()) };
+        assert_eq!(fetch_target(&on_branch), Some("payload"));
+        let bare = Source::Github { repo: "o/r".into(), sha: None, path: None, git_ref: None };
+        assert_eq!(fetch_target(&bare), Some("HEAD"));
+        assert_eq!(fetch_target(&gh("abc1234")), Some("abc1234"));
+        let both = Source::Github { repo: "o/r".into(), sha: Some("abc1234".into()), path: None, git_ref: Some("payload".into()) };
+        assert_eq!(fetch_target(&both), Some("abc1234"));
+        assert_eq!(fetch_target(&Source::Other { url: "x".into() }), None);
+        // A short hash is a prefix of the long one, and an unknown one never matches.
+        assert!(same_commit("0123456789abcdef", "0123456"));
+        assert!(!same_commit("0123456789abcdef", "0123457"));
+        assert!(!same_commit("", ""));
+    }
+
+    #[test]
+    fn a_library_install_has_one_labelled_history_row_that_undoes_by_uninstalling() {
+        let e = env();
+        put(&e.dir, "settings.json", br#"{"model":"x"}"#);
+        let fake = fake_claude(e.dir.clone(), TREE);
+        let runner = Runner::with_exec("claude".into(), &e.root, fake.clone());
+        let good = tree_hash_of(TREE);
+        let o = install_plugin(&e.ctx(), &runner, "fd@mk", &gh("abc"), &Checked { repo: "o/r", sha: "abc", tree_hash: &good }).unwrap();
+        let info = sw::list_backups_detailed(&e.backups, 5);
+        assert_eq!(info.len(), 1, "one row per install");
+        assert!(info[0].can_restore, "an install can be undone");
+        assert!(info[0].summary.as_deref().unwrap_or("").contains("Installed fd from the Library"), "{}", info[0].summary.clone().unwrap_or_default());
+        let op = sw::library_op(&e.backups, &o.backup_id).unwrap();
+        assert_eq!((op.op.as_str(), op.sha.as_str(), op.tree_hash.as_str()), ("install", "abc", good.as_str()));
+
+        let done = undo_plugin_backup(&e.ctx(), &runner, &o.backup_id, Some(&gh("abc"))).unwrap();
+        assert_eq!(done.did, "uninstall");
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_none());
+        // Undone once: it can't be undone twice, and the undo itself has its own row that can be undone.
+        assert!(undo_plugin_backup(&e.ctx(), &runner, &o.backup_id, None).unwrap_err().contains("already undone"));
+        let rows = sw::list_backups_detailed(&e.backups, 5);
+        assert_eq!(rows.len(), 2);
+        let first = rows.iter().find(|r| r.backup_id == o.backup_id).unwrap();
+        assert!(!first.can_restore && first.summary.as_deref().unwrap_or("").contains("(undone)"));
+        let undo_row = rows.iter().find(|r| r.backup_id == done.backup_id).unwrap();
+        assert!(undo_row.can_restore && undo_row.summary.as_deref().unwrap_or("").contains("undo of an install"), "{}", undo_row.summary.clone().unwrap_or_default());
+
+        // Undoing the removal brings the same commit back.
+        let back = undo_plugin_backup(&e.ctx(), &runner, &done.backup_id, Some(&gh("abc"))).unwrap();
+        assert_eq!(back.did, "install");
+        assert_eq!(ledger::user_install(&e.dir, "fd@mk").unwrap().git_sha.as_deref(), Some("abc"));
+        assert_eq!(fake.log().iter().filter(|l| l.starts_with("plugin install")).count(), 2);
+    }
+
+    #[test]
+    fn a_plain_uninstall_can_be_undone_and_a_moved_listing_blocks_it() {
+        let e = env();
+        let fake = fake_claude(e.dir.clone(), TREE);
+        let runner = Runner::with_exec("claude".into(), &e.root, fake.clone());
+        let good = tree_hash_of(TREE);
+        install_plugin(&e.ctx(), &runner, "fd@mk", &gh("abc"), &Checked { repo: "o/r", sha: "abc", tree_hash: &good }).unwrap();
+        let bid = uninstall_plugin(&e.ctx(), &runner, "fd@mk").unwrap();
+        let op = sw::library_op(&e.backups, &bid).unwrap();
+        assert_eq!((op.op.as_str(), op.sha.as_str(), op.repo.as_str()), ("uninstall", "abc", "o/r"));
+        // The catalog moved on: the old version can't be given back, nothing is installed.
+        let err = undo_plugin_backup(&e.ctx(), &runner, &bid, Some(&gh("def4567"))).unwrap_err();
+        assert!(err.contains("updated since you removed it"), "{err}");
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_none());
+        // Still listed at the same commit: it comes back.
+        undo_plugin_backup(&e.ctx(), &runner, &bid, Some(&gh("abc"))).unwrap();
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_some());
+        // Undoing it again while installed is refused.
+        assert!(undo_plugin_backup(&e.ctx(), &runner, &bid, Some(&gh("abc"))).is_err());
+    }
+
+    #[test]
+    fn undoing_a_removal_that_lands_another_commit_takes_it_out_again() {
+        let e = env();
+        let fake = fake_claude(e.dir.clone(), TREE);
+        let runner = Runner::with_exec("claude".into(), &e.root, fake.clone());
+        let good = tree_hash_of(TREE);
+        install_plugin(&e.ctx(), &runner, "fd@mk", &gh("abc"), &Checked { repo: "o/r", sha: "abc", tree_hash: &good }).unwrap();
+        let bid = uninstall_plugin(&e.ctx(), &runner, "fd@mk").unwrap();
+        // The removed version was another commit than the one Claude Code installs now (the fake lands "abc").
+        sw::tag_library_op(&e.backups, &bid, "x", sw::LibOp { op: "uninstall".into(), id: "fd@mk".into(), repo: "o/r".into(), sha: "1234567890".into(), tree_hash: good.clone(), undone: false });
+        let err = undo_plugin_backup(&e.ctx(), &runner, &bid, None).unwrap_err();
+        assert!(err.contains("took it out again"), "{err}");
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_none(), "no unchecked commit stays installed");
+    }
+
+    #[test]
+    fn undoing_an_install_leaves_an_updated_plugin_alone() {
+        let e = env();
+        let fake = fake_claude(e.dir.clone(), TREE);
+        let runner = Runner::with_exec("claude".into(), &e.root, fake.clone());
+        let good = tree_hash_of(TREE);
+        let o = install_plugin(&e.ctx(), &runner, "fd@mk", &gh("abc"), &Checked { repo: "o/r", sha: "abc", tree_hash: &good }).unwrap();
+        // Claude Code updated it to another commit since.
+        let p = e.dir.join("plugins/installed_plugins.json");
+        let t = fs::read_to_string(&p).unwrap().replace("\"abc\"", "\"zzz9999\"");
+        fs::write(&p, t).unwrap();
+        let err = undo_plugin_backup(&e.ctx(), &runner, &o.backup_id, None).unwrap_err();
+        assert!(err.contains("updated since you installed it"), "{err}");
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_some());
+    }
+
+    #[test]
+    fn a_commit_that_lands_other_than_the_checked_one_is_taken_out_again() {
+        let e = env();
+        let fake = fake_claude(e.dir.clone(), TREE);
+        let runner = Runner::with_exec("claude".into(), &e.root, fake);
+        let good = tree_hash_of(TREE);
+        // Same files, but the commit Claude Code landed ("abc") is not the one that was checked.
+        let err = install_plugin(&e.ctx(), &runner, "fd@mk", &gh("1234567890"), &Checked { repo: "o/r", sha: "1234567890", tree_hash: &good }).unwrap_err();
+        assert!(err.contains("took it out again"), "{err}");
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_none());
+        assert!(ledger::read(&e.data).entries.is_empty(), "nothing is recorded as installed");
     }
 
     #[test]

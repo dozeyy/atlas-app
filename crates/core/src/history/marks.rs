@@ -40,6 +40,8 @@ pub fn history_source(tag: &str) -> Option<&'static str> {
 pub struct Marks {
     /// `<file key>|<sha256>` -> source
     by_version: HashMap<String, &'static str>,
+    /// `<file key>|<sha256>` -> the sentence a Library change was tagged with
+    labels: HashMap<String, String>,
     /// (file key, source) of deletes: the key itself, or a folder holding it
     removed: Vec<(String, &'static str)>,
     /// (when, source) of the newest tagged change to `.claude.json`
@@ -68,6 +70,13 @@ impl Marks {
             }
             match p.saved_sha {
                 Some(sha) => {
+                    if src == SOURCE_LIBRARY
+                        && let Some(label) = p.summary.clone().filter(|l| !l.is_empty())
+                    {
+                        // Newest first: the same file contents can come back (install, remove,
+                        // install), and the latest sentence is the one that describes it now.
+                        m.labels.entry(format!("{key}|{sha}")).or_insert(label);
+                    }
                     m.by_version.insert(format!("{key}|{sha}"), src);
                 }
                 None if p.action == "delete" => m.removed.push((key, src)),
@@ -84,6 +93,11 @@ impl Marks {
     /// The source of the version of file `key` with this hash, when a tagged change made it.
     pub fn version(&self, key: &str, sha: &str) -> Option<&'static str> {
         self.by_version.get(&format!("{key}|{sha}")).copied()
+    }
+
+    /// The plain sentence a Library install or removal left on this exact version of a file.
+    pub fn label(&self, key: &str, sha: &str) -> Option<&str> {
+        self.labels.get(&format!("{key}|{sha}")).map(String::as_str)
     }
 
     /// The source of the delete that removed the item with this key.
@@ -108,6 +122,14 @@ mod tests {
         assert_eq!(m.removal("f:C:/c/skills/x/SKILL.md"), Some(SOURCE_MCP));
         assert_eq!(m.removal("f:C:/c/skills/x"), Some(SOURCE_MCP));
         assert_eq!(m.removal("f:C:/c/skills/xy/SKILL.md"), None);
+    }
+
+    #[test]
+    fn a_library_change_keeps_its_plain_sentence_for_that_exact_version() {
+        let mut m = Marks::default();
+        m.labels.insert("f:C:/c/settings.json|abc".into(), "Installed fd from the Library".into());
+        assert_eq!(m.label("f:C:/c/settings.json", "abc"), Some("Installed fd from the Library"));
+        assert_eq!(m.label("f:C:/c/settings.json", "other"), None);
     }
 
     #[test]

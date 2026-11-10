@@ -413,6 +413,28 @@ fn direct_restore_cannot_bring_back_a_hook_or_revert_a_settings_save_or_restore_
     assert!(!fs::read_to_string(&path).unwrap().contains("hooks:"));
 }
 
+// D21: a Library plugin install is undone through Claude Code's command, which can run a plugin's
+// commands, so direct mode refuses it and the approved path preview names what it would do.
+#[test]
+fn direct_restore_cannot_undo_a_library_plugin_change() {
+    let e = env();
+    let backups = e.data.join("setup-backups");
+    fs::create_dir_all(&backups).unwrap();
+    let settings = e.config.join("settings.json");
+    let id = atlas_core::setup_write::snapshot_files(&backups, "install-plugin-fd", "plugin", "fd@mk", &settings, &[]).unwrap();
+    atlas_core::setup_write::tag_library_op(
+        &backups,
+        &id,
+        "Installed fd from the Library",
+        atlas_core::setup_write::LibOp { op: "install".into(), id: "fd@mk".into(), repo: "o/r".into(), sha: "abc".into(), tree_hash: "h".into(), undone: false },
+    );
+    let before = fs::read(&settings).unwrap();
+    refused_as_code(direct(&e).apply(&Write::RestoreBackup { backup_id: id.clone() }));
+    assert_eq!(fs::read(&settings).unwrap(), before);
+    let p = ops(&e, "assistant").preview(&Write::RestoreBackup { backup_id: id }).unwrap();
+    assert!(p.summary.starts_with("Uninstall plugin"), "{}", p.summary);
+}
+
 // F4: turning something on is code coming back.
 #[test]
 fn direct_mode_refuses_to_turn_an_mcp_server_on() {

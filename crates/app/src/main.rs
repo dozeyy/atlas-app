@@ -184,6 +184,7 @@ fn main() {
             library::library_read_file,
             library::library_install_plugin,
             library::library_uninstall_plugin,
+            library::library_undo,
             library::library_set_enabled,
             library::library_add_marketplace,
             library::library_install_items,

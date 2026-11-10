@@ -759,6 +759,12 @@ impl Ops {
                 if !info.can_restore {
                     return Err("That backup can't be undone this way.".into());
                 }
+                if info.action == "library" {
+                    let op = sw::library_op(&self.backups, backup_id).ok_or("That backup can't be undone this way.")?;
+                    let what = if op.op == "install" { format!("Uninstall plugin {}", info.name) } else { format!("Reinstall plugin {}", info.name) };
+                    let note = Some("Runs Claude Code's own plugin command, so a plugin's commands can run on this computer.".to_string());
+                    return Ok(base(what, "plugin", &info.name, info.path.clone().unwrap_or_default(), None, None, note));
+                }
                 let (before, after) = self.restore_view(&info, &d);
                 let why = self.backup_reason(&info, &d);
                 Ok(base(format!("Undo the {} of {} {}", info.action, info.kind, info.name), &info.kind, &info.name, info.path.clone().unwrap_or_default(), before, after, runs_commands(info.summary.clone(), why)))
@@ -902,6 +908,20 @@ impl Ops {
             }
             Write::RestoreBackup { backup_id } => {
                 let info = sw::list_backups_detailed(&self.backups, usize::MAX).into_iter().find(|b| b.backup_id == *backup_id).ok_or("There is no backup with that id.")?;
+                if info.action == "library" {
+                    // A plugin install or removal is undone through Claude Code's own command (D21).
+                    if !info.can_restore {
+                        return Err("That backup can't be undone this way.".into());
+                    }
+                    self.guard_code("plugins")?;
+                    let op = sw::library_op(&self.backups, backup_id).ok_or("That backup can't be undone this way.")?;
+                    let runner = crate::library::cli::Runner::new(&self.cli, &self.inputs.root).map_err(|e| e.message())?;
+                    let ctx = crate::library::install::Ctx { root: &self.inputs.root, data: &self.data_dir, backups: &self.backups };
+                    let now = crate::library::catalog::source_of(&self.data_dir, &op.id);
+                    let done = crate::library::install::undo_plugin_backup_locked(&ctx, &runner, backup_id, now.as_ref())?;
+                    let summary = format!("Undid the {} of plugin {}", if done.did == "uninstall" { "install" } else { "removal" }, done.name);
+                    return Ok(Applied { summary, backup_id: Some(done.backup_id), path: info.path, note: None });
+                }
                 self.guard_backup(&info, &d)?;
                 let out = sw::restore_any(&self.backups, backup_id, &self.confine(&d)).map_err(wm)?;
                 if info.parked {

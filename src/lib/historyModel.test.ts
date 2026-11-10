@@ -19,6 +19,10 @@ describe("history sentences", () => {
     expect(whatHappened({ kind: "changed", source: "atlas_snapshot", item: item("a", "settings") })).toBe("Settings file changed");
     expect(whatHappened({ kind: "changed", source: "claude_edit", item: item("a", "skill") })).toBe("Skill edited by Claude");
     expect(whatHappened({ kind: "changed", source: "atlas_mcp", item: item("a", "skill") })).toBe("Skill edited by Claude");
+    expect(
+      whatHappened({ kind: "changed", source: "atlas_library", summary: "Installed fd from the Library", item: item("a", "settings") }),
+    ).toBe("Installed fd from the Library");
+    expect(whatHappened({ kind: "changed", source: "atlas_library", summary: "Changed `x`.", item: item("a", "settings") })).toBe("Settings file changed");
     expect(whatHappened({ kind: "dated", source: "file_date", item: item("a", "nonsense") })).toBe("File last changed");
   });
 

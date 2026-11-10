@@ -4,7 +4,7 @@ import { CaretDown } from "@phosphor-icons/react";
 import { KindTile } from "../setup/parts";
 import { Button } from "../controls";
 import type { HistoryEvent } from "../../lib/historyTypes";
-import { dotTone, setupKind, shortDate, timeText, whatHappened } from "../../lib/historyModel";
+import { dotTone, libraryLabel, setupKind, shortDate, timeText, whatHappened } from "../../lib/historyModel";
 import type { DaySection, RowGroup } from "../../lib/historyModel";
 
 interface Props {
@@ -52,12 +52,14 @@ function Row({
           <span className="min-w-0 flex-1">
             <span className="block truncate text-body text-ink">
               <span className="font-semibold">{whatHappened(head)}</span>{" "}
-              <span className="text-ink-2">
-                {head.item.name}
-                {project}
-              </span>
+              {!libraryLabel(head) && (
+                <span className="text-ink-2">
+                  {head.item.name}
+                  {project}
+                </span>
+              )}
             </span>
-            {(many > 1 || !dated) && (
+            {(many > 1 || (!dated && !libraryLabel(head))) && (
               <span className="block truncate text-body text-ink-2">{many > 1 ? `Changed ${many} times` : head.summary}</span>
             )}
           </span>

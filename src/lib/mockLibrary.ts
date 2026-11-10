@@ -18,6 +18,7 @@ import type {
   Pick,
   PluginOutcome,
   SafetyReport,
+  UndoDone,
   Shaped,
 } from "./libraryTypes";
 
@@ -259,11 +260,32 @@ export class MockLibrary {
     return { id: pluginId, backupId: `b-${this.n}`, installPath: null, version: e?.version ?? null, changed: false };
   }
 
+  /** Plugin rows that were removed, by backup id, so an Undo can bring one back. */
+  private removed = new Map<string, InstalledRow>();
+
   async libraryUninstallPlugin(id: string): Promise<string> {
     this.log(`uninstall:${id}`);
     await this.wait(40);
+    const row = this.installed.find((x) => x.id === id);
     this.installed = this.installed.filter((x) => x.id !== id);
-    return "Removed.";
+    const backupId = `b-${++this.n}`;
+    if (row) this.removed.set(backupId, row);
+    return backupId;
+  }
+
+  async libraryUndo(backupId: string): Promise<UndoDone> {
+    this.log(`undo:${backupId}`);
+    await this.wait(40);
+    const row = this.removed.get(backupId);
+    if (row) {
+      this.removed.delete(backupId);
+      this.installed.push(row);
+      return { id: row.id, name: row.name, did: "install", backupId: `b-${++this.n}` };
+    }
+    const hit = this.installed.find((x) => x.kind === "plugin" && x.backupId === backupId);
+    if (!hit) throw new Error("That change can't be undone from here.");
+    this.installed = this.installed.filter((x) => x !== hit);
+    return { id: hit.id, name: hit.name, did: "uninstall", backupId: `b-${++this.n}` };
   }
 
   async librarySetEnabled(id: string, on: boolean): Promise<void> {

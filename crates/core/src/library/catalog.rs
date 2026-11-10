@@ -24,6 +24,9 @@ pub enum Source {
         sha: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<String>,
+        /// The branch or tag Claude Code installs when there is no `sha` (HEAD when neither is set).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        git_ref: Option<String>,
     },
     /// A folder inside the marketplace's own repository (`./plugin`).
     Local { path: String },
@@ -66,6 +69,30 @@ fn sha_of(v: &Value) -> Option<String> {
     v.get("sha").and_then(Value::as_str).filter(|s| !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_hexdigit())).map(str::to_string)
 }
 
+/// A branch or tag name that is safe to put in a download address: letters, digits and `. _ - /`,
+/// no `..`, no leading dash or slash, no empty parts.
+pub fn valid_git_ref(r: &str) -> bool {
+    !r.is_empty()
+        && r.len() <= 200
+        && !r.starts_with(['-', '/'])
+        && !r.ends_with(['/', '.'])
+        && !r.contains("..")
+        && !r.contains("//")
+        && !r.ends_with(".lock")
+        && r.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'))
+}
+
+/// The `ref` a catalog source names: `Ok(None)` when it names none, `Err` when it names one Atlas
+/// can't safely turn into an address (the plugin is then "not readable", never read from HEAD).
+fn ref_of(v: &Value) -> Result<Option<String>, ()> {
+    match v.get("ref") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) if s.is_empty() => Ok(None),
+        Some(Value::String(s)) if valid_git_ref(s) => Ok(Some(s.clone())),
+        Some(_) => Err(()),
+    }
+}
+
 fn parse_source(v: &Value) -> Source {
     match v {
         Value::String(p) => Source::Local { path: p.clone() },
@@ -73,13 +100,14 @@ fn parse_source(v: &Value) -> Source {
             let kind = m.get("source").and_then(Value::as_str).unwrap_or("");
             let url = m.get("url").and_then(Value::as_str).unwrap_or("");
             let path = m.get("path").and_then(Value::as_str).map(|p| p.trim_start_matches("./").trim_matches('/').to_string()).filter(|p| !p.is_empty());
+            let git_ref = ref_of(v);
             match kind {
-                "url" | "git-subdir" => match github_repo(url) {
-                    Some(repo) => Source::Github { repo, sha: sha_of(v), path },
-                    None => Source::Other { url: url.to_string() },
+                "url" | "git-subdir" => match (github_repo(url), git_ref) {
+                    (Some(repo), Ok(git_ref)) => Source::Github { repo, sha: sha_of(v), path, git_ref },
+                    _ => Source::Other { url: url.to_string() },
                 },
-                "github" => match m.get("repo").and_then(Value::as_str) {
-                    Some(r) if r.matches('/').count() == 1 => Source::Github { repo: r.to_string(), sha: sha_of(v), path },
+                "github" => match (m.get("repo").and_then(Value::as_str), git_ref) {
+                    (Some(r), Ok(git_ref)) if r.matches('/').count() == 1 => Source::Github { repo: r.to_string(), sha: sha_of(v), path, git_ref },
                     _ => Source::Other { url: String::new() },
                 },
                 "npm" | "command" => Source::Command,
@@ -109,6 +137,35 @@ pub fn parse_available(json: &str) -> Result<Vec<Entry>, String> {
     Ok(out)
 }
 
+/// The marketplace files Claude Code already keeps on this computer, read without running
+/// anything: what the Library shows on the very first visit, while the real list is fetched. Same
+/// entries `list --available` would give for those marketplaces (a plugin's `source` is the same
+/// value), so an install from one of these rows takes the same checked path.
+pub fn read_local(marketplaces: &[(String, PathBuf)]) -> Vec<Entry> {
+    const MAX_BYTES: u64 = 16 * 1024 * 1024;
+    let mut out = Vec::new();
+    for (mp, loc) in marketplaces {
+        let file = if loc.is_file() { loc.clone() } else { loc.join(".claude-plugin").join("marketplace.json") };
+        let Ok(md) = fs::metadata(&file) else { continue };
+        if !md.is_file() || md.len() > MAX_BYTES {
+            continue;
+        }
+        let Some(v) = fs::read(&file).ok().and_then(|b| serde_json::from_slice::<Value>(b.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&b)).ok()) else { continue };
+        for p in v.get("plugins").and_then(Value::as_array).into_iter().flatten() {
+            let Some(name) = p.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()) else { continue };
+            out.push(Entry {
+                plugin_id: format!("{name}@{mp}"),
+                name: name.to_string(),
+                description: p.get("description").and_then(Value::as_str).unwrap_or("").to_string(),
+                marketplace: mp.clone(),
+                version: p.get("version").and_then(Value::as_str).unwrap_or("").to_string(),
+                source: parse_source(p.get("source").unwrap_or(&Value::Null)),
+            });
+        }
+    }
+    out
+}
+
 pub fn cache_path(data: &Path) -> PathBuf {
     super::library_dir(data).join("catalog.json")
 }
@@ -119,6 +176,11 @@ pub fn read_cache(data: &Path) -> Option<CatalogFile> {
     let bytes = fs::read(cache_path(data)).ok()?;
     let f: CatalogFile = serde_json::from_slice(&bytes).ok()?;
     (f.schema_version == SCHEMA_VERSION).then_some(f)
+}
+
+/// Where the cached catalog says `plugin_id` comes from right now.
+pub fn source_of(data: &Path, plugin_id: &str) -> Option<Source> {
+    read_cache(data)?.entries.into_iter().find(|e| e.plugin_id == plugin_id).map(|e| e.source)
 }
 
 pub fn write_cache(data: &Path, entries: Vec<Entry>, now_ms: u64) -> std::io::Result<()> {
@@ -222,6 +284,28 @@ mod tests {
     }
 
     #[test]
+    fn the_marketplace_files_on_disk_give_rows_before_the_first_refresh() {
+        let t = tempfile::tempdir().unwrap();
+        let mp = t.path().join("official");
+        fs::create_dir_all(mp.join(".claude-plugin")).unwrap();
+        fs::write(
+            mp.join(".claude-plugin").join("marketplace.json"),
+            r#"{"name":"official","plugins":[
+              {"name":"local-one","description":"d","source":"./plugins/local-one"},
+              {"name":"gh","version":"1.2.0","source":{"source":"github","repo":"o/r","ref":"payload"}},
+              {"name":"bad-ref","source":{"source":"github","repo":"o/r","ref":"../x"}},
+              {"description":"no name"}]}"#,
+        )
+        .unwrap();
+        let got = read_local(&[("official".into(), mp.clone()), ("missing".into(), t.path().join("nope"))]);
+        assert_eq!(got.len(), 3, "a plugin with no name and a marketplace with no file are skipped");
+        assert_eq!(got[0].plugin_id, "local-one@official");
+        assert_eq!(got[0].source, Source::Local { path: "./plugins/local-one".into() });
+        assert!(matches!(&got[1].source, Source::Github { git_ref: Some(r), .. } if r == "payload"));
+        assert!(matches!(got[2].source, Source::Other { .. }), "an unusable branch is unreadable, never HEAD");
+    }
+
+    #[test]
     fn sources_of_every_shape() {
         let v: Value = serde_json::from_str(
             r#"{"available":[
@@ -237,12 +321,36 @@ mod tests {
         .unwrap();
         let got = parse_available(&v.to_string()).unwrap();
         assert_eq!(got.len(), 6, "the entry without an id is skipped");
-        assert_eq!(got[0].source, Source::Github { repo: "o/r".into(), sha: Some("0412be76f50ab4f4f8abff3753efa9269fbbca5b".into()), path: None });
-        assert_eq!(got[1].source, Source::Github { repo: "o/r".into(), sha: Some("abcdef0".into()), path: Some("plugins/b".into()) });
+        assert_eq!(got[0].source, Source::Github { repo: "o/r".into(), sha: Some("0412be76f50ab4f4f8abff3753efa9269fbbca5b".into()), path: None, git_ref: None });
+        assert_eq!(got[1].source, Source::Github { repo: "o/r".into(), sha: Some("abcdef0".into()), path: Some("plugins/b".into()), git_ref: None });
         assert_eq!(got[2].source, Source::Local { path: "./plugin".into() });
         assert_eq!(got[3].source, Source::Command);
         assert_eq!(got[4].source, Source::Other { url: "https://gitlab.com/o/r.git".into() });
-        assert_eq!(got[5].source, Source::Github { repo: "o/r".into(), sha: None, path: None });
+        assert_eq!(got[5].source, Source::Github { repo: "o/r".into(), sha: None, path: None, git_ref: None });
+    }
+
+    #[test]
+    fn a_ref_is_kept_and_an_unusable_one_makes_the_plugin_unreadable() {
+        // Review finding 2: Claude Code installs the named ref, so Atlas must check that ref, not HEAD.
+        let v = r#"{"available":[
+            {"pluginId":"a@m","name":"a","marketplaceName":"m","source":{"source":"github","repo":"o/r","ref":"payload"}},
+            {"pluginId":"b@m","name":"b","marketplaceName":"m","source":{"source":"url","url":"https://github.com/o/r.git","ref":"release/1.2","path":"p"}},
+            {"pluginId":"c@m","name":"c","marketplaceName":"m","source":{"source":"github","repo":"o/r","ref":"../../x"}},
+            {"pluginId":"d@m","name":"d","marketplaceName":"m","source":{"source":"github","repo":"o/r","ref":"a b"}},
+            {"pluginId":"e@m","name":"e","marketplaceName":"m","source":{"source":"github","repo":"o/r","ref":7}},
+            {"pluginId":"f@m","name":"f","marketplaceName":"m","source":{"source":"github","repo":"o/r","ref":""}}
+            ]}"#;
+        let got = parse_available(v).unwrap();
+        assert_eq!(got[0].source, Source::Github { repo: "o/r".into(), sha: None, path: None, git_ref: Some("payload".into()) });
+        assert_eq!(got[1].source, Source::Github { repo: "o/r".into(), sha: None, path: Some("p".into()), git_ref: Some("release/1.2".into()) });
+        for i in [2, 3, 4] {
+            assert!(matches!(got[i].source, Source::Other { .. }), "{i}: {:?}", got[i].source);
+        }
+        assert_eq!(got[5].source, Source::Github { repo: "o/r".into(), sha: None, path: None, git_ref: None });
+        for bad in ["-x", "/x", "x/", "a..b", "a//b", "a b", "a?b", "x.lock", "", "x%2e"] {
+            assert!(!valid_git_ref(bad), "{bad}");
+        }
+        assert!(valid_git_ref("v1.2.3") && valid_git_ref("feature/x-y_z"));
     }
 
     #[test]

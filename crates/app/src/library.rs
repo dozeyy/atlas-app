@@ -57,7 +57,10 @@ fn now_ms() -> u64 {
 
 /// A checked folder the page can act on, by token.
 struct Staged {
-    base: PathBuf,
+    /// The checked folder; `None` for a plugin Atlas can't read (nothing to show or copy).
+    base: Option<PathBuf>,
+    /// What the catalog listed when it was checked (an install must still match it).
+    source: Option<catalog::Source>,
     repo: String,
     sha: String,
     tree_hash: String,
@@ -140,16 +143,33 @@ pub struct CatalogView {
     stale: bool,
 }
 
+/// One catalog entry: from the saved catalog, or (before there is one) from the marketplace files
+/// Claude Code keeps, so a row shown on the first visit can be looked at and installed.
+fn entry_of(env: &Env, plugin_id: &str) -> Option<catalog::Entry> {
+    if let Some(c) = catalog::read_cache(&env.data) {
+        return c.entries.into_iter().find(|e| e.plugin_id == plugin_id);
+    }
+    let mp = plugin_id.rsplit_once('@').map(|(_, m)| m)?;
+    let places: Vec<(String, PathBuf)> = ledger::marketplaces(&env.root.dir).into_iter().filter(|m| m.name == mp).filter_map(|m| m.install_location.map(|l| (m.name, PathBuf::from(l)))).collect();
+    catalog::read_local(&places).into_iter().find(|e| e.plugin_id == plugin_id)
+}
+
 fn view(st: &AppState, env: &Env) -> CatalogView {
     let cache = catalog::read_cache(&env.data);
     let now = now_ms();
     let stale = cache.as_ref().is_none_or(|c| now.saturating_sub(c.fetched_ms) > STALE_SECS * 1000);
+    let marketplaces = ledger::marketplaces(&env.root.dir);
     let (entries, fetched_ms) = match cache {
         Some(c) => (c.entries, Some(c.fetched_ms)),
-        None => (Vec::new(), None),
+        // The very first visit: show what Claude Code already keeps on disk instead of an empty
+        // tab while the real list is fetched (the page still refreshes, because `stale` is set).
+        None => {
+            let places: Vec<(String, PathBuf)> = marketplaces.iter().filter_map(|m| m.install_location.clone().map(|l| (m.name.clone(), PathBuf::from(l)))).collect();
+            (catalog::read_local(&places), None)
+        }
     };
     let sandbox = st.history_root().is_none();
-    CatalogView { entries, fetched_ms, now_ms: now, cli: CliChoice::Auto.found(), sandbox, marketplaces: ledger::marketplaces(&env.root.dir), stale }
+    CatalogView { entries, fetched_ms, now_ms: now, cli: CliChoice::Auto.found(), sandbox, marketplaces, stale }
 }
 
 /// The cached catalog and what Claude Code knows (read only, no network).
@@ -206,6 +226,10 @@ fn refresh_now(st: &AppState, marketplace: Option<&str>) -> Result<CatalogView, 
     }
     let text = runner.list_available().map_err(|e| e.message())?;
     let entries = catalog::parse_available(&text)?;
+    if entries.is_empty() {
+        // An empty answer would wipe the list the user can already see (and the saved copy).
+        return Err("Claude Code's plugin list came back empty, so Atlas kept the list it had.".into());
+    }
     catalog::write_cache(&env.data, entries, now_ms()).map_err(|_| "Atlas could not save the catalog.".to_string())?;
     eprintln!("[atlas] library: catalog refreshed in {} ms", t.elapsed().as_millis());
     Ok(view(st, &env))
@@ -391,28 +415,33 @@ fn takens(env: &Env, i: &install::Inspected) -> Vec<Taken> {
 pub async fn library_inspect_plugin(app: AppHandle, state: Info<'_>, lib: Lib<'_>, plugin_id: String) -> Result<Detail, String> {
     let st = state.inner().clone();
     let env = Env::of(&st)?;
-    let entry = catalog::read_cache(&env.data).and_then(|c| c.entries.into_iter().find(|e| e.plugin_id == plugin_id)).ok_or("That plugin is not in the catalog. Press Refresh.")?;
+    let entry = entry_of(&env, &plugin_id).ok_or("That plugin is not in the catalog. Press Refresh.")?;
     if let Some(m) = install::blocked(&entry.source) {
         return Err(m.into());
     }
+    let name = entry.name.clone();
     let (base, repo, sha, subpath) = match &entry.source {
-        catalog::Source::Github { repo, sha, path } => {
-            let un = fetch(&app, &lib, env.fetch_dir(), repo, sha.as_deref().unwrap_or("HEAD"), sha.as_deref()).await?;
+        catalog::Source::Github { repo, sha, path, .. } => {
+            // Exactly what Claude Code installs: the pinned commit, else the named branch or tag, else HEAD.
+            let want = install::fetch_target(&entry.source).unwrap_or("HEAD");
+            let un = fetch(&app, &lib, env.fetch_dir(), repo, want, sha.as_deref()).await?;
             let base = install::resolve_base(&un.dir, path.as_deref())?;
-            (base, repo.clone(), un.sha.or_else(|| sha.clone()).unwrap_or_default(), path.clone())
+            (Some(base), repo.clone(), un.sha.or_else(|| sha.clone()).unwrap_or_default(), path.clone())
         }
         catalog::Source::Local { path } => {
             let (dir, mp, p) = (env.root.dir.clone(), entry.marketplace.clone(), path.clone());
             let base = blocking(move || install::local_base(&dir, &mp, &p)).await?;
-            (base, String::new(), String::new(), Some(path.clone()))
+            (Some(base), String::new(), String::new(), Some(path.clone()))
         }
-        _ => return Err("Atlas can only read plugins that live on GitHub, so it can't check this one first.".into()),
+        // Another git host or a source Atlas can't read: nothing to look at, a deliberate two-click install.
+        _ => (None, String::new(), String::new(), None),
     };
-    let name = entry.name.clone();
-    let b2 = base.clone();
-    let inspected = blocking(move || Ok(install::inspect_plugin(&b2, &name))).await?;
+    let inspected = match base.clone() {
+        Some(b2) => blocking(move || Ok(install::inspect_plugin(&b2, &name))).await?,
+        None => install::inspect_unchecked(&name),
+    };
     let detail = Detail {
-        token: lib.keep(Staged { base, repo: repo.clone(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: Some(plugin_id), market_source: None }),
+        token: lib.keep(Staged { base, source: Some(entry.source.clone()), repo: repo.clone(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: Some(plugin_id), market_source: None }),
         repo,
         sha,
         subpath,
@@ -442,7 +471,7 @@ pub async fn library_inspect_installed(state: Info<'_>, lib: Lib<'_>, id: String
         let _ = ledger::recheck(&env.data, &id, &inspected.check.tree_hash);
         let repo = ledger::find(&env.data, "plugin", &id).map(|e| e.repo).unwrap_or_default();
         let sha = rec.git_sha.clone().unwrap_or_default();
-        let token = lib.keep(Staged { base, repo: repo.clone(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: Some(id), market_source: None });
+        let token = lib.keep(Staged { base: Some(base), source: None, repo: repo.clone(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: Some(id), market_source: None });
         Ok(Detail { token, repo, sha, subpath: None, taken: Vec::new(), inspected, market_source: None })
     })
     .await
@@ -463,7 +492,7 @@ pub async fn library_inspect_link(app: AppHandle, state: Info<'_>, lib: Lib<'_>,
     let taken = takens(&env, &inspected);
     let market_source = (inspected.shaped.shape == "marketplace").then(|| l.slug());
     let sha = un.sha.clone().unwrap_or_default();
-    let token = lib.keep(Staged { base, repo: l.slug(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: None, market_source: market_source.clone() });
+    let token = lib.keep(Staged { base: Some(base), source: None, repo: l.slug(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: None, market_source: market_source.clone() });
     Ok(Detail { token, repo: l.slug(), sha, subpath: l.path.clone(), inspected, taken, market_source })
 }
 
@@ -479,7 +508,7 @@ pub struct FileText {
 pub async fn library_read_file(lib: Lib<'_>, token: String, rel: String) -> Result<FileText, String> {
     let lib = lib.inner().clone();
     blocking(move || {
-        let base = lib.with(&token, |s| Ok(s.base.clone()))?;
+        let base = lib.with(&token, |s| s.base.clone().ok_or_else(|| "Atlas could not read this plugin's files, so there is nothing to show.".to_string()))?;
         let file = sw::safe_join(&base, rel.trim_start_matches(['/', '\\'])).map_err(|_| "That file is not inside the plugin.".to_string())?;
         let md = std::fs::symlink_metadata(&file).map_err(|_| "Atlas could not find that file.".to_string())?;
         if !md.is_file() {
@@ -504,13 +533,18 @@ pub async fn library_install_plugin(state: Info<'_>, lib: Lib<'_>, plugin_id: St
     let (st, lib) = (state.inner().clone(), lib.inner().clone());
     blocking(move || {
         let env = Env::of(&st)?;
-        let (repo, sha, tree_hash) = lib.with(&token, |s| {
+        let (repo, sha, tree_hash, checked_source) = lib.with(&token, |s| {
             if s.plugin_id.as_deref() != Some(plugin_id.as_str()) {
                 return Err("Check it again first.".to_string());
             }
-            Ok((s.repo.clone(), s.sha.clone(), s.tree_hash.clone()))
+            Ok((s.repo.clone(), s.sha.clone(), s.tree_hash.clone(), s.source.clone()))
         })?;
-        let source = catalog::read_cache(&env.data).and_then(|c| c.entries.into_iter().find(|e| e.plugin_id == plugin_id)).map(|e| e.source).ok_or("That plugin is not in the catalog. Press Refresh.")?;
+        // The listing may have been refreshed since the look (review finding 3): what Claude Code
+        // would install now has to be what was checked, or nothing is installed.
+        let source = entry_of(&env, &plugin_id).map(|e| e.source);
+        let checked_source = checked_source.ok_or("Check it again first.")?;
+        install::same_listing(&checked_source, source.as_ref())?;
+        let source = source.ok_or("That plugin is not in the catalog. Press Refresh.")?;
         let runner = env.runner()?;
         install::install_plugin(&env.ctx(), &runner, &plugin_id, &source, &install::Checked { repo: &repo, sha: &sha, tree_hash: &tree_hash })
     })
@@ -523,6 +557,22 @@ pub async fn library_uninstall_plugin(state: Info<'_>, id: String) -> Result<Str
     blocking(move || {
         let env = Env::of(&st)?;
         install::uninstall_plugin(&env.ctx(), &env.runner()?, &id)
+    })
+    .await
+}
+
+/// Undo a Library plugin install or removal (the toast's Undo and History's Undo): an install is
+/// undone by uninstalling, a removal by installing the same commit again.
+#[tauri::command]
+pub async fn library_undo(app: AppHandle, state: Info<'_>, hub: Hub<'_>, backup_id: String) -> Result<install::UndoDone, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || {
+        let env = Env::of(&st)?;
+        let op = sw::library_op(&env.backups, &backup_id).ok_or("That change can't be undone from here.")?;
+        let now = entry_of(&env, &op.id).map(|e| e.source);
+        let done = install::undo_plugin_backup(&env.ctx(), &env.runner()?, &backup_id, now.as_ref())?;
+        hub.refresh(&app, &st);
+        Ok(done)
     })
     .await
 }
@@ -573,7 +623,8 @@ pub async fn library_install_items(app: AppHandle, state: Info<'_>, lib: Lib<'_>
         let env = Env::of(&st)?;
         let (base, repo, sha, tree_hash, items) = lib.with(&token, |s| {
             let items: Vec<shape::Item> = picks.iter().filter_map(|p| s.shaped.items.iter().find(|i| i.kind == p.kind && i.name == p.name).cloned()).collect();
-            Ok((s.base.clone(), s.repo.clone(), s.sha.clone(), s.tree_hash.clone(), items))
+            let base = s.base.clone().ok_or_else(|| "Atlas could not read these files.".to_string())?;
+            Ok((base, s.repo.clone(), s.sha.clone(), s.tree_hash.clone(), items))
         })?;
         if items.is_empty() {
             return Err("Nothing is ticked.".into());

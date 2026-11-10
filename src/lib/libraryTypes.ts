@@ -2,7 +2,7 @@
 // structs; nothing here is computed on the page.
 
 export type PluginSource =
-  | { kind: "github"; repo: string; sha?: string | null; path?: string | null }
+  | { kind: "github"; repo: string; sha?: string | null; path?: string | null; gitRef?: string | null }
   | { kind: "local"; path: string }
   | { kind: "command" }
   | { kind: "other"; url: string };
@@ -134,6 +134,14 @@ export interface PluginOutcome {
   version: string | null;
   /** The installed files are not the ones that were checked. */
   changed: boolean;
+}
+
+/** What an Undo of a plugin change did (`did` is what was done now). */
+export interface UndoDone {
+  id: string;
+  name: string;
+  did: "install" | "uninstall";
+  backupId: string;
 }
 
 export interface ItemResult {

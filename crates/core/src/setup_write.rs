@@ -814,6 +814,53 @@ struct Manifest {
     /// History can say "Installed from the Library" for exactly those versions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     files: Option<Vec<(String, String)>>,
+    /// A plugin installed or removed from the Library: what Undo needs to put it back as it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lib: Option<LibOp>,
+}
+
+/// One Library plugin change (install or uninstall), kept in its backup so History can undo it:
+/// undo of an install is an uninstall, undo of an uninstall is an install of the same commit.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibOp {
+    /// install | uninstall
+    pub op: String,
+    /// `name@marketplace`
+    pub id: String,
+    /// `owner/repo` the plugin came from ("" when not known).
+    pub repo: String,
+    /// The commit that was installed (or that was installed when it was removed); "" when not known.
+    pub sha: String,
+    /// The checked files' hash, to compare again after a reinstall.
+    pub tree_hash: String,
+    /// This change has been undone (a second undo is refused).
+    #[serde(default)]
+    pub undone: bool,
+}
+
+/// Record what Undo needs on a Library plugin backup (and tag it, as `tag_backup` does).
+pub fn tag_library_op(backups: &Path, id: &str, summary: &str, op: LibOp) {
+    tag_backup(backups, id, "library", summary);
+    let Ok((mut m, dir)) = read_manifest(backups, id) else { return };
+    m.lib = Some(op);
+    let _ = write_manifest(&dir, &m);
+}
+
+/// The Library plugin change a backup holds, when it holds one.
+pub fn library_op(backups: &Path, id: &str) -> Option<LibOp> {
+    read_manifest(backups, id).ok().and_then(|(m, _)| m.lib)
+}
+
+/// Mark a Library backup as undone (its summary says so, and it can't be undone twice).
+pub fn mark_library_undone(backups: &Path, id: &str) {
+    let Ok((mut m, dir)) = read_manifest(backups, id) else { return };
+    if let Some(l) = m.lib.as_mut() {
+        l.undone = true;
+    }
+    let s = m.summary.clone().unwrap_or_default();
+    m.summary = Some(format!("{s} (undone)").chars().take(240).collect());
+    let _ = write_manifest(&dir, &m);
 }
 
 fn now_ms() -> u64 {
@@ -1963,6 +2010,9 @@ pub fn list_backups_detailed(backups: &Path, limit: usize) -> Vec<BackupInfo> {
         let can_restore = match m.action.as_str() {
             "delete" => true,
             "save" | "create" | "restore" => m.saved_stamp.is_some(),
+            // A Library plugin install or removal is undone through Claude Code's own command
+            // (`library::install::undo_plugin_backup`), once.
+            "library" => m.lib.as_ref().is_some_and(|l| !l.undone),
             _ => false,
         };
         out.push(BackupInfo {
@@ -2075,6 +2125,7 @@ pub fn restore_any_with(backups: &Path, backup_id: &str, confine: &Confine, to_t
             }
             Ok(UndoOutcome { name: m.name, kind: m.kind, backup_id: Some(nid) })
         }
+        "library" => refuse("A plugin from the Library is undone through Claude Code's own command, not by putting files back."),
         _ => refuse("That backup can't be undone this way."),
     }
 }
@@ -2169,6 +2220,8 @@ pub struct Provenance {
     pub saved_sha: Option<String>,
     /// A folder created from the Library: each file in it (full path) and its SHA-256.
     pub files: Vec<(String, String)>,
+    /// The plain sentence a Library change was tagged with ("Installed x from the Library").
+    pub summary: Option<String>,
 }
 
 /// Changes made by the MCP server or the assistant since `since_ms`, newest first.
@@ -2184,7 +2237,7 @@ pub fn provenance(backups: &Path, since_ms: u64) -> Vec<Provenance> {
         }
         let Some(path) = m.path.clone().or(m.file.clone()) else { continue };
         let files = m.files.iter().flatten().map(|(rel, sha)| (format!("{}/{rel}", path.trim_end_matches(['/', '\\'])), sha.clone())).collect();
-        out.push(Provenance { created_ms: m.created_ms, action: m.action, source, path, saved_sha: m.saved_sha, files });
+        out.push(Provenance { created_ms: m.created_ms, action: m.action, source, path, saved_sha: m.saved_sha, files, summary: m.summary });
     }
     out.sort_by_key(|p| std::cmp::Reverse(p.created_ms));
     out

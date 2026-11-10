@@ -63,6 +63,7 @@ import type {
   MarketAdded,
   Pick,
   PluginOutcome,
+  UndoDone,
 } from "./libraryTypes";
 import { MockBackend } from "./mock";
 
@@ -270,6 +271,8 @@ export interface Backend {
   libraryReadFile(token: string, rel: string): Promise<FileText>;
   libraryInstallPlugin(pluginId: string, token: string): Promise<PluginOutcome>;
   libraryUninstallPlugin(id: string): Promise<string>;
+  /** Undo a plugin install (uninstalls) or removal (installs the same commit again). */
+  libraryUndo(backupId: string): Promise<UndoDone>;
   librarySetEnabled(id: string, on: boolean): Promise<void>;
   libraryAddMarketplace(token: string): Promise<MarketAdded>;
   libraryInstallItems(token: string, picks: Pick[]): Promise<ItemResult[]>;
@@ -384,6 +387,7 @@ const tauriBackend: Backend = {
   libraryReadFile: (token, rel) => invoke<FileText>("library_read_file", { token, rel }),
   libraryInstallPlugin: (pluginId, token) => invoke<PluginOutcome>("library_install_plugin", { pluginId, token }),
   libraryUninstallPlugin: (id) => invoke<string>("library_uninstall_plugin", { id }),
+  libraryUndo: (backupId) => invoke<UndoDone>("library_undo", { backupId }),
   librarySetEnabled: (id, on) => invoke<void>("library_set_enabled", { id, on }),
   libraryAddMarketplace: (token) => invoke<MarketAdded>("library_add_marketplace", { token }),
   libraryInstallItems: (token, picks) => invoke<ItemResult[]>("library_install_items", { token, picks }),
