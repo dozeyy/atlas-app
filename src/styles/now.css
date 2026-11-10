@@ -688,8 +688,11 @@ html.reduced .nc-sweep.is-on::after {
 /* Short (three chats): one row of head, doing, numbers, clock; the trail beneath. */
 @container nowcard (max-height: 235px) and (min-width: 721px) {
   .nc-body {
-    /* The title column gets the most room: it is the one part that is text and gets cut. */
-    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.2fr) minmax(88px, 0.6fr) auto;
+    /* The title column gets the most room: it is the one part that is text and gets cut.
+       The clock column is a fixed width (room for "1:13:26"), never as wide as its own digits:
+       a column sized by its content put the icon, the verb and the tokens at a different x on
+       every card, so nothing lined up down the list. */
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.2fr) minmax(88px, 0.6fr) 104px;
     grid-template-rows: minmax(0, 1fr) auto;
     grid-template-areas:
       "head doing numbers clock"
@@ -815,7 +818,8 @@ html.reduced .nc-sweep.is-on::after {
    helpers are out): the same single row, the trail dropped, the verb never cut in two. */
 @container nowcard (max-height: 150px) and (max-width: 720px) {
   .nc-body {
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) auto auto;
+    /* Fixed number columns (room for "999k" and "1:13:26"), so the cards line up down the list. */
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) 64px 72px;
     grid-template-rows: minmax(0, 1fr);
     grid-template-areas: "head doing numbers clock";
     align-items: center;
