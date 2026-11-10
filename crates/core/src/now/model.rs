@@ -35,6 +35,35 @@ pub struct NowStep {
     pub by: Option<String>,
 }
 
+/// A helper's own task list, as counts only: "Step 3 of 6". Shown only once it has moved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanCount {
+    pub done: u32,
+    pub total: u32,
+}
+
+/// What a typical run of this kind of helper looks like: the median of its finished runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Typical {
+    /// Median tool calls.
+    pub calls: u32,
+    /// Median length, ms.
+    pub ms: i64,
+    /// How many finished runs the medians come from.
+    pub runs: u32,
+}
+
+/// The tool call a helper is waiting on. Only a kind and one safe word, never the command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenCall {
+    pub kind: String,
+    /// The program for a command ("cargo"), else "a helper", "the web" or "a tool".
+    pub word: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NowHelper {
@@ -46,6 +75,26 @@ pub struct NowHelper {
     pub started_ms: Option<i64>,
     /// It said its last word; the page lets it linger a few seconds, then it is dropped.
     pub done: bool,
+    /// What kind of helper it is (`code-reviewer`), from the sidecar.
+    pub agent_type: Option<String>,
+    /// What it was sent to do: the dispatcher's short description (masked, at most 80 characters).
+    pub goal: Option<String>,
+    /// Tool calls made so far.
+    pub tool_calls: u32,
+    /// Its own task list, once it has one with 2 or more steps that has moved.
+    pub plan: Option<PlanCount>,
+    /// The typical run of this type (needs `MIN_TYPICAL_RUNS` finished runs), else None.
+    pub typical: Option<Typical>,
+    /// What it has mostly been doing in its last few calls ("Reading", "Testing").
+    pub phase: String,
+    /// When its newest line was written, epoch ms.
+    pub last_line_ms: Option<i64>,
+    /// The call it is waiting on, if one is open.
+    pub open_call: Option<OpenCall>,
+    /// The model id its newest lines name (`claude-opus-5-5`); the page turns it into "Opus 5.5".
+    pub model: Option<String>,
+    /// The effort level its newest line says (`high`). None when no line says one.
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

@@ -830,6 +830,116 @@ pub fn first_day(conn: &Connection) -> rusqlite::Result<Option<String>> {
     conn.query_row("SELECT MIN(substr(hour_local,1,10)) FROM usage_hour", [], |r| r.get::<_, Option<String>>(0))
 }
 
+/// What a typical run of one kind of helper looks like: medians over its finished runs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypicalRun {
+    pub agent_type: String,
+    /// Median tool calls of a run.
+    pub calls: u32,
+    /// Median length of a run, ms (first to last recorded message).
+    pub ms: i64,
+    /// How many finished runs the medians come from.
+    pub runs: u32,
+}
+
+/// A helper with no message for this long is counted as over (the helper ledger will carry a
+/// recorded end status; until then this is the rule).
+const TYPICAL_ENDED_AFTER_MS: i64 = 10 * 60_000;
+
+/// A gap this long inside one helper file means it was resumed or abandoned and carried on: longer
+/// than the longest quiet build the live tracker still calls working (20 min), so a slow single run
+/// is kept and a message hours later is not.
+const TYPICAL_RUN_GAP_MS: i64 = 30 * 60_000;
+
+fn median<T: Copy + Ord + Into<i64>>(v: &mut [T]) -> i64 {
+    v.sort_unstable();
+    let n = v.len();
+    if n == 0 {
+        return 0;
+    }
+    if n % 2 == 1 { v[n / 2].into() } else { (v[n / 2 - 1].into() + v[n / 2].into()) / 2 }
+}
+
+/// One finished run of a helper: its kind, tool calls and length. The seam the helper ledger will
+/// fill from its recorded runs (with their real end status, which this cache does not hold):
+/// swap `finished_runs` for a ledger query and `medians` stays as it is.
+struct RunSample {
+    agent_type: String,
+    calls: i64,
+    ms: i64,
+}
+
+/// Helper runs that ended in `[since, over_by]`, one per helper file, from the cache.
+///
+/// What counts as one run: a helper whose messages form one continuous stretch (no gap longer
+/// than `TYPICAL_RUN_GAP_MS`). A helper that was resumed, or went quiet for longer than that
+/// and carried on, spans several lifetimes and the cache keeps one tool-call total per file, so
+/// it cannot be cut into honest runs: it is left out rather than counted as one huge run.
+/// What this cache cannot say is how a run ended (a killed or failed helper looks like a finished
+/// one); the ledger will.
+///
+/// The time bound is in the `WHERE` of the inner scan (the `messages_ts` index, named in the query:
+/// left alone the planner walks every helper file by `messages_file`, 224 ms against 60 ms for a
+/// week on a 127k-message cache, EXPLAIN QUERY PLAN 2026-11-09), a day looser than
+/// `since` so a run that began just before it is not cut short; the exact bound is on the run's
+/// last message in the `HAVING`, where a helper with a message older than the loose bound is left
+/// out too: its span is only partly in view, so its lifetime tool-call total would not fit it.
+fn finished_runs(conn: &Connection, since: i64, over_by: i64) -> rusqlite::Result<Vec<RunSample>> {
+    let mut st = conn.prepare_cached(
+        "WITH seen AS ( \
+           SELECT m.file_id AS file_id, m.ts_utc_ms AS ts, \
+                  m.ts_utc_ms - LAG(m.ts_utc_ms) OVER (PARTITION BY m.file_id ORDER BY m.ts_utc_ms) AS gap \
+           FROM messages m INDEXED BY messages_ts \
+           WHERE m.ts_utc_ms >= ?1 \
+             AND m.file_id IN (SELECT file_id FROM agents WHERE agent_type IS NOT NULL AND agent_type <> '') \
+         ) \
+         SELECT a.agent_type, f.tool_calls, MIN(s.ts), MAX(s.ts) \
+         FROM seen s \
+         JOIN agents a ON a.file_id = s.file_id \
+         JOIN files f ON f.file_id = s.file_id \
+         WHERE f.tool_calls > 0 AND f.missing = 0 \
+         GROUP BY a.session_id, a.agent_id \
+         HAVING MAX(s.ts) >= ?2 AND MAX(s.ts) <= ?3 AND COALESCE(MAX(s.gap), 0) <= ?4 \
+                AND NOT EXISTS (SELECT 1 FROM messages o WHERE o.file_id = a.file_id AND o.ts_utc_ms < ?1)",
+    )?;
+    let loose = since - 86_400_000;
+    let rows = st.query_map([loose, since, over_by, TYPICAL_RUN_GAP_MS], |r| {
+        Ok(RunSample {
+            agent_type: r.get::<_, String>(0)?,
+            calls: r.get::<_, i64>(1)?,
+            ms: (r.get::<_, i64>(3)? - r.get::<_, i64>(2)?).max(0),
+        })
+    })?;
+    rows.collect()
+}
+
+/// Per kind of helper: the median tool calls and length of its finished runs (see
+/// `finished_runs`) that ended in the last `days` days, with the run count. Runs with no tool call
+/// are left out, so a median is never zero. The Now tracker compares a live helper with it.
+pub fn typical_runs(conn: &Connection, ctx: &QueryCtx, days: u32) -> rusqlite::Result<Vec<TypicalRun>> {
+    let since = ctx.now_ms - i64::from(days) * 86_400_000;
+    let over_by = ctx.now_ms - TYPICAL_ENDED_AFTER_MS;
+    Ok(medians(finished_runs(conn, since, over_by)?))
+}
+
+fn medians(runs: Vec<RunSample>) -> Vec<TypicalRun> {
+    let mut by_type: BTreeMap<String, (Vec<i64>, Vec<i64>)> = BTreeMap::new();
+    for r in runs {
+        let e = by_type.entry(r.agent_type).or_default();
+        e.0.push(r.calls);
+        e.1.push(r.ms);
+    }
+    by_type
+        .into_iter()
+        .map(|(agent_type, (mut calls, mut ms))| TypicalRun {
+            agent_type,
+            runs: calls.len() as u32,
+            calls: median(&mut calls).clamp(0, i64::from(u32::MAX)) as u32,
+            ms: median(&mut ms),
+        })
+        .collect()
+}
+
 /// Chats with a message in `[from_day, to_day]`, per project key (the dashboard's rule).
 fn sessions_by_project(conn: &Connection, tz: Tz, from_day: &str, to_day: &str) -> rusqlite::Result<HashMap<String, u64>> {
     let lo = day_start_ms(tz, from_day);

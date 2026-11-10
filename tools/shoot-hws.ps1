@@ -23,6 +23,7 @@ param(
   [int]$SettleMs = 5000,
   [string]$Click = "",
   [string]$Tag = "",
+  [string]$Park = "",
   [switch]$EditFixture
 )
 $ErrorActionPreference = "Stop"
@@ -110,7 +111,9 @@ foreach ($v in $Views) {
       Start-Sleep -Milliseconds 900
     }
   }
-  [void][W]::SetCursorPos($r.L + 2, $r.T + 2)
+  # The pointer rests in the corner (it opens the menu button's hover menu); -Park "x,y" puts it elsewhere.
+  $pk = if ($Park) { $Park.Split(",") } else { @("2", "2") }
+  [void][W]::SetCursorPos($r.L + [int]$pk[0], $r.T + [int]$pk[1])
   Start-Sleep -Milliseconds 500
 
   $w = $r.R - $r.L; $hh = $r.B - $r.T

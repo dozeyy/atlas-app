@@ -54,9 +54,23 @@
   color: var(--ink-2);
 }
 
+/* Room the chat cards always keep (a short one-row card). */
+.now-run {
+  --card-min: 88px;
+  --stack-min: calc(var(--n, 1) * var(--card-min) + (var(--n, 1) - 1) * 16px);
+}
+.now-run:has(.now-grid) {
+  --stack-min: 224px;
+}
+/* With helpers out the group is as tall as its cards and its rows, never a box that scrolls
+   inside itself: the page scrolls instead (the main panel), and every row is always there. */
+.now-run:has(.ht) {
+  flex: 0 0 auto;
+}
+
 .now-stack {
   flex: 1 1 0;
-  min-height: 0;
+  min-height: var(--stack-min);
   display: grid;
   grid-template-rows: repeat(var(--n, 1), minmax(0, 1fr));
   gap: 16px;
@@ -64,7 +78,7 @@
 
 .now-grid {
   flex: 1 1 0;
-  min-height: 0;
+  min-height: var(--stack-min);
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
@@ -357,10 +371,6 @@
   margin-top: 8px;
 }
 
-.nc-helpers-chip {
-  display: none;
-}
-
 .nc-cap {
   margin: 4px 0 0;
   font-size: 12px;
@@ -479,53 +489,13 @@ html.reduced .nc-sweep.is-on::after {
 }
 
 
-/* Helpers and files */
+/* Files */
 .nc-people {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 10px;
   min-width: 0;
-}
-
-.nc-helper {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  max-width: 300px;
-  padding: 8px 12px;
-  border-radius: var(--r-control);
-  background: var(--raised);
-  color: var(--accent-text);
-  animation: nc-in 240ms var(--ease-out);
-  transition: opacity var(--dur-slow) var(--ease-out);
-}
-.nc-helper[data-done] {
-  opacity: 0.55;
-}
-.nc-helper-text {
-  min-width: 0;
-}
-.nc-helper-name,
-.nc-helper-doing {
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nc-helper-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.nc-helper-doing {
-  font-size: 12px;
-  color: var(--ink-2);
-}
-.now-card .nc-helper-spend {
-  margin: 0 0 0 4px;
-  color: var(--ink);
 }
 
 .nc-files {
@@ -684,9 +654,6 @@ html.reduced .nc-sweep.is-on::after {
   .nc-people {
     display: none;
   }
-  .nc-helpers-chip {
-    display: inline-flex;
-  }
   .nc-tile {
     width: 44px;
   }
@@ -727,9 +694,6 @@ html.reduced .nc-sweep.is-on::after {
   }
   .nc-people {
     display: none;
-  }
-  .nc-helpers-chip {
-    display: inline-flex;
   }
   .nc-tile {
     width: 40px;
@@ -799,6 +763,37 @@ html.reduced .nc-sweep.is-on::after {
   }
   .nc-head .now-chips {
     margin-top: 6px;
+  }
+}
+
+/* Very short and narrow (a small window, or the main panel's scrollbar taking its 8 px when
+   helpers are out): the same single row, the trail dropped, the verb never cut in two. */
+@container nowcard (max-height: 150px) and (max-width: 720px) {
+  .nc-body {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) auto auto;
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "head doing numbers clock";
+    align-items: center;
+    gap: 0 14px;
+  }
+  .nc-trail,
+  .nc-doing .nc-sweep {
+    display: none;
+  }
+  .nc-tile {
+    width: 36px;
+  }
+  .nc-doing-row {
+    gap: 10px;
+  }
+  .now-card .nc-verb {
+    font-size: 16px;
+  }
+  .now-card .nc-spend-fig {
+    font-size: 24px;
+  }
+  .now-card .nc-title {
+    font-size: 15px;
   }
 }
 
@@ -872,10 +867,223 @@ html.reduced .nc-sweep.is-on::after {
     box-shadow: 0 0 0 12px transparent;
   }
 }
+/* Helpers at work: one 56 px row per helper under the chat cards. Every row shows: the list grows
+   and the page scrolls. The fill and the phase word are the only things that move, and each
+   moves at most once per second (HelperTracker.tsx); the spark is the only mark of completion. */
+.ht {
+  flex: none;
+  container: ht / inline-size;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ht-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ht-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ht-chat {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+
+.ht-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ht-row {
+  --ht-trail: 200px;
+  --ht-prog: 156px;
+  flex: none;
+  display: grid;
+  grid-template-columns: 32px minmax(96px, 1fr) var(--ht-trail) var(--ht-prog) minmax(112px, 148px) 56px 56px;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 16px 0 12px;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+.ht-row[data-done] {
+  opacity: 0.7;
+}
+
+.ht-row p {
+  margin: 0;
+}
+
+.ht-id {
+  min-width: 0;
+}
+.ht-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.ht-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+/* The exact model and effort ("Opus 5.5 · high"): never cut, the name gives way first. */
+.ht-model {
+  flex: none;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.ht-goal {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+/* The trail: a dotted path, the clay fill up to the progress point, the spark at the goal. */
+.ht-trail {
+  position: relative;
+  height: 16px;
+  min-width: 0;
+}
+.ht-path {
+  position: absolute;
+  left: 0;
+  right: 16px;
+  top: 50%;
+  border-top: 2px dotted var(--line-strong);
+  transform: translateY(-50%);
+}
+.ht-fill {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 3px;
+  width: calc((100% - 16px) * var(--fill, 0) / 100);
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  transform: translateY(-50%);
+}
+/* Only a move the page chose to animate gets a transition; every other update just sets the width. */
+.ht-fill[data-anim] {
+  transition: width 260ms var(--ease-out);
+}
+.ht-spark {
+  position: absolute;
+  right: 0;
+  top: 0;
+  overflow: visible;
+}
+.ht-spark path {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+}
+.ht-trail[data-done] .ht-spark path {
+  fill: var(--accent);
+  stroke: var(--accent);
+  transition: fill var(--dur-slow) var(--ease-out);
+}
+
+.ht-prog {
+  min-width: 0;
+}
+.ht-prog-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.ht-prog .nc-cap {
+  margin: 0;
+  font-size: 11px;
+}
+
+.ht-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--ink);
+  animation: nc-in 240ms var(--ease-out);
+}
+.ht-status[data-tone="calm"] {
+  color: var(--ink-2);
+}
+.ht-status[data-tone="warning"] {
+  color: var(--warning);
+}
+
+.ht-elapsed,
+.ht-tokens {
+  font-size: 15px;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+/* Reduced motion: the fill and the spark just set, the phase word just changes. */
+html.reduced .ht-fill,
+html.reduced .ht-fill[data-anim],
+html.reduced .ht-trail[data-done] .ht-spark path,
+html.reduced .ht-row {
+  transition: none !important;
+}
+html.reduced .ht-status {
+  animation: none !important;
+}
+
+/* Narrower: the token count goes first, then the trail and the words shrink. The model line and
+   the progress words keep their room. */
+@container ht (max-width: 780px) {
+  .ht-row {
+    --ht-trail: 120px;
+    --ht-prog: 152px;
+    gap: 10px;
+    grid-template-columns: 32px minmax(120px, 1fr) var(--ht-trail) var(--ht-prog) minmax(88px, 112px) 56px;
+  }
+  .ht-tokens[data-opt] {
+    display: none;
+  }
+}
+@container ht (max-width: 700px) {
+  .ht-row {
+    --ht-trail: 80px;
+  }
+}
+
 /* Reduced motion: nothing slides, rings or sweeps. */
 html.reduced .nc-step.is-new,
 html.reduced .nc-step.is-new .nc-dot,
-html.reduced .nc-helper,
 html.reduced .nc-doing-text {
   animation: none !important;
 }

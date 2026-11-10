@@ -14,6 +14,7 @@ use serde::de::IgnoredAny;
 
 use crate::search::mask::mask_secrets;
 use crate::usage::line::{LineEvent, MsgEvent, Prefilter};
+use crate::usage::receipt_scan::{Notice, notices_in};
 use crate::usage::time::parse_iso_ms;
 
 /// Longest target shown for a file, command word or site.
@@ -33,6 +34,33 @@ pub struct ToolFact {
     pub desc: Desc,
     /// A file this call reads or changes: (short path, changed).
     pub touched: Option<(String, bool)>,
+    /// A command that runs tests (matched on a fixed word list; only this yes/no is kept).
+    pub test: bool,
+    /// What the call does to the helper's task list, if it is a task-list tool.
+    pub plan: Option<PlanOp>,
+}
+
+/// Where one step of a task list stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepState {
+    Pending,
+    Active,
+    Done,
+}
+
+/// A change to a helper's task list. Only the states are read, never a step's text.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlanOp {
+    /// The whole list (`TodoWrite` `todos`, an `update_plan` `items`).
+    Set(Vec<StepState>),
+    /// `update_plan {advance:true}`: finish the active step, start the next.
+    Advance,
+    /// `update_plan {done:[i], start:j}`, both 1-based.
+    Mark { done: Vec<usize>, start: Option<usize> },
+    /// `TaskCreate`: one more step.
+    Add,
+    /// `TaskUpdate {taskId, status}`.
+    Update { id: String, status: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +87,10 @@ pub struct Parsed {
     /// `(from a custom-title line, title)`.
     pub title: Option<(bool, String)>,
     pub usage: Option<Box<MsgEvent>>,
+    /// The effort level the line says it ran at (`high`), if it says one. Never guessed.
+    pub effort: Option<String>,
+    /// Helpers the parent says have ended (`<task-notification>` records): agent id and status.
+    pub notices: Vec<Notice>,
 }
 
 pub struct Facts {
@@ -66,6 +98,9 @@ pub struct Facts {
     assistant: Finder<'static>,
     user: Finder<'static>,
     titles: [Finder<'static>; 2],
+    /// A notification only counts at the start of a field, as Claude Code writes it; a file or
+    /// tool result that quotes the marker carries it mid-string.
+    notice: [Finder<'static>; 2],
 }
 
 impl Default for Facts {
@@ -91,6 +126,10 @@ struct Raw<'a> {
     custom_title: Option<Cow<'a, str>>,
     #[serde(borrow, default)]
     agent_name: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    effort: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    per_turn_effort: Option<Cow<'a, str>>,
 }
 
 #[derive(Deserialize)]
@@ -126,8 +165,23 @@ struct Block<'a> {
     text: Option<Cow<'a, str>>,
 }
 
-/// The only tool input fields that are read. Each is a path, a command, a site or a type
-/// name; a body (`content`, `old_string`, `prompt`...) is not even named here.
+/// One step of a task list: only its state is read, never its text.
+#[derive(Deserialize, Default)]
+struct StepIn {
+    #[serde(default, deserialize_with = "lenient")]
+    status: Option<String>,
+}
+
+/// `TaskUpdate`'s id, written as a string or a number.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TaskId {
+    Text(String),
+    Num(i64),
+}
+
+/// The only tool input fields that are read. Each is a path, a command, a site, a type name or
+/// a task-list state; a body (`content`, `old_string`, `prompt`...) is not even named here.
 #[derive(Deserialize, Default)]
 struct Input<'a> {
     #[serde(borrow, default, deserialize_with = "text_or_none")]
@@ -142,6 +196,38 @@ struct Input<'a> {
     subagent_type: Option<Cow<'a, str>>,
     #[serde(borrow, default, deserialize_with = "text_or_none")]
     skill: Option<Cow<'a, str>>,
+    #[serde(default, deserialize_with = "lenient")]
+    todos: Option<Vec<StepIn>>,
+    #[serde(default, deserialize_with = "lenient")]
+    items: Option<Vec<StepIn>>,
+    #[serde(default, deserialize_with = "lenient")]
+    advance: Option<bool>,
+    #[serde(default, deserialize_with = "lenient")]
+    done: Option<Vec<i64>>,
+    #[serde(default, deserialize_with = "lenient")]
+    start: Option<i64>,
+    #[serde(default, deserialize_with = "lenient", rename = "taskId")]
+    task_id: Option<TaskId>,
+    #[serde(borrow, default, deserialize_with = "text_or_none")]
+    status: Option<Cow<'a, str>>,
+}
+
+/// A field of an unexpected shape reads as absent instead of failing the whole line.
+fn lenient<'de, D, T>(d: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Any<T> {
+        Ok(T),
+        Other(IgnoredAny),
+    }
+    Ok(match Any::<T>::deserialize(d)? {
+        Any::Ok(t) => Some(t),
+        Any::Other(_) => None,
+    })
 }
 
 /// A field that is not a string (a surprise in some tool) reads as absent instead of
@@ -171,6 +257,7 @@ impl Facts {
             assistant: f(r#""type":"assistant""#),
             user: f(r#""type":"user""#),
             titles: [f(r#""type":"custom-title""#), f(r#""type":"agent-name""#)],
+            notice: [f(r#""content":"<task-notification>"#), f(r#""text":"<task-notification>"#)],
         }
     }
 
@@ -179,7 +266,9 @@ impl Facts {
         let is_asst = self.assistant.find(line).is_some();
         let is_user = !is_asst && self.user.find(line).is_some();
         let is_title = !is_asst && !is_user && self.titles.iter().any(|f| f.find(line).is_some());
-        if !(is_asst || is_user || is_title) {
+        // Which helpers ended: a record in the parent chat (a queued line or a user line).
+        let has_notice = !is_asst && self.notice.iter().any(|f| f.find(line).is_some());
+        if !(is_asst || is_user || is_title || has_notice) {
             return None;
         }
         let raw: Raw = serde_json::from_slice(line).ok()?;
@@ -195,7 +284,12 @@ impl Facts {
             interrupted: false,
             title: None,
             usage: None,
+            effort: None,
+            notices: Vec::new(),
         };
+        if has_notice {
+            notices_in(line, &mut out.notices);
+        }
         match raw.ty.as_ref() {
             "custom-title" | "agent-name" => {
                 let custom = raw.ty == "custom-title";
@@ -207,6 +301,7 @@ impl Facts {
             }
             "assistant" => {
                 out.role = Role::Assistant;
+                out.effort = raw.per_turn_effort.as_deref().or(raw.effort.as_deref()).and_then(effort_word);
                 if let Ok(LineEvent::Message(m)) = self.pre.parse(line) {
                     out.usage = Some(m);
                 }
@@ -262,6 +357,7 @@ impl Facts {
                     None => {}
                 }
             }
+            _ if !out.notices.is_empty() => {}
             _ => return None,
         }
         Some(out)
@@ -285,15 +381,71 @@ fn describe(id: &str, name: &str, input: &Input, cwd: Option<&str>) -> ToolFact 
         "WebSearch" => ("web", "Searching the web", None, None),
         "Task" | "Agent" => ("helper", "Starting a helper", input.subagent_type.as_deref().map(|t| clean(t, 32)), None),
         "TodoWrite" | "ExitPlanMode" | "EnterPlanMode" | "TaskCreate" | "TaskUpdate" => ("plan", "Planning", None, None),
+        n if n.starts_with("mcp__") && n.ends_with("__update_plan") => ("plan", "Planning", None, None),
         "AskUserQuestion" => ("ask", "Asking you", None, None),
         "Skill" => ("tool", "Using a skill", input.skill.as_deref().map(|s| clean(s, 32)), None),
         n if n.starts_with("mcp__") => ("tool", "Using", Some(mcp_label(n)), None),
         n => ("tool", "Using", Some(clean(n, 32)), None),
     };
+    let test = matches!(name, "Bash" | "PowerShell") && input.command.as_deref().is_some_and(is_test_run);
     ToolFact {
         id: id.to_string(),
         desc: Desc { kind, verb: verb.to_string(), target: target.map(|t| mask(&t)) },
         touched: touched.map(|(p, w)| (mask(&p), w)),
+        test,
+        plan: plan_op(name, input),
+    }
+}
+
+/// Words that mark a command as a test run, matched whole against the first
+/// `TEST_SCAN_CHARS` characters of it (`cargo test`, `npx vitest run`, `pytest -q`,
+/// `./verify.ps1`). Only the yes/no leaves this file.
+const TEST_WORDS: &[&str] = &["test", "tests", "vitest", "jest", "pytest", "nextest", "verify"];
+const TEST_SCAN_CHARS: usize = 200;
+
+pub fn is_test_run(cmd: &str) -> bool {
+    let head: String = cmd.chars().take(TEST_SCAN_CHARS).collect::<String>().to_ascii_lowercase();
+    head.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| TEST_WORDS.contains(&w))
+}
+
+fn state_of(status: Option<&str>) -> StepState {
+    match status {
+        Some("completed") => StepState::Done,
+        Some("in_progress") => StepState::Active,
+        _ => StepState::Pending,
+    }
+}
+
+/// A task-list tool's effect on the list. A helper that never touches one yields `None` for
+/// every call, which is nearly all of them (the spec's 0 of 1,594).
+fn plan_op(name: &str, input: &Input) -> Option<PlanOp> {
+    match name {
+        "TodoWrite" => input.todos.as_ref().map(|t| PlanOp::Set(t.iter().map(|s| state_of(s.status.as_deref())).collect())),
+        "TaskCreate" => Some(PlanOp::Add),
+        "TaskUpdate" => {
+            let id = match input.task_id.as_ref()? {
+                TaskId::Text(t) => t.clone(),
+                TaskId::Num(n) => n.to_string(),
+            };
+            Some(PlanOp::Update { id, status: input.status.as_deref()?.to_string() })
+        }
+        n if n.starts_with("mcp__") && n.ends_with("__update_plan") => {
+            if let Some(items) = &input.items {
+                return Some(PlanOp::Set(items.iter().map(|s| state_of(s.status.as_deref())).collect()));
+            }
+            if input.advance == Some(true) {
+                return Some(PlanOp::Advance);
+            }
+            if input.done.is_some() || input.start.is_some() {
+                let idx = |n: &i64| usize::try_from(*n).ok().filter(|n| *n >= 1);
+                return Some(PlanOp::Mark {
+                    done: input.done.iter().flatten().filter_map(idx).collect(),
+                    start: input.start.as_ref().and_then(idx),
+                });
+            }
+            None
+        }
+        _ => None,
     }
 }
 
@@ -433,6 +585,13 @@ fn program_name(w: &str) -> String {
     base.to_string()
 }
 
+/// An effort level as the transcript writes it (`high`, `xhigh`): one short lowercase word, or
+/// nothing. Anything else (empty, long, odd characters) is dropped rather than shown.
+pub fn effort_word(w: &str) -> Option<String> {
+    let w = w.trim();
+    (!w.is_empty() && w.len() <= 10 && w.bytes().all(|b| b.is_ascii_lowercase())).then(|| w.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -451,6 +610,21 @@ mod tests {
         assert_eq!(command_head("cargo clean-the-world"), "cargo");
         assert_eq!(command_head("cd /tmp"), "a command");
         assert_eq!(command_head("sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA do"), "a command");
+    }
+
+    #[test]
+    fn effort_is_the_lines_own_word_or_nothing() {
+        let line = |extra: &str| {
+            format!(r#"{{"type":"assistant","timestamp":"2026-11-08T10:00:00.000Z"{extra},"message":{{"stop_reason":"tool_use","content":[]}}}}"#)
+        };
+        assert_eq!(one(&line(r#","effort":"high""#)).effort.as_deref(), Some("high"));
+        // The per-turn level wins over the plain one.
+        assert_eq!(one(&line(r#","effort":"high","perTurnEffort":"medium""#)).effort.as_deref(), Some("medium"));
+        assert_eq!(one(&line("")).effort, None);
+        // Not a word we can trust: dropped, never guessed.
+        assert_eq!(one(&line(r#","effort":"HIGH!!""#)).effort, None);
+        assert_eq!(one(&line(r#","effort":"a-very-long-made-up-level""#)).effort, None);
+        assert_eq!(effort_word("xhigh").as_deref(), Some("xhigh"));
     }
 
     #[test]

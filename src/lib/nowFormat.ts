@@ -2,6 +2,12 @@
 
 import type { NowChat, NowLast, NowSnapshot } from "./nowTypes";
 import { formatDuration } from "./usage";
+import type { Cost } from "./usageTypes";
+
+/** The live snapshot carries a dollar estimate and a flag, not a full Cost: rebuild one for the hover. */
+export function nowCost(usd: number | null, unpriced: boolean): Cost {
+  return { usd, complete: !unpriced, unpricedTokens: 0 };
+}
 
 /** 83 s -> "1:23", 3725 s -> "1:02:05". */
 export function clock(ms: number): string {
