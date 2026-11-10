@@ -76,7 +76,8 @@ describe("History", () => {
     expect(within(screen.getByRole("list", { name: "Changes" })).getAllByText(/Settings file/).length).toBeGreaterThan(0);
     await userEvent.click(within(show).getByRole("button", { name: "All" }));
     await userEvent.type(screen.getByRole("searchbox", { name: "Search changes" }), "zzzz-no-such");
-    expect(await screen.findByText(/Nothing matches that/)).toBeInTheDocument();
+    expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
+    expect(screen.getByText('"zzzz-no-such"')).toBeInTheDocument();
   });
 
   it("compares a copy with what is on disk now when asked", async () => {

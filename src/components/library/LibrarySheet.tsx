@@ -3,6 +3,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowSquareOut, CaretRight, Package, X } from "@phosphor-icons/react";
 import { Button } from "../controls";
+import { EmptyState } from "../EmptyState";
 import { Chip } from "../setup/parts";
 import { AgentAvatar } from "../usage/helperKit";
 import { KIND_BY_ID } from "../../lib/setup-model";
@@ -28,8 +29,8 @@ const EASY = "Atlas could not read that. Check your connection and try again.";
 function Section({ title, aside, className = "", children }: { title: string; aside?: ReactNode; className?: string; children: ReactNode }) {
   return (
     <section className={`border-t border-line px-6 py-4 ${className}`}>
-      <div className="mb-2.5 flex items-baseline justify-between gap-3">
-        <h3 className="shrink-0 text-body font-semibold text-ink">{title}</h3>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h3 className="h-sub shrink-0">{title}</h3>
         {aside && <span className="min-w-0 truncate text-caption text-ink-2">{aside}</span>}
       </div>
       {children}
@@ -90,11 +91,7 @@ function FileView({ token, item, onBack }: { token: string; item: InnerItem; onB
         </span>
       </div>
       {state === null && <div role="status" aria-label="Reading the file" className="skeleton h-40 rounded-card" />}
-      {state && "error" in state && (
-        <p role="alert" className="text-body text-ink-2">
-          {state.error}
-        </p>
-      )}
+      {state && "error" in state && <EmptyState compact variant="error" title="Atlas could not read that file" reason={state.error} />}
       {text && (
         <>
           <div ref={host} className="h-[min(360px,45vh)] overflow-hidden rounded-card border border-line bg-surface" />
@@ -276,7 +273,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
         <header className="flex items-start gap-3 border-b border-line px-6 py-4">
           <PluginTile topic={entryTopic({ name: target.name, description: entry?.description })} state={tileState(installed)} size={40} />
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="selectable break-words text-subtitle font-semibold text-ink">
+            <h2 id={titleId} className="h-page selectable break-words">
               {target.name}
             </h2>
             {/* Where it comes from, in words. The version and the commit are under the check, not up here. */}
@@ -329,19 +326,19 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
 
           {error && (
             <div className="border-t border-line px-6 py-4">
-              <p role="alert" className="text-body text-ink">
-                {error}
-              </p>
-              <div className="mt-3">
-                <Button
-                  onClick={() => {
+              {/* The Library writes its own reasons in plain words, so the sentence stays on the surface. */}
+              <EmptyState
+                compact
+                variant="error"
+                title="Atlas could not check this"
+                body={error}
+                action={{
+                  onClick: () => {
                     dropCheck(target.pluginId);
                     load(true);
-                  }}
-                >
-                  Try again
-                </Button>
-              </div>
+                  },
+                }}
+              />
             </div>
           )}
 

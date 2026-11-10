@@ -226,7 +226,7 @@ describe("Chat receipt and helper map", () => {
     await userEvent.keyboard("{Enter}");
     expect(node).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(within(screen.getByRole("complementary", { name: `Slice: ${a.name}` })).getByRole("button", { name: /Open helper/ }));
-    expect(await screen.findByRole("heading", { level: 2, name: a.name })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: a.name })).toBeInTheDocument();
   });
 
   it("a helper line on the receipt opens the map on that helper", async () => {
@@ -249,11 +249,11 @@ describe("Chat receipt and helper map", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Show as a list" }));
     const a = detail.agents[0];
     await userEvent.click(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) })[0]);
-    expect(await screen.findByRole("heading", { level: 2, name: a.name })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: a.name })).toBeInTheDocument();
 
     // From the helper: one step back is its session, on the tab it was opened from.
     await userEvent.keyboard("{Escape}");
-    expect(screen.queryByRole("heading", { level: 2, name: a.name })).toBeNull();
+    expect(screen.queryByRole("heading", { level: 1, name: a.name })).toBeNull();
     expect(await screen.findByRole("radio", { name: "Helpers" })).toBeChecked();
     expect(screen.queryByRole("searchbox", { name: "Search chats" })).toBeNull();
 
@@ -338,7 +338,11 @@ describe("Chat receipt and helper map", () => {
     let calls = 0;
     backend.sessionReceipt = (id) => (++calls === 1 ? Promise.reject(new Error("The chat file could not be read")) : real(id));
     mountDetail(backend, row.sessionId);
-    expect(await screen.findByText("The chat file could not be read")).toBeInTheDocument();
+    // The plain sentence is on the surface; the raw reason waits behind Details.
+    expect(await screen.findByText("Could not load the token breakdown")).toBeInTheDocument();
+    expect(screen.queryByText("The chat file could not be read")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(screen.getByText("The chat file could not be read")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
   });

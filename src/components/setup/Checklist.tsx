@@ -69,7 +69,7 @@ export function Checklist({ items, onCreate, steps = SETUP_STEPS }: { items: Set
           {p.complete ? <CheckCircle size={20} weight="fill" /> : <Sparkle size={18} weight="duotone" />}
         </span>
         <div className={folded ? "min-w-0 shrink" : "min-w-0 flex-1"}>
-          <h2 id="checklist-title" className="d d-figure truncate text-ink">
+          <h2 id="checklist-title" className="h-section truncate">
             {progressTitle(p)}
           </h2>
         </div>

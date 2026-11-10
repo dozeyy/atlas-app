@@ -1,11 +1,10 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowLeft, Plus, SquaresFour } from "@phosphor-icons/react";
+import { ArrowLeft, Plus } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { EmptyState } from "../EmptyState";
 import { IconMotion } from "../IconMotion";
 import { GroupBody, GroupSection } from "./GroupSection";
-import { NoMatches } from "./states";
 import { Toolbar } from "./Toolbar";
 import {
   DEFAULT_FILTERS,
@@ -16,6 +15,7 @@ import {
   tileBlurb,
   tileKinds,
   tileNoun,
+  tileTitle,
   visibleItems,
   type Filters,
   type TileId,
@@ -149,6 +149,8 @@ export function CollectionView({
           </IconMotion>
           Back to Toolkit
         </Button>
+        {/* The list you opened is named: Toolkit stays the page, this is the one thing on it. */}
+        <h2 className="h-page min-w-0 truncate">{tileTitle(tile)}</h2>
         {creatable && (
           <Button variant="primary" className="ml-auto" onClick={() => onCreate(creatable)}>
             <IconMotion motion="pop">
@@ -176,7 +178,6 @@ export function CollectionView({
         {items.length === 0 ? (
           <EmptyState
             fill
-            icon={tile === "more" ? SquaresFour : KIND_BY_ID[tile].icon}
             seed={73}
             title={tile === "more" ? "Nothing here yet" : `No ${tileNoun(tile)} yet`}
             body={tileBlurb(tile)}
@@ -189,7 +190,7 @@ export function CollectionView({
             )}
           </EmptyState>
         ) : groups.length === 0 ? (
-          <NoMatches onClear={clearAll} />
+          <EmptyState variant="no-match" fill query={query.trim() || undefined} action={{ onClick: clearAll, label: "Clear search and filters" }} />
         ) : single ? (
           <GroupBody group={groups[0]!} onOpenItem={onOpenItem} onDelete={onDelete} />
         ) : (

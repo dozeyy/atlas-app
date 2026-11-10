@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { CaretDown, Stack, Warning } from "@phosphor-icons/react";
-import { Button } from "../controls";
 import { EndLine } from "./EndLine";
 import { Skeleton } from "./StateBlocks";
+import { EmptyState } from "../EmptyState";
 import { AgentAvatar, modelTone } from "./helperKit";
 import { useIntro } from "../../lib/motion";
 import { KIND_WORDS, barWidth, byModel, cacheReads, fitColumn, flagText, itemDetail, itemTitleFull, itemTitle, kindTitle, lineTitle, tokensText, whatItUsed, whoUsed, type SpendLine } from "../../lib/receiptView";
@@ -188,15 +188,12 @@ export function ReceiptPane({
 
   if (state.error && !r) {
     return (
-      <div role="alert" className="flex items-center gap-3 text-body text-ink-2">
-        <span className="text-danger">{state.error}</span>
-        <Button onClick={() => state.reload(false)}>Try again</Button>
-      </div>
+      <EmptyState compact variant="error" title="Could not load the token breakdown" reason={state.error} action={{ onClick: () => state.reload(false) }} />
     );
   }
   if (!r) {
     if (state.loading) return <ReceiptSkeleton />;
-    return <p className="text-body text-ink-2">This chat is not in the usage cache any more.</p>;
+    return <p className="text-body text-ink-2">This session is no longer in your usage data.</p>;
   }
 
   const total = r.totalTokens;

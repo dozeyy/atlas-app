@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ClockCounterClockwise, PauseCircle } from "@phosphor-icons/react";
 import { getBackend } from "../lib/ipc";
 import { useFetched } from "../lib/useUsage";
 import { useWidth } from "../lib/useWidth";
@@ -8,10 +7,10 @@ import { prefersReducedMotion } from "../lib/motion";
 import { GROUP_CHIPS, groupEvents } from "../lib/historyModel";
 import { exact, shortDate } from "../lib/usage";
 import { useAtlas } from "../state/AtlasProvider";
-import { Button, Card, PageTitle } from "../components/controls";
+import { Card, PageTitle } from "../components/controls";
 import { EmptyState } from "../components/EmptyState";
 import { SearchField, SelectField } from "../components/usage/fields";
-import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
+import { Skeleton } from "../components/usage/StateBlocks";
 import { Ribbon } from "../components/history/Ribbon";
 import { Timeline } from "../components/history/Timeline";
 import { Detail } from "../components/history/Detail";
@@ -173,7 +172,7 @@ export function History() {
     return (
       <div className="@container" ref={root}>
         <PageTitle title="History" />
-        <ErrorBlock title="Could not load History" message={overview.error} onRetry={() => overview.reload(false)} />
+        <EmptyState variant="error" title="Could not load History" reason={overview.error} action={{ onClick: () => overview.reload(false) }} />
       </div>
     );
   }
@@ -184,7 +183,6 @@ export function History() {
         <EmptyState
           fill
           seed={11}
-          icon={PauseCircle}
           title="History is paused while Sandbox mode is on"
           body="Atlas keeps its copies of your real Claude folder only. Turn Sandbox mode off in Settings, under Claude folder, and History picks up where it left off."
         />
@@ -198,7 +196,6 @@ export function History() {
         <EmptyState
           fill
           seed={11}
-          icon={ClockCounterClockwise}
           title="Atlas is taking its first look"
           body="It is reading your Claude folder now. Changes you make from here on show up on this page, newest first."
         />
@@ -241,16 +238,15 @@ export function History() {
       )}
 
       {list.error && !list.events.length ? (
-        <ErrorBlock title="Could not load the changes" message={list.error} onRetry={list.retry} />
+        <EmptyState variant="error" title="Could not load the changes" reason={list.error} action={{ onClick: list.retry }} />
       ) : list.loading && list.events.length === 0 ? (
         <Skeleton className="h-64" />
       ) : list.events.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-10 text-center">
-          <p role="status" className="text-body text-ink-2">
-            {filtered ? "Nothing matches that. Try another filter or search." : "No changes yet."}
-          </p>
-          {filtered && <Button onClick={showEverything}>Show everything</Button>}
-        </div>
+        filtered ? (
+          <EmptyState variant="no-match" query={q.trim() || undefined} action={{ onClick: showEverything, label: "Show everything" }} />
+        ) : (
+          <EmptyState seed={11} className="min-h-[240px]" title="No changes yet" body="Changes to your Claude setup show up here, newest first." />
+        )
       ) : wide ? (
         // The list gets half: its rows are sentences, and a diff wraps inside its pane.
         <div className="rise grid min-h-[240px] flex-1 grid-cols-[minmax(380px,1fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-6" style={rise(3)}>

@@ -9,7 +9,8 @@ import { CreateFlow } from "../components/setup/CreateFlow";
 import { DetailSheet } from "../components/setup/DetailSheet";
 import { ItemRow } from "../components/setup/ItemViews";
 import { PathText } from "../components/setup/parts";
-import { NoSetup, SetupError, SetupSkeleton } from "../components/setup/states";
+import { NoSetup, SetupSkeleton } from "../components/setup/states";
+import { EmptyState } from "../components/EmptyState";
 import { Insights, TopSlot } from "../components/setup/TopSlot";
 import { TypeTiles } from "../components/setup/TypeTiles";
 import { CostProvider } from "../components/setup/CostContext";
@@ -52,7 +53,7 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <h2 id="missing-title" className="text-lead font-semibold text-ink">
+            <h2 id="missing-title" className="h-section">
               Projects no longer on disk
             </h2>
             <span className="chip">{projects.length}</span>
@@ -292,7 +293,14 @@ export function Setup() {
       ) : st.snapshot ? (
         <Loaded snap={st.snapshot} includeWorktrees={st.includeWorktrees} loads={st.loads} error={st.status === "ready" ? st.error : null} />
       ) : st.status === "error" ? (
-        <SetupError message={st.error ?? "Something went wrong."} onRetry={reloadSetup} />
+        <EmptyState
+          fill
+          variant="error"
+          title="Atlas could not read your toolkit"
+          body="Nothing in your Claude folder was changed."
+          reason={st.error}
+          action={{ onClick: reloadSetup }}
+        />
       ) : (
         <SetupSkeleton />
       )}

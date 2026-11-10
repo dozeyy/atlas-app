@@ -151,8 +151,9 @@ describe("Dashboard", () => {
     const list = await screen.findByRole("region", { name: "Recent sessions" });
     const first = within(list).getAllByRole("button", { name: /tokens/ })[0];
     await userEvent.click(first);
-    expect(await screen.findByRole("heading", { level: 1, name: "Sessions" })).toBeInTheDocument();
+    // An open session is the page: its own name is the one title, and the way back names the list.
     expect(await screen.findByRole("button", { name: "All sessions" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1, name: "Sessions" })).not.toBeInTheDocument();
     // A session opens on its receipt.
     expect(await screen.findByRole("region", { name: "Who used it" })).toBeInTheDocument();
   });
@@ -174,7 +175,7 @@ describe("Sessions", () => {
     mount("data", "sessions");
     await screen.findAllByRole("button", { name: /tokens/ });
     await userEvent.type(screen.getByRole("searchbox", { name: "Search chats" }), "zzzz-nothing");
-    expect(await screen.findByText("No chats match")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
     // Two ways to clear: the X in the field and the worded button in the empty state. Each brings the list back.
     const clears = screen.getAllByRole("button", { name: "Clear search" });
     expect(clears).toHaveLength(2);
@@ -182,7 +183,7 @@ describe("Sessions", () => {
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ }).length).toBeGreaterThan(0));
     expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
     await userEvent.type(screen.getByRole("searchbox", { name: "Search chats" }), "zzzz-nothing");
-    expect(await screen.findByText("No chats match")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
     await userEvent.click(screen.getAllByRole("button", { name: "Clear search" })[0]);
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ }).length).toBeGreaterThan(0));
     expect(screen.getByRole("searchbox", { name: "Search chats" })).toHaveValue("");
@@ -326,7 +327,7 @@ describe("Helpers (subagents) inside a session", () => {
     mountDetail(backend, row.sessionId);
     await openHelperList();
     await userEvent.click(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) })[0]);
-    expect(await screen.findByRole("heading", { level: 2, name: a.name })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: a.name })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "What it was asked" })).toHaveTextContent(full.prompt!);
     expect(screen.getByText("Tool calls")).toBeInTheDocument();
     expect(screen.getByText("Ran for")).toBeInTheDocument();

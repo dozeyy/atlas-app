@@ -125,7 +125,7 @@ function Quiet({ title, hint, last, now }: { title: string; hint?: string; last?
 function List({ title, count, needsYou, children }: { title: string; count: number; needsYou?: boolean; children: ReactNode }) {
   return (
     <section className="now-list" aria-label={title} data-needs-you={needsYou || undefined}>
-      <h2 className="now-list-head">
+      <h2 className="h-section now-list-head">
         {needsYou && <Warning size={16} weight="fill" aria-hidden="true" />}
         <span>{title}</span>
         <span className="now-count">{count}</span>
@@ -221,7 +221,7 @@ function Running({ chats }: { chats: NowChat[] }) {
   const now = useClock(true, 1000);
   return (
     <section className="now-run" aria-label="Running">
-      <h2 className="now-list-head">
+      <h2 className="h-section now-list-head">
         <span>Running</span>
         <span className="now-count">{chats.length}</span>
       </h2>

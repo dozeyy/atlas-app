@@ -215,7 +215,8 @@ export function ItemEditor({
               <Lock size={18} aria-hidden="true" />
             </span>
             <div>
-              <h3 className="text-lead font-semibold text-ink">This {KIND_BY_ID[item.kind].singular} holds secret values</h3>
+              {/* A message, not a heading: the system face a step above body. */}
+              <p className="text-lead font-semibold text-ink">This {KIND_BY_ID[item.kind].singular} holds secret values</p>
               <p className="mt-1 text-body text-ink-2">
                 Editing shows the real text, keys and tokens included. Atlas does not save or log them anywhere else.
               </p>

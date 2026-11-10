@@ -192,7 +192,7 @@ function Report({ onClose }: { onClose: () => void }) {
       }
     >
       <Para>Atlas keeps no log files, so there is nothing to attach. Write down what you were doing and what happened, and include these details.</Para>
-      <pre className="code-text selectable rounded-control border border-line bg-raised px-3 py-2 text-ink">{details}</pre>
+      <pre className="code-text selectable rounded-control border border-line bg-raised px-3 py-2 text-ink-2">{details}</pre>
     </Dialog>
   );
 }

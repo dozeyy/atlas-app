@@ -217,7 +217,7 @@ describe("Team: Scorecard", () => {
   it("says so when the numbers cannot be read, and can try again", async () => {
     backend.team.failNext = true;
     await openToolkit();
-    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be read/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not read the team's runs");
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     await card("General purpose");
   });

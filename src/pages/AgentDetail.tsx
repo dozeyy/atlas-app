@@ -6,7 +6,8 @@ import { Bars } from "../components/charts/Bars";
 import { IconMotion } from "../components/IconMotion";
 import { Breakdown, ClampText, FileRow, ModelSplit } from "../components/usage/detailParts";
 import { AgentAvatar, helperName, ModelChip, OutcomeMark, shownName, TokenFigure, type AvatarLevel } from "../components/usage/helperKit";
-import { ErrorBlock, SectionTitle, Skeleton } from "../components/usage/StateBlocks";
+import { SectionTitle, Skeleton } from "../components/usage/StateBlocks";
+import { EmptyState } from "../components/EmptyState";
 import { timelineBars } from "../components/usage/timelineBars";
 import { getBackend } from "../lib/ipc";
 import { useIntro } from "../lib/motion";
@@ -73,7 +74,7 @@ export function AgentDetailView({
     return (
       <>
         {back}
-        <ErrorBlock title="Could not load this helper" message={d.error} onRetry={() => d.reload(false)} />
+        <EmptyState variant="error" title="Could not load this helper" reason={d.error} action={{ onClick: () => d.reload(false) }} />
       </>
     );
   }
@@ -81,7 +82,12 @@ export function AgentDetailView({
     return (
       <>
         {back}
-        <ErrorBlock title="This helper is not here any more" message="It is no longer in the usage cache. Go back to the session to see who is left." />
+        <EmptyState
+          variant="error"
+          title="This helper is not here any more"
+          body="It is no longer in your usage data."
+          action={{ label: "Back to the session", onClick: onBack }}
+        />
       </>
     );
   }
@@ -106,7 +112,7 @@ export function AgentDetailView({
         <AgentAvatar type={agent.agentType} size={48} level={d.data.parentName ? "nested" : level} />
         <div className="min-w-0">
           {/* A name made from the type gets its short forms in capitals; one that was written stays as written. */}
-          <h2 className="d d-figure break-words text-ink">{shownName(agent)}</h2>
+          <h1 className="h-page break-words">{shownName(agent)}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-body text-ink-2">
             {outcome && <OutcomeMark outcome={outcome} />}
             {type && <span title={agent.agentType ?? undefined}>{type}</span>}

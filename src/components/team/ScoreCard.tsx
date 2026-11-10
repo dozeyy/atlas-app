@@ -69,9 +69,10 @@ export function ScoreCard({ card, onOpen }: { card: TypeCard; onOpen: () => void
       <div className="flex items-center gap-3">
         <AgentAvatar type={card.agentType} size={40} />
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-lead font-semibold text-ink" title={name}>
+          {/* A card's name is a label, not a heading (the card is one button). */}
+          <div className="truncate text-lead font-semibold text-ink" title={name}>
             {name}
-          </h3>
+          </div>
           {card.reviewer && <p className="truncate text-caption text-ink-2">{REVIEWER_WORDS}</p>}
         </div>
       </div>

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { WarningCircle } from "@phosphor-icons/react";
 import { Button } from "../controls";
-import { ErrorBlock, Skeleton } from "../usage/StateBlocks";
+import { Skeleton } from "../usage/StateBlocks";
+import { EmptyState } from "../EmptyState";
 import { SideSheet } from "./SideSheet";
 import { getBackend } from "../../lib/ipc";
 import { errorText } from "../../lib/setup-actions";
@@ -73,7 +74,7 @@ function LineField({
           onEnter();
         }
       }}
-      className="selectable team-draft block w-full resize-none overflow-hidden rounded-control border border-line-strong bg-surface px-3 py-2 font-mono text-body text-ink [overflow-wrap:anywhere]"
+      className="selectable team-draft block w-full resize-none overflow-hidden rounded-control border border-line-strong bg-surface px-3 py-2 code-text text-ink [overflow-wrap:anywhere]"
     />
   );
 }
@@ -230,7 +231,7 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
     >
       <div className="px-6 py-4">
         {loadError ? (
-          <ErrorBlock title="Could not prepare this rule" message={loadError} onRetry={load} />
+          <EmptyState compact variant="error" title="Could not prepare this rule" reason={loadError} action={{ onClick: load }} />
         ) : !sheet ? (
           <div aria-label="Loading" className="space-y-3">
             <Skeleton className="h-14" />
@@ -288,7 +289,7 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
                     rows={6}
                     spellCheck={false}
                     onChange={(e) => setDrafts((d) => ({ ...d, [target.id]: e.target.value }))}
-                    className="selectable team-draft w-full resize-y rounded-control border border-line-strong bg-surface px-3 py-2 font-mono text-body text-ink"
+                    className="selectable team-draft w-full resize-y rounded-control border border-line-strong bg-surface px-3 py-2 code-text text-ink"
                   />
                 ) : (
                   <>

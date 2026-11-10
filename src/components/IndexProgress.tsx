@@ -64,7 +64,7 @@ export function IndexProgress({
       <div role="status" className="mb-6 flex items-start gap-3 rounded-card border border-line bg-warning-tint px-5 py-4">
         <WarningCircle size={20} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
         <p className="text-body text-ink">
-          This usage cache was made by a newer Atlas. You can read it here, but this version will not change it.
+          Your usage data was saved by a newer Atlas. You can read it here, but this version will not change it.
         </p>
       </div>
     );
@@ -73,7 +73,7 @@ export function IndexProgress({
   if (status.state === "recovering") {
     return (
       <div role="status" className="mb-6 rounded-card border border-line bg-surface px-5 py-4 text-body text-ink">
-        The usage cache was damaged. Atlas is rebuilding it from your sessions.
+        Your usage data was damaged. Atlas is rebuilding it from your sessions.
       </div>
     );
   }

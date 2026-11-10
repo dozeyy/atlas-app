@@ -3,6 +3,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowSquareOut, CaretDown, CaretRight, Check, Copy, CopySimple, Eye, EyeSlash, FolderOpen, Lock, PencilSimple, Trash, WarningCircle, X } from "@phosphor-icons/react";
 import { Button } from "../controls";
+import { EmptyState } from "../EmptyState";
 import { Dialog } from "../Dialog";
 import { DuplicateDialog } from "./DuplicateDialog";
 import { ItemEditor } from "./ItemEditor";
@@ -46,7 +47,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="border-t border-line px-6 py-4">
-      <h3 className="mb-2.5 text-body font-semibold text-ink">{title}</h3>
+      <h3 className="h-sub mb-2">{title}</h3>
       {children}
     </section>
   );
@@ -382,9 +383,7 @@ function SourceSection({ item, loads, fileRows }: { item: SetupItem; loads: numb
   const waiting = noFile ? (
     <p className="text-body text-ink-2">This lives in your claude.ai account, so there is no file on this computer to show.</p>
   ) : err ? (
-    <p role="alert" className="text-body text-ink-2">
-      {err}
-    </p>
+    <EmptyState compact variant="error" title="Atlas could not read this file" reason={err} />
   ) : !src ? (
     <div role="status" aria-label="Loading contents" className="skeleton h-40 rounded-card" />
   ) : null;
@@ -410,7 +409,7 @@ function SourceSection({ item, loads, fileRows }: { item: SetupItem; loads: numb
           {fileRows.length > 0 && <Facts rows={src ? [...fileRows, { label: "Line endings", value: src.lineEnding === "CRLF" ? "Windows (CRLF)" : "Unix (LF)" }] : fileRows} />}
           {fields.length > 0 && (
             <div>
-              <h4 className="mb-2 text-body font-medium text-ink">Settings in the file's header</h4>
+              <h4 className="h-sub mb-2">Settings in the file's header</h4>
               <dl className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2">
                 {fields.map((f) => (
                   <div key={f.key} className="contents">
@@ -423,7 +422,7 @@ function SourceSection({ item, loads, fileRows }: { item: SetupItem; loads: numb
           )}
           {parsed && (
             <div>
-              <h4 className="mb-2 text-body font-medium text-ink">Raw text</h4>
+              <h4 className="h-sub mb-2">Raw text</h4>
               {raw}
             </div>
           )}
@@ -577,7 +576,7 @@ export function DetailSheet({
     // A hook's title is in plain words; the name the settings file uses stays findable here
     // (the scan's own Event and Matcher rows say it when they are present).
     ...(displayName(item) !== item.name && !item.detail.some((d) => d.label === "Event")
-      ? [{ label: "In settings", value: <span className="mono [overflow-wrap:anywhere]">{item.name}</span>, copy: item.name }]
+      ? [{ label: "In settings", value: <span className="mono text-ink-2 [overflow-wrap:anywhere]">{item.name}</span>, copy: item.name }]
       : []),
   ];
 
@@ -597,7 +596,7 @@ export function DetailSheet({
         <header className="sticky top-0 z-10 flex items-start gap-3 border-b border-line bg-bg px-6 py-4">
           <ItemIcon item={item} size={40} />
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="selectable break-words text-subtitle font-semibold text-ink">
+            <h2 id={titleId} className="h-page selectable break-words">
               {displayName(item)}
             </h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -722,16 +721,16 @@ export function DetailSheet({
               rows={[
                 // How it connects is the lead line, in words; the settings' own word shows only when Atlas has none.
                 ...(connectionWords(mcp.transport, link.target) ? [] : [{ label: "Type", value: mcp.transport }]),
-                ...(link.target ? [{ label: mcp.transport === "stdio" ? "Command" : "Address", value: <span className="mono break-all">{link.target}</span>, copy: link.target }] : []),
-                ...(mcp.envKeys.length ? [{ label: "Environment", value: <span className="mono">{mcp.envKeys.join(", ")}</span> }] : []),
-                ...(mcp.headerKeys.length ? [{ label: "Headers", value: <span className="mono">{mcp.headerKeys.join(", ")}</span> }] : []),
+                ...(link.target ? [{ label: mcp.transport === "stdio" ? "Command" : "Address", value: <span className="mono break-all text-ink-2">{link.target}</span>, copy: link.target }] : []),
+                ...(mcp.envKeys.length ? [{ label: "Environment", value: <span className="mono text-ink-2">{mcp.envKeys.join(", ")}</span> }] : []),
+                ...(mcp.headerKeys.length ? [{ label: "Headers", value: <span className="mono text-ink-2">{mcp.headerKeys.join(", ")}</span> }] : []),
               ]}
             />
             {mcp.perProject.length > 0 && (
               <>
-                <h4 className="mb-2 mt-4 text-body font-medium text-ink">
+                <h4 className="h-sub mb-2 mt-4">
                   Projects{" "}
-                  <span className="font-normal text-ink-2">
+                  <span className="font-normal">
                     {mcp.onCount} of {mcp.totalProjects || mcp.perProject.length} on
                   </span>
                 </h4>

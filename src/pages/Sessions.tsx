@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowsDownUp, ChatsCircle } from "@phosphor-icons/react";
+import { ArrowsDownUp } from "@phosphor-icons/react";
 import { Button, Card, PageTitle } from "../components/controls";
 import { EmptyState } from "../components/EmptyState";
 import { IndexProgress } from "../components/IndexProgress";
@@ -8,7 +8,7 @@ import { ChoiceList, OptionField, OptionsMenu } from "../components/OptionsMenu"
 import { PickUp } from "../components/usage/PickUp";
 import { SessionGrid, SessionLine } from "../components/usage/SessionList";
 import { SearchField, SelectField } from "../components/usage/fields";
-import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
+import { Skeleton } from "../components/usage/StateBlocks";
 import { SessionDetailView } from "./SessionDetail";
 import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
@@ -21,6 +21,8 @@ import { addDays, compact, exact, localDay, modelChoices, plural } from "../lib/
 import type { SessionPage, SessionQuery, SessionRow } from "../lib/types";
 
 const PAGE = 50;
+/** Empty, no-match and error take the room the list would: the state never floats over a blank page. */
+const STATE_HEIGHT = "min-h-[max(320px,calc(var(--app-h)-14.5rem))]";
 /** Titles and projects are filtered this soon after the last keystroke. Message text waits a little longer (useChatSearch). */
 const TITLE_DEBOUNCE_MS = 60;
 
@@ -221,7 +223,8 @@ export function Sessions() {
 
   return (
     <>
-      <PageTitle title="Sessions" />
+      {/* An open session draws its own title; a page has one. */}
+      {selected === null && <PageTitle title="Sessions" />}
       <IndexProgress status={status} progress={progress} onRetry={() => void backend.usageReindex("changed").catch(() => {})} />
 
       {selected && (
@@ -280,7 +283,13 @@ export function Sessions() {
             Waiting for your Claude folder. Your sessions appear here as soon as it is ready.
           </p>
         ) : first.error && !cacheNotReady(status) ? (
-          <ErrorBlock title="Could not load your sessions" message={first.error} onRetry={() => first.reload(false)} />
+          <EmptyState
+            variant="error"
+            className={STATE_HEIGHT}
+            title="Could not load your sessions"
+            reason={first.error}
+            action={{ onClick: () => first.reload(false) }}
+          />
         ) : ((first.loading || first.error) && !first.data) || (total === 0 && settling) ? (
           <div role="status" aria-label="Loading sessions">
             {/* Same shape as the loaded page: the pick-up card, then rows. */}
@@ -302,27 +311,18 @@ export function Sessions() {
           </p>
         ) : total === 0 && filtered ? (
           <EmptyState
-            icon={ChatsCircle}
-            seed={11}
-            className="min-h-[max(320px,calc(var(--app-h)-14.5rem))]"
-            title="No chats match"
-            body={
-              typed && changed > 0
-                ? "Nothing fits the search and filters you set. Loosen them or start again."
-                : typed
-                  ? "Nothing fits what you typed. Try fewer words."
-                  : "Nothing fits the filters you set. Loosen them or start again."
-            }
-          >
-            <Button onClick={clear}>{typed && changed > 0 ? "Clear search and filters" : typed ? "Clear search" : "Clear filters"}</Button>
-          </EmptyState>
+            variant="no-match"
+            className={STATE_HEIGHT}
+            query={typed || undefined}
+            body={typed && changed > 0 ? "Filters are on too." : typed ? "Try fewer words." : undefined}
+            action={{ onClick: clear, label: typed && changed > 0 ? "Clear search and filters" : typed ? "Clear search" : "Clear filters" }}
+          />
         ) : total === 0 ? (
           <EmptyState
-            icon={ChatsCircle}
             seed={11}
-            className="min-h-[max(320px,calc(var(--app-h)-14.5rem))]"
+            className={STATE_HEIGHT}
             title="No sessions yet"
-            body="Each Claude Code conversation shows up here with the tokens it used, when it ran and which project it belonged to."
+            body="Each Claude Code session shows up here with the tokens it used, when it ran and its project."
           />
         ) : (
           <>
@@ -375,8 +375,8 @@ export function Sessions() {
                 </Button>
                 <span className="text-caption text-ink-2">{`Showing ${exact(rows.length)} of ${exact(total)}`}</span>
                 {moreError && (
-                  <span role="alert" className="text-caption text-danger">
-                    {moreError}
+                  <span role="alert" className="text-caption text-danger" title={moreError}>
+                    Could not load more. Try again.
                   </span>
                 )}
               </div>

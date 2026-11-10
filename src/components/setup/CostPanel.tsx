@@ -22,7 +22,7 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
 
   return (
     <section aria-labelledby="cost-title" className="@container flex min-w-0 flex-col rounded-card border border-line bg-surface px-5 py-4">
-      <h2 id="cost-title" className="text-lead font-semibold text-ink">
+      <h2 id="cost-title" className="h-section">
         What your setup costs
       </h2>
       <p data-cost-headline title={total || undefined} className="mt-1 flex items-baseline gap-2 text-body text-ink-2">

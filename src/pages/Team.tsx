@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChatsCircle, MagnifyingGlass, Scales } from "@phosphor-icons/react";
 import { EmptyState } from "../components/EmptyState";
-import { Button, SegmentedControl } from "../components/controls";
+import { SegmentedControl } from "../components/controls";
 import { AgentSheet } from "../components/team/AgentSheet";
 import { RuleSheet } from "../components/team/RuleSheet";
 import { ScoreCard } from "../components/team/ScoreCard";
 import { ThemeList } from "../components/team/ThemeList";
-import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
+import { Skeleton } from "../components/usage/StateBlocks";
 import { SearchField, SelectField } from "../components/usage/fields";
 import { getBackend } from "../lib/ipc";
 import { openAgentNext, openToolkitItemNext } from "../lib/nav";
@@ -111,7 +110,9 @@ function Scorecard({
   const data = score.data;
   const cards = useMemo(() => (data ? filterCards(data.types, filter) : []), [data, filter]);
 
-  if (score.error && !data) return <ErrorBlock title="Could not read the team's runs" message={score.error} onRetry={() => score.reload()} />;
+  if (score.error && !data) {
+    return <EmptyState fill variant="error" title="Could not read the team's runs" reason={score.error} action={{ onClick: () => score.reload() }} />;
+  }
   if (!data) return <CardsSkeleton />;
 
   const narrowed = prefs.range !== "all" || prefs.startedFrom !== "all";
@@ -121,23 +122,18 @@ function Scorecard({
   return (
     <>
       {data.types.length === 0 ? (
-        <EmptyState
-          icon={ChatsCircle}
-          title={reading ? READING_TITLE : narrowed ? "No helper runs match" : "No helper runs yet"}
-          body={
-            reading
-              ? READING_BODY
-              : narrowed
-                ? "Try a longer range, or all the ways a run can start."
-                : "When Claude hands a job to a helper, its runs are counted here, one card for each kind of helper."
-          }
-          seed={11}
-          fill
-        />
+        narrowed && !reading ? (
+          <EmptyState variant="no-match" fill title="No helper runs match" body="Try a longer range, or all the ways a run can start." />
+        ) : (
+          <EmptyState
+            title={reading ? READING_TITLE : "No helper runs yet"}
+            body={reading ? READING_BODY : "When Claude hands a job to a helper, its runs are counted here, one card for each kind of helper."}
+            seed={11}
+            fill
+          />
+        )
       ) : cards.length === 0 ? (
-        <EmptyState icon={MagnifyingGlass} title={`No helper matches ${filter.trim()}`} body="Try fewer words." seed={7} fill>
-          <Button onClick={onClearFilter}>Clear search</Button>
-        </EmptyState>
+        <EmptyState variant="no-match" fill query={filter.trim()} body="Try fewer words." action={{ onClick: onClearFilter }} />
       ) : (
         <div className="team-grid">
           {cards.map((c) => (
@@ -182,14 +178,15 @@ function ReviewView({
   const reading = useReadingHold(themes.reload, themes.at);
 
   const data = themes.data;
-  if (themes.error && !data) return <ErrorBlock title="Could not read the reviews" message={themes.error} onRetry={() => themes.reload()} />;
+  if (themes.error && !data) {
+    return <EmptyState fill variant="error" title="Could not read the reviews" reason={themes.error} action={{ onClick: () => themes.reload() }} />;
+  }
   if (!data) return <ThemesSkeleton />;
 
   return (
     <>
       {data.themes.length === 0 ? (
         <EmptyState
-          icon={Scales}
           title={reading ? READING_TITLE : data.findings > 0 ? "No problem keeps coming back yet" : "Nothing caught in review yet"}
           body={
             reading

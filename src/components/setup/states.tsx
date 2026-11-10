@@ -1,5 +1,3 @@
-import { FolderDashed, MagnifyingGlass, WarningOctagon } from "@phosphor-icons/react";
-import { Button } from "../controls";
 import { EmptyState } from "../EmptyState";
 
 function Bar({ w, h = 12, className = "" }: { w: string; h?: number; className?: string }) {
@@ -32,32 +30,13 @@ export function SetupSkeleton() {
   );
 }
 
-export function SetupError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <EmptyState fill icon={WarningOctagon} seed={61} title="Atlas could not read your toolkit" body={message}>
-      <Button variant="primary" onClick={onRetry}>
-        Try again
-      </Button>
-    </EmptyState>
-  );
-}
-
 export function NoSetup() {
   return (
     <EmptyState
       fill
-      icon={FolderDashed}
       seed={67}
       title="No toolkit found here"
       body="Atlas found no skills, agents, commands or settings. If your Claude folder lives somewhere else, choose it in Settings."
     />
-  );
-}
-
-export function NoMatches({ onClear }: { onClear: () => void }) {
-  return (
-    <EmptyState fill icon={MagnifyingGlass} seed={71} title="Nothing matches" body="Try a different word, or turn off a filter.">
-      <Button onClick={onClear}>Clear search and filters</Button>
-    </EmptyState>
   );
 }

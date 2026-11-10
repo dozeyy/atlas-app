@@ -181,6 +181,9 @@ describe("Setup page: main view", () => {
     };
     await open(backend);
     expect(await screen.findByText("Atlas could not read your toolkit")).toBeInTheDocument();
+    // The raw reason waits behind Details.
+    expect(screen.queryByText("The Claude folder could not be read.")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(screen.getByText("The Claude folder could not be read.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("list", { name: "Types of things in your toolkit" })).toBeInTheDocument();
@@ -218,8 +221,8 @@ describe("Setup page: a collection", () => {
   it("opens a tile as its own view with a way back that returns focus to the tile", async () => {
     await open(backend);
     await openTile("Skills");
-    // No page header: a plain back control, and nothing else says which page this is.
-    expect(screen.queryByRole("heading", { level: 2, name: "Skills" })).not.toBeInTheDocument();
+    // The list you opened is named, next to a plain back control.
+    expect(screen.getByRole("heading", { level: 2, name: "Skills" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to Toolkit" })).toBeInTheDocument();
     expect(screen.getByText("commit-helper")).toBeInTheDocument();
     expect(screen.queryByText("code-reviewer")).not.toBeInTheDocument();

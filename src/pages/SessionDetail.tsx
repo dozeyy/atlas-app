@@ -26,7 +26,8 @@ import { HelperSlice } from "../components/usage/HelperSlice";
 import { AgentAvatar, ModelDots, OutcomeMark, sessionName, shownName, TokenFigure } from "../components/usage/helperKit";
 import { ReceiptPane } from "../components/usage/ReceiptPane";
 import { SessionTools, useSessionItems } from "../components/usage/SessionTools";
-import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
+import { Skeleton } from "../components/usage/StateBlocks";
+import { EmptyState } from "../components/EmptyState";
 import { timelineBars } from "../components/usage/timelineBars";
 import type { BarDatum } from "../components/charts/shared";
 import { getBackend } from "../lib/ipc";
@@ -294,14 +295,11 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
       ) : (
         <Card className="flex min-h-0 flex-1 flex-col">
           {missing ? (
-            <p className="px-5 py-4 text-body text-ink-2">The file for this session is no longer on disk, so its messages cannot be shown.</p>
+            <EmptyState compact fill title="No messages to show" body="The file for this session is no longer on disk." />
           ) : error ? (
-            <div className="px-5 py-4">
-              <p role="alert" className="text-body text-danger">{error}</p>
-              <Button className="mt-3" onClick={() => load(cursor)}>Try again</Button>
-            </div>
+            <EmptyState compact fill variant="error" title="Could not load the messages" reason={error} action={{ onClick: () => load(cursor) }} />
           ) : items.length === 0 && !busy ? (
-            <p className="px-5 py-4 text-body text-ink-2">There are no readable messages in this session.</p>
+            <EmptyState compact fill title="No messages to show" body="This session has no messages Atlas can read." />
           ) : (
             <ClampList className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
               {items.map((m, i) => (
@@ -573,7 +571,7 @@ export function SessionDetailView({
     return (
       <>
         <div className="mb-4">{back}</div>
-        <ErrorBlock title="Could not load this session" message={d.error} onRetry={() => d.reload(false)} />
+        <EmptyState variant="error" title="Could not load this session" reason={d.error} action={{ onClick: () => d.reload(false) }} />
       </>
     );
   }
@@ -581,7 +579,12 @@ export function SessionDetailView({
     return (
       <>
         <div className="mb-4">{back}</div>
-        <ErrorBlock title="This session is not here any more" message="It is no longer in the usage cache. Go back to the list to see what is left." />
+        <EmptyState
+          variant="error"
+          title="This session is not here any more"
+          body="It is no longer in your usage data."
+          action={{ label: "All sessions", onClick: onBack }}
+        />
       </>
     );
   }
@@ -621,9 +624,9 @@ export function SessionDetailView({
       {/* Top to bottom: which chat, the one figure, one line of plain facts, then the tabs. */}
       <div className="flex shrink-0 items-center gap-3">
         {back}
-        <h2 className="d d-figure min-w-0 flex-1 truncate text-ink" title={name}>
+        <h1 className="h-page min-w-0 flex-1 truncate" title={name}>
           {name}
-        </h2>
+        </h1>
       </div>
       <div className="sd-hero">
         <TokenFigure
@@ -735,10 +738,7 @@ export function SessionDetailView({
               />
             </div>
           ) : receipt.error ? (
-            <div role="alert" className="flex items-center gap-3 text-body text-ink-2">
-              <span className="text-danger">{receipt.error}</span>
-              <Button onClick={() => receipt.reload(false)}>Try again</Button>
-            </div>
+            <EmptyState compact variant="error" title="Could not draw the helper map" reason={receipt.error} action={{ onClick: () => receipt.reload(false) }} />
           ) : (
             <div role="status" aria-label="Drawing the helper map">
               <Skeleton className="h-64" />

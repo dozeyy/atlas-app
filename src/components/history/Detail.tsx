@@ -4,7 +4,8 @@ import { getBackend } from "../../lib/ipc";
 import { useFetched } from "../../lib/useUsage";
 import { Button } from "../controls";
 import { ItemIcon } from "../setup/parts";
-import { ErrorBlock, Skeleton } from "../usage/StateBlocks";
+import { Skeleton } from "../usage/StateBlocks";
+import { EmptyState } from "../EmptyState";
 import { DiffView, TextPreview, diffNote } from "./DiffView";
 import type { HistoryEvent, VersionRow } from "../../lib/historyTypes";
 import { agoText, scopeText, setupKind, sourceNote, whatHappened } from "../../lib/historyModel";
@@ -105,7 +106,7 @@ export function Detail({ event, onBack }: { event: HistoryEvent; onBack?: () => 
         <ItemIcon item={{ kind: setupKind(event.item.kind), name: event.item.name }} size={44} />
         <div className="min-w-0 flex-1">
           {/* A long name is read in full here (it wraps); where the file is waits in the name's hover. */}
-          <h2 className="d d-figure wrap-anywhere text-ink" title={event.item.path || undefined}>
+          <h2 className="h-section wrap-anywhere" title={event.item.path || undefined}>
             {event.item.name}
           </h2>
           <p className="wrap-anywhere text-body text-ink-2">
@@ -136,7 +137,7 @@ export function Detail({ event, onBack }: { event: HistoryEvent; onBack?: () => 
             </label>
           )}
 
-          {diff.error && <ErrorBlock message={diff.error} onRetry={() => diff.reload()} />}
+          {diff.error && <EmptyState compact variant="error" title="Could not load this change" reason={diff.error} action={{ onClick: () => diff.reload() }} />}
           {diff.loading && !d && <Skeleton className="h-24" />}
           {d && diffNote(d, now ? "now" : "before") && <p className="text-body text-ink-2">{diffNote(d, now ? "now" : "before")}</p>}
           {d && <DiffView diff={d} onExpand={() => setFull(true)} />}

@@ -10,7 +10,7 @@ import { closePalette } from "../../state/paletteStore";
 import { setBackend } from "../../lib/ipc";
 import { MockBackend } from "../../lib/mock";
 import { clearPendingToolkitItem, clearPendingToolkitTab } from "../../lib/nav";
-import { COMMAND_SOURCE, NO_CLI, OFFLINE } from "../../lib/library";
+import { COMMAND_SOURCE, NO_CLI } from "../../lib/library";
 
 // CodeMirror needs real layout; the read-only viewer is checked in the running app.
 vi.mock("../../lib/codemirror", () => ({
@@ -114,7 +114,7 @@ describe("Library tab: opening", () => {
     expect(await row("pdf-tools")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^code-review\./ })).not.toBeInTheDocument();
     await userEvent.type(screen.getByRole("searchbox", { name: "Search plugins and skills" }), "zzz");
-    expect(await screen.findByText("Nothing matches pdfzzz")).toBeInTheDocument();
+    expect(await screen.findByText('"pdfzzz"')).toBeInTheDocument();
     // The dead end offers the way out: one press brings the list back and leaves the caret in the box.
     await userEvent.click(screen.getByText("Clear search"));
     expect(await row("pdf-tools")).toBeInTheDocument();
@@ -128,7 +128,8 @@ describe("Library tab: opening", () => {
       b.library.offline = true;
     });
     await openLibraryTab();
-    expect(await screen.findByText(OFFLINE)).toBeInTheDocument();
+    expect(await screen.findByText("Atlas could not reach the plugin catalog")).toBeInTheDocument();
+    expect(screen.getByText("Check your connection and press Refresh.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
   });
 });

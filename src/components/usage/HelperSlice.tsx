@@ -75,9 +75,9 @@ export function HelperSlice({
           <AgentAvatar type={type} size={32} level={node.kind === "root" ? "main" : node.depth >= 2 ? "nested" : "helper"} />
         )}
         <div className="min-w-0">
-          <h3 className="truncate text-lead font-semibold text-ink" title={node.name}>
+          <h2 className="h-section truncate" title={node.name}>
             {node.name}
-          </h3>
+          </h2>
           {node.kind === "more" ? (
             <div className="truncate text-caption text-ink-2">{`${plural(node.hidden.length, "small helper")}, folded together`}</div>
           ) : (

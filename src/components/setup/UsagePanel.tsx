@@ -166,7 +166,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
   return (
     <section aria-labelledby="usage-title" className="@container min-w-0 rounded-card border border-line bg-surface px-5 py-4">
       <div className="flex items-baseline gap-x-3">
-        <h2 id="usage-title" className="text-lead font-semibold text-ink">
+        <h2 id="usage-title" className="h-section">
           Used and never used
         </h2>
         <p className="ml-auto text-caption text-ink-2">Last 30 days</p>
@@ -187,7 +187,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
             </div>
           </Ring>
           <div className="min-w-0 flex-1">
-            <h3 className="mb-1.5 text-body font-semibold text-ink">Used most</h3>
+            <h3 className="h-sub mb-2">Used most</h3>
             {used.length === 0 ? (
               <p className="text-body text-ink-2">Nothing has been used yet.</p>
             ) : (
@@ -215,9 +215,9 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
         </div>
 
         <div className="min-w-0">
-          <h3 className="mb-1.5 flex items-baseline gap-2 text-body font-semibold text-ink">
+          <h3 className="h-sub mb-2 flex items-baseline gap-2">
             Never used
-            <span className="d d-figure font-normal text-ink-2" aria-label={`${never.length}`}>
+            <span className="d d-small text-ink" aria-label={`${never.length}`}>
               {never.length}
             </span>
           </h3>

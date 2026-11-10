@@ -199,7 +199,7 @@ describe("Sessions: search inside chats", () => {
     await screen.findAllByRole("button", { name: /tokens/ });
     await userEvent.type(searchbox(), "zzzz-nothing");
     expect(await screen.findByText(/did not work just now/)).toBeInTheDocument();
-    expect(await screen.findByText("No chats match")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
   });
 });
 
@@ -264,10 +264,10 @@ describe("Sessions: the first view", () => {
     mount();
     const card = await screen.findByRole("region", { name: "Pick up where you left off" });
     await userEvent.click(within(card).getByRole("button", { name: "Open" }));
-    const title = await screen.findByRole("heading", { level: 2 });
+    const title = await screen.findByRole("heading", { level: 1 });
     const first = title.textContent;
     await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
-    await waitFor(() => expect(screen.getByRole("heading", { level: 2 }).textContent).not.toBe(first));
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).not.toBe(first));
     await userEvent.click(screen.getByRole("button", { name: /Copy resume/ }));
     await waitFor(() => expect(written.length).toBe(1));
     expect(written[0]).toMatch(/claude --resume [A-Za-z0-9_-]+$/);

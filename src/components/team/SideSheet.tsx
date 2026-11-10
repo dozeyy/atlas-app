@@ -97,7 +97,7 @@ export function SideSheet({
         <header className="sticky top-0 z-10 flex items-start gap-3 border-b border-line bg-bg px-6 py-4">
           {lead}
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="selectable break-words text-subtitle font-semibold text-ink">
+            <h2 id={titleId} className="h-page selectable break-words">
               {title}
             </h2>
             {subtitle && <div className="mt-1 break-words text-body text-ink-2">{subtitle}</div>}
@@ -123,8 +123,8 @@ export function SideSheet({
 export function SheetSection({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
     <section className="border-b border-line px-6 py-4 last:border-b-0">
-      <div className="mb-2.5 flex items-baseline justify-between gap-3">
-        <h3 className="text-body font-semibold text-ink">{title}</h3>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h3 className="h-sub">{title}</h3>
         {aside}
       </div>
       {children}

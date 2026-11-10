@@ -199,7 +199,7 @@ export function MiniKind({ kind, name }: { kind: string; name: string }) {
 export function PathText({ path, className = "" }: { path: string; className?: string }) {
   const parts = path.match(/[^\\/]*[\\/]?/g)?.filter(Boolean) ?? [path];
   return (
-    <span className={`mono [overflow-wrap:anywhere] ${className}`}>
+    <span className={`mono [overflow-wrap:anywhere] ${className.includes("text-ink") ? "" : "text-ink-2"} ${className}`}>
       {parts.map((p, i) => (
         <Fragment key={i}>
           {p}

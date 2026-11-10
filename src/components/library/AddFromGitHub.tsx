@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { WarningCircle } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { Dialog } from "../Dialog";
 import { Chip } from "../setup/parts";
@@ -105,7 +106,8 @@ export function AddFromGitHub({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <Button onClick={cancel}>Cancel</Button>
-          <Button variant="primary" disabled={primary.disabled} onClick={primary.onClick}>
+          {/* An error is a calm zone: the way on is outlined, never the clay fill. */}
+          <Button variant={phase.t === "error" ? undefined : "primary"} disabled={primary.disabled} onClick={primary.onClick}>
             {primary.label}
           </Button>
         </>
@@ -131,7 +133,7 @@ export function AddFromGitHub({ onClose }: { onClose: () => void }) {
             placeholder="github.com/owner/repo"
             spellCheck={false}
             autoComplete="off"
-            className="selectable mono h-9 min-w-0 rounded-control border border-line-strong bg-surface px-3 text-body text-ink outline-none focus-visible:border-accent"
+            className="selectable h-9 min-w-0 rounded-control border border-line-strong bg-surface px-3 text-body text-ink outline-none focus-visible:border-accent"
           />
         </label>
 
@@ -141,8 +143,10 @@ export function AddFromGitHub({ onClose }: { onClose: () => void }) {
           </p>
         )}
         {phase.t === "error" && (
-          <p role="alert" className="break-words text-body text-ink">
-            {phase.message}
+          // The Library writes its reasons in plain words, so the sentence is the surface.
+          <p role="alert" className="flex items-start gap-2 break-words text-body text-ink">
+            <WarningCircle size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0 text-danger" />
+            <span className="min-w-0">{phase.message}</span>
           </p>
         )}
 

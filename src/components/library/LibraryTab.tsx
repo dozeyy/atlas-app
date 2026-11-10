@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowsClockwise, GithubLogo, MagnifyingGlass, Package, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowsClockwise, GithubLogo, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
 import { Button, IconButton } from "../controls";
 import { EmptyState } from "../EmptyState";
 import { SelectField } from "../usage/fields";
@@ -168,17 +168,15 @@ export function LibraryTab() {
         </p>
       </div>
     ) : (
+      // A calm error: what happened, the next step, the engine's own words behind Details.
       <EmptyState
         fill
-        icon={Package}
-        title="The plugin catalog is not here yet"
-        body={lib.error ?? OFFLINE}
-        seed={4}
-      >
-        <Button variant="primary" onClick={() => void refreshLibrary()}>
-          Refresh
-        </Button>
-      </EmptyState>
+        variant="error"
+        title="Atlas could not reach the plugin catalog"
+        body="Check your connection and press Refresh."
+        reason={lib.error && lib.error !== OFFLINE ? lib.error : null}
+        action={{ label: "Refresh", onClick: () => void refreshLibrary() }}
+      />
     );
   } else if (rows.length === 0 && partial && lib.source !== "installed") {
     body = <ListSkeleton label="Searching the catalog" />;
@@ -186,32 +184,27 @@ export function LibraryTab() {
     const nothingInstalled = lib.source === "installed" && !lib.query;
     // What to do next, in words that fit what is on screen: the rail is only "on the left" when it is drawn.
     const wider = lib.source === "all" ? "" : wide ? ", or pick All on the left" : ", or pick All in the list of sources";
-    body = (
+    body = lib.query ? (
+      // The way out is offered right here, not back up in the search box.
       <EmptyState
         fill
-        icon={nothingInstalled ? Package : MagnifyingGlass}
-        title={nothingInstalled ? "Nothing installed yet" : lib.query ? `Nothing matches ${lib.query}` : "Nothing here yet"}
-        body={
-          nothingInstalled
-            ? "Plugins and skills you add from the Library show up here."
-            : lib.query
-              ? `Try fewer words${wider}.`
-              : "This marketplace lists no plugins. Pick All to see the rest."
-        }
+        variant="no-match"
+        query={lib.query}
+        body={`Try fewer words${wider}.`}
+        action={{
+          onClick: () => {
+            setQuery("");
+            search.current?.focus();
+          },
+        }}
+      />
+    ) : (
+      <EmptyState
+        fill
+        title={nothingInstalled ? "Nothing installed yet" : "Nothing here yet"}
+        body={nothingInstalled ? "Plugins and skills you add from the Library show up here." : "This marketplace lists no plugins. Pick All to see the rest."}
         seed={7}
-      >
-        {/* The way out is offered right here, not back up in the search box. */}
-        {lib.query && (
-          <Button
-            onClick={() => {
-              setQuery("");
-              search.current?.focus();
-            }}
-          >
-            Clear search
-          </Button>
-        )}
-      </EmptyState>
+      />
     );
   } else {
     body = (

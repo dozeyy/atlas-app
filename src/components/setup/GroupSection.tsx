@@ -34,7 +34,7 @@ function Cards({ items, onOpen, onDelete }: { items: SetupItem[]; onOpen: (id: s
       {blocks.map((r) => (
         <div key={r.label} className={headed ? "mb-5 last:mb-0" : undefined}>
           {headed && (
-            <h3 className="mb-2 flex items-baseline gap-2 text-body font-medium text-ink-2">
+            <h3 className="h-sub mb-2 flex items-baseline gap-2">
               {r.label}
               <span className="font-normal">{r.items.length}</span>
             </h3>
@@ -83,7 +83,7 @@ export function GroupBody({
         {permissionBuckets(items).map((b) => (
           <div key={b.id} className="mb-4 last:mb-0">
             {/* Same small heading as a place ("Global 3"): name, then the count. */}
-            <h3 className="mb-2 flex items-baseline gap-2 text-body font-medium text-ink-2">
+            <h3 className="h-sub mb-2 flex items-baseline gap-2">
               {BUCKET_TITLE[b.id]}
               <span className="font-normal">{b.items.length}</span>
             </h3>
@@ -126,7 +126,7 @@ export function GroupSection({
         <KindTile kind={meta.kind} size={32} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <h2 id={`${id}-title`} className="d d-figure text-ink">
+            <h2 id={`${id}-title`} className="h-section">
               {meta.plural}
             </h2>
             <span className="chip">{items.length}</span>
