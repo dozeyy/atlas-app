@@ -22,9 +22,11 @@ export interface UpdateSnapshot {
   state: UpdateState;
   /** "Later": the icon stays away until the next launch. */
   dismissed: boolean;
+  /** The sidebar's offer has popped up (or Settings showed one) this launch: it pops up once. */
+  offered: boolean;
 }
 
-let snap: UpdateSnapshot = { state: { kind: "none" }, dismissed: false };
+let snap: UpdateSnapshot = { state: { kind: "none" }, dismissed: false, offered: false };
 const listeners = new Set<() => void>();
 
 function set(next: Partial<UpdateSnapshot>) {
@@ -44,7 +46,7 @@ export function useUpdate(): UpdateSnapshot {
 
 /** Tests start each case from nothing. */
 export function resetUpdateStore() {
-  snap = { state: { kind: "none" }, dismissed: false };
+  snap = { state: { kind: "none" }, dismissed: false, offered: false };
   listeners.forEach((l) => l());
 }
 
@@ -70,11 +72,21 @@ export async function checkForUpdate({ manual }: { manual: boolean }): Promise<C
     }
     // A failed install keeps its message until the next try; a fresh find otherwise resets.
     const keep = snap.state.kind === "failed" && snap.state.info.version === info.version;
-    set({ state: keep ? snap.state : { kind: "available", info }, dismissed: manual ? false : snap.dismissed });
+    // A find from the Settings button is answered there, so the sidebar does not pop up as well.
+    set({
+      state: keep ? snap.state : { kind: "available", info },
+      dismissed: manual ? false : snap.dismissed,
+      offered: manual ? true : snap.offered,
+    });
     return { outcome: "available", info };
   } catch (e) {
     return { outcome: "failed", message: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** The sidebar's offer popped up: it does not pop up again this launch. */
+export function markOffered() {
+  if (!snap.offered) set({ offered: true });
 }
 
 /** Hide the icon until the next launch. */

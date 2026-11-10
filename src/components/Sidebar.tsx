@@ -11,7 +11,6 @@ import {
 import { GiftIcon } from "./GiftIcon";
 import { IconMotion } from "./IconMotion";
 import { UpdateButton } from "./UpdateButton";
-import { TodayStat } from "./TodayStat";
 import type { Motion } from "./IconMotion";
 import { useAtlas } from "../state/AtlasProvider";
 import { useKeyHints } from "../lib/keyHints";
@@ -101,11 +100,10 @@ export function Sidebar() {
           </div>
         )}
         {/* Settings: icon only, in the sidebar's bottom-right corner (centred when folded). The
-            update icon, when there is one, mirrors it at the bottom-left (above it when folded);
-            the Today readout fills the space between them while the sidebar is open. */}
+            update button, when there is one, fills the rest of the row from the bottom-left (icon
+            and the word "Update"; the icon alone above Settings when folded). */}
         <nav aria-label="Secondary" className="nav-settings-row">
           <UpdateButton />
-          <TodayStat />
           {item(NAV.find((n) => n.view === "settings")!, true)}
         </nav>
       </div>

@@ -51,8 +51,8 @@ describe("the update icon", () => {
     expect(mock.updates.checks).toBe(1);
     await act(() => vi.advanceTimersByTimeAsync(CHECK_EVERY_MS));
     expect(mock.updates.checks).toBe(2);
-    expect(mock.updates.installs).toBe(0);
-    expect(screen.queryByRole("dialog")).toBeNull(); // found one, and still no dialog
+    expect(mock.updates.installs).toBe(0); // the offer pops up; nothing installs by itself
+    expect(screen.getByRole("dialog", { name: "Update" })).toBeInTheDocument();
   });
 
   it("a failed check is silent", async () => {
@@ -65,25 +65,28 @@ describe("the update icon", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("opens a small confirm with the version, 'Update and restart' and 'Later'", async () => {
+  it("pops up a small offer by itself, once per launch, without taking the focus", async () => {
     mock.updates.available = NEWER;
     render(<UpdateButton />);
     await act(() => checkForUpdate({ manual: false }));
-    await userEvent.click(icon()!);
     const dialog = await screen.findByRole("dialog", { name: "Update" });
     expect(dialog).toHaveTextContent("Atlas 0.2.0 is ready");
+    expect(dialog.contains(document.activeElement)).toBe(false); // never steals the keyboard
     expect(screen.getByRole("button", { name: "Update and restart" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Later" })).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(icon()).not.toBeNull(); // Escape closes the panel, the icon stays
+    await act(() => checkForUpdate({ manual: false }));
+    expect(screen.queryByRole("dialog")).toBeNull(); // offered once per launch, not on every check
+    await userEvent.click(icon()!);
+    expect(await screen.findByRole("dialog", { name: "Update" })).toBeInTheDocument();
   });
 
   it("'Later' hides the icon until the next launch; only the Settings button brings it back", async () => {
     mock.updates.available = NEWER;
     render(<UpdateButton />);
     await act(() => checkForUpdate({ manual: false }));
-    await userEvent.click(icon()!);
     await userEvent.click(await screen.findByRole("button", { name: "Later" }));
     expect(icon()).toBeNull();
     await act(() => checkForUpdate({ manual: false }));
@@ -97,7 +100,6 @@ describe("the update icon", () => {
     mock.updates.stepMs = 30;
     render(<UpdateButton />);
     await act(() => checkForUpdate({ manual: false }));
-    await userEvent.click(icon()!);
     await userEvent.click(await screen.findByRole("button", { name: "Update and restart" }));
     await waitFor(() => expect(screen.getByRole("button", { name: /^Downloading 0\.2\.0, \d+%$/ })).toHaveAttribute("data-state", "downloading"));
     expect(document.querySelector(".upd-ring .upd-arc")).not.toBeNull();
@@ -110,7 +112,6 @@ describe("the update icon", () => {
     mock.updates.installError = "The update did not pass its safety check, so it was not installed.";
     render(<UpdateButton />);
     await act(() => checkForUpdate({ manual: false }));
-    await userEvent.click(icon()!);
     await userEvent.click(await screen.findByRole("button", { name: "Update and restart" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("The update did not pass its safety check, so it was not installed.");

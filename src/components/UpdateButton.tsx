@@ -7,6 +7,7 @@ import {
   FIRST_CHECK_MS,
   checkForUpdate,
   dismissUpdate,
+  markOffered,
   startInstall,
   useUpdate,
 } from "../lib/updateStore";
@@ -26,17 +27,21 @@ function noteLine(notes: string | null): string {
 }
 
 /**
- * The update icon at the sidebar's bottom-left corner. Absent until a newer version is known
- * (and absent after "Later" until the next launch). It never opens by itself, except to say
- * that an install the person asked for failed. Checks run quietly: once a few seconds after the
- * first paint, then every six hours.
+ * The update button at the sidebar's bottom-left: the icon and the word "Update" (the icon alone
+ * when the sidebar is folded). Absent until a newer version is known (and absent after "Later"
+ * until the next launch). The first time a launch finds an update, its small panel opens by
+ * itself, without taking the keyboard focus; it is only an offer: "Later", Escape or a click
+ * anywhere else closes it, and nothing installs unless the person clicks "Update and restart".
+ * Checks run quietly: once a few seconds after the first paint, then every six hours.
  */
 export function UpdateButton() {
-  const { state, dismissed } = useUpdate();
+  const { state, dismissed, offered } = useUpdate();
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ left: number; bottom: number } | null>(null);
+  // The offer pops up by itself once per launch; that open never moves the keyboard focus.
+  const auto = useRef(false);
 
   useEffect(() => {
     const first = setTimeout(() => void checkForUpdate({ manual: false }), FIRST_CHECK_MS);
@@ -50,8 +55,19 @@ export function UpdateButton() {
   // A failed install says so, once, where the person is already looking.
   const kind = state.kind;
   useEffect(() => {
-    if (kind === "failed") setOpen(true);
+    if (kind === "failed") {
+      auto.current = false;
+      setOpen(true);
+    }
   }, [kind]);
+
+  // A newer version found: offer it once, unasked.
+  useEffect(() => {
+    if (kind !== "available" || dismissed || offered) return;
+    markOffered();
+    auto.current = true;
+    setOpen(true);
+  }, [kind, dismissed, offered]);
 
   // The panel is drawn on the page, not inside the sidebar (which clips), so it is placed from
   // the button's own position: above it, on its left edge.
@@ -76,7 +92,7 @@ export function UpdateButton() {
       if (e.key !== "Escape") return;
       e.stopPropagation();
       setOpen(false);
-      button.current?.focus({ preventScroll: true });
+      if (!auto.current) button.current?.focus({ preventScroll: true });
     };
     document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", esc, true);
@@ -89,7 +105,7 @@ export function UpdateButton() {
   // Keyboard users land on the first choice when the panel appears (or changes to its failure).
   const placed = at !== null;
   useEffect(() => {
-    if (open && placed) panel.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    if (open && placed && !auto.current) panel.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
   }, [open, placed, kind]);
 
   if (state.kind === "none" || dismissed) return null;
@@ -124,23 +140,31 @@ export function UpdateButton() {
         aria-haspopup="dialog"
         aria-expanded={open}
         data-state={state.kind}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          auto.current = false;
+          setOpen((v) => !v);
+        }}
       >
         <span className="upd-face">
-          {working && (
-            <svg className={`upd-ring${fraction === null ? " upd-spin" : ""}`} viewBox="0 0 36 36" aria-hidden="true">
-              <circle className="upd-track" cx="18" cy="18" r={RING} />
-              <circle
-                className="upd-arc"
-                cx="18"
-                cy="18"
-                r={RING}
-                strokeDasharray={fraction === null ? undefined : CIRC}
-                strokeDashoffset={fraction === null ? undefined : CIRC * (1 - fraction)}
-              />
-            </svg>
-          )}
-          <DownloadSimple size={18} weight="bold" aria-hidden="true" />
+          <span className="upd-glyph">
+            {working && (
+              <svg className={`upd-ring${fraction === null ? " upd-spin" : ""}`} viewBox="0 0 36 36" aria-hidden="true">
+                <circle className="upd-track" cx="18" cy="18" r={RING} />
+                <circle
+                  className="upd-arc"
+                  cx="18"
+                  cy="18"
+                  r={RING}
+                  strokeDasharray={fraction === null ? undefined : CIRC}
+                  strokeDashoffset={fraction === null ? undefined : CIRC * (1 - fraction)}
+                />
+              </svg>
+            )}
+            <DownloadSimple size={18} weight="bold" aria-hidden="true" />
+          </span>
+          <span className="upd-text" aria-hidden="true">
+            {state.kind === "downloading" ? (pct === null ? "Downloading" : `Downloading ${pct}%`) : state.kind === "installing" ? "Installing" : "Update"}
+          </span>
         </span>
       </button>
       {open &&

@@ -1062,90 +1062,6 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
 .nav-settings-row .nav-item {
   width: 36px;
 }
-/* Today readout: fills the foot between the update icon and Settings; hidden when folded. */
-.today-stat {
-  flex: 1 1 0;
-  min-width: 0;
-  height: 36px;
-  padding: 0;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  color: var(--ink-2);
-  cursor: pointer;
-  text-align: left;
-  container-type: inline-size;
-  transition: background-color var(--dur-fast) var(--ease-out);
-}
-.today-stat:hover {
-  background: color-mix(in srgb, var(--raised) 80%, transparent);
-}
-.today-stat-face {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  height: 100%;
-  /* Text starts where the nav icons start (the nav face pads 16); 4 on the right, the room
-     "129% usual" needs beside "Today". */
-  padding: 0 4px 0 16px;
-  transition: transform var(--dur-press) var(--ease-out);
-}
-.today-stat:active .today-stat-face {
-  transform: scale(var(--press-scale));
-}
-.today-stat-top,
-.today-stat-bottom {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-.today-stat-label,
-.today-stat-pace {
-  font-size: var(--text-caption);
-  line-height: 14px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.today-stat-pace {
-  overflow: hidden;
-  text-overflow: clip;
-  font-variant-numeric: tabular-nums;
-}
-.today-stat-figure {
-  font-size: var(--text-body);
-  line-height: 18px;
-  font-weight: 680;
-  color: var(--ink);
-  white-space: nowrap;
-}
-.today-stat-spark {
-  flex: none;
-}
-.today-base {
-  stroke: var(--line);
-  stroke-width: 1;
-}
-.today-area {
-  fill: var(--accent-tint);
-  stroke: none;
-}
-/* Squeezed beside the update icon: the figure alone, then just the figure and label. */
-@container (max-width: 119px) {
-  .today-stat-pace {
-    display: none;
-  }
-}
-@container (max-width: 99px) {
-  .today-stat .today-stat-spark {
-    /* (the more specific selector beats the generic .chart display:block that comes later) */
-    display: none;
-  }
-}
-.side-collapsed .today-stat {
-  display: none;
-}
 .nav-settings-row .nav-face {
   justify-content: center;
   padding: 0;
@@ -2330,8 +2246,8 @@ html.reduced .map-node:focus-visible .map-body {
    update colour and nothing else. */
 .upd-btn {
   position: relative;
-  flex: none;
-  width: 36px;
+  flex: 1 1 0;
+  min-width: 36px;
   height: 36px;
   padding: 0;
   border: 0;
@@ -2346,8 +2262,12 @@ html[data-input="keyboard"] .upd-btn:focus-visible {
 }
 .upd-face {
   position: relative;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* The icon sits where the nav icons sit (the nav face pads 16, minus half the 18 px glyph's
+     extra box); the word follows it. Folded: the icon alone, centred. */
+  padding: 0 12px 0 9px;
   width: 100%;
   height: 100%;
   border-radius: 10px;
@@ -2362,17 +2282,45 @@ html[data-input="keyboard"] .upd-btn:focus-visible {
 .upd-btn:active .upd-face {
   transform: scale(var(--press-scale));
 }
+.upd-glyph {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.upd-text {
+  font-size: var(--text-body);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.side-collapsed .upd-btn {
+  flex: none;
+  width: 36px;
+}
+.side-collapsed .upd-face {
+  justify-content: center;
+  padding: 0;
+}
+.side-collapsed .upd-text {
+  display: none;
+}
 @keyframes upd-in {
   from {
     opacity: 0;
     transform: scale(0.8);
   }
 }
+/* The download ring circles the icon: a 36 px ring centred on the 18 px glyph. */
 .upd-ring {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: -9px;
+  left: -9px;
+  width: 36px;
+  height: 36px;
   transform: rotate(-90deg);
   pointer-events: none;
 }
