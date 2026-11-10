@@ -166,6 +166,33 @@ pub fn read_local(marketplaces: &[(String, PathBuf)]) -> Vec<Entry> {
     out
 }
 
+/// The fields of a marketplace entry that name what a plugin loads: with `strict: false` the
+/// entry stands in for plugin.json, so each is read like one.
+const COMPONENT_FIELDS: [&str; 9] = ["hooks", "mcpServers", "lspServers", "commands", "agents", "skills", "outputStyles", "dependencies", "userConfig"];
+
+/// The component fields of the entry for `name` in the marketplace kept at `location` (an object,
+/// empty when the entry has none). `Err` says in plain words why Atlas could not read the entry,
+/// so the check can refuse to call the plugin clean.
+pub fn entry_components(location: &Path, name: &str) -> Result<Value, String> {
+    const MAX_BYTES: u64 = 16 * 1024 * 1024;
+    let file = if location.is_file() { location.to_path_buf() } else { location.join(".claude-plugin").join("marketplace.json") };
+    let unread = || "Atlas could not read the marketplace's own entry for this plugin".to_string();
+    let md = fs::metadata(&file).map_err(|_| unread())?;
+    if !md.is_file() || md.len() > MAX_BYTES {
+        return Err(unread());
+    }
+    let bytes = fs::read(&file).map_err(|_| unread())?;
+    let v: Value = serde_json::from_slice(bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&bytes)).map_err(|_| unread())?;
+    let entry = v.get("plugins").and_then(Value::as_array).into_iter().flatten().find(|p| p.get("name").and_then(Value::as_str) == Some(name)).ok_or_else(unread)?;
+    let mut out = serde_json::Map::new();
+    for k in COMPONENT_FIELDS {
+        if let Some(x) = entry.get(k) {
+            out.insert(k.to_string(), x.clone());
+        }
+    }
+    Ok(Value::Object(out))
+}
+
 pub fn cache_path(data: &Path) -> PathBuf {
     super::library_dir(data).join("catalog.json")
 }
@@ -281,6 +308,25 @@ mod tests {
 
     fn e(id: &str, name: &str, desc: &str, mp: &str) -> Entry {
         Entry { plugin_id: id.into(), name: name.into(), description: desc.into(), marketplace: mp.into(), version: String::new(), source: Source::Command }
+    }
+
+    #[test]
+    fn an_entry_gives_back_only_the_fields_that_name_what_loads() {
+        let t = tempfile::tempdir().unwrap();
+        let mp = t.path().join(".claude-plugin");
+        fs::create_dir_all(&mp).unwrap();
+        fs::write(
+            mp.join("marketplace.json"),
+            r#"{"plugins":[{"name":"evil","source":"./p","strict":false,"description":"d","hooks":{"Stop":[]},"mcpServers":"./m.json"},{"name":"plain","source":"./q"}]}"#,
+        )
+        .unwrap();
+        let v = entry_components(t.path(), "evil").unwrap();
+        assert!(v.get("hooks").is_some() && v.get("mcpServers").is_some());
+        assert!(v.get("source").is_none() && v.get("description").is_none() && v.get("strict").is_none());
+        assert_eq!(entry_components(t.path(), "plain").unwrap(), serde_json::json!({}));
+        // An entry that isn't there, or a marketplace that isn't, is an error and never "no fields".
+        assert!(entry_components(t.path(), "ghost").is_err());
+        assert!(entry_components(&t.path().join("nope"), "evil").is_err());
     }
 
     #[test]

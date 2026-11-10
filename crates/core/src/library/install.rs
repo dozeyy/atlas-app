@@ -103,9 +103,14 @@ pub fn inspect_link(base: &Path, repo_name: &str) -> Inspected {
 /// A catalog plugin's folder. Claude Code installs all of it, hooks and language servers included,
 /// so nothing is "not installed".
 pub fn inspect_plugin(base: &Path, name: &str) -> Inspected {
+    inspect_plugin_entry(base, name, check::EntryFields::Absent)
+}
+
+/// A catalog plugin: its files, and what the marketplace's own entry for it names.
+pub fn inspect_plugin_entry(base: &Path, name: &str, entry: check::EntryFields<'_>) -> Inspected {
     let mut shaped = shape::detect_plugin(base, name);
     shaped.not_installed.clear();
-    let check = check::check_tree(base, &[]);
+    let check = check::check_tree_entry(base, &[], entry);
     Inspected { shaped, check }
 }
 
@@ -180,13 +185,16 @@ pub fn same_commit(a: &str, b: &str) -> bool {
     !a.is_empty() && (a == b || (a.len() >= 7 && b.len() >= 7 && (a.starts_with(&b) || b.starts_with(&a))))
 }
 
+/// Said when the catalog (or the marketplace's entry) changed between the check and the click.
+pub const LISTING_MOVED: &str = "This plugin was updated in the catalog since you checked it. Check it again first.";
+
 /// What was checked has to be what the catalog lists now (review finding 3): a refresh between the
 /// look and the click can point the plugin at another commit, branch or place, and Claude Code
 /// would install that unchecked one. Differing listings are refused, never installed.
 pub fn same_listing(checked: &Source, now: Option<&Source>) -> Result<(), String> {
     match now {
         Some(n) if n == checked => Ok(()),
-        Some(_) => Err("This plugin was updated in the catalog since you checked it. Check it again first.".into()),
+        Some(_) => Err(LISTING_MOVED.into()),
         None => Err("That plugin is not in the catalog. Press Refresh.".into()),
     }
 }
@@ -262,8 +270,12 @@ pub fn install_plugin_locked(ctx: &Ctx, runner: &Runner, id: &str, source: &Sour
     if commit_differs {
         // Claude Code installed a commit nobody looked at (a branch moved after the check): take
         // it out again rather than leave it running. Both steps stay in History.
-        let _ = uninstall_plugin_locked(ctx, runner, id);
-        return Err("Claude Code installed a newer version than the one Atlas checked, so Atlas took it out again. Check it again and try once more.".into());
+        return Err(take_out_again(ctx, runner, id, "Claude Code installed a newer version than the one Atlas checked", "Check it again and try once more."));
+    }
+    if files_differ && checked.sha.is_empty() {
+        // No commit to pin it to (a plugin inside a marketplace folder): different files than the
+        // ones Atlas looked at have nothing else vouching for them, so they do not stay.
+        return Err(take_out_again(ctx, runner, id, "The files Claude Code installed are not the ones Atlas checked", "Check it again and try once more."));
     }
     let entry = LedgerEntry {
         kind: "plugin".into(),
@@ -280,6 +292,18 @@ pub fn install_plugin_locked(ctx: &Ctx, runner: &Runner, id: &str, source: &Sour
     };
     ledger::add(ctx.data, entry).map_err(|_| "The plugin is installed, but Atlas could not note it in its own list.".to_string())?;
     Ok(PluginOutcome { id: id.into(), backup_id, install_path: landed.install_path, version: landed.version, changed })
+}
+
+/// Take a plugin that just landed out again (what landed is not what was checked). The sentence
+/// is only "took it out again" when the uninstall really worked; when it did not, it says the
+/// plugin is still installed and where to remove it.
+fn take_out_again(ctx: &Ctx, runner: &Runner, id: &str, why: &str, next: &str) -> String {
+    let gone = uninstall_plugin_locked(ctx, runner, id).is_ok() && ledger::user_install(&ctx.root.dir, id).is_none();
+    if gone {
+        format!("{why}, so Atlas took it out again. {next}")
+    } else {
+        format!("{why}, and Atlas could not take it out again, so it is still installed. Open Toolkit, find it under Installed in the Library and press Uninstall.")
+    }
 }
 
 /// Uninstall `id` (keeping the plugin's own data, so a reinstall brings it back).
@@ -396,8 +420,7 @@ pub fn undo_plugin_backup_locked(ctx: &Ctx, runner: &Runner, backup_id: &str, so
             let out = install_plugin_locked(ctx, runner, &op.id, &source, &Checked { repo: &op.repo, sha: &op.sha, tree_hash: &op.tree_hash })?;
             if out.changed {
                 // Not what was removed: take it out again rather than keep an unchecked commit.
-                let _ = uninstall_plugin_locked(ctx, runner, &op.id);
-                return Err("What Claude Code installed is not the version you removed, so Atlas took it out again. Find it in the Library to check the current one.".into());
+                return Err(take_out_again(ctx, runner, &op.id, "What Claude Code installed is not the version you removed", "Find it in the Library to check the current one."));
             }
             sw::tag_library_op(
                 ctx.backups,
@@ -673,6 +696,11 @@ mod tests {
 
     /// A fake `claude plugin ...` that behaves like the real one: install writes the three files and a tree.
     fn fake_claude(dir: PathBuf, tree: &'static [(&'static str, &'static str)]) -> Arc<Fake> {
+        fake_claude_with(dir, tree, true)
+    }
+
+    /// The same, where `uninstall` can be made to fail (it leaves the plugin installed).
+    fn fake_claude_with(dir: PathBuf, tree: &'static [(&'static str, &'static str)], uninstall_works: bool) -> Arc<Fake> {
         Fake::new(move |req: &Request| {
             let a: Vec<&str> = req.args.iter().map(String::as_str).collect();
             assert_eq!(req.config_dir.as_deref(), Some(dir.as_path()), "the folder is passed on");
@@ -690,6 +718,7 @@ mod tests {
                     fs::write(dir.join("settings.json"), format!(r#"{{"enabledPlugins":{{"{id}":true}}}}"#)).unwrap();
                     ok(&format!(r#"{{"command":"install","outcome":"ok","pluginId":"{id}","message":"Installed."}}"#))
                 }
+                ["plugin", "uninstall", ..] if !uninstall_works => Ok(RawOutput { code: 1, stdout: r#"{"outcome":"failed","message":"It is locked."}"#.into(), stderr: String::new() }),
                 ["plugin", "uninstall", ..] => {
                     fs::write(&installed, r#"{"version":2,"plugins":{}}"#).unwrap();
                     ok(r#"{"command":"uninstall","outcome":"ok","message":"Uninstalled."}"#)
@@ -1025,6 +1054,34 @@ mod tests {
         assert!(err.contains("took it out again"), "{err}");
         assert!(ledger::user_install(&e.dir, "fd@mk").is_none());
         assert!(ledger::read(&e.data).entries.is_empty(), "nothing is recorded as installed");
+    }
+
+    #[test]
+    fn files_that_differ_with_no_commit_to_pin_them_to_are_taken_out_again() {
+        let e = env();
+        let fake = fake_claude(e.dir.clone(), TREE);
+        let runner = Runner::with_exec("claude".into(), &e.root, fake);
+        // A plugin inside a marketplace folder: no commit, and the files are not the ones checked.
+        let local = Source::Local { path: "./fd".into() };
+        let err = install_plugin(&e.ctx(), &runner, "fd@mk", &local, &Checked { repo: "", sha: "", tree_hash: "not-what-landed" }).unwrap_err();
+        assert!(err.contains("took it out again") && err.contains("not the ones Atlas checked"), "{err}");
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_none());
+        assert!(ledger::read(&e.data).entries.is_empty());
+        // The same files as checked stay.
+        let good = tree_hash_of(TREE);
+        assert!(install_plugin(&e.ctx(), &runner, "fd@mk", &local, &Checked { repo: "", sha: "", tree_hash: &good }).is_ok());
+    }
+
+    #[test]
+    fn a_rollback_that_fails_says_the_plugin_is_still_installed() {
+        let e = env();
+        let fake = fake_claude_with(e.dir.clone(), TREE, false);
+        let runner = Runner::with_exec("claude".into(), &e.root, fake);
+        let good = tree_hash_of(TREE);
+        let err = install_plugin(&e.ctx(), &runner, "fd@mk", &gh("1234567890"), &Checked { repo: "o/r", sha: "1234567890", tree_hash: &good }).unwrap_err();
+        assert!(!err.contains("took it out again,") && !err.contains("so Atlas took it out"), "{err}");
+        assert!(err.contains("could not take it out again") && err.contains("still installed") && err.contains("Uninstall"), "{err}");
+        assert!(ledger::user_install(&e.dir, "fd@mk").is_some(), "it really is still installed");
     }
 
     #[test]

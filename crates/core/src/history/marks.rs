@@ -40,8 +40,10 @@ pub fn history_source(tag: &str) -> Option<&'static str> {
 pub struct Marks {
     /// `<file key>|<sha256>` -> source
     by_version: HashMap<String, &'static str>,
-    /// `<file key>|<sha256>` -> the sentence a Library change was tagged with
-    labels: HashMap<String, String>,
+    /// `<file key>|<sha256>` -> (when its backup was made, the sentence the Library change was
+    /// tagged with), one per backup: the same file contents come back (install, remove, install),
+    /// so a row is matched to the backup made just before it, not to the contents alone.
+    labels: HashMap<String, Vec<(i64, String)>>,
     /// (file key, source) of deletes: the key itself, or a folder holding it
     removed: Vec<(String, &'static str)>,
     /// (when, source) of the newest tagged change to `.claude.json`
@@ -73,9 +75,7 @@ impl Marks {
                     if src == SOURCE_LIBRARY
                         && let Some(label) = p.summary.clone().filter(|l| !l.is_empty())
                     {
-                        // Newest first: the same file contents can come back (install, remove,
-                        // install), and the latest sentence is the one that describes it now.
-                        m.labels.entry(format!("{key}|{sha}")).or_insert(label);
+                        m.labels.entry(format!("{key}|{sha}")).or_default().push((p.created_ms as i64, label));
                     }
                     m.by_version.insert(format!("{key}|{sha}"), src);
                 }
@@ -95,9 +95,13 @@ impl Marks {
         self.by_version.get(&format!("{key}|{sha}")).copied()
     }
 
-    /// The plain sentence a Library install or removal left on this exact version of a file.
-    pub fn label(&self, key: &str, sha: &str) -> Option<&str> {
-        self.labels.get(&format!("{key}|{sha}")).map(String::as_str)
+    /// The plain sentence of the Library install or removal that left this exact version of a
+    /// file at `at_ms` (the file's modified time): the backup made last before that moment. A
+    /// version that came back later gets the sentence of the change that brought it back.
+    pub fn label(&self, key: &str, sha: &str, at_ms: i64) -> Option<&str> {
+        // The backup is made first and the file written after it; a little slack covers clocks.
+        const SLACK_MS: i64 = 500;
+        self.labels.get(&format!("{key}|{sha}"))?.iter().filter(|(made, _)| *made <= at_ms + SLACK_MS).max_by_key(|(made, _)| *made).map(|(_, l)| l.as_str())
     }
 
     /// The source of the delete that removed the item with this key.
@@ -127,9 +131,17 @@ mod tests {
     #[test]
     fn a_library_change_keeps_its_plain_sentence_for_that_exact_version() {
         let mut m = Marks::default();
-        m.labels.insert("f:C:/c/settings.json|abc".into(), "Installed fd from the Library".into());
-        assert_eq!(m.label("f:C:/c/settings.json", "abc"), Some("Installed fd from the Library"));
-        assert_eq!(m.label("f:C:/c/settings.json", "other"), None);
+        // install (state A), remove (state B), install again (state A): three backups, two file states.
+        m.labels.insert("f:C:/c/settings.json|A".into(), vec![(1_000, "Installed fd from the Library".into()), (9_000, "Installed fd (undo of a removal)".into())]);
+        m.labels.insert("f:C:/c/settings.json|B".into(), vec![(5_000, "Uninstalled fd from the Library".into())]);
+        let k = "f:C:/c/settings.json";
+        // Each row gets the sentence of the backup made just before it, not the newest or oldest for its contents.
+        assert_eq!(m.label(k, "A", 2_000), Some("Installed fd from the Library"));
+        assert_eq!(m.label(k, "B", 6_000), Some("Uninstalled fd from the Library"));
+        assert_eq!(m.label(k, "A", 10_000), Some("Installed fd (undo of a removal)"));
+        // A row from before any tagged change, or other contents, gets none.
+        assert_eq!(m.label(k, "A", 100), None);
+        assert_eq!(m.label(k, "other", 2_000), None);
     }
 
     #[test]

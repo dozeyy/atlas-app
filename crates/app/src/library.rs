@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 use std::io::Cursor;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -68,6 +68,9 @@ struct Staged {
     plugin_id: Option<String>,
     /// `owner/repo` when the folder is a marketplace that can be added.
     market_source: Option<String>,
+    /// What the marketplace's own entry for the plugin named when it was checked (its component
+    /// fields as JSON, or why they could not be read); `None` for a plugin that was not checked.
+    entry_fields: Option<String>,
 }
 
 #[derive(Default)]
@@ -152,6 +155,26 @@ fn entry_of(env: &Env, plugin_id: &str) -> Option<catalog::Entry> {
     let mp = plugin_id.rsplit_once('@').map(|(_, m)| m)?;
     let places: Vec<(String, PathBuf)> = ledger::marketplaces(&env.root.dir).into_iter().filter(|m| m.name == mp).filter_map(|m| m.install_location.map(|l| (m.name, PathBuf::from(l)))).collect();
     catalog::read_local(&places).into_iter().find(|e| e.plugin_id == plugin_id)
+}
+
+/// What the marketplace's own entry for `entry` names (hooks, servers, commands...): read from the
+/// marketplace files Claude Code keeps, the same ones it installs from. `Err` is why it could not
+/// be read, which the check shows as "can't read", never as clean.
+fn entry_fields_of(env: &Env, entry: &catalog::Entry) -> Result<serde_json::Value, String> {
+    let loc = ledger::marketplaces(&env.root.dir)
+        .into_iter()
+        .find(|m| m.name == entry.marketplace)
+        .and_then(|m| m.install_location)
+        .ok_or_else(|| "Atlas could not find the marketplace's files, so it could not read the plugin's own entry".to_string())?;
+    catalog::entry_components(Path::new(&loc), &entry.name)
+}
+
+/// The same look as a comparable string, kept with the token and compared again at install.
+fn entry_fields_key(r: &Result<serde_json::Value, String>) -> String {
+    match r {
+        Ok(v) => v.to_string(),
+        Err(e) => format!("!{e}"),
+    }
 }
 
 fn view(st: &AppState, env: &Env) -> CatalogView {
@@ -436,12 +459,36 @@ pub async fn library_inspect_plugin(app: AppHandle, state: Info<'_>, lib: Lib<'_
         // Another git host or a source Atlas can't read: nothing to look at, a deliberate two-click install.
         _ => (None, String::new(), String::new(), None),
     };
+    // The marketplace's own entry can name hooks and servers too (strict: false); they are
+    // checked with the files, and an entry Atlas can't read is never "clean".
+    let fields = base.as_ref().map(|_| entry_fields_of(&env, &entry));
     let inspected = match base.clone() {
-        Some(b2) => blocking(move || Ok(install::inspect_plugin(&b2, &name))).await?,
+        Some(b2) => {
+            let fields = fields.clone();
+            blocking(move || {
+                let kind = match &fields {
+                    Some(Ok(v)) => atlas_core::library::check::EntryFields::Fields(v),
+                    Some(Err(e)) => atlas_core::library::check::EntryFields::Unreadable(e),
+                    None => atlas_core::library::check::EntryFields::Absent,
+                };
+                Ok(install::inspect_plugin_entry(&b2, &name, kind))
+            })
+            .await?
+        }
         None => install::inspect_unchecked(&name),
     };
     let detail = Detail {
-        token: lib.keep(Staged { base, source: Some(entry.source.clone()), repo: repo.clone(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: Some(plugin_id), market_source: None }),
+        token: lib.keep(Staged {
+            base,
+            source: Some(entry.source.clone()),
+            repo: repo.clone(),
+            sha: sha.clone(),
+            tree_hash: inspected.check.tree_hash.clone(),
+            shaped: inspected.shaped.clone(),
+            plugin_id: Some(plugin_id),
+            market_source: None,
+            entry_fields: fields.as_ref().map(entry_fields_key),
+        }),
         repo,
         sha,
         subpath,
@@ -471,7 +518,7 @@ pub async fn library_inspect_installed(state: Info<'_>, lib: Lib<'_>, id: String
         let _ = ledger::recheck(&env.data, &id, &inspected.check.tree_hash);
         let repo = ledger::find(&env.data, "plugin", &id).map(|e| e.repo).unwrap_or_default();
         let sha = rec.git_sha.clone().unwrap_or_default();
-        let token = lib.keep(Staged { base: Some(base), source: None, repo: repo.clone(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: Some(id), market_source: None });
+        let token = lib.keep(Staged { base: Some(base), source: None, repo: repo.clone(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: Some(id), market_source: None, entry_fields: None });
         Ok(Detail { token, repo, sha, subpath: None, taken: Vec::new(), inspected, market_source: None })
     })
     .await
@@ -492,7 +539,7 @@ pub async fn library_inspect_link(app: AppHandle, state: Info<'_>, lib: Lib<'_>,
     let taken = takens(&env, &inspected);
     let market_source = (inspected.shaped.shape == "marketplace").then(|| l.slug());
     let sha = un.sha.clone().unwrap_or_default();
-    let token = lib.keep(Staged { base: Some(base), source: None, repo: l.slug(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: None, market_source: market_source.clone() });
+    let token = lib.keep(Staged { base: Some(base), source: None, repo: l.slug(), sha: sha.clone(), tree_hash: inspected.check.tree_hash.clone(), shaped: inspected.shaped.clone(), plugin_id: None, market_source: market_source.clone(), entry_fields: None });
     Ok(Detail { token, repo: l.slug(), sha, subpath: l.path.clone(), inspected, taken, market_source })
 }
 
@@ -533,17 +580,24 @@ pub async fn library_install_plugin(state: Info<'_>, lib: Lib<'_>, plugin_id: St
     let (st, lib) = (state.inner().clone(), lib.inner().clone());
     blocking(move || {
         let env = Env::of(&st)?;
-        let (repo, sha, tree_hash, checked_source) = lib.with(&token, |s| {
+        let (repo, sha, tree_hash, checked_source, checked_fields) = lib.with(&token, |s| {
             if s.plugin_id.as_deref() != Some(plugin_id.as_str()) {
                 return Err("Check it again first.".to_string());
             }
-            Ok((s.repo.clone(), s.sha.clone(), s.tree_hash.clone(), s.source.clone()))
+            Ok((s.repo.clone(), s.sha.clone(), s.tree_hash.clone(), s.source.clone(), s.entry_fields.clone()))
         })?;
         // The listing may have been refreshed since the look (review finding 3): what Claude Code
         // would install now has to be what was checked, or nothing is installed.
-        let source = entry_of(&env, &plugin_id).map(|e| e.source);
+        let entry = entry_of(&env, &plugin_id);
+        let source = entry.as_ref().map(|e| e.source.clone());
         let checked_source = checked_source.ok_or("Check it again first.")?;
         install::same_listing(&checked_source, source.as_ref())?;
+        // ... and so does what the marketplace's own entry says the plugin loads.
+        if let (Some(was), Some(e)) = (checked_fields, entry.as_ref())
+            && was != entry_fields_key(&entry_fields_of(&env, e))
+        {
+            return Err(install::LISTING_MOVED.into());
+        }
         let source = source.ok_or("That plugin is not in the catalog. Press Refresh.")?;
         let runner = env.runner()?;
         install::install_plugin(&env.ctx(), &runner, &plugin_id, &source, &install::Checked { repo: &repo, sha: &sha, tree_hash: &tree_hash })
