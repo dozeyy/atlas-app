@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ClockCounterClockwise, Database, FolderSimple, Info, Minus, Palette, PlugsConnected, Plus, SlidersHorizontal } from "@phosphor-icons/react";
+import { ClockCounterClockwise, Database, FolderSimple, Minus, Mountains, Palette, PlugsConnected, Plus, SlidersHorizontal } from "@phosphor-icons/react";
 import { Button, Card, IconButton, PageTitle, Row, Toggle } from "../components/controls";
 import { Dialog } from "../components/Dialog";
 import { ThemePicker } from "../components/ThemePicker";
@@ -27,7 +27,8 @@ const SECTIONS = [
   { id: "claude", label: "Claude Code", icon: PlugsConnected },
   { id: "data", label: "Your data", icon: Database },
   { id: "history", label: "History", icon: ClockCounterClockwise },
-  { id: "about", label: "About", icon: Info },
+  // Not the info circle: across the app that one means "hover for more".
+  { id: "about", label: "About", icon: Mountains },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
