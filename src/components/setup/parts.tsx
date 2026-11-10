@@ -13,6 +13,7 @@ import {
   ArrowsSplit,
 } from "@phosphor-icons/react";
 import { IconMotion, type Motion } from "../IconMotion";
+import { AgentAvatar, agentLook } from "../usage/helperKit";
 import { enabledTone, KIND_BY_ID, type Tone } from "../../lib/setup-model";
 import type { Conflict, Enabled, ItemKind, ScopeKind, SetupItem } from "../../lib/setup-types";
 
@@ -116,17 +117,70 @@ export const KIND_MOTION: Record<string, Motion> = {
 };
 
 /** The rounded square holding a kind's icon. It relaxes into a blob and the icon moves when the card is hovered. */
-export function KindTile({ kind, size = 36, icon }: { kind: ItemKind | "more"; size?: number; icon?: ComponentType<IconProps> }) {
+export function KindTile({
+  kind,
+  size = 36,
+  icon,
+  title,
+}: {
+  kind: ItemKind | "more";
+  size?: number;
+  icon?: ComponentType<IconProps>;
+  /** What the icon stands for, on hover. Left out where a label already sits beside the tile. */
+  title?: string;
+}) {
   const Icon = icon ?? KIND_BY_ID[kind as ItemKind].icon;
   return (
     <span
       aria-hidden="true"
+      title={title}
       style={{ width: size, height: size }}
       className="kind-tile flex shrink-0 items-center justify-center bg-accent-tint text-accent-text"
     >
       <IconMotion motion={KIND_MOTION[kind] ?? "pop"} size={Math.round(size * 0.55)}>
         <Icon />
       </IconMotion>
+    </span>
+  );
+}
+
+/** What an agent's avatar says on hover: that it is an agent, and which sort when the avatar shows one. */
+function agentTip(name: string): string {
+  const sort = agentLook(name).label;
+  return /other/i.test(sort) ? "Agent" : `Agent: ${sort}`;
+}
+
+/**
+ * The picture beside an item's name. An agent wears the avatar it has on Now, Sessions and Team
+ * (one mapping, in helperKit), so the same helper looks the same everywhere; every other kind
+ * shows its kind icon. Hovering either says what it is.
+ */
+export function ItemIcon({ item, size = 36 }: { item: Pick<SetupItem, "kind" | "name">; size?: number }) {
+  if (item.kind === "agent") {
+    return (
+      <span title={agentTip(item.name)} className="flex shrink-0 self-start">
+        <AgentAvatar type={item.name} size={size} />
+      </span>
+    );
+  }
+  return <KindTile kind={item.kind} size={size} title={sentenceCase(KIND_BY_ID[item.kind].singular)} />;
+}
+
+/** The same picture at list size, for the one-line rows in the panels: an agent's avatar, or the kind's icon at 16 px. */
+export function MiniKind({ kind, name }: { kind: string; name: string }) {
+  if (kind === "agent") {
+    return (
+      <span title={agentTip(name)} className="flex shrink-0 self-center">
+        <AgentAvatar type={name} size={20} />
+      </span>
+    );
+  }
+  const meta = KIND_BY_ID[kind as ItemKind];
+  if (!meta) return null;
+  const Icon = meta.icon;
+  return (
+    <span title={sentenceCase(meta.singular)} className="flex size-5 shrink-0 items-center justify-center self-center text-ink-2">
+      <Icon size={16} aria-hidden="true" />
     </span>
   );
 }

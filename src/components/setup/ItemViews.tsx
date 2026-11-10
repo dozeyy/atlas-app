@@ -5,7 +5,7 @@ import { pushToast } from "../../state/toastStore";
 import type { KeyboardEvent } from "react";
 import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import type { SetupItem } from "../../lib/setup-types";
-import { ConflictChip, copyText, formatDate, KindTile, ScopeChip, SecretsChip, StateChip, TagChip, WarningMark } from "./parts";
+import { ConflictChip, copyText, formatDate, ItemIcon, ScopeChip, SecretsChip, StateChip, TagChip, WarningMark } from "./parts";
 import { useItemCost } from "./CostContext";
 import { HOOK_EVENTS } from "./CreateFlow";
 
@@ -91,7 +91,7 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
         hitClassName="h-full min-h-[104px]"
         className="flex min-h-[104px] gap-3 p-3.5"
       >
-        <KindTile kind={item.kind} />
+        <ItemIcon item={item} />
         <span className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span className="flex items-start justify-between gap-2 pr-6">
             <span title={item.name} className="truncate text-body font-semibold text-ink">

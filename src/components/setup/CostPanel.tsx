@@ -1,7 +1,7 @@
-import { KIND_BY_ID } from "../../lib/setup-model";
 import { fmtUsd, rowTitle, topRows, usdHover, weeklyTokens, windowLabel } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
-import type { CostReport, ItemKind, SetupItem } from "../../lib/setup-types";
+import type { CostReport, SetupItem } from "../../lib/setup-types";
+import { MiniKind } from "./parts";
 
 // Four rows keep this panel about as tall as the usage panel beside it, so the Toolkit page
 // fits a 1280x800 window without scrolling.
@@ -33,7 +33,6 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
       <ol className="mt-3 space-y-2.5">
         {rows.map((r, i) => {
           const share = weeklyTokens(r) / max;
-          const Icon = KIND_BY_ID[r.kind as ItemKind]?.icon;
           const openable = onOpen && r.id !== null && known.has(r.id);
           const hover = [`${exact(r.tokens)} tokens with every message${weekly ? `, ${exact(weeklyTokens(r))} over ${windowLabel(report)}` : ""}.`, usdHover(r, report)]
             .filter(Boolean)
@@ -48,7 +47,7 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
           return (
             <li key={`${r.id ?? r.name}-${i}`} data-cost-row={r.id ?? r.name} title={hover}>
               <div className="flex items-baseline gap-2">
-                {Icon && <Icon size={14} aria-hidden="true" className="shrink-0 translate-y-[2px] text-ink-2" />}
+                <MiniKind kind={r.kind} name={r.name} />
                 {name}
                 <span className="ml-auto shrink-0 text-body text-ink">
                   <span className="d d-small">{compact(weekly ? weeklyTokens(r) : r.tokens)}</span>

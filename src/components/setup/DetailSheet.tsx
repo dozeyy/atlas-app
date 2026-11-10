@@ -15,7 +15,7 @@ import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import { isPerCall, rowFor, usdHover } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
 import type { CostReport, CostRow, MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
-import { Chip, ConflictChip, copyText, formatDate, formatSize, KindTile, PathText, ScopeChip, sentenceCase, StateChip, TagChip } from "./parts";
+import { Chip, ConflictChip, copyText, formatDate, formatSize, ItemIcon, PathText, ScopeChip, sentenceCase, StateChip, TagChip } from "./parts";
 
 const REVEAL_MS = 10_000;
 
@@ -461,7 +461,7 @@ export function DetailSheet({
         className="sheet-enter relative flex h-full w-[min(680px,var(--app-w))] flex-col overflow-y-auto border-l border-line bg-bg shadow-float outline-none"
       >
         <header className="sticky top-0 z-10 flex items-start gap-3 border-b border-line bg-bg px-6 py-4">
-          <KindTile kind={item.kind} size={40} />
+          <ItemIcon item={item} size={40} />
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="selectable break-words text-subtitle font-semibold text-ink">
               {item.name}

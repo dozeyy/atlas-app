@@ -7,6 +7,7 @@ import { cacheNotReady } from "../../lib/useUsage";
 import { joinUsage, usageWindow } from "../../lib/usage-join";
 import type { SetupItem } from "../../lib/setup-types";
 import type { UsageRow } from "../../lib/usage-types";
+import { MiniKind } from "./parts";
 
 // A glance, not an inventory: the full lists are one tile away. These caps keep the panel short
 // enough that the whole Toolkit page fits a 1280x800 window beside the cost ranking. The dust
@@ -225,6 +226,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
                   return (
                     <li key={r.id} title={`${it.name}: ${r.uses30d.toLocaleString()} ${r.uses30d === 1 ? "time" : "times"}${r.lastUsed ? `, last ${relativeTime(r.lastUsed)}` : ""}`}>
                       <div className="flex items-baseline gap-2">
+                        <MiniKind kind={it.kind} name={it.name} />
                         {open(r.id, it.name)}
                         <span className="ml-auto shrink-0 text-caption text-ink-2">
                           <span className="d d-small text-ink">{r.uses30d.toLocaleString()}</span>x
