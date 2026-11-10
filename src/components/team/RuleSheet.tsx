@@ -7,7 +7,7 @@ import { getBackend } from "../../lib/ipc";
 import { errorText } from "../../lib/setup-actions";
 import { reloadSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
-import type { ReviewTheme, RuleSheetData, RuleTarget } from "../../lib/teamTypes";
+import type { PreviewLine, ReviewTheme, RuleSheetData, RuleTarget } from "../../lib/teamTypes";
 
 /** The most a CLAUDE.md line may hold; the server enforces the same number. */
 const LINE_MAX = 400;
@@ -17,6 +17,42 @@ export function whereWords(t: RuleTarget): string {
   if (t.kind === "file") return `the rule file ${t.title.replace(/^A rule file, /, "")}`;
   if (t.id === "global") return "your global CLAUDE.md";
   return `${t.title.replace(/^CLAUDE\.md in /, "")}'s CLAUDE.md`;
+}
+
+/** The few lines of the file around where the rule lands, before and after, in a calm code well. */
+function Preview({ lines, rule }: { lines: PreviewLine[]; rule: string }) {
+  const before = lines.filter((l) => l.kind === "keep");
+  const empty = before.length === 0;
+  return (
+    <div className="mt-4" aria-label="What will change">
+      <p className="mb-1.5 text-body font-semibold text-ink">What will change</p>
+      <div className="grid gap-2">
+        <PreviewBlock label="Now">
+          {empty ? <PreviewRow text="This file is empty or new." dim /> : before.map((l, i) => <PreviewRow key={i} text={l.text} />)}
+        </PreviewBlock>
+        <PreviewBlock label="After saving">
+          {lines.map((l, i) => (l.kind === "slot" ? <PreviewRow key={i} text={rule.trim() || " "} added /> : <PreviewRow key={i} text={l.text} added={l.kind === "added"} />))}
+        </PreviewBlock>
+      </div>
+    </div>
+  );
+}
+
+function PreviewBlock({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <figure className="team-preview" aria-label={label}>
+      <figcaption className="team-preview-label text-caption">{label}</figcaption>
+      <div className="selectable">{children}</div>
+    </figure>
+  );
+}
+
+function PreviewRow({ text, added, dim }: { text: string; added?: boolean; dim?: boolean }) {
+  return (
+    <div className="team-preview-row" data-added={added ? "true" : undefined} data-dim={dim ? "true" : undefined}>
+      {text === "" ? " " : text}
+    </div>
+  );
 }
 
 /**
@@ -214,6 +250,8 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
                 )}
               </div>
             )}
+
+            {target && target.kind === "line" && target.preview && target.preview.length > 0 && <Preview lines={target.preview} rule={text} />}
 
             {problem && (
               <p role="alert" className="mt-3 flex items-start gap-2 rounded-card bg-warning-tint px-4 py-3 text-body text-warning">

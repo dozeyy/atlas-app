@@ -227,6 +227,40 @@ describe("Team: Caught in review", () => {
 
   });
 
+  it("shows what will change: the lines around the rule, and the line as it is edited", async () => {
+    await openToolkit();
+    await userEvent.click((await screen.findAllByRole("button", { name: "Make this a rule" }))[0]);
+    const sheet = await screen.findByRole("dialog", { name: "Make this a rule" });
+    const after = await within(sheet).findByRole("figure", { name: "After saving" });
+    const now = within(sheet).getByRole("figure", { name: "Now" });
+    // Before: the file as it is. After: the same lines with the rule in its place.
+    expect(within(now).getByText("- Plain words in the UI.")).toBeInTheDocument();
+    expect(within(now).queryByText(/Check before handing work back/)).toBeInTheDocument();
+    const field = within(sheet).getByRole("textbox", { name: "The line" });
+    await userEvent.clear(field);
+    await userEvent.type(field, "- Brand new rule text.");
+    expect(within(after).getByText("- Brand new rule text.")).toBeInTheDocument();
+    expect(within(now).queryByText("- Brand new rule text.")).not.toBeInTheDocument();
+    // A new rule file has no preview: the whole file is the editor.
+    await userEvent.click(within(sheet).getByRole("radio", { name: /A rule file/ }));
+    expect(within(sheet).queryByRole("figure", { name: "After saving" })).not.toBeInTheDocument();
+  });
+
+  it("holds 'Still reading your chats' until the first answer after the read finished, never 'No helper runs'", async () => {
+    setPrefs("scorecard");
+    backend.empty = true;
+    backend.usage.setScenario("indexing");
+    await openToolkit();
+    expect(await screen.findByText("Still reading your chats")).toBeInTheDocument();
+    // The read finishes. The empty answer from the middle of the read is still on screen for a
+    // moment; the page must not call that "No helper runs yet".
+    backend.empty = false;
+    act(() => backend.usage.setScenario("data"));
+    expect(screen.queryByText(/No helper runs/)).not.toBeInTheDocument();
+    expect(await card("Code reviewer")).toBeInTheDocument();
+    expect(screen.queryByText("Still reading your chats")).not.toBeInTheDocument();
+  });
+
   it("refuses a file that changed since the sheet opened, writes nothing, and can reload", async () => {
     await openToolkit();
     await userEvent.click((await screen.findAllByRole("button", { name: "Make this a rule" }))[1]);

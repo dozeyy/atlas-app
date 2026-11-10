@@ -4,6 +4,7 @@
 import type {
   MadeRule,
   ModelUse,
+  PreviewLine,
   ProjectRuns,
   ReviewTheme,
   RuleReply,
@@ -100,6 +101,18 @@ function buildRuns(): MockRun[] {
   return out;
 }
 
+/** The lines the mock shows around the new rule: an existing section with one line in it. */
+const MOCK_PREVIEW: PreviewLine[] = [
+  { kind: "keep", text: "## Style" },
+  { kind: "keep", text: "- Plain words in the UI." },
+  { kind: "keep", text: "" },
+  { kind: "keep", text: "## Caught in review" },
+  { kind: "keep", text: "- Check before handing work back: Tests cover the empty case." },
+  { kind: "slot", text: "" },
+  { kind: "keep", text: "" },
+  { kind: "keep", text: "## Notes" },
+];
+
 export class MockTeam {
   /** Test hook: the next rule save finds its file changed. */
   staleNext = false;
@@ -147,11 +160,11 @@ export class MockTeam {
     const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "review-rule";
     const line = `- Check before handing work back: ${label.replace(/^./, (c) => c.toUpperCase()).replace(/[.;:,]+$/, "")}.`;
     const targets: RuleSheetData["targets"] = [
-      { id: "global", kind: "line", title: "CLAUDE.md in your Claude folder", path: "~/.claude/CLAUDE.md", stamp: "s-global", exists: true, text: line, blocked: null },
+      { id: "global", kind: "line", title: "CLAUDE.md in your Claude folder", path: "~/.claude/CLAUDE.md", stamp: "s-global", exists: true, text: line, blocked: null, preview: MOCK_PREVIEW },
     ];
     projectPaths.slice(0, 3).forEach((p) => {
       const name = p.split("/").pop() ?? p;
-      targets.push({ id: `project:${p}`, kind: "line", title: `CLAUDE.md in ${name}`, path: `${p}/CLAUDE.md`, stamp: `s-${name}`, exists: true, text: line, blocked: null });
+      targets.push({ id: `project:${p}`, kind: "line", title: `CLAUDE.md in ${name}`, path: `${p}/CLAUDE.md`, stamp: `s-${name}`, exists: true, text: line, blocked: null, preview: MOCK_PREVIEW });
     });
     targets.push({
       id: "file",
@@ -162,6 +175,7 @@ export class MockTeam {
       exists: false,
       text: `# ${label.split(/\s+/).slice(0, 6).join(" ")}\n\n${line}\n`,
       blocked: null,
+      preview: null,
     });
     return { targets };
   }

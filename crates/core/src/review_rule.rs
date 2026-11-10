@@ -18,25 +18,48 @@ pub const MISSING_STAMP: &str = "missing";
 
 const LINE_PREFIX: &str = "- Check before handing work back: ";
 
-/// A word that is a severity label, a bare line reference or a path: dropped from the draft.
+/// A severity word ("High", "error"), bare. Dropped only when it leads the text as a label.
+fn is_severity(word: &str) -> bool {
+    let w = word.trim_matches(|c: char| !c.is_ascii_alphanumeric()).to_ascii_lowercase();
+    matches!(w.as_str(), "critical" | "high" | "medium" | "low" | "minor" | "major" | "nit" | "blocker" | "info" | "warning" | "error")
+}
+
+/// A leading severity label: "[High]", "(medium)", "Error:", "High -". A severity word inside the
+/// sentence ("Error text is swallowed") is part of the finding and stays.
+fn is_label(word: &str, next: Option<&str>) -> bool {
+    if !is_severity(word) {
+        return false;
+    }
+    let wrapped = word.starts_with(['[', '(']) && word.ends_with([']', ')', ':']);
+    let ends = word.ends_with(':') || word.ends_with(['-']);
+    let then_sep = next.is_some_and(|n| matches!(n, "-" | ":" | "--" | "|"));
+    wrapped || ends || then_sep
+}
+
+/// A directory path ("src/lib/api.ts") or a bare line reference (":42", "L42-50"): dropped from
+/// the draft. A bare file name ("net.rs") is a name, not a path, and stays.
 fn is_noise(word: &str) -> bool {
-    let w = word.trim_matches(|c: char| !c.is_ascii_alphanumeric());
-    let lower = w.to_ascii_lowercase();
-    matches!(lower.as_str(), "critical" | "high" | "medium" | "low" | "minor" | "major" | "nit" | "blocker" | "info" | "warning" | "error")
-        || looks_like_path(word)
-        || looks_like_line_ref(word)
+    looks_like_dir_path(word) || looks_like_line_ref(word)
 }
 
-fn looks_like_path(word: &str) -> bool {
+/// Words that introduce a place: dropped with the path that follows them.
+fn is_place_word(word: &str) -> bool {
+    matches!(word.to_ascii_lowercase().as_str(), "in" | "at" | "on" | "from" | "inside" | "within")
+}
+
+/// "net.rs:42" -> "net.rs" (a trailing `:line` or `:line-line`, with any closing punctuation kept).
+fn strip_line_suffix(word: &str) -> String {
+    let core_end = word.trim_end_matches([')', ',', ';', '.', '"', '\'', ']']).len();
+    let (core, tail) = word.split_at(core_end);
+    match core.rsplit_once(':') {
+        Some((head, num)) if !head.is_empty() && !num.is_empty() && num.chars().all(|c| c.is_ascii_digit() || c == '-') => format!("{head}{tail}"),
+        _ => word.to_string(),
+    }
+}
+
+fn looks_like_dir_path(word: &str) -> bool {
     let w = word.trim_matches(|c: char| matches!(c, '`' | '(' | ')' | ',' | ';' | ':' | '"' | '\'' | '.'));
-    let has_sep = w.contains('/') || w.contains('\\');
-    let has_ext = w.rsplit_once('.').is_some_and(|(stem, ext)| !stem.is_empty() && !ext.is_empty() && ext.len() <= 5 && ext.chars().all(|c| c.is_ascii_alphanumeric()) && stem.chars().any(|c| c.is_ascii_alphabetic()) && (ext.chars().any(|c| c.is_ascii_alphabetic())));
-    (has_sep && w.len() > 2) || (has_ext && !w.contains(' ') && w.chars().filter(|c| *c == '.').count() == 1 && w.len() > 3 && has_known_ext(w))
-}
-
-fn has_known_ext(w: &str) -> bool {
-    let ext = w.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    matches!(ext.as_str(), "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "md" | "json" | "toml" | "css" | "html" | "yml" | "yaml" | "cs" | "go" | "java" | "kt" | "swift" | "cpp" | "c" | "h" | "sql" | "sh" | "ps1" | "xaml" | "lock" | "txt")
+    (w.contains('/') || w.contains('\\')) && w.len() > 2
 }
 
 fn looks_like_line_ref(word: &str) -> bool {
@@ -91,13 +114,28 @@ fn is_import(word: &str) -> bool {
 /// markdown links are removed, and the length is capped.
 pub fn clean_label(label: &str) -> String {
     let safe = strip_links(&crate::setup::secrets::redact_inline(label)).replace('`', "");
-    // A leading "[High]" / "HIGH:" / "(medium)" tag.
-    let mut words: Vec<&str> = safe.split_whitespace().filter(|w| !is_import(w) && !is_noise(w)).collect();
-    // Dangling joiners left where a path or severity was removed.
-    while words.first().is_some_and(|w| matches!(*w, "-" | ":" | "--" | "|" | "in" | "at" | "on")) {
+    let all: Vec<&str> = safe.split_whitespace().filter(|w| !is_import(w)).collect();
+    // A leading "[High]" / "HIGH:" / "(medium)" tag, possibly more than one.
+    let mut start = 0;
+    while start < all.len() && is_label(all[start], all.get(start + 1).copied()) {
+        start += 1;
+    }
+    let mut words: Vec<String> = Vec::new();
+    for w in &all[start..] {
+        if is_noise(w) {
+            // "in crates/core/x.rs": the place word goes with its path.
+            if words.last().is_some_and(|p| is_place_word(p)) {
+                words.pop();
+            }
+            continue;
+        }
+        words.push(strip_line_suffix(w));
+    }
+    // Dangling joiners left where a label or path was removed.
+    while words.first().is_some_and(|w| matches!(w.as_str(), "-" | ":" | "--" | "|" | "in" | "at" | "on")) {
         words.remove(0);
     }
-    while words.last().is_some_and(|w| matches!(*w, "-" | ":" | "--" | "|" | "in" | "at" | "on" | "(" | ")")) {
+    while words.last().is_some_and(|w| matches!(w.as_str(), "-" | ":" | "--" | "|" | "in" | "at" | "on" | "(" | ")")) {
         words.pop();
     }
     let joined = words.join(" ");
@@ -309,6 +347,48 @@ pub fn append_under_heading(file: &[u8], heading: &str, text: &str) -> Vec<u8> {
     out
 }
 
+/// One line of the "what will change" preview.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewLine {
+    /// `keep` (already in the file) | `added` (a heading Atlas adds with the rule) | `slot` (the rule).
+    pub kind: &'static str,
+    /// The line's text; empty for `slot` (the page shows the line being edited there).
+    pub text: String,
+}
+
+/// The lines around where a CLAUDE.md rule will land: up to `PREVIEW_BEFORE` lines before it, the
+/// slot for the rule itself (with the heading Atlas adds when the file has none), and the line
+/// after it (two lines, so the next heading shows). Found by running the real append with a marker, so the preview cannot disagree with
+/// the write.
+pub fn preview(file: &[u8]) -> Vec<PreviewLine> {
+    const MARK: &str = "- atlas-preview-slot-7f3a";
+    const PREVIEW_BEFORE: usize = 5;
+    let lines_of = |b: &[u8]| -> Vec<String> {
+        let b = b.strip_prefix(&[0xEF, 0xBB, 0xBF][..]).unwrap_or(b);
+        String::from_utf8_lossy(b).lines().map(|l| l.to_string()).collect()
+    };
+    let before = lines_of(file);
+    let after = lines_of(&append_under_heading(file, HEADING, MARK));
+    let Some(slot) = after.iter().position(|l| l == MARK) else { return Vec::new() };
+    // Lines the append added in front of the slot (the heading and the blank line under it).
+    let added = after.len().saturating_sub(before.len() + 1).min(slot);
+    let from = slot.saturating_sub(PREVIEW_BEFORE + added);
+    let to = (slot + 3).min(after.len());
+    let mut out = Vec::new();
+    for (k, text) in after.iter().enumerate().take(to).skip(from) {
+        let kind = if k == slot {
+            "slot"
+        } else if k >= slot - added && k < slot {
+            "added"
+        } else {
+            "keep"
+        };
+        out.push(PreviewLine { kind, text: if k == slot { String::new() } else { text.clone() } });
+    }
+    out
+}
+
 /// Which lines are inside (or are the edge of) a fenced code block. A fence opens with three or more
 /// backticks or tildes and closes only on the same character, at least as long, with nothing after
 /// it (CommonMark), so a shorter or different fence inside the block does not end it.
@@ -397,6 +477,40 @@ fn save(data_dir: &Path, rules: BTreeMap<String, MadeRule>) -> std::io::Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_preview_shows_where_the_line_lands_and_the_heading_it_adds() {
+        let kinds = |p: &[PreviewLine]| p.iter().map(|l| l.kind).collect::<Vec<_>>();
+        // No heading yet: a blank line, the heading and its blank line are added after the last 5 lines.
+        let p = preview(b"# Notes\n\na\nb\nc\nd\ne\nf\n");
+        assert_eq!(kinds(&p), ["keep", "keep", "keep", "keep", "keep", "added", "added", "added", "slot"]);
+        assert_eq!(p[0].text, "b");
+        assert_eq!((p[5].text.as_str(), p[6].text.as_str()), ("", "## Caught in review"));
+        // An existing section: the slot sits under its last line, and the next heading follows.
+        let p = preview(b"## Caught in review\n- one\n\n## Other\ntext\n");
+        assert_eq!(kinds(&p), ["keep", "keep", "slot", "keep", "keep"]);
+        assert_eq!(p[1].text, "- one");
+        assert_eq!(p[3].text, "");
+        // An empty file, then a BOM and CRLF.
+        assert_eq!(kinds(&preview(b"")), ["added", "added", "slot"]);
+        let p = preview(b"\xEF\xBB\xBF# T\r\nx\r\n");
+        assert_eq!(p[0].text, "# T");
+        assert!(p.iter().all(|l| !l.text.contains('\r')));
+    }
+
+    #[test]
+    fn bare_file_names_and_severity_words_inside_the_sentence_stay() {
+        assert_eq!(draft_line("Retry loop in net.rs never backs off after a failure"), "- Check before handing work back: Retry loop in net.rs never backs off after a failure.");
+        assert_eq!(draft_line("Error text is swallowed instead of shown"), "- Check before handing work back: Error text is swallowed instead of shown.");
+        assert_eq!(draft_line("High latency on the first paint"), "- Check before handing work back: High latency on the first paint.");
+        // Only directories and line numbers go.
+        assert_eq!(draft_line("Retry loop in src/net.rs:42 never backs off"), "- Check before handing work back: Retry loop never backs off.");
+        assert_eq!(draft_line("net.rs:42 never backs off"), "- Check before handing work back: Net.rs never backs off.");
+        // A leading label goes, in each of its usual shapes.
+        assert_eq!(draft_line("Error: net.rs never backs off"), "- Check before handing work back: Net.rs never backs off.");
+        assert_eq!(draft_line("High - retries are unbounded"), "- Check before handing work back: Retries are unbounded.");
+        assert_eq!(draft_line("(medium) retries are unbounded"), "- Check before handing work back: Retries are unbounded.");
+    }
 
     #[test]
     fn the_draft_drops_severity_path_and_line_and_ends_in_a_full_stop() {

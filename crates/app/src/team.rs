@@ -76,12 +76,38 @@ pub struct RuleTarget {
     text: String,
     /// Why this target cannot be used (a rule file of that name already exists).
     blocked: Option<String>,
+    /// For a CLAUDE.md line: the lines around where the rule will land, from the same append the
+    /// write uses. None for a new rule file (its whole text is in the editor).
+    preview: Option<Vec<review_rule::PreviewLine>>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuleSheet {
     targets: Vec<RuleTarget>,
+}
+
+/// A path as the sheet shows it. The scan reports a project folder with forward slashes and the
+/// file is joined on with a backslash, so on Windows one separator is used all the way through.
+fn shown(p: &Path) -> String {
+    let s = atlas_core::setup::display_path(p);
+    if cfg!(windows) {
+        s.replace('/', "\\")
+    } else {
+        s
+    }
+}
+
+/// The preview of a CLAUDE.md. A file that is not readable text or is very large is previewed
+/// as empty rather than read whole.
+fn preview_of(file: &Path) -> Vec<review_rule::PreviewLine> {
+    const MAX: u64 = 1_000_000;
+    let bytes = match std::fs::metadata(file) {
+        Ok(m) if m.len() > MAX => return Vec::new(),
+        Ok(_) => std::fs::read(file).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    review_rule::preview(&bytes)
 }
 
 /// A folder as compared: slashes unified, no trailing slash, lower-case (Windows paths).
@@ -133,11 +159,12 @@ fn build_targets(projects: &[Project], root_dir: &Path, asked: &[String], label:
             id,
             kind: "line",
             title,
-            path: atlas_core::setup::display_path(&file),
+            path: shown(&file),
             stamp: sw::file_stamp(&file),
             exists: file.is_file(),
             text: line.clone(),
             blocked: None,
+            preview: Some(preview_of(&file)),
         })
         .collect();
     let slug = review_rule::rule_slug(label);
@@ -147,11 +174,12 @@ fn build_targets(projects: &[Project], root_dir: &Path, asked: &[String], label:
         id: "file".into(),
         kind: "file",
         title: format!("A rule file, rules/{slug}.md"),
-        path: atlas_core::setup::display_path(&rule_path),
+        path: shown(&rule_path),
         stamp: sw::file_stamp(&rule_path),
         exists: taken,
         text: review_rule::rule_file_text(label),
         blocked: taken.then(|| "A rule file with this name is already there.".to_string()),
+        preview: None,
     });
     targets
 }
@@ -228,7 +256,7 @@ pub async fn rule_save(app: AppHandle, state: Info<'_>, hub: Hub<'_>, args: Rule
                 Err(e) => return Err(e.message()),
             };
             sw::tag_backup(&backups, &out.backup_id, "user", summary);
-            (Some(out.backup_id), atlas_core::setup::display_path(&target), false)
+            (Some(out.backup_id), shown(&target), false)
         } else {
             let found = claude_md_targets(&d.snapshot.projects, &i.root.dir, &args.project_paths).into_iter().find(|(id, _, _)| *id == args.target_id);
             let Some((_, _, file)) = found else { return Err("That place for the rule is not available any more. Close this and try again.".into()) };
@@ -236,10 +264,10 @@ pub async fn rule_save(app: AppHandle, state: Info<'_>, hub: Hub<'_>, args: Rule
             // The line is already there (a save whose note was lost, or a hand edit): nothing to
             // write, and no second copy.
             if std::fs::read(&file).is_ok_and(|b| review_rule::has_line(&b, &line)) {
-                (None, atlas_core::setup::display_path(&file), true)
+                (None, shown(&file), true)
             } else {
                 match sw::apply_append(&file, "instructions", "CLAUDE.md", review_rule::HEADING, &line, &args.stamp, summary, &backups) {
-                    Ok(o) => (o.backup_id, atlas_core::setup::display_path(&file), false),
+                    Ok(o) => (o.backup_id, shown(&file), false),
                     Err(WriteError::Conflict) => return Ok(conflict()),
                     Err(e) => return Err(e.message()),
                 }
@@ -400,5 +428,43 @@ mod tests {
         for x in &t {
             assert!(!x.text.contains('@') && !x.text.contains("evil.example") && !x.text.contains('`') && !x.text.contains("sk-ant-api03"), "{}", x.text);
         }
+    }
+
+    #[test]
+    fn a_line_target_carries_the_preview_and_one_slash_style_in_its_path() {
+        let base = tempfile::tempdir().unwrap();
+        let claude = base.path().join(".claude");
+        let mut p = repo(base.path(), "w", "alpha");
+        std::fs::write(Path::new(&p.path).join("CLAUDE.md"), "# alpha\nrules\n").unwrap();
+        // The scan reports the folder with forward slashes; the file is joined on with the OS one.
+        p.path = p.path.replace('\\', "/");
+        let t = build_targets(std::slice::from_ref(&p), &claude, std::slice::from_ref(&p.path), "x");
+        let shown_path = &t[1].path;
+        if cfg!(windows) {
+            assert!(!shown_path.contains('/'), "{shown_path}");
+        }
+        assert!(shown_path.ends_with("CLAUDE.md"));
+        let pv = t[1].preview.as_ref().unwrap();
+        assert_eq!(pv.last().map(|l| l.kind), Some("slot"));
+        assert!(pv.iter().any(|l| l.kind == "added" && l.text == review_rule::HEADING));
+        // A new rule file has no preview: its whole text is in the editor.
+        assert!(t.last().unwrap().preview.is_none());
+    }
+
+    #[test]
+    fn a_change_to_the_file_after_the_sheet_opened_changes_its_stamp_so_save_refuses() {
+        let base = tempfile::tempdir().unwrap();
+        let claude = base.path().join(".claude");
+        let p = repo(base.path(), "w", "alpha");
+        let file = Path::new(&p.path).join("CLAUDE.md");
+        let opened = build_targets(std::slice::from_ref(&p), &claude, std::slice::from_ref(&p.path), "x");
+        assert_eq!(opened[1].stamp, sw::file_stamp(&file), "unchanged: Save goes ahead");
+        std::fs::write(&file, "# alpha\nsomeone edited this, and it is longer now\n").unwrap();
+        assert_ne!(opened[1].stamp, sw::file_stamp(&file), "changed: the stamp no longer matches");
+        // A rule file that appears after the sheet saw it missing is stale too.
+        assert_eq!(opened.last().unwrap().stamp, review_rule::MISSING_STAMP);
+        std::fs::create_dir_all(claude.join("rules")).unwrap();
+        std::fs::write(claude.join("rules").join("x.md"), "x").unwrap();
+        assert_ne!(sw::file_stamp(&claude.join("rules").join("x.md")), review_rule::MISSING_STAMP);
     }
 }

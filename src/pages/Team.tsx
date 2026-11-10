@@ -25,6 +25,30 @@ const VIEWS: { value: TeamView; label: string }[] = [
 ];
 
 /** Shown instead of "none yet" while the first read of the chats is still running. */
+/**
+ * True while the first read of the chats is running, and until the page has an answer that was
+ * asked for after it finished. The status turns ready a moment before the numbers do, and the
+ * answer on screen then is still the empty one from the middle of the read: "No helper runs"
+ * must not flash up in that gap. When the read finishes, one fresh answer is asked for here.
+ */
+function useReadingHold(reload: (silent: boolean) => void, answeredAt: number | null): boolean {
+  const { status } = useUsageStatus();
+  const notReady = cacheNotReady(status);
+  const [sawReading, setSawReading] = useState(false);
+  const [readyAt, setReadyAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (status !== null && notReady) {
+      setSawReading(true);
+      setReadyAt(null);
+    } else if (!notReady && sawReading && readyAt === null) {
+      setReadyAt(Date.now());
+      reload(true);
+    }
+  }, [status, notReady, sawReading, readyAt, reload]);
+  const fresh = !sawReading || (readyAt !== null && answeredAt !== null && answeredAt >= readyAt);
+  return notReady || !fresh;
+}
+
 const READING_TITLE = "Still reading your chats";
 const READING_BODY = "This fills in by itself when the first read finishes.";
 
@@ -63,8 +87,7 @@ function Scorecard({
   const args = scorecardArgs(prefs);
   const score = useFetched(() => backend.teamScorecard(args), [prefs.range, prefs.startedFrom]);
   useLiveReload(score.reload);
-  const { status } = useUsageStatus();
-  const reading = cacheNotReady(status);
+  const reading = useReadingHold(score.reload, score.at);
 
   const data = score.data;
   const cards = useMemo(() => (data ? filterCards(data.types, filter) : []), [data, filter]);
@@ -133,9 +156,8 @@ function ReviewView({
   const days = rangeDays(prefs.range);
   const themes = useFetched(() => backend.teamThemes({ days }), [prefs.range]);
   useLiveReload(themes.reload);
-  const { status } = useUsageStatus();
-  const reading = cacheNotReady(status);
   const reload = useCallback(() => themes.reload(true), [themes]);
+  const reading = useReadingHold(themes.reload, themes.at);
 
   const data = themes.data;
   if (themes.error && !data) return <ErrorBlock title="Could not read the reviews" message={themes.error} onRetry={() => themes.reload()} />;

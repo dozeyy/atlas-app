@@ -178,6 +178,14 @@ export interface RuleTarget {
   exists: boolean;
   text: string;
   blocked: string | null;
+  /** For a CLAUDE.md line: the lines around where the rule lands. Empty or null: no preview. */
+  preview: PreviewLine[] | null;
+}
+
+/** `keep` is already in the file, `added` is a heading Atlas adds, `slot` is the rule itself. */
+export interface PreviewLine {
+  kind: "keep" | "added" | "slot";
+  text: string;
 }
 
 export interface RuleSheetData {
