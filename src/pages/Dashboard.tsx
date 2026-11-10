@@ -120,7 +120,7 @@ const PAGE_WIDE = "@[600px]:col-span-2 @[740px]:col-span-1";
 /** A column of the wide grid; below it the column dissolves and its cards join the page grid. */
 const PAGE_COLUMN = "contents @[900px]:block @[900px]:min-w-0 @[900px]:space-y-4";
 
-function DashboardSkeleton({ firstIndex }: { firstIndex: boolean }) {
+function DashboardSkeleton() {
   return (
     <div role="status" aria-label="Loading your usage">
       {/* The same grid as the page it stands in for, so nothing jumps when the numbers land. */}
@@ -134,7 +134,7 @@ function DashboardSkeleton({ firstIndex }: { firstIndex: boolean }) {
           <Skeleton className="h-4 w-16" />
           <Skeleton className="mt-4 size-[88px] !rounded-full" />
         </Card>
-        {/* A small window has no room for the Activity card: the line below must stay on the first screen. */}
+        {/* A small window shows the top row only, so the loading state stays on one screen. */}
         <Card className="hidden px-5 py-4 @[740px]:block">
           <Skeleton className="h-4 w-20" />
           <Skeleton className="mt-4 h-[144px] w-full" />
@@ -144,7 +144,8 @@ function DashboardSkeleton({ firstIndex }: { firstIndex: boolean }) {
           <Skeleton className="mt-4 h-[120px] w-full" />
         </Card>
       </div>
-      {firstIndex && <p className="mt-4 text-body text-ink-2">Reading your history. This runs once.</p>}
+      {/* No words here: during the first read the banner above the page already says what is
+          happening and that it happens once. */}
     </div>
   );
 }
@@ -277,7 +278,7 @@ export function Dashboard() {
       ) : dash.error && !cacheNotReady(status) && !engineDown ? (
         <ErrorBlock title="Could not load your usage" message={dash.error} onRetry={() => dash.reload(false)} />
       ) : engineDown && !data ? null : !data || (nothing && firstIndex) ? (
-        <DashboardSkeleton firstIndex={firstIndex} />
+        <DashboardSkeleton />
       ) : nothing ? (
         <EmptyState
           icon={SquaresFour}
