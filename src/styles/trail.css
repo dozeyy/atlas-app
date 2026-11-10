@@ -994,6 +994,8 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   align-items: baseline;
   align-content: flex-start;
   height: var(--text-caption--line-height);
+  overflow: hidden;
+  white-space: nowrap;
 }
 .sl-main {
   display: flex;
@@ -1780,11 +1782,17 @@ html[data-input="keyboard"] .x-del:focus-visible {
 
 /* Helpers that were started by another helper hang off a rail, so the nesting reads as a tree. */
 .helper-kids {
-  margin: 12px 0 0 20px;
+  margin: 8px 0 0 20px;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 12px;
+  gap: 8px;
+}
+/* A helper's avatar. A helper started by another helper wears the same tile hollow: an outline in
+   its own colour, nothing filled, so the two levels tell apart without reading. */
+.helper-av.nested {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentColor;
 }
 .helper-kid {
   position: relative;
@@ -1794,9 +1802,9 @@ html[data-input="keyboard"] .x-del:focus-visible {
   content: "";
   position: absolute;
   left: -12px;
-  top: -12px;
+  top: -8px;
   width: 12px;
-  height: 48px;
+  height: 40px;
   border-left: 1.5px solid var(--line-strong);
   border-bottom: 1.5px solid var(--line-strong);
   border-bottom-left-radius: 8px;
@@ -1806,8 +1814,8 @@ html[data-input="keyboard"] .x-del:focus-visible {
   content: "";
   position: absolute;
   left: -12px;
-  top: 36px;
-  bottom: -12px;
+  top: 32px;
+  bottom: -8px;
   border-left: 1.5px solid var(--line-strong);
   pointer-events: none;
 }

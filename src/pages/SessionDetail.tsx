@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   ArrowBendDownRight,
   ArrowLeft,
@@ -6,7 +7,6 @@ import {
   CaretRight,
   CaretUp,
   ChatsCircle,
-  Clock,
   Copy,
   FolderOpen,
   Hash,
@@ -21,7 +21,7 @@ import { TokenText } from "../components/usage/TokenText";
 import { Breakdown, ModelSplit, Stat } from "../components/usage/detailParts";
 import { HelperMap } from "../components/usage/HelperMap";
 import { HelperSlice } from "../components/usage/HelperSlice";
-import { AgentAvatar, ModelChip, ModelDots, sessionName, TokenFigure } from "../components/usage/helperKit";
+import { AgentAvatar, ModelDots, OutcomeMark, sessionName, TokenFigure } from "../components/usage/helperKit";
 import { ReceiptPane } from "../components/usage/ReceiptPane";
 import { SessionTools, useSessionItems } from "../components/usage/SessionTools";
 import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
@@ -37,9 +37,9 @@ import { helperTree, type HelperNode } from "../lib/helperTree";
 import { MAIN_ID } from "../lib/helperMap";
 import { useIntro } from "../lib/motion";
 import { useFetched, useLiveReload } from "../lib/useUsage";
-import { compact, effortMix, exact, formatDuration, formatUsd, formatWhen, headline, percent, plural, share, topEffort } from "../lib/usage";
+import { compact, effortMix, exact, formatDuration, formatUsd, formatWhen, headline, modelWithEffort, percent, plural, share, topEffort } from "../lib/usage";
 import { AgentDetailView, typeLabel } from "./AgentDetail";
-import type { AgentSummary, SessionDetail, TranscriptItem } from "../lib/types";
+import type { AgentSummary, Outcome, SessionDetail, TranscriptItem } from "../lib/types";
 
 type Tab = "receipt" | "helpers" | "messages" | "details";
 
@@ -47,12 +47,18 @@ type Tab = "receipt" | "helpers" | "messages" | "details";
 function HelperCard({
   agent,
   parentName,
+  inTree = false,
+  outcome,
   sessionTokens,
   index,
   onOpen,
 }: {
   agent: AgentSummary;
   parentName: string | null;
+  /** Drawn under its starter on the rail, so the starter's name is not written out again. */
+  inTree?: boolean;
+  /** How it ended, once the receipt has been read; nothing until then. */
+  outcome?: Outcome | null;
   /** The chat's tokens, counted the same way as the helper's (the headline kind). */
   sessionTokens: number;
   index: number;
@@ -62,50 +68,72 @@ function HelperCard({
   // same share the receipt and the helper map show for this helper.
   const tokens = headline(agent.tokens);
   const frac = share(tokens, sessionTokens);
+  const dot = (
+    <span aria-hidden="true" className="mx-1.5 text-ink-2/60">
+      &middot;
+    </span>
+  );
+  // One row a helper: who (the name), what kind (the avatar, and the type in words), did it finish,
+  // how long, and on the right how much. Everything else is on the helper's own page. A type that
+  // only repeats the name ("verifier", Verifier) is not written twice.
+  const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const type = agent.agentType && !flat(agent.name).startsWith(flat(agent.agentType)) ? typeLabel(agent.agentType) : null;
+  const facts: ReactNode[] = [];
+  if (outcome) facts.push(<OutcomeMark key="o" outcome={outcome} />);
+  if (type)
+    facts.push(
+      <span key="t" className="min-w-12 truncate" title={agent.agentType ?? undefined}>
+        {type}
+      </span>,
+    );
+  if (parentName && !inTree)
+    facts.push(
+      <span key="p" className="inline-flex min-w-16 max-w-56 items-baseline" title={`Started by ${parentName}`}>
+        <ArrowBendDownRight size={12} aria-hidden="true" className="mr-1 shrink-0 self-center" />
+        <span className="truncate">{parentName}</span>
+      </span>,
+    );
+  facts.push(
+    <span key="d" className="flex-none whitespace-nowrap" title={`Ran for ${formatDuration(agent.durationMs)}, ${plural(agent.toolCalls, "tool call")}`}>
+      {formatDuration(agent.durationMs)}
+    </span>,
+  );
   return (
-    <Card onClick={() => onOpen(agent.agentId)} className="flex flex-col gap-3 p-4">
-      <div className="flex items-start gap-3">
-        <AgentAvatar type={agent.agentType} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-body font-semibold text-ink" title={agent.name}>
-            {agent.name}
-          </div>
-          <div className="flex min-w-0 items-center gap-1 truncate text-caption text-ink-2">
-            {parentName ? (
-              <>
-                <ArrowBendDownRight size={12} aria-hidden="true" className="shrink-0" />
-                <span className="truncate">{`Started by ${parentName}`}</span>
-              </>
-            ) : (
-              <span>{typeLabel(agent.agentType)}</span>
-            )}
-          </div>
+    <Card onClick={() => onOpen(agent.agentId)} className="flex items-center gap-3 px-4 py-3">
+      <AgentAvatar type={agent.agentType} level={parentName ? "nested" : "helper"} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-body font-semibold text-ink" title={agent.name}>
+          {agent.name}
         </div>
-        <div className="shrink-0 text-right">
-          <div className="d d-small text-ink">
-            <TokenText tokens={tokens} cost={agent.cost} unit="" />
-          </div>
-          <div className="text-caption text-ink-2">tokens</div>
+        {/* The facts stay; the model leaves the line whole when there is no room (.sl-meta). */}
+        <div className="sl-meta mt-0.5 min-w-0 text-caption text-ink-2">
+          <span className="sl-main">
+            {facts.map((f, i) => (
+              <Fragment key={i}>
+                {i > 0 && dot}
+                {f}
+              </Fragment>
+            ))}
+            {parentName && inTree && <span className="sr-only">{`, started by ${parentName}`}</span>}
+          </span>
+          <span className="flex-none whitespace-nowrap" title={agent.model}>
+            {dot}
+            {modelWithEffort(agent.model, topEffort(agent.efforts))}
+          </span>
         </div>
       </div>
-      <div>
-        <div className="share-bar" role="img" aria-label={`${percent(frac)} of the session's tokens`}>
-          <i style={{ width: `${Math.max(frac > 0 ? 2 : 0, frac * 100)}%`, ["--i" as string]: Math.min(index, 12) }} />
+      <div className="shrink-0 text-right">
+        <div className="d d-small text-ink">
+          <TokenText tokens={tokens} cost={agent.cost} />
         </div>
-        <div className="mt-1 text-caption text-ink-2">{`${percent(frac)} of the session`}</div>
+        <div className="flex items-center justify-end text-caption text-ink-2" role="img" aria-label={`${percent(frac)} of the session's tokens`}>
+          {percent(frac)}
+          <span aria-hidden="true" className="tok-bar">
+            <i style={{ width: `${Math.max(frac > 0 ? 4 : 0, Math.round(frac * 100))}%`, ["--i" as string]: Math.min(index, 12) }} />
+          </span>
+        </div>
       </div>
-      <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-ink-2">
-        <ModelChip model={agent.model} effort={topEffort(agent.efforts)} />
-        <span className="inline-flex items-center gap-1">
-          <Clock size={12} aria-hidden="true" />
-          {formatDuration(agent.durationMs)}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Wrench size={12} aria-hidden="true" />
-          {plural(agent.toolCalls, "tool call")}
-        </span>
-        <CaretRight size={12} aria-hidden="true" className="row-caret ml-auto" />
-      </div>
+      <CaretRight size={12} aria-hidden="true" className="row-caret shrink-0" />
     </Card>
   );
 }
@@ -113,11 +141,13 @@ function HelperCard({
 function HelperBranch({
   node,
   names,
+  outcomes,
   sessionTokens,
   onOpen,
 }: {
   node: HelperNode;
   names: Map<string, string>;
+  outcomes: Map<string, Outcome | null>;
   sessionTokens: number;
   onOpen: (id: string) => void;
 }) {
@@ -127,6 +157,8 @@ function HelperBranch({
       <HelperCard
         agent={a}
         parentName={a.parentAgentId ? (names.get(a.parentAgentId) ?? null) : null}
+        inTree
+        outcome={outcomes.get(a.agentId)}
         sessionTokens={sessionTokens}
         index={node.index}
         onOpen={onOpen}
@@ -135,7 +167,7 @@ function HelperBranch({
         <ul className="helper-kids">
           {node.kids.map((k) => (
             <li key={k.agent.agentId} className="helper-kid">
-              <HelperBranch node={k} names={names} sessionTokens={sessionTokens} onOpen={onOpen} />
+              <HelperBranch node={k} names={names} outcomes={outcomes} sessionTokens={sessionTokens} onOpen={onOpen} />
             </li>
           ))}
         </ul>
@@ -154,6 +186,7 @@ function HelperList({
   sessionId,
   sessionTokens,
   names,
+  outcomes,
   onOpen,
 }: {
   agents: AgentSummary[];
@@ -161,6 +194,7 @@ function HelperList({
   sessionId: string;
   sessionTokens: number;
   names: Map<string, string>;
+  outcomes: Map<string, Outcome | null>;
   onOpen: (id: string) => void;
 }) {
   const intro = useIntro(`helpers:${sessionId}`);
@@ -170,22 +204,23 @@ function HelperList({
 
   if (nested) {
     return (
-      <ul className={`grid grid-cols-1 gap-3${intro ? " intro" : ""}`}>
+      <ul className={`grid grid-cols-1 gap-2${intro ? " intro" : ""}`}>
         {roots.map((r) => (
           <li key={r.agent.agentId}>
-            <HelperBranch node={r} names={names} sessionTokens={sessionTokens} onOpen={onOpen} />
+            <HelperBranch node={r} names={names} outcomes={outcomes} sessionTokens={sessionTokens} onOpen={onOpen} />
           </li>
         ))}
       </ul>
     );
   }
   return (
-    <ul className={`grid grid-cols-1 gap-3 @2xl:grid-cols-2${intro ? " intro" : ""}`}>
+    <ul className={`grid grid-cols-1 gap-2 @2xl:grid-cols-2${intro ? " intro" : ""}`}>
       {flat.map((a, i) => (
         <li key={a.agentId} className="@2xl:[&:last-child:nth-child(odd)]:col-span-2">
           <HelperCard
             agent={a}
             parentName={a.parentAgentId ? (names.get(a.parentAgentId) ?? null) : null}
+            outcome={outcomes.get(a.agentId)}
             sessionTokens={sessionTokens}
             index={i}
             onOpen={onOpen}
@@ -533,6 +568,8 @@ export function SessionDetailView({
   const sessionTokens = headline(row.tokens);
   const names = new Map(agents.map((a) => [a.agentId, a.name]));
   const helperTypes = new Map(agents.map((a) => [a.agentId, a.agentType]));
+  // How each helper ended comes with the receipt (it reads the files); the list shows it once it is in.
+  const outcomes = new Map((receipt.data?.threads ?? []).flatMap((t) => (t.agentId ? [[t.agentId, t.outcome] as const] : [])));
   const hasHelpers = agents.length > 0;
   const shownTab: Tab = tab === "helpers" && !hasHelpers ? "receipt" : tab;
 
@@ -664,7 +701,7 @@ export function SessionDetailView({
 
         {shownTab === "helpers" &&
           (view === "list" ? (
-            <HelperList agents={agents} order={order} sessionId={id} sessionTokens={sessionTokens} names={names} onOpen={setAgentId} />
+            <HelperList agents={agents} order={order} sessionId={id} sessionTokens={sessionTokens} names={names} outcomes={outcomes} onOpen={setAgentId} />
           ) : receipt.data ? (
             <div className="map-grid">
               <HelperMap receipt={receipt.data} sessionId={id} selected={picked} onSelect={setPicked} types={helperTypes} />
