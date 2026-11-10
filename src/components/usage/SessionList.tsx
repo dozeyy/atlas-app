@@ -119,6 +119,7 @@ export function SessionLine({
   snippet,
   barShare,
   dayKnown = false,
+  projectKnown = false,
   query,
 }: {
   row: SessionRow;
@@ -131,6 +132,8 @@ export function SessionLine({
   barShare?: number;
   /** The row sits under a band that names its day: it says the time only, never the day twice. */
   dayKnown?: boolean;
+  /** The row sits under a band that names its folder: the project and its dot stay on the band. */
+  projectKnown?: boolean;
 }) {
   const name = sessionName(row);
   return (
@@ -145,14 +148,18 @@ export function SessionLine({
         <span className="sl-meta mt-1 w-full min-w-0 truncate text-caption text-ink-2">
           <span className="sl-main">
             {/* The dot and the hairline each say what they are when pointed at. */}
-            <span
-              data-tip={`${row.projectPath || row.projectName}\nThe dot is this project's colour in every list.`}
-              className={`truncate ${row.projectName.length > SHORT_PROJECT ? "sl-proj" : "flex-none"}`}
-            >
-              <ProjectDot path={row.projectPath || row.projectName} />
-              <Marked text={row.projectName} query={query} />
-            </span>
-            <span className="flex-none">{DOT}</span>
+            {!projectKnown && (
+              <>
+                <span
+                  data-tip={`${row.projectPath || row.projectName}\nThe dot is this project's colour in every list.`}
+                  className={`truncate ${row.projectName.length > SHORT_PROJECT ? "sl-proj" : "flex-none"}`}
+                >
+                  <ProjectDot path={row.projectPath || row.projectName} />
+                  <Marked text={row.projectName} query={query} />
+                </span>
+                <span className="flex-none">{DOT}</span>
+              </>
+            )}
             <span className="flex-none">
               <TokenText tokens={row.tokens.total} cost={row.cost} className="font-semibold text-ink" />
               {barShare !== undefined && (

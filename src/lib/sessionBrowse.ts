@@ -38,6 +38,54 @@ export function groupByDay(rows: SessionRow[], now: Date): DayGroup[] {
   return groups;
 }
 
+export interface FolderGroup {
+  /** The project folder, as the rows name it; "" for chats with no folder. */
+  key: string;
+  /** The folder's name in plain words ("atlas"); "No folder" for the last group. */
+  name: string;
+  /** The full path, for the hover; "" when there is none. */
+  path: string;
+  rows: SessionRow[];
+  /** Headline tokens of the rows listed under this folder. */
+  tokens: number;
+  /** When the newest chat here started. */
+  latest: number;
+}
+
+/** The group every chat with no project folder falls into. */
+export const NO_FOLDER = "No folder";
+
+/**
+ * Cuts a list into one group per project folder. A group sits where its first row sits in the
+ * list (newest first: the folder with the newest chat on top), and its rows keep the list's
+ * order, so more rows loading later only ever add to the end of a group or add groups at the
+ * end; nothing moves. Chats with no folder go last, whatever their place in the list.
+ */
+export function groupByFolder(rows: SessionRow[]): FolderGroup[] {
+  const groups: FolderGroup[] = [];
+  const at = new Map<string, FolderGroup>();
+  let none: FolderGroup | null = null;
+  for (const row of rows) {
+    const path = (row.projectPath ?? "").trim();
+    const key = path === "" ? "" : path.replace(/[\\/]+$/, "");
+    let g: FolderGroup | null | undefined = key === "" ? none : at.get(key);
+    if (g) {
+      g.rows.push(row);
+      g.tokens += row.tokens.total;
+      if (row.startedAt > g.latest) g.latest = row.startedAt;
+      continue;
+    }
+    g = { key, name: key === "" ? NO_FOLDER : row.projectName || NO_FOLDER, path, rows: [row], tokens: row.tokens.total, latest: row.startedAt };
+    if (key === "") none = g;
+    else {
+      at.set(key, g);
+      groups.push(g);
+    }
+  }
+  if (none) groups.push(none);
+  return groups;
+}
+
 /** A value as a share of the largest one, 0 to 1. A tiny non-zero value still shows a sliver. */
 export function shareOfMax(value: number, max: number): number {
   if (!(max > 0) || !(value > 0)) return 0;

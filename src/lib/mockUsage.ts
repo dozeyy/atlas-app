@@ -1,5 +1,5 @@
 // Stand-in usage data for a plain browser and for tests. Deterministic: the same
-// numbers every run, spread over the 60 days before "now". Nothing here is real.
+// numbers every run, spread over the 300 days before "now". Nothing here is real.
 
 import type {
   AgentDetail,
@@ -177,11 +177,14 @@ function summarize(prompt: string): string {
   return prompt.length <= 60 ? prompt : `${prompt.slice(0, 57).trimEnd()}...`;
 }
 
+/** Days of history. The first 60 are the ones every page was tuned on; the rest make the list long enough to page many times (400+ chats). */
+const DAYS = 300;
+
 function build(now: Date): MockSession[] {
   const rand = rng(20261108);
   const out: MockSession[] = [];
   const today = localDay(now);
-  for (let back = 0; back < 60; back++) {
+  for (let back = 0; back < DAYS; back++) {
     const day = addDays(today, -back);
     const n = back % 7 === 5 || back % 7 === 6 ? (rand() < 0.4 ? 1 : 0) : 1 + Math.floor(rand() * 3);
     for (let k = 0; k < n; k++) {
