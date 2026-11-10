@@ -153,6 +153,13 @@ long. Every change below serves that order. Pictures use the `dn-` labels.
     parent for a helper. Needs the engine.
 15. LEFT. A very long folder name takes the whole chips row of a small card, so the model
     chip drops out (never shaved). Only with 60-letter folder names.
+16. BUILT (polish, from the shell audit). Dashboard first read: the line under the skeleton
+    ("Reading your history. This runs once.") said what the banner above it already says
+    ("Reading your sessions ... This happens once."). The line is gone; the banner says it
+    once. `dash-indexing/dn-idx-before-*` against `dash-indexing/dn-idx-after-*`.
+17. SHARED REQUEST (not mine to edit). Three cut texts in a Recent sessions row have no
+    hover: the title and the project name. Both are in `SessionList.tsx` (`SessionLine`),
+    the Sessions page's component. Exact change in the report.
 
 ## Suggestions for Will
 
