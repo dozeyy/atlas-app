@@ -48,6 +48,25 @@ export function whatHappened(e: Pick<HistoryEvent, "kind" | "item" | "source"> &
   return `${noun(e.item.kind)} ${VERB[e.kind]}`;
 }
 
+/**
+ * A long name in two parts, so a row can cut the middle and keep the ending, which is the part
+ * that tells two files apart: "a-very-long-na" + "e-0123.json". A short name comes back whole
+ * with an empty ending. Wide letters (Chinese, Japanese, Korean) count double.
+ */
+export function splitName(name: string, longFrom = 28, keep = 10): [string, string] {
+  const chars = Array.from(name);
+  if (chars.length <= longFrom) return [name, ""];
+  let at = chars.length;
+  let width = 0;
+  while (at > 1) {
+    const w = (chars[at - 1].codePointAt(0) ?? 0) > 0x2e7f ? 2 : 1;
+    if (width + w > keep) break;
+    width += w;
+    at--;
+  }
+  return [chars.slice(0, at).join(""), chars.slice(at).join("")];
+}
+
 /** Where an item applies, in plain words. */
 export function scopeText(item: ItemRef): string {
   if (item.scope === "user") return "Every project";

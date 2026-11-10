@@ -43,7 +43,8 @@ describe("app menu", () => {
     await userEvent.click(screen.getByRole("menuitem", { name: "About Atlas" }));
     const dlg = screen.getByRole("dialog", { name: "About Atlas" });
     expect(within(dlg).getByText("0.1.0")).toBeInTheDocument();
-    expect(within(dlg).getByText("release")).toBeInTheDocument();
+    // Written as Settings writes it.
+    expect(within(dlg).getByText("Release")).toBeInTheDocument();
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

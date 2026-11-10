@@ -65,6 +65,13 @@ export function shortcutGroups(platform: Platform): { title: string; rows: { key
       ],
     },
     {
+      title: "History",
+      rows: [
+        { keys: `${mod}+F`, does: "Search the changes" },
+        { keys: "Up / Down", does: "Move between changes" },
+      ],
+    },
+    {
       title: "Charts",
       rows: [
         { keys: "Left / Right", does: "Move between bars; the readout follows" },

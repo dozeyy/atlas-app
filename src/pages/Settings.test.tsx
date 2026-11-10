@@ -35,7 +35,7 @@ describe("Settings", () => {
   it("shows one section at a time from the rail, so the page never scrolls", async () => {
     mount();
     const rail = await screen.findByRole("navigation", { name: "Settings sections" });
-    expect(within(rail).getAllByRole("button").map((b) => b.textContent)).toEqual(["Appearance", "Claude folder", "Claude Code", "Your data", "History", "About"]);
+    expect(within(rail).getAllByRole("button").map((b) => b.textContent)).toEqual(["Appearance", "General", "Claude folder", "Claude Code", "Your data", "History", "About"]);
     expect(screen.getByRole("heading", { level: 2, name: "Appearance" })).toBeInTheDocument();
     expect(screen.queryByText("Folder Atlas reads")).not.toBeInTheDocument();
     expect(within(rail).getByRole("button", { name: "Appearance" })).toHaveAttribute("aria-current", "true");
@@ -45,8 +45,8 @@ describe("Settings", () => {
     expect(screen.queryByRole("switch", { name: "Keep running when closed" })).not.toBeInTheDocument();
 
     await userEvent.click(within(rail).getByRole("button", { name: "About" }));
-    expect(screen.getByText("Privacy")).toHaveAttribute("title", expect.stringContaining("never sends your data"));
-    expect(screen.queryByText(/never sends your data/)).not.toBeInTheDocument();
+    expect(screen.getByText("Privacy")).toHaveAttribute("title", expect.stringContaining("sends none of your chats or files"));
+    expect(screen.queryByText(/sends none of your chats or files/)).not.toBeInTheDocument();
     expect(screen.getByText("Version")).toBeInTheDocument();
   });
 
@@ -88,6 +88,7 @@ describe("Settings", () => {
 
   it("turns Keep running when closed on and off", async () => {
     mount();
+    await userEvent.click(await screen.findByRole("button", { name: "General" }));
     const sw = await screen.findByRole("switch", { name: "Keep running when closed" });
     expect(sw).toHaveAttribute("aria-checked", "false");
     await userEvent.click(sw);
@@ -96,6 +97,7 @@ describe("Settings", () => {
 
   it("keeps the finished-chat notice off until it is switched on", async () => {
     mount();
+    await userEvent.click(await screen.findByRole("button", { name: "General" }));
     const sw = await screen.findByRole("switch", { name: "Tell me when a chat finishes" });
     expect(sw).toHaveAttribute("aria-checked", "false");
     expect(screen.queryByText(/cannot tell when a chat is only waiting/)).not.toBeInTheDocument();

@@ -698,6 +698,24 @@ html.reduced .options-panel {
   pointer-events: none;
   transition: left var(--side-dur) var(--ease-out);
 }
+/* While a sheet or dialog is open the row dims with the page and its menu, sidebar and Wrapped
+   buttons wait; Minimize, Maximize and Close stay lit and the row still drags the window. */
+body:has(> .fixed.inset-0) .titlebar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--scrim);
+  pointer-events: none;
+  animation: fade-in var(--dur) var(--ease-out) both;
+}
+body:has(> .fixed.inset-0) :is(.titlebar-left, .titlebar-gift) {
+  pointer-events: none;
+}
+body:has(> .fixed.inset-0) .caption-buttons {
+  position: relative;
+  z-index: 2;
+}
 .app-shell[data-side="collapsed"] .titlebar::after {
   transition-delay: 60ms; /* in step with the sidebar, which waits for the labels to fade */
 }
@@ -1069,6 +1087,12 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
 .side-collapsed [role="status"] {
   justify-content: center;
   padding-inline: 0;
+  gap: 0;
+}
+/* The hidden words leave the row, so the dot sits in the middle of the folded chip. */
+.side-collapsed [role="status"] .nav-label {
+  position: absolute;
+  pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .side,
@@ -1159,10 +1183,15 @@ html[data-platform="macos"] .side {
 }
 .theme-card {
   border-radius: var(--r-card);
+  /* Settings is a calm page: a theme card answers with its border and press, it does not lift. */
+  --lift: 0px;
 }
 .theme-card-face {
   display: block;
   padding: 10px;
+}
+.theme-card:hover .theme-card-face {
+  box-shadow: none;
 }
 .theme-card[aria-checked="true"] .theme-card-face {
   border-color: var(--accent);

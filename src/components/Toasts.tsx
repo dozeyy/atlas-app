@@ -28,9 +28,10 @@ function ToastCard({ toast }: { toast: Toast }) {
               dismissToast(toast.id);
             }
           }}
-          className="press h-8 shrink-0 cursor-pointer rounded-control px-3 text-body font-semibold text-accent-text hover:bg-accent-tint disabled:cursor-wait disabled:opacity-60"
+          className="press h-8 shrink-0 cursor-pointer rounded-control px-3 text-body hover:bg-accent-tint disabled:cursor-wait disabled:opacity-60"
         >
-          {act.label}
+          {/* On a span: a colour or weight set on the button itself loses to the page's button reset. */}
+          <span className="font-semibold text-accent-text">{act.label}</span>
         </button>
       )}
       <button

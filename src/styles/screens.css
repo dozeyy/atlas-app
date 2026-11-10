@@ -53,6 +53,11 @@
 .hx-row[aria-current="true"] .hx-row-face {
   background: var(--accent-tint);
 }
+/* History is a calm page: a row answers the pointer with its tint only. The icon in its tile
+   stays still (trail.css would play its one-shot motion under any hovered button). */
+.hx-rail .hx-row:not(:disabled):hover .ico[data-m] {
+  animation: none;
+}
 .hx-dot {
   position: absolute;
   left: 2px;
@@ -159,9 +164,10 @@
   display: block;
   border-radius: var(--r-pill);
   background: var(--accent);
+  /* Calm page: the dot grows on a plain ease, no spring. */
   transition:
     background-color var(--dur-fast) var(--ease-out),
-    scale var(--dur-hover) var(--ease-spring);
+    scale var(--dur-fast) var(--ease-out);
 }
 .hx-ribbon-hit[data-empty="true"] .hx-ribbon-dot {
   background: var(--heat-0);
@@ -294,6 +300,9 @@
   align-self: start;
 }
 .st-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   height: 32px;
   padding: 0 12px;
   border: 0;
@@ -308,6 +317,10 @@
   transition:
     background-color var(--dur) var(--ease-out),
     color var(--dur) var(--ease-out);
+}
+/* Side by side (a narrow window) the names alone fit on one line; the icons come with the rail. */
+.st-nav:not([data-wide]) .st-nav-ico {
+  display: none;
 }
 .st-nav-item:hover {
   background: var(--raised);

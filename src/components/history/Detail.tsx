@@ -104,11 +104,13 @@ export function Detail({ event, onBack }: { event: HistoryEvent; onBack?: () => 
       <header className="flex items-start gap-3">
         <KindTile kind={setupKind(event.item.kind)} size={44} />
         <div className="min-w-0 flex-1">
-          <h2 className="d d-figure truncate text-ink">{event.item.name}</h2>
-          <p className="text-body text-ink-2">
+          {/* A long name is read in full here (it wraps); where the file is waits in the name's hover. */}
+          <h2 className="d d-figure wrap-anywhere text-ink" title={event.item.path || undefined}>
+            {event.item.name}
+          </h2>
+          <p className="wrap-anywhere text-body text-ink-2">
             {whatHappened(event)}, {agoText(event.at)}. {scopeText(event.item)}.
           </p>
-          {event.item.path && <p className="selectable mt-0.5 break-all font-mono text-caption text-ink-2">{event.item.path}</p>}
         </div>
       </header>
 
