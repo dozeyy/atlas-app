@@ -109,6 +109,8 @@ export class MockTeam {
   readonly forgotten: string[] = [];
   calls: ScorecardArgs[] = [];
   private made: Record<string, MadeRule> = {};
+  /** `target|text` of every line saved and not yet undone: saving the same line again is "already". */
+  private lines = new Set<string>();
   private readonly runs = buildRuns();
 
   async teamScorecard(args: ScorecardArgs): Promise<Scorecard> {
@@ -141,15 +143,16 @@ export class MockTeam {
     return { fromTs: null, findings: 31, total: themes.length, themes, made: { ...this.made } };
   }
 
-  async ruleSheet(label: string, projects: string[]): Promise<RuleSheetData> {
+  async ruleSheet(label: string, projectPaths: string[]): Promise<RuleSheetData> {
     const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "review-rule";
     const line = `- Check before handing work back: ${label.replace(/^./, (c) => c.toUpperCase()).replace(/[.;:,]+$/, "")}.`;
     const targets: RuleSheetData["targets"] = [
       { id: "global", kind: "line", title: "CLAUDE.md in your Claude folder", path: "~/.claude/CLAUDE.md", stamp: "s-global", exists: true, text: line, blocked: null },
     ];
-    projects.slice(0, 3).forEach((p, n) =>
-      targets.push({ id: `project:${n}`, kind: "line", title: `CLAUDE.md in ${p}`, path: `~/Projects/${p}/CLAUDE.md`, stamp: `s-${p}`, exists: true, text: line, blocked: null }),
-    );
+    projectPaths.slice(0, 3).forEach((p) => {
+      const name = p.split("/").pop() ?? p;
+      targets.push({ id: `project:${p}`, kind: "line", title: `CLAUDE.md in ${name}`, path: `${p}/CLAUDE.md`, stamp: `s-${name}`, exists: true, text: line, blocked: null });
+    });
     targets.push({
       id: "file",
       kind: "file",
@@ -166,12 +169,18 @@ export class MockTeam {
   async ruleSave(args: RuleSave): Promise<RuleReply> {
     if (this.staleNext) {
       this.staleNext = false;
-      return { status: "conflict", backupId: null, path: null, message: "This file changed since you opened it." };
+      return { status: "conflict", backupId: null, path: null, message: "This file changed since you opened it.", note: null };
     }
+    const key = `${args.targetId}|${args.text}`;
+    if (args.targetId !== "file" && this.lines.has(key)) {
+      this.made[args.themeId] = { path: "~/.claude/CLAUDE.md", madeMs: Date.now() };
+      return { status: "already", backupId: null, path: "~/.claude/CLAUDE.md", message: null, note: null };
+    }
+    this.lines.add(key);
     this.saved.push(args);
     const path = args.targetId === "file" ? "~/.claude/rules/new-rule.md" : "~/.claude/CLAUDE.md";
     this.made[args.themeId] = { path, madeMs: Date.now() };
-    return { status: "saved", backupId: `backup-${this.saved.length}`, path, message: null };
+    return { status: "saved", backupId: `backup-${this.saved.length}`, path, message: null, note: null };
   }
 
   /** Is this backup id one a rule save handed out? (The mock backend's Undo asks.) */
@@ -182,6 +191,7 @@ export class MockTeam {
   async ruleForget(themeId: string): Promise<void> {
     this.forgotten.push(themeId);
     delete this.made[themeId];
+    for (const s of this.saved) if (s.themeId === themeId) this.lines.delete(`${s.targetId}|${s.text}`);
   }
 }
 
@@ -284,6 +294,7 @@ const THEMES: Omit<ReviewTheme, "lastSeen">[] = [
     notTied: 1,
     reviewers: [{ agentType: "code-reviewer", count: 7 }],
     projects: ["atlas", "deskify"],
+    projectPaths: ["/mock/work/atlas", "/mock/work/deskify"],
     examples: [
       { text: "The response can be null here and the next line reads a field from it.", sessionId: "mock-session-code-reviewer-0", agentId: "agent-code-reviewer-0", ts: Date.now() - DAY },
       { text: "No check that the reply exists before use.", sessionId: "mock-session-code-reviewer-1", agentId: "agent-code-reviewer-1", ts: Date.now() - 2 * DAY },
@@ -302,6 +313,7 @@ const THEMES: Omit<ReviewTheme, "lastSeen">[] = [
     notTied: 0,
     reviewers: [{ agentType: "code-reviewer", count: 3 }, { agentType: "verifier", count: 2 }],
     projects: ["atlas"],
+    projectPaths: ["/mock/work/atlas"],
     examples: [{ text: "An empty list shows a blank pane, not a sentence.", sessionId: "mock-session-verifier-0", agentId: "agent-verifier-0", ts: Date.now() - 3 * DAY }],
   },
   {
@@ -314,6 +326,7 @@ const THEMES: Omit<ReviewTheme, "lastSeen">[] = [
     notTied: 1,
     reviewers: [{ agentType: "verifier", count: 3 }],
     projects: ["willhenry"],
+    projectPaths: ["/mock/work/willhenry"],
     examples: [],
   },
 ];

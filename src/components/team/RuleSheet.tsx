@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { WarningCircle } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { ErrorBlock, Skeleton } from "../usage/StateBlocks";
@@ -8,6 +8,16 @@ import { errorText } from "../../lib/setup-actions";
 import { reloadSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
 import type { ReviewTheme, RuleSheetData, RuleTarget } from "../../lib/teamTypes";
+
+/** The most a CLAUDE.md line may hold; the server enforces the same number. */
+const LINE_MAX = 400;
+
+/** Which file the toast names: "your global CLAUDE.md", "atlas's CLAUDE.md", "the rule file rules/x.md". */
+export function whereWords(t: RuleTarget): string {
+  if (t.kind === "file") return `the rule file ${t.title.replace(/^A rule file, /, "")}`;
+  if (t.id === "global") return "your global CLAUDE.md";
+  return `${t.title.replace(/^CLAUDE\.md in /, "")}'s CLAUDE.md`;
+}
 
 /**
  * "Make this a rule": pick where the line goes (your Claude folder's CLAUDE.md, a project's
@@ -25,12 +35,11 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<{ text: string; stale: boolean } | null>(null);
   const radioName = useId();
-  const area = useRef<HTMLTextAreaElement>(null);
-
+  
   const load = useCallback(() => {
     setLoadError(null);
     backend
-      .ruleSheet(theme.label, theme.projects)
+      .ruleSheet(theme.label, theme.projectPaths)
       .then((s) => {
         setSheet(s);
         setDrafts(Object.fromEntries(s.targets.map((t) => [t.id, t.text])));
@@ -38,7 +47,7 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
         setProblem(null);
       })
       .catch((e) => setLoadError(errorText(e, "Atlas could not prepare this rule.")));
-  }, [backend, theme.label, theme.projects]);
+  }, [backend, theme.label, theme.projectPaths]);
 
   useEffect(() => {
     load();
@@ -46,7 +55,8 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
 
   const target: RuleTarget | undefined = sheet?.targets.find((t) => t.id === targetId);
   const text = target ? (drafts[target.id] ?? "") : "";
-  const canSave = !!target && !target.blocked && text.trim().length > 0 && !saving;
+  const lineOk = !target || target.kind === "file" || /^- \S/.test(text.trim());
+  const canSave = !!target && !target.blocked && text.trim().length > 0 && lineOk && !saving;
 
   const save = async () => {
     if (!target || !canSave) return;
@@ -56,7 +66,7 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
       const out = await backend.ruleSave({
         themeId: theme.id,
         label: theme.label,
-        projects: theme.projects,
+        projectPaths: theme.projectPaths,
         targetId: target.id,
         text,
         stamp: target.stamp,
@@ -68,8 +78,15 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
       const backupId = out.backupId;
       onChanged();
       onClose();
+      const where = whereWords(target);
+      const note = out.note ? ` ${out.note}` : "";
+      if (out.status === "already") {
+        pushToast({ message: `That rule is already in ${where}. Nothing was added.${note}`, tone: "success" });
+        reloadSetup();
+        return;
+      }
       pushToast({
-        message: `Made a rule in ${target.kind === "file" ? "a new rule file" : "CLAUDE.md"}.`,
+        message: `Added a rule to ${where}.${note}`,
         tone: "success",
         action: backupId
           ? {
@@ -161,16 +178,40 @@ export function RuleSheet({ theme, onClose, onChanged }: { theme: ReviewTheme; o
                 <label htmlFor={`${radioName}-text`} className="mb-1.5 block text-body font-semibold text-ink">
                   {target.kind === "file" ? "The file" : "The line"}
                 </label>
-                <textarea
-                  id={`${radioName}-text`}
-                  ref={area}
-                  value={text}
-                  disabled={!!target.blocked}
-                  rows={target.kind === "file" ? 6 : 3}
-                  spellCheck={false}
-                  onChange={(e) => setDrafts((d) => ({ ...d, [target.id]: e.target.value }))}
-                  className="selectable team-draft w-full resize-y rounded-control border border-line-strong bg-surface px-3 py-2 font-mono text-body text-ink"
-                />
+                {target.kind === "file" ? (
+                  <textarea
+                    id={`${radioName}-text`}
+                    value={text}
+                    disabled={!!target.blocked}
+                    rows={6}
+                    spellCheck={false}
+                    onChange={(e) => setDrafts((d) => ({ ...d, [target.id]: e.target.value }))}
+                    className="selectable team-draft w-full resize-y rounded-control border border-line-strong bg-surface px-3 py-2 font-mono text-body text-ink"
+                  />
+                ) : (
+                  <>
+                    <input
+                      id={`${radioName}-text`}
+                      type="text"
+                      value={text}
+                      maxLength={LINE_MAX}
+                      disabled={!!target.blocked}
+                      spellCheck={false}
+                      aria-describedby={`${radioName}-hint`}
+                      onChange={(e) => setDrafts((d) => ({ ...d, [target.id]: e.target.value.replace(/[\r\n]+/g, " ") }))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void save();
+                        }
+                      }}
+                      className="selectable team-draft w-full rounded-control border border-line-strong bg-surface px-3 py-2 font-mono text-body text-ink"
+                    />
+                    <p id={`${radioName}-hint`} className="mt-1 text-caption text-ink-2">
+                      One line that starts with a dash. It goes under "Caught in review".
+                    </p>
+                  </>
+                )}
               </div>
             )}
 

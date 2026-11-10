@@ -1483,9 +1483,12 @@ pub fn file_stamp(file: &Path) -> String {
 #[allow(clippy::too_many_arguments)]
 pub fn apply_append(file: &Path, kind: &str, name: &str, heading: &str, text: &str, expected_stamp: &str, summary: &str, backups: &Path) -> Res<SaveOutcome> {
     check_write_allowed(file)?;
-    if text.trim().is_empty() {
-        return refuse("There is nothing to add.");
-    }
+    // One `- ` line and nothing else: the server holds this line whatever the page sent.
+    let text = match crate::review_rule::validate_line(text) {
+        Ok(t) => t,
+        Err(m) => return refuse(m),
+    };
+    let text = text.as_str();
     let before = match fs::read(file) {
         Ok(b) => Some(b),
         Err(e) if e.kind() == io::ErrorKind::NotFound => None,
@@ -1512,6 +1515,8 @@ pub fn apply_append(file: &Path, kind: &str, name: &str, heading: &str, text: &s
         None => crate::review_rule::new_instructions_text(text).into_bytes(),
     };
     let (id, dir) = new_backup(backups, &format!("save-{name}"))?;
+    // Set once the new bytes are in place: from then on the backup is the way back and stays.
+    let mut swapped = false;
     let outcome = (|| -> Res<SaveOutcome> {
         if let Some(b) = &before {
             fs::write(dir.join("file-before"), b)?;
@@ -1537,6 +1542,7 @@ pub fn apply_append(file: &Path, kind: &str, name: &str, heading: &str, text: &s
             return Err(WriteError::Conflict);
         }
         atomic_write(file, &after)?;
+        swapped = true;
         let back = fs::read(file)?;
         if back != after {
             return refuse("The file on disk is not what Atlas just wrote. Something else changed it at the same time.");
@@ -1545,6 +1551,9 @@ pub fn apply_append(file: &Path, kind: &str, name: &str, heading: &str, text: &s
     })();
     match &outcome {
         Ok(_) => tag_backup(backups, &id, "user", summary),
+        // The file was replaced but did not read back as written: keep the backup (History and
+        // Undo can still put the old bytes back) and say so in History.
+        Err(_) if swapped => tag_backup(backups, &id, "user", summary),
         // Nothing was changed on failure; the half-made backup is only clutter.
         Err(_) => {
             let _ = fs::remove_dir_all(&dir);

@@ -83,7 +83,7 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
   );
 }
 
-function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot; includeWorktrees: boolean; loads: number; error: string | null }) {
+function Loaded({ snap, includeWorktrees, loads, error, onItemRequested }: { snap: SetupSnapshot; includeWorktrees: boolean; loads: number; error: string | null; onItemRequested: () => void }) {
   const { info } = useAtlas();
   const [tile, setTile] = useState<TileId | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -134,9 +134,11 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
     const id = peekPendingToolkitItem();
     if (!id) return;
     clearPendingToolkitItem();
+    // The item lives on "Your setup": a jump from the Team tab brings that tab forward first.
+    onItemRequested();
     // Another item replaces the one being edited: ask first when it holds unsaved edits.
     if (byId.has(id) && id !== selectedRef.current) guardLeave(() => setSelectedId(id));
-  }, [byId]);
+  }, [byId, onItemRequested]);
   useEffect(() => {
     takePending();
     return onNavRequest(takePending);
@@ -268,6 +270,8 @@ export function Setup() {
     setTab(TABS[next].value);
   };
 
+  const showSetup = useCallback(() => setTab("setup"), [setTab]);
+
   return (
     <>
       <PageTitle title="Toolkit" />
@@ -278,10 +282,10 @@ export function Setup() {
         <LibraryTab />
       ) : (
         <>
-          {tab === "team" && <Team onShowSetup={() => setTab("setup")} />}
+          {tab === "team" && <Team onShowSetup={showSetup} />}
           <div className={tab === "team" ? "hidden" : "contents"}>
             {st.snapshot ? (
-              <Loaded snap={st.snapshot} includeWorktrees={st.includeWorktrees} loads={st.loads} error={st.status === "ready" ? st.error : null} />
+              <Loaded snap={st.snapshot} includeWorktrees={st.includeWorktrees} loads={st.loads} error={st.status === "ready" ? st.error : null} onItemRequested={showSetup} />
             ) : st.status === "error" ? (
               <SetupError message={st.error ?? "Something went wrong."} onRetry={reloadSetup} />
             ) : (

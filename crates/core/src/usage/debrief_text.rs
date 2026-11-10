@@ -461,6 +461,7 @@ mod tests {
                 not_tied: 0,
                 reviewers: Vec::new(),
                 projects: Vec::new(),
+                project_paths: Vec::new(),
                 last_seen: 0,
                 examples: Vec::new(),
             });

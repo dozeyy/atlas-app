@@ -281,6 +281,9 @@ pub struct Theme {
     /// Reviewer types that raised it.
     pub reviewers: Vec<TypeCount>,
     pub projects: Vec<String>,
+    /// The full folders behind `projects`, most findings first: two repos can share a name, and
+    /// a rule is written to a folder, so the page hands these back rather than the names.
+    pub project_paths: Vec<String>,
     pub last_seen: i64,
     pub examples: Vec<Example>,
 }
@@ -780,7 +783,7 @@ struct FindingRec {
     text: String,
     ts: i64,
     reviewer_type: String,
-    project: String,
+    project_path: String,
 }
 
 /// The findings of reviewer-type helpers only: a coder's "Issues fixed:" bullets or a quoted JSON
@@ -803,7 +806,7 @@ fn load_findings(conn: &Connection, ledger: &Ledger, from: Option<i64>, session:
             text: r.get(3)?,
             ts: r.get(4)?,
             reviewer_type: r.get(5)?,
-            project: super::query::base_name(&r.get::<_, String>(6)?),
+            project_path: r.get(6)?,
         })
     })?;
     let mut out = Vec::new();
@@ -867,8 +870,8 @@ fn build_themes(
             };
             sev.entry(rank).or_insert((name, 0)).1 += 1;
             *revs.entry(f.reviewer_type.as_str()).or_default() += 1;
-            if !f.project.is_empty() {
-                *projects.entry(f.project.as_str()).or_default() += 1;
+            if !f.project_path.is_empty() {
+                *projects.entry(f.project_path.as_str()).or_default() += 1;
             }
             last_seen = last_seen.max(f.ts);
             match tied.get(&(f.session_id.as_str(), f.agent_id.as_str())) {
@@ -891,7 +894,7 @@ fn build_themes(
                 break;
             }
             if seen_text.insert(f.text.as_str()) {
-                examples.push(Example { text: cut(&f.text, EXAMPLE_CHARS), session_id: f.session_id.clone(), agent_id: f.agent_id.clone(), ts: f.ts });
+                examples.push(Example { text: cut(&crate::setup::secrets::redact_inline(&f.text), EXAMPLE_CHARS), session_id: f.session_id.clone(), agent_id: f.agent_id.clone(), ts: f.ts });
             }
         }
         let counted = |m: BTreeMap<&str, u32>| -> Vec<TypeCount> {
@@ -899,18 +902,26 @@ fn build_themes(
             v.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.agent_type.cmp(&b.agent_type)));
             v
         };
-        let mut project_names: Vec<(&str, u32)> = projects.into_iter().collect();
-        project_names.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        let mut project_paths: Vec<(&str, u32)> = projects.into_iter().collect();
+        project_paths.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        let mut project_names: Vec<String> = Vec::new();
+        for (p, _) in &project_paths {
+            let n = super::query::base_name(p);
+            if !n.is_empty() && !project_names.contains(&n) {
+                project_names.push(n);
+            }
+        }
         out.push(Theme {
             id: c.id,
-            label: cut(label_text, LABEL_CHARS),
+            label: cut(&crate::setup::secrets::redact_inline(label_text), LABEL_CHARS),
             count: members.len() as u32,
             runs: runs.len() as u32,
             severities: sev.into_values().map(|(severity, count)| SeverityCount { severity, count }).collect(),
             found_in_work_by: counted(work),
             not_tied,
             reviewers: counted(revs),
-            projects: project_names.into_iter().map(|(p, _)| p.to_string()).collect(),
+            projects: project_names,
+            project_paths: project_paths.into_iter().map(|(p, _)| p.to_string()).collect(),
             last_seen,
             examples,
         });

@@ -194,13 +194,37 @@ describe("Team: Caught in review", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(backend.team.saved).toHaveLength(1);
     expect(backend.team.saved[0].stamp).toBe("s-global");
-    const toast = await screen.findByText(/Made a rule in CLAUDE\.md/);
+    const toast = await screen.findByText(/Added a rule to your global CLAUDE\.md\./);
     expect(toast).toBeInTheDocument();
     expect(await screen.findByText(/Made a rule, /)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(backend.team.forgotten).toEqual(["t-null-check"]));
     await waitFor(() => expect(screen.getAllByRole("button", { name: "Make this a rule" })).toHaveLength(3));
+  });
+
+  it("offers a project by its folder, keeps the line to one dash line, and the toast names the file", async () => {
+    await openToolkit();
+    await userEvent.click((await screen.findAllByRole("button", { name: "Make this a rule" }))[0]);
+    const sheet = await screen.findByRole("dialog", { name: "Make this a rule" });
+    // A project is offered by its folder, not by its position.
+    const project = await within(sheet).findByRole("radio", { name: /CLAUDE\.md in atlas/ });
+    await userEvent.click(project);
+    const field = within(sheet).getByRole("textbox", { name: "The line" }) as HTMLInputElement;
+    expect(field.tagName).toBe("INPUT");
+    expect(field.maxLength).toBe(400);
+    // The line must start with a dash: nothing else can be saved.
+    await userEvent.clear(field);
+    await userEvent.type(field, "A heading would go here");
+    expect(within(sheet).getByRole("button", { name: "Save rule" })).toBeDisabled();
+    await userEvent.clear(field);
+    await userEvent.type(field, "- Check the empty case.");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Save rule" }));
+    await waitFor(() => expect(backend.team.saved).toHaveLength(1));
+    expect(backend.team.saved[0].targetId).toBe("project:/mock/work/atlas");
+    expect(backend.team.saved[0].projectPaths).toContain("/mock/work/atlas");
+    expect(await screen.findByText(/Added a rule to atlas's CLAUDE\.md\./)).toBeInTheDocument();
+
   });
 
   it("refuses a file that changed since the sheet opened, writes nothing, and can reload", async () => {

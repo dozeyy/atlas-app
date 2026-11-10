@@ -144,6 +144,8 @@ export interface ReviewTheme {
   notTied: number;
   reviewers: TypeCount[];
   projects: string[];
+  /** The folders behind `projects`, most findings first. A rule is written to a folder, so the page hands these back. */
+  projectPaths: string[];
   lastSeen: number;
   examples: ThemeExample[];
 }
@@ -165,7 +167,7 @@ export interface Themes {
 // ---- Make this a rule ----------------------------------------------------------------
 
 export interface RuleTarget {
-  /** `global`, `project:<n>` or `file`. */
+  /** `global`, `project:<folder>` or `file`. */
   id: string;
   /** `line` (a line in a CLAUDE.md) or `file` (a new rule file). */
   kind: "line" | "file";
@@ -185,15 +187,18 @@ export interface RuleSheetData {
 export interface RuleSave {
   themeId: string;
   label: string;
-  projects: string[];
+  projectPaths: string[];
   targetId: string;
   text: string;
   stamp: string;
 }
 
 export interface RuleReply {
-  status: "saved" | "conflict";
+  /** `already`: the line was in the file, nothing was written. */
+  status: "saved" | "already" | "conflict";
   backupId: string | null;
   path: string | null;
   message: string | null;
+  /** A quiet extra sentence on success. */
+  note: string | null;
 }

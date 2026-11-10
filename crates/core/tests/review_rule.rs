@@ -184,3 +184,20 @@ fn append_is_byte_exact_for_mixed_line_endings_and_no_final_newline() {
     // The file has CRLF somewhere, so the new lines use CRLF; the old bytes are untouched.
     assert!(after.ends_with(b"- X.\r\n"));
 }
+
+#[test]
+fn the_server_refuses_anything_but_one_dash_line_and_writes_nothing() {
+    let fx = Fx::new();
+    let file = fx.claude().join("CLAUDE.md");
+    let original = b"# Notes\n\nKeep it short.\n".to_vec();
+    fs::write(&file, &original).unwrap();
+    let stamp = file_stamp(&file);
+    let long = format!("- {}", "x".repeat(500));
+    for bad in ["- one\n- two", "- one\n\n## A heading", "## Heading", "plain words", "- # heading", "- ```sh", long.as_str()] {
+        let err = apply_append(&file, "instructions", "CLAUDE.md", HEADING, bad, &stamp, "x", &fx.backups).unwrap_err();
+        assert!(matches!(err, WriteError::Refused(_)), "{bad:?} -> {err:?}");
+    }
+    assert_eq!(fs::read(&file).unwrap(), original, "nothing was written");
+    let left: Vec<_> = fs::read_dir(&fx.backups).map(|rd| rd.flatten().collect()).unwrap_or_default();
+    assert!(left.is_empty(), "no backup is left behind");
+}

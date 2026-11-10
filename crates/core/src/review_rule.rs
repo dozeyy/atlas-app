@@ -46,10 +46,53 @@ fn looks_like_line_ref(word: &str) -> bool {
     w.strip_prefix(':').is_some_and(digits) || w.strip_prefix(['L', 'l']).is_some_and(digits)
 }
 
-/// The finding text without severity words, path and line tokens, whitespace collapsed.
+/// The longest label a draft carries; a finding can be a paragraph.
+pub const LABEL_CHARS: usize = 160;
+/// The longest line a CLAUDE.md rule may be, enforced on Save as well as in the draft.
+pub const LINE_MAX_CHARS: usize = 400;
+
+/// Where a markdown link starting at `chars[i]` (`[`) ends: (end of the text, end of the link).
+fn link_at(chars: &[char], i: usize) -> Option<(usize, usize)> {
+    let close = chars[i + 1..].iter().position(|c| *c == ']')? + i + 1;
+    if chars.get(close + 1) != Some(&'(') {
+        return None;
+    }
+    let end = chars[close + 2..].iter().position(|c| *c == ')')? + close + 2;
+    Some((close, end))
+}
+
+/// `[text](url)` becomes `text`: a link in a rule would send every future chat to a page.
+fn strip_links(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < chars.len() {
+        match (chars[i] == '[').then(|| link_at(&chars, i)).flatten() {
+            Some((close, end)) => {
+                out.extend(&chars[i + 1..close]);
+                i = end + 1;
+            }
+            None => {
+                out.push(chars[i]);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// A `@path` word is an import in a CLAUDE.md: it would pull a file into every chat.
+fn is_import(word: &str) -> bool {
+    word.trim_start_matches(['(', '"', '\'', '[']).starts_with('@')
+}
+
+/// The finding text made safe to write into a rules file, without severity words, path and
+/// line tokens, whitespace collapsed. Secret-looking parts are masked, `@imports`, backticks and
+/// markdown links are removed, and the length is capped.
 pub fn clean_label(label: &str) -> String {
+    let safe = strip_links(&crate::setup::secrets::redact_inline(label)).replace('`', "");
     // A leading "[High]" / "HIGH:" / "(medium)" tag.
-    let mut words: Vec<&str> = label.split_whitespace().filter(|w| !is_noise(w)).collect();
+    let mut words: Vec<&str> = safe.split_whitespace().filter(|w| !is_import(w) && !is_noise(w)).collect();
     // Dangling joiners left where a path or severity was removed.
     while words.first().is_some_and(|w| matches!(*w, "-" | ":" | "--" | "|" | "in" | "at" | "on")) {
         words.remove(0);
@@ -57,7 +100,48 @@ pub fn clean_label(label: &str) -> String {
     while words.last().is_some_and(|w| matches!(*w, "-" | ":" | "--" | "|" | "in" | "at" | "on" | "(" | ")")) {
         words.pop();
     }
-    words.join(" ")
+    let joined = words.join(" ");
+    if joined.chars().count() <= LABEL_CHARS {
+        return joined;
+    }
+    // Cut at a word edge.
+    let cut: String = joined.chars().take(LABEL_CHARS).collect();
+    match cut.rsplit_once(' ') {
+        Some((head, _)) if !head.is_empty() => head.to_string(),
+        _ => cut,
+    }
+}
+
+/// What Save accepts for a CLAUDE.md rule: exactly one `- ` line, no heading or code fence in it,
+/// no control characters, at most `LINE_MAX_CHARS`. Returns the line trimmed, or a plain sentence
+/// saying what is wrong. The page also limits the field; the server does not trust the page.
+pub fn validate_line(text: &str) -> Result<String, &'static str> {
+    let t = text.trim_end_matches(['\n', '\r', ' ', '\t']);
+    let t = t.trim_start_matches(['\n', '\r']);
+    if t.contains('\n') || t.contains('\r') {
+        return Err("A rule is one line. Remove the extra lines.");
+    }
+    if t.chars().any(|c| c.is_control()) {
+        return Err("The rule has a character that can't be saved.");
+    }
+    let Some(body) = t.strip_prefix("- ") else { return Err("A rule starts with a dash and a space.") };
+    let body = body.trim();
+    if body.is_empty() {
+        return Err("There is nothing to add.");
+    }
+    if body.starts_with('#') || body.contains("```") || body.contains("~~~") {
+        return Err("A rule can't hold a heading or a code block.");
+    }
+    if t.chars().count() > LINE_MAX_CHARS {
+        return Err("That line is too long. Keep it under 400 characters.");
+    }
+    Ok(t.to_string())
+}
+
+/// Whether `file` already has exactly this line (ignoring trailing spaces and line endings).
+pub fn has_line(file: &[u8], line: &str) -> bool {
+    let want = line.trim();
+    String::from_utf8_lossy(file).lines().any(|l| l.trim() == want)
 }
 
 fn sentence(label: &str) -> String {
@@ -161,21 +245,7 @@ pub fn append_under_heading(file: &[u8], heading: &str, text: &str) -> Vec<u8> {
     }
 
     let is_heading = |s: &(usize, usize, usize)| String::from_utf8_lossy(&file[s.0..s.1]).trim_end() == heading;
-    let in_fence = {
-        // Mark lines inside ``` fences so a "## " in a code block is not a section end.
-        let mut v = vec![false; spans.len()];
-        let mut open = false;
-        for (k, s) in spans.iter().enumerate() {
-            let t = String::from_utf8_lossy(&file[s.0..s.1]);
-            if t.trim_start().starts_with("```") || t.trim_start().starts_with("~~~") {
-                open = !open;
-                v[k] = true;
-            } else {
-                v[k] = open;
-            }
-        }
-        v
-    };
+    let in_fence = fence_marks(file, &spans);
     let head_idx = spans.iter().enumerate().position(|(k, s)| !in_fence[k] && is_heading(s));
 
     let mut out = Vec::with_capacity(file.len() + 128);
@@ -237,6 +307,37 @@ pub fn append_under_heading(file: &[u8], heading: &str, text: &str) -> Vec<u8> {
         }
     }
     out
+}
+
+/// Which lines are inside (or are the edge of) a fenced code block. A fence opens with three or more
+/// backticks or tildes and closes only on the same character, at least as long, with nothing after
+/// it (CommonMark), so a shorter or different fence inside the block does not end it.
+fn fence_marks(file: &[u8], spans: &[(usize, usize, usize)]) -> Vec<bool> {
+    let mut v = vec![false; spans.len()];
+    let mut open: Option<(char, usize)> = None;
+    for (k, s) in spans.iter().enumerate() {
+        let t = String::from_utf8_lossy(&file[s.0..s.1]);
+        let t = t.trim_start();
+        let ch = t.chars().next().filter(|c| *c == '`' || *c == '~');
+        let run = ch.map_or(0, |c| t.chars().take_while(|x| *x == c).count());
+        match open {
+            None => {
+                // A backtick fence's info string cannot hold a backtick ("```x```" is inline code).
+                let opens = run >= 3 && !(ch == Some('`') && t[run..].contains('`'));
+                if opens {
+                    open = Some((ch.unwrap_or('`'), run));
+                    v[k] = true;
+                }
+            }
+            Some((c, len)) => {
+                v[k] = true;
+                if ch == Some(c) && run >= len && t[run..].trim().is_empty() {
+                    open = None;
+                }
+            }
+        }
+    }
+    v
 }
 
 /// The CLAUDE.md a missing global file starts as: the heading and the line.
@@ -358,6 +459,48 @@ mod tests {
         let before = b"```\n## Caught in review\n```\n";
         let out = append_under_heading(before, HEADING, "- X.");
         assert!(String::from_utf8(out).unwrap().ends_with("```\n\n## Caught in review\n\n- X.\n"));
+    }
+
+    #[test]
+    fn the_draft_masks_secrets_and_drops_imports_links_backticks_and_length() {
+        let d = draft_line("see @~/.ssh/config and [the doc](https://evil.example/x) with `eval` for sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789");
+        assert!(!d.contains('@') && !d.contains("evil.example") && !d.contains('`') && !d.contains("sk-ant-api03"), "{d}");
+        assert!(d.contains("the doc"), "{d}");
+        let long = draft_line(&"word ".repeat(200));
+        assert!(long.chars().count() <= LINE_PREFIX.len() + LABEL_CHARS + 1, "{}", long.len());
+        assert!(validate_line(&long).is_ok());
+    }
+
+    #[test]
+    fn save_accepts_exactly_one_dash_line() {
+        assert_eq!(validate_line("- Check this.\n"), Ok("- Check this.".to_string()));
+        assert!(validate_line("- A\n- B").is_err());
+        assert!(validate_line("- A\n\n## Heading").is_err());
+        assert!(validate_line("## Heading").is_err());
+        assert!(validate_line("Plain text").is_err());
+        assert!(validate_line("- # sneaky heading").is_err());
+        assert!(validate_line("- ```sh").is_err());
+        assert!(validate_line("- ").is_err());
+        assert!(validate_line(&format!("- {}", "x".repeat(LINE_MAX_CHARS))).is_err());
+        assert!(validate_line("- bell \u{7}").is_err());
+    }
+
+    #[test]
+    fn has_line_ignores_line_endings_and_trailing_spaces() {
+        assert!(has_line(b"# A\r\n- Same.  \r\n", "- Same."));
+        assert!(!has_line(b"# A\n- Other.\n", "- Same."));
+    }
+
+    #[test]
+    fn a_longer_or_different_fence_inside_a_block_does_not_end_it() {
+        // The ```` block holds a ``` line and a "## Caught in review" that are both still code.
+        let before = b"````md\n```\n## Caught in review\n```\n````\n";
+        let out = append_under_heading(before, HEADING, "- X.");
+        assert_eq!(String::from_utf8(out).unwrap(), "````md\n```\n## Caught in review\n```\n````\n\n## Caught in review\n\n- X.\n");
+        // A tilde fence is not closed by backticks.
+        let before = b"~~~\n```\n## Caught in review\n~~~\n";
+        let out = String::from_utf8(append_under_heading(before, HEADING, "- X.")).unwrap();
+        assert!(out.ends_with("~~~\n\n## Caught in review\n\n- X.\n"), "{out}");
     }
 
     #[test]

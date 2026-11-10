@@ -240,7 +240,7 @@ export interface Backend {
   teamScorecard(args: ScorecardArgs): Promise<Scorecard>;
   teamThemes(args: ThemeArgs): Promise<Themes>;
   /** The places a rule can go, each with the stamp of its file as it is now. Nothing is written. */
-  ruleSheet(label: string, projects: string[]): Promise<RuleSheetData>;
+  ruleSheet(label: string, projectPaths: string[]): Promise<RuleSheetData>;
   /** Backup, append (or create), read back. `conflict` when the file changed since the sheet opened. */
   ruleSave(args: RuleSave): Promise<RuleReply>;
   /** After Undo: the theme offers "Make this a rule" again. */
@@ -369,7 +369,7 @@ const tauriBackend: Backend = {
   setupUndo: (backupId) => invoke<UndoOutcome>("setup_undo", { backupId }),
   teamScorecard: (args) => invoke<Scorecard>("team_scorecard", { args }),
   teamThemes: (args) => invoke<Themes>("team_themes", { args }),
-  ruleSheet: (label, projects) => invoke<RuleSheetData>("rule_sheet", { label, projects }),
+  ruleSheet: (label, projectPaths) => invoke<RuleSheetData>("rule_sheet", { label, projectPaths }),
   ruleSave: (args) => invoke<RuleReply>("rule_save", { args }),
   ruleForget: (themeId) => invoke<void>("rule_forget", { themeId }),
   setupCreateDraft: (kind, name, event) => invoke<Draft>("setup_create_draft", { kind, name, event }),
