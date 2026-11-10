@@ -264,8 +264,10 @@ describe("Library tab: installing (D20, D24, D19 words)", () => {
     await userEvent.type(within(dialog).getByPlaceholderText("github.com/owner/repo"), "github.com/owner/tools");
     await userEvent.click(check);
     expect(await within(dialog).findByText("You already have one called ship.")).toBeInTheDocument();
-    // What Atlas does not install is named, and one safety line is shown.
-    expect(within(dialog).getByText("Not installed")).toBeInTheDocument();
+    // What Atlas leaves out is named as the reason the verdict holds (G11: "Left out", not a
+    // second "Not installed" line under "nothing here runs"), and one safety line is shown.
+    expect(within(dialog).getByText("Left out")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Atlas does not copy it, so it never runs\./)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Install 2 items" }));
     await waitFor(() => expect(lib().installed.map((r) => r.name).sort()).toEqual(["reviewer", "tidy-notes"]));
     expect(lib().calls).toContain("items:tidy-notes,reviewer");

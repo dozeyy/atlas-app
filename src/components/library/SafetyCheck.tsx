@@ -63,13 +63,16 @@ export function SafetyCheck({ report, notInstalled }: { report: SafetyReport; no
           ))}
         </ul>
       )}
+      {/* What the repository holds that Atlas leaves behind. Said as a reason the verdict above
+          stays true ("nothing here runs": the hook is not copied, so it never runs), not as a
+          second list of things that sound installed. */}
       {notInstalled && notInstalled.length > 0 && (
-        <ul className="grid grid-cols-[minmax(0,1fr)] gap-1 border-t border-line px-4 py-2.5">
+        <ul className="grid grid-cols-[minmax(0,1fr)] gap-1 border-t border-line px-4 py-2.5" aria-label="Left out">
           {notInstalled.map((n) => (
             <li key={n.path} className="flex flex-wrap items-center gap-2 text-caption text-ink-2">
-              <Chip tone="muted">Not installed</Chip>
+              <Chip tone="muted">Left out</Chip>
               <span className="min-w-0 break-words">
-                {n.what} <span className="mono break-all">{n.path}</span>. Atlas does not copy these.
+                {n.what} in <span className="mono break-all">{n.path}</span>. Atlas does not copy {/^1\s/.test(n.what) ? "it" : "them"}, so {/^1\s/.test(n.what) ? "it never runs" : "they never run"}.
               </span>
             </li>
           ))}

@@ -1,10 +1,17 @@
 /* Toolkit > Library. Colours come from tokens.css; nothing here is a literal value. */
 
-/* The highlighted row (arrow keys, or the one that opened the sheet): accent tint and a bar. */
-.lib-sel {
+/*
+ * The highlighted row (arrow keys, or the one that opened the sheet): accent tint and a bar. It
+ * is a cursor, so it is drawn only while it is one: the keyboard is in use, or the sheet it opened
+ * is up. After a mouse install the row shows its own state (the clay tile and its check) and
+ * nothing that could be read as a second "installed" mark.
+ */
+html[data-input="keyboard"] .lib-sel,
+[data-sheet-open] .lib-sel {
   background: var(--accent-tint);
 }
-.lib-sel::before {
+html[data-input="keyboard"] .lib-sel::before,
+[data-sheet-open] .lib-sel::before {
   content: "";
   position: absolute;
   inset: 8px auto 8px 0;

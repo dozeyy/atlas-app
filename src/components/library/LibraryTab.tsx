@@ -189,8 +189,17 @@ export function LibraryTab() {
         action={{ label: "Refresh", onClick: () => void refreshLibrary() }}
       />
     ) : (
-      // A calm error: what happened, the next step, the engine's own words behind Details.
-      <EmptyState fill variant="error" title="The Library could not load" reason={lib.error} action={{ label: "Refresh", onClick: () => void refreshLibrary() }} />
+      // A calm error: what happened, the next step, the engine's own words behind Details. The
+      // list comes from Claude Code's own command, so a failure that is not the network is its
+      // answer (or no answer); the sentence says where that answer is, and never blames the connection.
+      <EmptyState
+        fill
+        variant="error"
+        title="The Library could not load"
+        body="Claude Code did not give Atlas the plugin list. Refresh tries again; what it said is under Details."
+        reason={lib.error}
+        action={{ label: "Refresh", onClick: () => void refreshLibrary() }}
+      />
     );
   } else if (rows.length === 0 && partial && lib.source !== "installed") {
     body = <ListSkeleton label="Searching the catalog" />;
@@ -222,7 +231,19 @@ export function LibraryTab() {
     );
   } else {
     body = (
-      <LibraryList rows={rows} heads={heads} showSource={showSource} installedOnly={lib.source === "installed"} selectedKey={selectedKey} cli={cli} busy={lib.busy} actions={actions} scrollTo={scrollTo} onFirstRows={reportFirstRows} />
+      <LibraryList
+        rows={rows}
+        heads={heads}
+        showSource={showSource}
+        installedOnly={lib.source === "installed"}
+        query={query}
+        selectedKey={selectedKey}
+        cli={cli}
+        busy={lib.busy}
+        actions={actions}
+        scrollTo={scrollTo}
+        onFirstRows={reportFirstRows}
+      />
     );
   }
 
@@ -287,7 +308,10 @@ export function LibraryTab() {
 
       <div className="flex min-h-0 flex-1 gap-4">
         {wide && <SourceRail options={options} value={lib.source} counts={!loading} onChange={setSource} onAdd={() => setAdding(true)} />}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{body}</div>
+        {/* data-sheet-open: the highlighted row is drawn while its sheet is up (library.css). */}
+        <div data-sheet-open={sheet ? "" : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {body}
+        </div>
       </div>
 
       {sheet && <LibrarySheet key={sheet.pluginId} target={sheet} onClose={() => setSheet(null)} />}

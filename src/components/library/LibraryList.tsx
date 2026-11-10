@@ -39,6 +39,7 @@ import {
   installBlock,
   itemWord,
   sourceCaption,
+  tokens,
   type LibraryRow,
   type ListHead,
   type Topic,
@@ -117,6 +118,44 @@ export function PluginTile({ topic, state, size = 32 }: { topic: Topic; state: T
 /** Room a row keeps on the right while it asks "Uninstall name?": the two buttons. */
 const CONFIRM_ROOM = "pr-[204px]";
 
+const NO_WORDS: string[] = [];
+
+/**
+ * The typed words, marked where they sit in a row's text, the way a Sessions row marks its hits
+ * (the same `sl-hit`: heavier and underlined, no colour of its own). `words` are `tokens()` of the
+ * query, so they are lower case with no punctuation; the earliest match wins at each step.
+ */
+export function marked(text: string, words: string[]): React.ReactNode {
+  if (words.length === 0 || !text) return text;
+  const lower = text.toLowerCase();
+  // A case fold that changes the length (rare letters) would put the marks in the wrong place.
+  if (lower.length !== text.length) return text;
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  for (;;) {
+    let at = -1;
+    let len = 0;
+    for (const w of words) {
+      const k = lower.indexOf(w, i);
+      if (k >= 0 && (at < 0 || k < at)) {
+        at = k;
+        len = w.length;
+      }
+    }
+    if (at < 0) break;
+    if (at > i) out.push(text.slice(i, at));
+    out.push(
+      <mark key={at} className="sl-hit">
+        {text.slice(at, at + len)}
+      </mark>,
+    );
+    i = at + len;
+  }
+  if (out.length === 0) return text;
+  if (i < text.length) out.push(text.slice(i));
+  return out;
+}
+
 export interface RowActions {
   /** Open the detail sheet for this row (focusInstall: put focus on its Install). */
   open: (row: LibraryRow, focusInstall?: boolean) => void;
@@ -161,6 +200,7 @@ function Row({
   actions,
   showSource,
   underInstalled,
+  words = NO_WORDS,
 }: {
   row: LibraryRow;
   y: number;
@@ -172,6 +212,8 @@ function Row({
   showSource: boolean;
   /** The heading above (or the filter) already says "Installed". */
   underInstalled: boolean;
+  /** The typed words (lower case), marked where they sit in the name and the line under it. */
+  words?: string[];
 }) {
   const [confirm, setConfirm] = useState(false);
   // A row that is uninstalled (or installed again) is a different row: its confirm does not carry over.
@@ -333,10 +375,10 @@ function Row({
             "Uninstall name?", the question is this line: it is there at every width. */}
         <span className="min-w-0 flex-1">
           <span data-row-title title={confirm ? ask : about} className="block truncate text-body font-semibold text-ink">
-            {confirm ? ask : name}
+            {confirm ? ask : marked(name, words)}
           </span>
           <span title={second2} className={`block truncate text-caption ${own ? "text-warning" : "text-ink-2"}`}>
-            {second2}
+            {own ? second2 : marked(second2, words)}
           </span>
         </span>
         <span title={source} className={`hidden max-w-[168px] shrink-0 truncate text-right text-caption text-ink-2 ${sourceFrom}`}>
@@ -377,6 +419,7 @@ export function LibraryList({
   heads = NO_HEADS,
   showSource = false,
   installedOnly = false,
+  query = "",
   selectedKey,
   cli,
   busy,
@@ -390,6 +433,8 @@ export function LibraryList({
   showSource?: boolean;
   /** The Installed filter: every row is installed, and the rail says so. */
   installedOnly?: boolean;
+  /** What was typed: its words are marked in each row, as Sessions and the palette mark theirs. */
+  query?: string;
   selectedKey: string | null;
   cli: boolean;
   busy: LibraryState["busy"];
@@ -401,6 +446,7 @@ export function LibraryList({
   const box = useRef<HTMLDivElement>(null);
   const [top, setTop] = useState(0);
   const [height, setHeight] = useState(520);
+  const words = useMemo(() => tokens(query), [query]);
 
   useLayoutEffect(() => {
     const el = box.current;
@@ -456,7 +502,10 @@ export function LibraryList({
     <div
       ref={box}
       onScroll={(e) => setTop(e.currentTarget.scrollTop)}
-      className="@container min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-card border border-line bg-surface"
+      // The box is as tall as its rows and no taller (flex-initial): a filter that leaves three
+      // rows gets a three-row card, not a card with 400 px of nothing under it. A long list still
+      // shrinks to the pane and scrolls inside itself.
+      className="@container min-h-0 flex-initial overflow-y-auto overflow-x-hidden rounded-card border border-line bg-surface"
     >
       <div role="list" aria-label="Plugins and skills" style={{ height: total }} className="relative">
         {heads.map((head) => (
@@ -483,6 +532,7 @@ export function LibraryList({
             actions={actions}
             showSource={showSource}
             underInstalled={installedOnly || heads[headOf[from + i]!]?.label === INSTALLED_HEAD}
+            words={words}
           />
         ))}
       </div>
