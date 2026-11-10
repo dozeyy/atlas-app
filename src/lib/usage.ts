@@ -90,18 +90,29 @@ export function formatDuration(ms: number): string {
  * A model id as people say it, always with its full version: "claude-opus-5-5" -> "Opus 5.5",
  * "claude-fable-5-2" -> "Fable 5.2", "claude-3-5-sonnet-20241022" -> "Sonnet 3.5". Any family
  * works, so a model Atlas has never heard of still gets a name ("claude-nova-9-1" -> "Nova 9.1");
- * whether it is priced is a separate question. Anything else (`<synthetic>`) stays as it is.
- * Same rules as `model_label` in `crates/core/src/usage/naming.rs`.
+ * whether it is priced is a separate question. A cloud provider wraps the id in its own prefix
+ * and suffix ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", "claude-sonnet-4-5@20250929"): the
+ * model inside is named, on every page, so a raw id is never the name. Anything with no model in
+ * it (`<synthetic>`) stays as it is. The plain ids follow the same rules as `model_label` in
+ * `crates/core/src/usage/naming.rs`; the provider ids are named here only.
  */
 export function modelLabel(raw: string): string {
-  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   // A context suffix ("claude-opus-5-5[1m]") is the same model.
   const id = raw.trim().replace(/(.)\s*\[[^\]]*\]$/, "$1");
+  const plain = plainModelLabel(id);
+  if (plain) return plain;
+  const inner = /claude-(?:[a-z]+-\d{1,3}(?:-\d{1,2}(?!\d))?|\d{1,3}(?:-\d{1,2}(?!\d))?-[a-z]+)(?:-\d{8})?/.exec(id);
+  return (inner && plainModelLabel(inner[0])) || raw;
+}
+
+/** "claude-<family>-<version>" or "claude-<version>-<family>", with or without a date; else null. */
+function plainModelLabel(id: string): string | null {
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   let m = /^claude-([a-z]+)-(\d{1,3})(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
   if (m) return `${cap(m[1])} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
   m = /^claude-(\d{1,3})(?:-(\d{1,2}))?-([a-z]+)(?:-\d{8})?$/.exec(id);
   if (m) return `${cap(m[3])} ${m[1]}${m[2] ? `.${m[2]}` : ""}`;
-  return raw;
+  return null;
 }
 
 /** The most used reasoning effort, or null when no reply recorded one (never a guess). */

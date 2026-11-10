@@ -1,23 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { modelLabel } from "./usage";
-import { storyModelName, uniqueLabels } from "./wrappedLoad";
+import { uniqueLabels } from "./wrappedLoad";
 
 const row = (key: string, label: string) => ({ key, label });
-
-describe("storyModelName", () => {
-  it("names the model inside a provider's id, so a raw id never lands on a slide", () => {
-    expect(storyModelName("claude-opus-5-5", modelLabel)).toBe("Opus 5.5");
-    expect(storyModelName("us.anthropic.claude-sonnet-4-5-20250929-v1:0", modelLabel)).toBe("Sonnet 4.5");
-    expect(storyModelName("anthropic.claude-opus-4-20250514-v1:0", modelLabel)).toBe("Opus 4");
-    expect(storyModelName("claude-sonnet-4-5@20250929", modelLabel)).toBe("Sonnet 4.5");
-    expect(storyModelName("anthropic.claude-3-5-sonnet-20241022-v2:0", modelLabel)).toBe("Sonnet 3.5");
-  });
-
-  it("leaves an id with no model in it alone", () => {
-    expect(storyModelName("<synthetic>", modelLabel)).toBe("<synthetic>");
-    expect(storyModelName("some-vendor/unknown-model-2026", modelLabel)).toBe("some-vendor/unknown-model-2026");
-  });
-});
 
 describe("uniqueLabels", () => {
   it("leaves distinct names alone, in order", () => {

@@ -79,27 +79,15 @@ function seriesTotals(
   const out: { label: string; value: number; name: string; hint?: string }[] = byFolder ? uniqueLabels(shown) : shown;
   return out.map(({ label: l, value, name, hint }) => ({ label: l, value, name, ...(hint ? { hint } : {}) }));
 }
-/**
- * A model's plain name for the story. The app's namer knows "claude-<family>-<version>"; a cloud
- * provider wraps that id in its own prefix and suffix ("us.anthropic.claude-sonnet-4-5-20250929-v1:0",
- * "claude-sonnet-4-5@20250929"). The model inside is named, so the raw id never lands on a slide.
- * An id with no model in it stays as it is (the slide then wraps and cuts it like any long name).
- */
-export function storyModelName(id: string, name: (id: string) => string): string {
-  const plain = name(id);
-  if (plain !== id) return plain;
-  const inner = /claude-(?:[a-z]+-\d{1,3}(?:-\d{1,2}(?!\d))?|\d{1,3}(?:-\d{1,2}(?!\d))?-[a-z]+)(?:-\d{8})?/.exec(id);
-  if (!inner) return id;
-  const named = name(inner[0]);
-  return named === inner[0] ? id : named;
-}
 
 /**
  * Everything the story needs, from the same queries the other screens use. Returns null when there
  * is no usage at all. A part that fails is left out; the story is built from what is there.
+ * `modelName` is the app's one namer (`modelLabel`): it names the model inside a cloud provider's
+ * id too, so a raw id never lands on a slide; an id with no model in it stays as it is (the slide
+ * then wraps and cuts it like any long name).
  */
-export async function loadWrapped(daily: Daily, nameModel: (id: string) => string): Promise<WrappedData | null> {
-  const modelName = (id: string) => storyModelName(id, nameModel);
+export async function loadWrapped(daily: Daily, modelName: (id: string) => string): Promise<WrappedData | null> {
   const backend = getBackend();
   const firstIdx = daily.tokens.findIndex((v) => v > 0);
   if (firstIdx < 0) return null;

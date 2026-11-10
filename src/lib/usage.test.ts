@@ -153,6 +153,23 @@ describe("models", () => {
     expect(modelLabel("[1m]")).toBe("[1m]");
     expect(modelLabel("claude-opus")).toBe("claude-opus");
   });
+
+  // These were the Wrapped story's own rule (storyModelName); every page has it now, same results.
+  it("names the model inside a provider's id, so a raw id is never the name", () => {
+    expect(modelLabel("us.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe("Sonnet 4.5");
+    expect(modelLabel("anthropic.claude-opus-4-20250514-v1:0")).toBe("Opus 4");
+    expect(modelLabel("claude-sonnet-4-5@20250929")).toBe("Sonnet 4.5");
+    expect(modelLabel("anthropic.claude-3-5-sonnet-20241022-v2:0")).toBe("Sonnet 3.5");
+    expect(modelLabel("eu.anthropic.claude-haiku-4-5-20251001-v1:0")).toBe("Haiku 4.5");
+    expect(modelLabel("us.anthropic.claude-opus-5-5-v1:0[1m]")).toBe("Opus 5.5");
+    expect(modelLabel("vendor/claude-opus-5-5")).toBe("Opus 5.5");
+  });
+
+  it("leaves an id with no model in it alone", () => {
+    expect(modelLabel("some-vendor/unknown-model-2026")).toBe("some-vendor/unknown-model-2026");
+    expect(modelLabel("anthropic.claude-v2")).toBe("anthropic.claude-v2");
+    expect(modelLabel("")).toBe("");
+  });
 });
 
 describe("effort", () => {
