@@ -992,7 +992,10 @@ html.reduced .nc-sweep.is-on::after {
   min-width: 0;
 }
 .ht-name {
-  flex: 0 1 auto;
+  /* Never shrunk (a shrink of a fraction of a pixel already costs two letters and an ellipsis);
+     only capped, so a very long name still leaves the model its first letters. */
+  flex: 0 0 auto;
+  max-width: calc(100% - 8px - 4ch);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1001,9 +1004,14 @@ html.reduced .nc-sweep.is-on::after {
   font-weight: 600;
   color: var(--ink);
 }
-/* The exact model and effort ("Opus 5.5 · high"): never cut, the name gives way first. */
+/* The model and effort ("Opus 5.5 · high") give way first: the kind of helper is what a row is
+   read by, so its name stays whole while there is any room, and the model's own start (the
+   model name) outlasts its effort. The full label is on hover. */
 .ht-model {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
   color: var(--ink-2);
