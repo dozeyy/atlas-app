@@ -66,7 +66,26 @@ Pictures are under `docs/shots/fable-pass/<stop>/` (not in git), 900x600 and 118
 | 3 | Settings: an icon on every rail entry; General (Keep running when closed, Shortcut on the desktop, Tell me when a chat finishes) apart from Appearance (theme, Launch animation, Show shortcuts); a small info mark on a row whose label has a hover; the connector sentence moved into that hover; the rebuild dialog is two short sentences. | Grouping and findability; a hover you can see is there. | `settings*`: `r2-before-*` / `r2-after-*` |
 | 4 | Your data: the usage row lost its three-line cache path (it waits in the hover), both folder buttons read "Open folder", hints wrap without a stray last word; the unsaved-changes dialog is one sentence. | Density: one line of help per row. | `settings-data`: `r2-before-*` / `r3-after-*`; `leave-guard`, `dialog`: `r3-after-*` |
 
-Privacy copy, for Will to read: the sheet used to say Atlas "makes no network connections". It looks for updates and the Library fetches the skills you pick, so it now says "Goes online: only to look for a new version and to fetch a skill you pick in the Library. None of your data is sent."
+Privacy copy, for Will to read: the sheet used to say Atlas "makes no network connections". It looks for updates and the Library goes online, so the sheet was rewritten; the wording that shipped is in "Round two" below.
+
+## Round two (2026-11-09)
+
+| # | What changed | Where to look |
+|---|---|---|
+| 1 | Privacy says only what the code does. Lead: "Atlas has no account, no analytics and no crash reports." Reads: "Your Claude folder, and the Claude files inside your projects." Writes: "Its own data, what you change in your Claude files (backed up first), and the entry that connects Claude Code to Atlas." Goes online: "Only to look for a new version, and to load the Library and what you install from it. Atlas sends none of your chats or files." Settings > About > Privacy says the same in its hover. | `help-privacy/r4-after-*`, `settings-about/r4-after-*` |
+| 2 | No raw path on the surface: the three Your data rows keep a plain line and the full path waits in that line's hover and behind the button; the History detail shows the file name, with the path in the name's hover. | `settings-data/r5-after-*`, `history-detail/r5-after-*` |
+
+What was softened in the Privacy sheet, and why (checked against `crates/app/src/update.rs`, `crates/app/src/library.rs`, `crates/core/src/setup/files.rs`, `crates/core/src/connect.rs`, `crates/core/src/library/install.rs`):
+
+- "Reads only the Claude folder you point it at" was not true: project files (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `.mcp.json`, `<project>/.claude`) and `managed-settings.json` are read too. The "only" is gone.
+- "Writes an item only when you edit or remove it; a backup comes first" was not true: installs write, and the connector entry is written by Atlas itself with no backup when it goes through Claude Code's own `claude mcp add-json`. "Backed up first" is now said only of what you change.
+- "Your chats and files stay on this computer" and "None of your data is sent" became "Atlas sends none of your chats or files". Atlas's own requests are the update check and a download from GitHub. What Claude Code's own program sends when Atlas asks it to list or install plugins cannot be proven from Atlas's code, so the sheet speaks for Atlas only.
+- Not said in the sheet, for the coordinator: loading the Library makes Claude Code write small caches into the Claude folder (`library.rs`, `refresh_now`). Claude Code writes them, not Atlas.
+- Not changed: Settings > Claude Code > "Private to you / No network access". The connector is built with the stdio transport only (`crates/mcp/Cargo.toml`), which supports it; the "never reads sign-in files or keys" half of its hover was not re-checked in code.
+
+Left as they are on purpose: the Claude folder section and the "Connector program" row still show a path in mono, because there the path is the answer to the row's question.
+
+Audits on the round-two head: reduced motion (27 History, Settings and shell stops, 1180x780 Light) and Settings at 900x600 Light with the sidebar open and folded found nothing new; the History diff still scrolls sideways on purpose. Button weight (`2e9f4f0`) on pages of other areas at 900x600: Sessions, a session, Toolkit open type and the Toolkit item sheet lay out the same before and after, sidebar open and folded; no control grew past its container. The "Open" button in Sessions' "Pick up where you left off" card sits on a second line at 900x600 with the sidebar open, before the change as well as after.
 
 ## Shared requests from the other areas
 
