@@ -21,7 +21,7 @@ import { PageTitle } from "../components/controls";
 import { Topo } from "../components/Topo";
 import { prefersReducedMotion } from "../lib/motion";
 import { HelperTracker } from "../components/now/HelperTracker";
-import { ago, clock, groupChats, nowCost } from "../lib/nowFormat";
+import { ago, clock, groupChats, nowCost, splitPath } from "../lib/nowFormat";
 import type { NowChat, NowLast, NowStep } from "../lib/nowTypes";
 import { useClimb, useClock, useNowSnapshot } from "../lib/useNow";
 import { CALM_MS, useSteadyDoing } from "../lib/useSteadyDoing";
@@ -280,7 +280,7 @@ function ChatCard({ chat }: { chat: NowChat }) {
               </p>
               {doing.target && (
                 <p className="nc-target" title={doing.target}>
-                  {doing.target}
+                  <TargetText text={doing.target} />
                 </p>
               )}
             </div>
@@ -403,9 +403,21 @@ function Trail({ steps, working }: { steps: NowStep[]; working: boolean }) {
             {s.verb}
             {s.count > 1 && <span className="nc-step-count">{` x${s.count}`}</span>}
           </span>
-          <span className="nc-step-target">{s.target ?? ""}</span>
+          <span className="nc-step-target">{s.target ? <TargetText text={s.target} /> : ""}</span>
         </li>
       ))}
     </ol>
+  );
+}
+
+/** What is being worked on. A file path gives up its folders first, so the file name stays. */
+function TargetText({ text }: { text: string }) {
+  const path = splitPath(text);
+  if (!path) return <>{text}</>;
+  return (
+    <span className="now-path">
+      <span className={path.head.length > 2 ? "now-path-head" : "now-path-head is-short"}>{path.head}</span>
+      <span className="now-path-tail">{path.tail}</span>
+    </span>
   );
 }

@@ -460,6 +460,34 @@
   color: var(--ink-2);
 }
 
+/* A file path: the folders give way first (ellipsis), the file name stays whole while it fits. */
+.now-path {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: bottom;
+}
+.now-path-head {
+  /* Shrinks long before the file name does; keeps room for "C" and the ellipsis. */
+  flex: 0 1000000 auto;
+  min-width: 2ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A folder of one or two letters is never cut. */
+.now-path-head.is-short {
+  flex-shrink: 0;
+  min-width: auto;
+}
+.now-path-tail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The one quiet sign that work is going on: a slow clay sweep, only while it works. */
 .nc-sweep {
   position: relative;
