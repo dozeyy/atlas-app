@@ -28,6 +28,7 @@ import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
 import { hasClearPeak, spendRidge, timelineBars } from "../components/usage/timelineBars";
 import type { BarDatum } from "../components/charts/shared";
 import { getBackend } from "../lib/ipc";
+import { clearPendingAgent, peekPendingAgent } from "../lib/nav";
 import { copyResume, openFolder } from "../lib/sessionActions";
 import { resumeCommand } from "../lib/sessionBrowse";
 import { useAtlas } from "../state/AtlasProvider";
@@ -432,7 +433,10 @@ export function SessionDetailView({
   // The receipt reads the chat's files once and is then kept, so it is not reloaded with every
   // tick: only when the chat's cost itself moved.
   const receipt = useFetched(() => backend.sessionReceipt(id), [id]);
-  const [agentId, setAgentId] = useState<string | null>(null);
+  // The Team tab can ask for a helper of this chat: it opens straight on that helper.
+  const [agentId, setAgentId] = useState<string | null>(() => peekPendingAgent(id));
+  const agentChat = useRef(id);
+  useEffect(() => clearPendingAgent(), []);
   const [tab, setTab] = useState<Tab>("receipt");
   const [view, setView] = useState<"map" | "list">("map");
   const [order, setOrder] = useState<"started" | "spend">("started");
@@ -442,7 +446,11 @@ export function SessionDetailView({
   const costSeen = useRef<number | null>(null);
 
   useEffect(() => {
-    setAgentId(null);
+    // Only another chat resets the helper: the first run belongs to a helper asked for by name.
+    if (agentChat.current !== id) {
+      agentChat.current = id;
+      setAgentId(null);
+    }
     setScope("all");
     setTab("receipt");
     setView("map");

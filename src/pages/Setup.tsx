@@ -19,6 +19,7 @@ import type { CreateKind, SetupItem, SetupProject, SetupSnapshot } from "../lib/
 import { reloadSetup, startSetup, useSetup } from "../state/setupStore";
 import { useAtlas } from "../state/AtlasProvider";
 import { guardLeave } from "../state/unsavedStore";
+import { Team } from "./Team";
 
 const CLAUDE_JSON_NOTE: Record<string, string> = {
   missing: "Atlas could not find your .claude.json, so the project list and per-project MCP servers may be incomplete.",
@@ -216,6 +217,7 @@ const TAB_KEY = "atlas.toolkit.tab";
 const TABS: { value: ToolkitTab; label: string }[] = [
   { value: "setup", label: "Your setup" },
   { value: "library", label: "Library" },
+  { value: "team", label: "Team" },
 ];
 
 function firstTab(): ToolkitTab {
@@ -224,8 +226,11 @@ function firstTab(): ToolkitTab {
     clearPendingToolkitTab();
     return asked;
   }
+  // An item to open lives on "Your setup", whichever tab was left open last.
+  if (peekPendingToolkitItem()) return "setup";
   try {
-    return window.localStorage.getItem(TAB_KEY) === "library" ? "library" : "setup";
+    const saved = window.localStorage.getItem(TAB_KEY);
+    return saved === "library" || saved === "team" ? saved : "setup";
   } catch {
     return "setup";
   }
@@ -250,9 +255,13 @@ export function Setup() {
     () =>
       onNavRequest(() => {
         const asked = peekPendingToolkitTab();
-        if (!asked) return;
-        clearPendingToolkitTab();
-        setTab(asked);
+        if (asked) {
+          clearPendingToolkitTab();
+          setTab(asked);
+        } else if (peekPendingToolkitItem()) {
+          // "Open this item" from another tab: Your setup mounts and takes it from its first render.
+          setTab("setup");
+        }
       }),
     [setTab],
   );
@@ -260,8 +269,12 @@ export function Setup() {
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     e.preventDefault();
-    setTab(e.key === "ArrowRight" ? "library" : "setup");
+    const at = TABS.findIndex((t) => t.value === tab);
+    const next = (at + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length;
+    setTab(TABS[next].value);
   };
+
+  const showSetup = useCallback(() => setTab("setup"), [setTab]);
 
   return (
     <>
@@ -271,6 +284,8 @@ export function Setup() {
       </div>
       {tab === "library" ? (
         <LibraryTab />
+      ) : tab === "team" ? (
+        <Team onShowSetup={showSetup} />
       ) : st.snapshot ? (
         <Loaded snap={st.snapshot} includeWorktrees={st.includeWorktrees} loads={st.loads} error={st.status === "ready" ? st.error : null} />
       ) : st.status === "error" ? (

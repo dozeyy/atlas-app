@@ -1,0 +1,77 @@
+/* Team (a tab of the Toolkit, in the one tab row with Your setup and Library). Tokens only; no hex
+   colors in this file. */
+
+/* The scorecard: cards of a steady width that fill the row. */
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.team-pane {
+  padding-bottom: var(--gutter-y);
+}
+
+/* A share of a total, as a thin meter. Always has the number beside it. */
+.team-meter {
+  display: block;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  overflow: hidden;
+}
+.team-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--slate);
+}
+
+.team-caret {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.team-caret-open {
+  transform: rotate(90deg);
+}
+
+.team-draft {
+  line-height: 20px;
+}
+.team-draft:disabled {
+  opacity: 0.5;
+}
+
+/* The rule sheet's before and after: a calm well of code lines. The added lines carry the accent
+   wash and a bar at the left, so they read without colour alone (the bar is a shape). */
+.team-preview {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--raised);
+}
+.team-preview-label {
+  padding: 4px 12px;
+  color: var(--ink-2);
+  border-bottom: 1px solid var(--line);
+}
+.team-preview-row {
+  min-height: 20px;
+  padding: 0 12px 0 9px;
+  border-left: 3px solid transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  line-height: 20px;
+  color: var(--ink);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.team-preview-row[data-added="true"] {
+  border-left-color: var(--accent);
+  background: var(--accent-tint);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.team-preview-row[data-dim="true"] {
+  color: var(--ink-2);
+}

@@ -627,3 +627,24 @@ Unit B (whoever lands first owns it).
 - `cli`, `sdk-ts` and `sdk-py` entrypoints (prefix rule only; not seen on this machine).
 - Whether a Stop hook's `additionalContext` reaches the model on 2.1.296.
 - All token figures are character estimates until criterion 37.
+
+## Unit 2 build notes (2026-11-09)
+- D21 deviation, kept (coordinator, code review of bde78b9): the Team tab's range, Started from
+  and view are UI prefs stored in the browser's localStorage (`atlas.team.prefs`,
+  `atlas.toolkit.tab`), the same pattern as other view prefs, not in `settings.json`.
+- History has no Undo button, by design: Undo is the toast's action right after the change. A
+  rule made from Team is in History as "Instruction file changed" with its backup, and "Copy this
+  version" / "Save a copy" bring the old bytes back.
+- Ctrl+K to a Toolkit item while on the Team tab brings the "Your setup" tab forward, then opens
+  the item.
+- Make this a rule: a project target is identified by its folder (`project:<folder>`), checked
+  against the scan on Save; the draft is redacted (secrets masked, `@imports`, backticks and
+  markdown links removed, 160 characters); Save accepts exactly one `- ` line, no heading or code
+  fence, up to 400 characters; a line already in the file is not added twice.
+- The rule sheet shows "What will change" for a CLAUDE.md target: "Now" and "After saving", the
+  lines around where the rule lands (the slot is found by running the real append with a marker,
+  so the preview cannot disagree with the write; the line shown is the one being edited). A new
+  rule file has no preview, the editor is the whole file. The draft keeps bare file names and any
+  severity word inside the sentence; it drops directory paths, `:line` references and a leading
+  label such as "High:". While the first read of the chats runs, and until the first answer asked
+  for after it ends, the page says "Still reading your chats" instead of "No helper runs".

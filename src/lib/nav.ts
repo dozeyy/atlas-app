@@ -4,6 +4,7 @@
 let pending: string | null = null;
 let pendingProject: string | null = null;
 let pendingItem: string | null = null;
+let pendingAgent: { session: string; agent: string } | null = null;
 const listeners = new Set<() => void>();
 
 const wake = () => {
@@ -21,6 +22,22 @@ export function peekPendingSession(): string | null {
 
 export function clearPendingSession(): void {
   pending = null;
+}
+
+/** "Open this helper of this chat when Sessions appears" (the Team tab's run rows). */
+export function openAgentNext(sessionId: string, agentId: string): void {
+  pending = sessionId;
+  pendingAgent = agentId ? { session: sessionId, agent: agentId } : null;
+  wake();
+}
+
+/** The helper to show on top of this chat, if one was asked for. */
+export function peekPendingAgent(sessionId: string): string | null {
+  return pendingAgent && pendingAgent.session === sessionId ? pendingAgent.agent : null;
+}
+
+export function clearPendingAgent(): void {
+  pendingAgent = null;
 }
 
 /** "Show the chats of this project when Sessions appears" (a project's key, as the filter uses). */
@@ -52,8 +69,8 @@ export function clearPendingToolkitItem(): void {
   pendingItem = null;
 }
 
-/** "Show this Toolkit tab when the Toolkit appears" ("setup" or "library"). */
-export type ToolkitTab = "setup" | "library";
+/** "Show this Toolkit tab when the Toolkit appears" ("setup", "library" or "team"). */
+export type ToolkitTab = "setup" | "library" | "team";
 let pendingTab: ToolkitTab | null = null;
 
 export function openToolkitTabNext(tab: ToolkitTab): void {

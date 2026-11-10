@@ -453,6 +453,19 @@ fn debug_builds_refuse_delete_save_undo_and_create_against_the_real_config() {
     let text = create_draft("skill", "atlas-guard-test-does-not-exist", None, &ctx).unwrap().text;
     assert!(matches!(create_apply("skill", "atlas-guard-test-does-not-exist", None, &text, &ctx, backups.path()).unwrap_err(), WriteError::Refused(m) if m.contains("refused")));
 
+    // Make this a rule (review themes): a CLAUDE.md line and a rule file, aimed at the real folder.
+    let ghost_md = real.join("CLAUDE.md");
+    let before = std::fs::read(&ghost_md).ok();
+    let line = "- Check before handing work back: Guard test.";
+    assert!(matches!(
+        atlas_core::setup_write::apply_append(&ghost_md, "instructions", "CLAUDE.md", atlas_core::review_rule::HEADING, line, &atlas_core::setup_write::file_stamp(&ghost_md), "x", backups.path()).unwrap_err(),
+        WriteError::Refused(m) if m.contains("refused")
+    ));
+    assert_eq!(std::fs::read(&ghost_md).ok(), before, "the real CLAUDE.md is untouched");
+    let rule_text = atlas_core::review_rule::rule_file_text("guard test");
+    assert!(matches!(create_apply("rule", "atlas-guard-test-does-not-exist", None, &rule_text, &ctx, backups.path()).unwrap_err(), WriteError::Refused(m) if m.contains("refused")));
+    assert!(!real.join("rules").join("atlas-guard-test-does-not-exist.md").exists());
+
     // Undo, with a hand-made backup whose manifest points at the real folder.
     let id = "0000000000000-0000-guard";
     let dir = backups.path().join(id);
