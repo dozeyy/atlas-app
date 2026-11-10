@@ -192,11 +192,11 @@ describe("Now", () => {
     const rows = within(fin).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]!).getByText("9.9k")).toBeInTheDocument();
-    // A chat Atlas only read the tail of has no token total rather than a wrong one: a quiet dash holds
-    // the slot so the rows line up, and the hover says why.
-    const dash = within(rows[1]!).getByText("-");
-    expect(dash.closest(".now-stat")).toHaveAttribute("title", expect.stringMatching(/not watching/));
-    expect(dash.closest(".now-stat")).toHaveAttribute("data-dim");
+    // A session Atlas only read the tail of has no token total rather than a wrong one, and no dash
+    // standing in for it: the row shows when it ended and nothing else.
+    expect(within(rows[1]!).queryByText("Tokens")).not.toBeInTheDocument();
+    expect(within(rows[1]!).queryByText("-")).not.toBeInTheDocument();
+    expect(rows[1]!.querySelectorAll(".now-stat")).toHaveLength(1);
     expect(within(rows[1]!).getByText("2 h")).toBeInTheDocument();
   });
 

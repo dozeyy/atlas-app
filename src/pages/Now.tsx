@@ -136,9 +136,9 @@ function List({ title, count, needsYou, children }: { title: string; count: numb
 }
 
 /** `optional` ranks what a narrow row drops: 1 goes first, then 2; the unranked figure always stays. */
-function Stat({ fig, cap, title, optional, dim }: { fig: string; cap: string; title?: string; optional?: 1 | 2; dim?: boolean }) {
+function Stat({ fig, cap, title, optional }: { fig: string; cap: string; title?: string; optional?: 1 | 2 }) {
   return (
-    <div className="now-stat" title={title} data-opt={optional} data-dim={dim || undefined}>
+    <div className="now-stat" title={title} data-opt={optional}>
       <p className="d d-small now-stat-fig">{fig}</p>
       <p className="nc-cap">{cap}</p>
     </div>
@@ -197,13 +197,10 @@ function DoneRow({ last, now }: { last: NowLast; now: number }) {
           {last.model && <span className="chip">{modelWithEffort(last.model, last.effort)}</span>}
         </p>
       </div>
-      {last.tokens !== null ? (
-        <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false))} optional={2} />
-      ) : (
-        // A chat that was already over when Atlas started: only the end of its transcript is read, so a
-        // total would be a fraction of the real one. The slot stays, so the rows line up.
-        <Stat fig="-" cap="Tokens" title="Atlas was not watching this session, so it has no total" optional={2} dim />
-      )}
+      {/* A session that was already over when Atlas started has no total (the engine reads only the
+          end of its file), so its row shows no token figure at all: a dash read as missing data, and
+          right after a launch every row had one. */}
+      {last.tokens !== null && <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false))} optional={2} />}
       <Stat fig={ago(last.endedMs, now).replace(/ ago$/, "")} cap="Ended" />
     </li>
   );

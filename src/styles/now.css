@@ -187,10 +187,6 @@
 .now-stat .nc-cap {
   margin: 0;
 }
-.now-stat[data-dim] .now-stat-fig {
-  color: var(--ink-2);
-  font-weight: 500;
-}
 /* A list too narrow for every number gives the title the room: the last-turn time goes first,
    then the token count; how long ago always stays. */
 @container nowlist (max-width: 520px) {
