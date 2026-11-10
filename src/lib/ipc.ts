@@ -308,7 +308,11 @@ export interface Backend {
  * passes through here, so no reader has to know (Settings once read it as 1970).
  */
 export function indexedAtMs<T extends { lastIndexedAt: number | null }>(status: T): T {
-  return status.lastIndexedAt === null ? status : { ...status, lastIndexedAt: status.lastIndexedAt * 1000 };
+  // A payload that leaves the field out (or sends anything but a number) means "never": a missing
+  // stamp times 1000 is NaN, which every reader would print as a date.
+  const at = status.lastIndexedAt;
+  if (typeof at !== "number" || !Number.isFinite(at)) return at === null ? status : { ...status, lastIndexedAt: null };
+  return { ...status, lastIndexedAt: at * 1000 };
 }
 
 const tauriBackend: Backend = {

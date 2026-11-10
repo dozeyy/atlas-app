@@ -36,6 +36,15 @@ describe("the last-indexed stamp", () => {
     expect(other.filesTracked).toBe(61);
   });
 
+  it("reads a payload with no stamp as 'never', not as NaN", () => {
+    // An event from an older engine, or one sent before the first pass, can leave the field out.
+    const bare = { filesTracked: 3 } as unknown as { lastIndexedAt: number | null; filesTracked: number };
+    expect(indexedAtMs(bare)).toEqual({ filesTracked: 3, lastIndexedAt: null });
+    expect(indexedAtMs({ lastIndexedAt: Number.NaN }).lastIndexedAt).toBeNull();
+    expect(indexedAtMs({ lastIndexedAt: undefined as unknown as null }).lastIndexedAt).toBeNull();
+    expect(indexedAtMs({ lastIndexedAt: 0 }).lastIndexedAt).toBe(0);
+  });
+
   it("reads as minutes ago in the real app, never as a day in 1970", async () => {
     invoke.mockImplementation(async (cmd: string) => ({ state: "idle", lastIndexedAt: cmd === "usage_reindex" ? null : ENGINE_SECONDS }));
     const real = getBackend();
