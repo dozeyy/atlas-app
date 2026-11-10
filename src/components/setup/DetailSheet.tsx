@@ -15,7 +15,7 @@ import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import { isPerCall, rowFor, usdHover } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
 import type { CostReport, CostRow, MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
-import { Chip, ConflictChip, copyText, formatDate, formatSize, KindTile, ScopeChip, StateChip, TagChip } from "./parts";
+import { Chip, ConflictChip, copyText, formatDate, formatSize, KindTile, PathText, ScopeChip, sentenceCase, StateChip, TagChip } from "./parts";
 
 const REVEAL_MS = 10_000;
 
@@ -438,8 +438,8 @@ export function DetailSheet({
   const rows: { label: string; value: ReactNode; copy?: string }[] = [
     { label: "Where", value: item.scopeLabel },
     ...(item.plugin ? [{ label: "Plugin", value: item.plugin }] : []),
-    ...(item.path ? [{ label: "File", value: <span className="mono break-all">{item.path}</span>, copy: item.path }] : []),
-    ...(item.linkTarget ? [{ label: "Linked to", value: <span className="mono break-all">{item.linkTarget}</span>, copy: item.linkTarget }] : []),
+    ...(item.path ? [{ label: "File", value: <PathText path={item.path} />, copy: item.path }] : []),
+    ...(item.linkTarget ? [{ label: "Linked to", value: <PathText path={item.linkTarget} />, copy: item.linkTarget }] : []),
     ...(item.size !== null ? [{ label: "Size", value: formatSize(item.size) }] : []),
     ...(item.modifiedMs ? [{ label: "Changed", value: `${formatDate(item.modifiedMs)} (${relativeTime(item.modifiedMs)})` }] : []),
     ...(item.usedBy !== null ? [{ label: "Used by", value: item.usedBy === 0 ? "No hook uses this script" : `${item.usedBy} ${item.usedBy === 1 ? "hook" : "hooks"}` }] : []),
@@ -467,11 +467,11 @@ export function DetailSheet({
               {item.name}
             </h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <Chip tone="muted">{meta.singular}</Chip>
+              <Chip tone="muted">{sentenceCase(meta.singular)}</Chip>
               <ScopeChip scope={item.scope} label={item.scopeLabel} />
               <StateChip enabled={item.enabled} />
-              {item.backup && <Chip tone="muted">backup copy</Chip>}
-              {item.worktree && <Chip tone="muted">agent worktree</Chip>}
+              {item.backup && <Chip tone="muted">Backup copy</Chip>}
+              {item.worktree && <Chip tone="muted">Agent worktree</Chip>}
             </div>
           </div>
           <button
@@ -604,7 +604,7 @@ export function DetailSheet({
                 <ul className="grid max-h-56 grid-cols-1 gap-1.5 overflow-y-auto sm:grid-cols-2">
                   {mcp.perProject.map((p) => (
                     <li key={p.projectId} className="flex items-center justify-between gap-2 rounded-control bg-raised px-2.5 py-1.5 text-body">
-                      <span className="truncate text-ink">{p.projectName}</span>
+                      <span title={p.projectName} className="truncate text-ink">{p.projectName}</span>
                       <Chip tone={p.on ? "good" : "muted"}>{p.on ? "On" : "Off"}</Chip>
                     </li>
                   ))}
@@ -619,7 +619,7 @@ export function DetailSheet({
             <ul className="space-y-1">
               {item.attachments.map((a) => (
                 <li key={a} className="mono flex items-center gap-2 text-ink">
-                  <span className="selectable min-w-0 flex-1 break-all">{a}</span>
+                  <PathText path={a} className="selectable min-w-0 flex-1" />
                   {item.kind === "skill" && item.editable && (
                     <button
                       type="button"

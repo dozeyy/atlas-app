@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "../controls";
 import { Dialog } from "../Dialog";
+import { PathText } from "./parts";
 import { deleteItem, errorText, whatGetsRemoved } from "../../lib/setup-actions";
 import type { SetupItem } from "../../lib/setup-types";
 
@@ -38,7 +39,11 @@ export function ConfirmDelete({ item, onCancel, onDone }: { item: SetupItem; onC
       }
     >
       <p className="text-body text-ink">{whatGetsRemoved(item)}</p>
-      {item.path && <p className="mono selectable mt-2 break-all text-ink-2">{item.path}</p>}
+      {item.path && (
+        <p className="selectable mt-2 text-ink-2">
+          <PathText path={item.path} />
+        </p>
+      )}
       <p className="mt-3">Atlas keeps a backup first, so you can undo this straight away.</p>
       {error && (
         <p role="alert" className="mt-3 rounded-control bg-danger-tint px-3 py-2 text-body text-danger">

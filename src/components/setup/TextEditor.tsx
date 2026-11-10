@@ -147,7 +147,8 @@ export function TextEditor({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       {above?.({ text, setText: (next) => editor.current?.setText?.(next) })}
-      <div ref={host} data-editor className="h-[min(440px,calc(var(--app-h)*0.52))] min-h-[260px] overflow-hidden rounded-card border border-line-strong bg-surface" />
+      {/* Gives up height (down to about eight lines) before the check message and Save are pushed out of a short window. */}
+      <div ref={host} data-editor className="h-[min(440px,calc(var(--app-h)*0.52))] min-h-[200px] overflow-hidden rounded-card border border-line-strong bg-surface" />
 
       <div aria-live="polite" className="min-h-6">
         {problems.length > 0 ? (

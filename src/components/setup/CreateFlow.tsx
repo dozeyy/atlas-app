@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "../controls";
 import { Dialog } from "../Dialog";
+import { PathText } from "./parts";
 import { TextEditor } from "./TextEditor";
 import { getBackend } from "../../lib/ipc";
 import { errorText } from "../../lib/setup-actions";
@@ -159,7 +160,7 @@ export function CreateFlow({ kind, onClose }: { kind: CreateKind; onClose: () =>
       ) : draft ? (
         <div className="flex flex-col gap-2">
           <p className="text-body text-ink-2">
-            Goes in <span className="mono selectable break-all text-ink">{draft.whereNote || draft.path}</span>
+            Goes in <PathText path={draft.whereNote || draft.path} className="selectable text-ink" />
           </p>
           <TextEditor
             initial={draft.text}
