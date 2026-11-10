@@ -95,6 +95,46 @@ fn measure_the_real_corpus() {
         }
     }
 
+    {
+        // The verdict table of the reviewer types, and findings per review.
+        let c = fx.db();
+        let mut st = c
+            .prepare(
+                "SELECT agent_type, COUNT(*), SUM(verdict='pass'), SUM(verdict='findings'), SUM(verdict='partial'), SUM(verdict='other'),
+                        SUM(verdict IS NULL), SUM(verdict='findings' AND findings_n=0), SUM(verdict='findings'), SUM(findings_n)
+                 FROM agent_runs WHERE agent_type IN ('verifier','code-reviewer','design-reviewer') GROUP BY 1",
+            )
+            .unwrap();
+        for r in st
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, (1..=9).map(|i| r.get::<_, Option<i64>>(i).map(|v| v.unwrap_or(0))).collect::<Result<Vec<_>, _>>()?))
+            })
+            .unwrap()
+        {
+            let (ty, v) = r.unwrap();
+            println!(
+                "  verdicts {ty}: runs {} pass {} findings {} partial {} other {} none {} | findings-verdict with 0 findings {} of {} | findings stored {}",
+                v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]
+            );
+        }
+    }
+    if let Ok(path) = std::env::var("ATLAS_REAL_DUMP") {
+        // Ids and verdict columns only (no text): lets a script look at the reports behind them.
+        use std::io::Write;
+        let c = fx.db();
+        let mut st = c
+            .prepare("SELECT session_id, agent_id, agent_type, ifnull(verdict_word,''), ifnull(verdict,''), findings_n FROM agent_runs ORDER BY 1,2")
+            .unwrap();
+        let mut f = std::fs::File::create(path).unwrap();
+        for r in st
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, i64>(5)?)))
+            .unwrap()
+        {
+            let (s, a, t, w, v, n) = r.unwrap();
+            writeln!(f, "{s}\t{a}\t{t}\t{w}\t{v}\t{n}").unwrap();
+        }
+    }
+
     let t = Instant::now();
     let sc = fx.engine.agent_scorecard(&ScorecardArgs::default()).unwrap();
     println!("scorecard: {:.0} ms, {} runs, {} types", t.elapsed().as_secs_f64() * 1000.0, sc.total_runs, sc.types.len());

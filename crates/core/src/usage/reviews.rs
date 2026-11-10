@@ -216,8 +216,13 @@ fn read_label(line: &str, start: usize, end: usize, is_verdict: bool) -> Option<
     }
     let ws = words(rest);
     // "Verdict: PASS | FAIL" / "PASS or FAIL": a template or a choice, not a verdict.
-    let classes: Vec<Verdict> = (0..ws.len()).filter_map(|i| verdict_word_at(&ws, i)).map(|(_, c, _)| c).collect();
-    if classes.iter().any(|c| *c != classes[0]) && (rest.contains('|') || rest.contains('/') || up.contains(" OR ")) {
+    // Only the first sentence is checked: "VERDICT: pass. No Critical or High findings." is a verdict.
+    // ... and not what follows a bracket or a semicolon ("VERDICT: pass (nothing Critical or High; ...)").
+    let clause = rest.split(". ").next().unwrap_or(rest);
+    let clause = clause.split([';', '(']).next().unwrap_or(clause);
+    let clause_ws = words(clause);
+    let classes: Vec<Verdict> = (0..clause_ws.len()).filter_map(|i| verdict_word_at(&clause_ws, i)).map(|(_, c, _)| c).collect();
+    if classes.iter().any(|c| *c != classes[0]) && (clause.contains('|') || clause.contains('/') || clause.to_ascii_uppercase().contains(" OR ")) {
         return None;
     }
     let mut seen = 0;
@@ -336,15 +341,105 @@ fn status_verdict(text: &str) -> Option<VerdictLine> {
                 }
                 "DONE" => {
                     let sep = after.trim_start();
-                    let after_sep = sep.strip_prefix([':', '-', '\u{2014}', '\u{2013}', '.', ',', ';'])?;
-                    let (word, class, _) = lead_verdict(after_sep.trim_start_matches([' ', '-', '\u{2014}', '\u{2013}', '*']))?;
-                    mk(word, class)
+                    // "STATUS: done (all six criteria pass; real sign-in is untested)".
+                    let after_sep = sep.strip_prefix([':', '-', '\u{2014}', '\u{2013}', '.', ',', ';', '('])?;
+                    let clause = after_sep.trim_start_matches([' ', '-', '\u{2014}', '\u{2013}', '*']);
+                    if let Some((word, class, _)) = lead_verdict(clause) {
+                        return mk(word, class);
+                    }
+                    any_sentence_all_pass(clause).then(|| VerdictLine { word: "PASS".into(), class: Verdict::Pass, status: true })
                 }
                 _ => None,
             }
         })();
     }
     out
+}
+
+/// A clause that says everything passed: "All 7 criteria PASS", "Every claim passes", "all three
+/// modules passed on ...", "overall pass". Only at the head of the clause; "checks 1, 2 and 4 pass,
+/// check 3 is partial" and "all fail_case.rs tests" say no such thing.
+fn all_pass_clause(s: &str) -> bool {
+    // The first sentence only.
+    let sentence = strip_code(s);
+    let sentence = sentence.split(". ").next().unwrap_or("");
+    let mut ws: Vec<String> = sentence.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).take(13).map(str::to_ascii_lowercase).collect();
+    // "The three modules PASS ..." reads as "all three modules".
+    if ws.first().is_some_and(|w| w == "the")
+        && ws.get(1).is_some_and(|w| matches!(w.as_str(), "two" | "three" | "four" | "five" | "six" | "seven" | "eight" | "nine" | "ten") || w.parse::<u8>().is_ok())
+    {
+        ws.remove(0);
+        ws.insert(0, "all".to_string());
+    }
+    // "All checks pass except 3" and "every test passes but one" are not everything passing.
+    if ws.iter().any(|w| matches!(w.as_str(), "except" | "but" | "apart" | "besides" | "only")) {
+        return false;
+    }
+    let passes = |w: Option<&String>| w.is_some_and(|w| matches!(w.as_str(), "pass" | "passed" | "passes"));
+    match ws.first().map(String::as_str) {
+        // "Overall pass rate was 80%" and "Overall pass/fail per criterion" are not verdicts.
+        Some("overall") => passes(ws.get(1)) && !ws.get(2).is_some_and(|w| matches!(w.as_str(), "rate" | "fail" | "or" | "and" | "count" | "percent" | "ratio" | "per")),
+        // The first pass word, with nothing negative before it ("every CI run on all four heads
+        // passed"), and not "pass rate".
+        Some("all" | "every" | "everything") => (1..ws.len()).find(|i| passes(ws.get(*i))).is_some_and(|p| {
+            !ws[1..p].iter().any(|w| matches!(w.as_str(), "not" | "never" | "fail" | "failed" | "fails" | "partial" | "partly" | "cannot" | "unable"))
+                && !ws.get(p + 1).is_some_and(|w| matches!(w.as_str(), "rate" | "percent" | "ratio"))
+        }),
+        _ => false,
+    }
+}
+
+/// `all_pass_clause` over the first three sentences of a STATUS line's clause, none of which may
+/// say something failed or is partial ("Every item passes. Two things need your attention.").
+fn any_sentence_all_pass(clause: &str) -> bool {
+    let sentences: Vec<&str> = clause.split(". ").take(3).collect();
+    let negative = |s: &str| {
+        s.to_ascii_lowercase().split(|c: char| !c.is_ascii_alphabetic()).any(|w| matches!(w, "fail" | "failed" | "fails" | "failing" | "partial" | "blocked" | "cannot" | "unable"))
+    };
+    sentences.iter().any(|s| all_pass_clause(s.trim_start_matches(|c: char| !c.is_alphabetic()))) && !sentences.iter().any(|s| negative(s))
+}
+
+/// The headline of a final text: its first line (or the line after a bare `STATUS: done`) when it
+/// opens with PASS / FAIL, or says everything passed. Reviewers and verifiers often state the result
+/// as the first thing they write and never label it ("**PASS for 1.21 and 1.20.**", "Every claim
+/// passes.", "All three criteria passed on 3149."). A weak verdict, like one read from a STATUS line.
+fn headline_verdict(text: &str) -> Option<VerdictLine> {
+    let mut lines = visible_lines(text).map(str::trim).filter(|l| !l.is_empty());
+    let mut first = lines.next()?;
+    let is_status = |l: &str| l.trim_start_matches(|c: char| !is_word_char(c)).get(..6).is_some_and(|h| h.eq_ignore_ascii_case("status"));
+    if is_status(first) {
+        first = lines.next()?;
+        if is_status(first) {
+            return None;
+        }
+    }
+    let plain = strip_code(first);
+    let mk = |word: &str, class| Some(VerdictLine { word: word.to_string(), class, status: true });
+    if let Some((word, class, _)) = lead_verdict(plain.trim_start_matches(|c: char| !c.is_alphabetic()))
+        && matches!(word, "PASS" | "FAIL")
+    {
+        return mk(word, class);
+    }
+    let head = plain.trim_start_matches(|c: char| !c.is_alphabetic());
+    if all_pass_clause(head) || head.get(..8).is_some_and(|h| h.eq_ignore_ascii_case("merge ok")) {
+        return mk("PASS", Verdict::Pass);
+    }
+    // A scored report: "SCORE 95/100: PASS", "Score: ... = 83. FAIL (needs 95)": one PASS or FAIL in
+    // capitals on the first line.
+    if plain.to_ascii_lowercase().contains("score") || plain.contains(" = ") {
+        let caps: Vec<&str> = plain.split(|c: char| !c.is_ascii_alphabetic()).filter(|w| matches!(*w, "PASS" | "FAIL")).collect();
+        if let [one] = caps.as_slice() {
+            return mk(one, classify_word(one));
+        }
+    }
+    // "Re-check of 581b3d8: pass." : the first sentence ends with the verdict after a colon.
+    let unbold = plain.replace("**", "");
+    let sentence = unbold.split(". ").next().unwrap_or(&unbold);
+    let (lead, last) = sentence.rsplit_once(':')?;
+    let last = last.trim_matches(|c: char| !c.is_ascii_alphabetic());
+    (lead.chars().count() <= 80 && (last.eq_ignore_ascii_case("pass") || last.eq_ignore_ascii_case("fail")))
+        .then(|| mk(&last.to_ascii_uppercase(), classify_word(&last.to_ascii_uppercase())))
+        .flatten()
 }
 
 /// The verdict a final text states: the last line with a `Verdict` or `Overall` label and a
@@ -364,7 +459,7 @@ pub fn parse_verdict(text: &str) -> Option<VerdictLine> {
             }
         }
     }
-    found.or_else(|| status_verdict(text))
+    found.or_else(|| status_verdict(text)).or_else(|| headline_verdict(text))
 }
 
 // ---------------------------------------------------------------- finding lines (D8)
@@ -424,7 +519,7 @@ enum Label {
 
 fn has_section_word(s: &str) -> bool {
     let u = s.to_ascii_uppercase();
-    u.contains("FINDINGS") || u.contains("ISSUES") || u.contains("PROBLEMS")
+    u.contains("FINDINGS") || u.contains("ISSUES") || u.contains("PROBLEMS") || u.contains("DEFECTS")
 }
 
 fn all_caps_label(s: &str) -> bool {
@@ -496,7 +591,7 @@ fn leading_severity(line: &str, allow_bare: bool) -> Option<(&'static str, &str)
         s = r;
         separated = true;
     }
-    s = s.trim_start_matches(['*', '_', ' ', ':', '-', ')', ']']);
+    s = s.trim_start_matches(['*', '_', ' ', ':', '-', ')', ']', ',', '\u{b7}']);
     if !(opened || closed || separated || allow_bare) {
         return None;
     }
@@ -545,13 +640,178 @@ fn clean_text(s: &str) -> String {
 /// measurement test; nothing else reads it).
 pub static MASK_DROPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// A severity heading on a line of its own: "**High**", "### Medium", "Critical:", "Low (3)".
+fn severity_heading(line: &str) -> Option<&'static str> {
+    let t = line.trim_start_matches(['#', '*', '_', ' ']).trim_end_matches(['*', '_', ' ', ':']);
+    let word_len = t.bytes().take_while(u8::is_ascii_alphabetic).count();
+    let sev = severity_of(&t[..word_len])?;
+    let rest = t[word_len..].trim().trim_matches(['*', '_', ':']).trim();
+    let tail_ok = rest.is_empty()
+        || (rest.starts_with('(') && rest.ends_with(')') && rest.len() <= 12)
+        || matches!(rest.to_ascii_lowercase().as_str(), "findings" | "severity" | "issues" | "priority");
+    tail_ok.then_some(sev)
+}
+
+/// An item that opens a findings list of its own: "4. **Top 5 defects:**".
+fn item_section_label(body: &str) -> bool {
+    let t = body.trim_matches(['*', '_', ' ']);
+    t.ends_with(':') && t.chars().count() <= 60 && has_section_word(t)
+}
+
+/// `path/file.ext:123` (a line or a range) as the first word of a segment.
+fn looks_like_location(seg: &str) -> bool {
+    let tok = seg.trim_matches(['`', '*', '_', ' ']).split_whitespace().next().unwrap_or("");
+    let tok = tok.trim_matches('`');
+    let Some((path, line)) = tok.rsplit_once(':') else { return false };
+    (path.contains('.') || path.contains('/'))
+        && path.chars().any(char::is_alphabetic)
+        && line.starts_with(|c: char| c.is_ascii_digit())
+        && line.chars().all(|c| c.is_ascii_digit() || matches!(c, '-' | ','))
+}
+
+/// "path:line | category | text" (the reviewer's pipe layout): the severity if a segment is one, and
+/// the other segments after the location as the text.
+fn pipe_finding(body: &str) -> Option<(Option<&'static str>, String)> {
+    if body.starts_with('|') || !body.contains(" | ") {
+        return None;
+    }
+    let segs: Vec<&str> = body.split(" | ").map(str::trim).collect();
+    let loc = segs.iter().position(|s| looks_like_location(s))?;
+    let mut severity = None;
+    let mut parts: Vec<&str> = Vec::new();
+    for (i, s) in segs.iter().enumerate() {
+        let bare = s.trim_matches(['*', '_', ' ', '`']);
+        if let Some(sev) = severity_of(bare) {
+            severity = severity.or(Some(sev));
+        } else if i > loc && !bare.is_empty() {
+            parts.push(s);
+        }
+    }
+    let text = parts.join(": ");
+    says_something(&text).then_some((severity, text))
+}
+
+/// Findings given as a JSON array (`[{"file","line","summary","failure_scenario"}, ...]`) in a code
+/// fence. Whole-array first, else one object per line.
+fn json_findings(text: &str) -> Vec<(Option<&'static str>, String)> {
+    let mut blocks: Vec<String> = Vec::new();
+    let mut cur: Option<String> = None;
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.starts_with("```") || line.starts_with("~~~") {
+            match cur.take() {
+                Some(b) => blocks.push(b),
+                None => cur = Some(String::new()),
+            }
+        } else if let Some(b) = cur.as_mut() {
+            b.push_str(raw);
+            b.push('\n');
+        }
+    }
+    let mut out = Vec::new();
+    for b in blocks {
+        let t = b.trim();
+        if !t.starts_with('[') {
+            continue;
+        }
+        let objects: Vec<serde_json::Value> = match serde_json::from_str::<Vec<serde_json::Value>>(t) {
+            Ok(v) => v,
+            Err(_) => t
+                .lines()
+                .filter_map(|l| serde_json::from_str::<serde_json::Value>(l.trim().trim_end_matches(',')).ok())
+                .collect(),
+        };
+        for o in objects {
+            let Some(summary) = ["summary", "title", "description", "text", "finding", "issue"].iter().find_map(|k| o.get(*k).and_then(|v| v.as_str())) else {
+                continue;
+            };
+            let from_field = o.get("severity").and_then(|v| v.as_str()).and_then(|s| severity_of(s.trim()));
+            let (sev, rest) = match leading_severity(summary.trim(), true) {
+                Some((s, rest)) => (from_field.or(Some(s)), rest),
+                None => (from_field, summary.trim()),
+            };
+            out.push((sev, rest.to_string()));
+        }
+    }
+    out
+}
+
+/// A finding that is too long is cut at a word end rather than lost, when its severity says it is
+/// one (a loose item that long is prose).
+fn cut(text: &str) -> String {
+    if text.chars().count() <= Thresholds::FINDING_MAX_CHARS {
+        return text.to_string();
+    }
+    let head: String = text.chars().take(Thresholds::FINDING_MAX_CHARS - 3).collect();
+    let end = head.rfind(' ').filter(|i| *i > head.len() / 2).unwrap_or(head.len());
+    format!("{}...", head[..end].trim_end())
+}
+
+/// The first "Defect:" / "Problem:" / "Issue:" detail line under the item at `i`.
+fn defect_under(lines: &[&str], i: usize) -> Option<String> {
+    let base = indent_of(lines[i]);
+    for raw in &lines[i + 1..] {
+        if raw.trim().is_empty() {
+            continue;
+        }
+        if indent_of(raw) <= base {
+            return None;
+        }
+        let (_, body) = strip_bullet(raw.trim());
+        let t = body.trim_start_matches(['*', '_', ' ']);
+        for label in ["defect", "problem", "issue"] {
+            if t.len() > label.len() && t.is_char_boundary(label.len()) && t[..label.len()].eq_ignore_ascii_case(label) {
+                let after = t[label.len()..].trim_start_matches(['*', '_', ' ']);
+                if let Some(r) = after.strip_prefix(':') {
+                    return Some(r.trim_start_matches(['*', '_', ' ']).to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 /// The finding lines of a final text (D8), already masked and bounded. A line the secret mask
-/// would change is dropped entirely, never stored half-masked.
+/// would change is dropped entirely, never stored half-masked. The layouts read: severity-led lines
+/// and loose items under a findings heading, items under a severity heading ("**High**" then
+/// "1. `path:line` ..."), "path:line | category | text" lines, and a JSON array in a code fence.
 pub fn finding_lines(text: &str) -> Vec<Finding> {
     let mut out: Vec<Finding> = Vec::new();
+    // `structured`: the line is known to be a finding (a severity, a location row, a JSON object),
+    // so one that is too long is cut; a loose item that long is prose and is dropped.
+    let push = |severity: Option<&'static str>, text: String, structured: bool, out: &mut Vec<Finding>| -> bool {
+        let text = clean_text(&text);
+        let n = text.chars().count();
+        if n < Thresholds::FINDING_MIN_CHARS || (!structured && n > Thresholds::FINDING_MAX_CHARS) {
+            return true;
+        }
+        let text = cut(&text);
+        if mask_secrets(&text).as_ref() != text {
+            MASK_DROPPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return true;
+        }
+        out.push(Finding { severity, text });
+        out.len() < Thresholds::MAX_FINDINGS_PER_RUN
+    };
+
+    let json = json_findings(text);
+    if !json.is_empty() {
+        for (sev, t) in json {
+            if !push(sev, t, true, &mut out) {
+                break;
+            }
+        }
+        return out;
+    }
+
+    let lines: Vec<&str> = text.lines().collect();
     let mut in_fence = false;
     let mut in_section = false;
-    for raw in text.lines() {
+    // The indent range loose items of the open section may have: top level for a heading,
+    // one level deeper for a list item that is itself the label.
+    let mut item_range = 0..2usize;
+    let mut heading_sev: Option<&'static str> = None;
+    for (i, raw) in lines.iter().enumerate() {
         let line = raw.trim();
         if line.starts_with("```") || line.starts_with("~~~") {
             in_fence = !in_fence;
@@ -560,43 +820,74 @@ pub fn finding_lines(text: &str) -> Vec<Finding> {
         if in_fence || line.is_empty() {
             continue;
         }
+        let indent = indent_of(raw);
         let (is_item, body) = strip_bullet(line);
         if !is_item {
+            if let Some(sev) = severity_heading(line) {
+                heading_sev = Some(sev);
+                in_section = false;
+                continue;
+            }
             match classify_label(line) {
                 Label::Findings => {
                     in_section = true;
+                    item_range = 0..2;
+                    heading_sev = None;
                     continue;
                 }
                 Label::Other => {
                     in_section = false;
+                    heading_sev = None;
                     continue;
                 }
                 Label::NotALabel => {}
             }
+        } else if item_section_label(body) {
+            in_section = true;
+            item_range = indent + 1..indent + 5;
+            heading_sev = None;
+            continue;
+        } else if in_section && indent < item_range.start && {
+            // "5. **Summary:**": another item-style label at the section's own level ends it.
+            let t = body.trim_matches(['*', '_', ' ']);
+            t.ends_with(':') && t.chars().count() <= 60
+        } {
+            in_section = false;
+            continue;
+        }
+        if let Some((sev, t)) = pipe_finding(body) {
+            if !push(sev, t, true, &mut out) {
+                break;
+            }
+            continue;
         }
         let (severity, rest) = match leading_severity(body, is_item) {
-            Some((sev, rest)) => (Some(sev), rest),
-            // A loose item under a findings heading is a finding only at the top level, and only
-            // when it says something: a nested "Fix: ..." / "Where: ..." line is detail of the
-            // finding above it, and a bare file reference names no problem (measured on a real
-            // corpus: 80 % of loose items were such lines).
-            None if in_section && is_item && indent_of(raw) < 2 && !is_detail_line(body) => (None, body),
-            None => continue,
+            Some((sev, rest)) => (Some(sev), rest.to_string()),
+            None if is_item && !is_detail_line(body) && (in_section && item_range.contains(&indent) || heading_sev.is_some() && indent < 2) => {
+                let sev = if in_section && item_range.contains(&indent) { None } else { heading_sev };
+                let own = clean_text(body);
+                // An item that is only a location takes the problem from its "Defect:" detail.
+                let rest = if !says_something(&own) {
+                    match defect_under(&lines, i) {
+                        Some(d) => format!("{own} - {d}"),
+                        None => own,
+                    }
+                } else {
+                    own
+                };
+                (sev, rest)
+            }
+            None => {
+                if indent < 2 {
+                    heading_sev = None;
+                }
+                continue;
+            }
         };
-        let text = clean_text(rest);
-        if severity.is_none() && !says_something(&text) {
+        if severity.is_none() && !says_something(&clean_text(&rest)) {
             continue;
         }
-        let n = text.chars().count();
-        if !(Thresholds::FINDING_MIN_CHARS..=Thresholds::FINDING_MAX_CHARS).contains(&n) {
-            continue;
-        }
-        if mask_secrets(&text).as_ref() != text {
-            MASK_DROPPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            continue;
-        }
-        out.push(Finding { severity, text });
-        if out.len() >= Thresholds::MAX_FINDINGS_PER_RUN {
+        if !push(severity, rest, severity.is_some(), &mut out) {
             break;
         }
     }
@@ -910,8 +1201,21 @@ mod verdict {
         // A verdict word in the line counts when it is the only kind.
         assert_eq!(st("STATUS: done - PASS"), Some(("PASS".into(), Verdict::Pass, true)));
         assert_eq!(st("STATUS: done: FAIL (see item 2)"), Some(("FAIL".into(), Verdict::Findings, true)));
+        // "done" followed by a clause that says everything passed is that verdict.
+        assert_eq!(st("STATUS: done. All 4 criteria PASS."), Some(("PASS".into(), Verdict::Pass, true)));
+        assert_eq!(st("STATUS: done: every claim passes"), Some(("PASS".into(), Verdict::Pass, true)));
+        assert_eq!(st("STATUS: done. All fail_case.rs tests were renamed"), None);
+        assert_eq!(st("STATUS: done (all six criteria pass; real sign-in is untested, see UNVERIFIED)"), Some(("PASS".into(), Verdict::Pass, true)));
+        assert_eq!(st("STATUS: done. Every item PASS on jar v3 (SHA-256 abc)"), Some(("PASS".into(), Verdict::Pass, true)));
+        assert_eq!(st("STATUS: done. The three modules PASS on everything I could check; one caveat"), Some(("PASS".into(), Verdict::Pass, true)));
+        assert_eq!(st("STATUS: done. All checks pass except check 3"), None);
+        assert_eq!(st("STATUS: done. Every CI run on all four expected heads passed. Two things need your attention."), Some(("PASS".into(), Verdict::Pass, true)));
+        assert_eq!(st("STATUS: done. The delta works end to end. All checks pass and no source was edited."), Some(("PASS".into(), Verdict::Pass, true)));
+        assert_eq!(st("STATUS: done. All checks pass. Check 3 failed on the second run."), None);
+        assert_eq!(st("STATUS: done. Every time I ran it the tests failed, then the pass rate rose"), None);
+        assert_eq!(st("STATUS: done. All of F1 through F9 and G1 through G4 pass. Both mutations made their tests fail."), None);
+        assert_eq!(st("STATUS: done. Criteria 1, 2, 3 and 4 pass. Criterion 5 is a partial pass"), None);
         // A verdict word later in the sentence, in a path or in a code span is no verdict.
-        assert_eq!(st("STATUS: done. All 4 criteria PASS."), None);
         assert_eq!(st("STATUS: done - added tests/fail_case.rs"), None);
         assert_eq!(st("STATUS: done - fixed the merge conflict"), None);
         assert_eq!(st("STATUS: done - wrapped it in a code block"), None);
@@ -924,6 +1228,37 @@ mod verdict {
         // A Verdict line wins over the status line, and is not "from status".
         assert_eq!(st("STATUS: partial\nVERDICT: PASS"), Some(("PASS".into(), Verdict::Pass, false)));
         assert_eq!(st("Verdicts are listed below"), None);
+    }
+
+    #[test]
+    fn an_unlabelled_headline_states_the_verdict() {
+        let st = |t: &str| parse_verdict(t).map(|x| (x.word, x.class, x.status));
+        let pass = Some(("PASS".to_string(), Verdict::Pass, true));
+        assert_eq!(st("**PASS for 1.21 and 1.20.**\n\nEvidence below."), pass);
+        assert_eq!(st("Every claim passes.\n\n1. **PASS.** a\n2. **PASS.** b"), pass);
+        assert_eq!(st("All three criteria passed on 3149.\nmore"), pass);
+        assert_eq!(st("STATUS: done\n\n**PASS** - the fix holds"), pass);
+        assert_eq!(st("FAIL: the cache is never flushed\nmore"), Some(("FAIL".to_string(), Verdict::Findings, true)));
+        // Only the opening line counts; a per-criterion list, a mixed result or a path is none.
+        assert_eq!(st("Checks ran against the build.\n\n1. **PASS.** a\n2. **PASS.** b"), None);
+        assert_eq!(st("Checks 1, 2 and 4 passed. Check 3 is partial.\nmore"), None);
+        assert_eq!(st("pass_through.rs was reviewed\nmore"), None);
+        assert_eq!(st("STATUS: done\nSTATUS: done"), None);
+        assert_eq!(st("**Re-check of 581b3d8: pass.** All four fixes are in the code."), pass);
+        assert_eq!(st("**SCORE 95/100: PASS** (borderline, pass mark 95). The head is f9a8.\nmore"), pass);
+        assert_eq!(st("**Unit A: Visual 24 / Function 24 = 95, PASS**\nMust-fix: none."), pass);
+        assert_eq!(st("Compare a = b, PASS and FAIL both appear"), None);
+        assert_eq!(st("**Score: Visual 19/25 = 83. FAIL (needs 95).** No auto-reject."), Some(("FAIL".to_string(), Verdict::Findings, true)));
+        assert_eq!(st("Score: 4/10\n1. dealer_full.png: the torso is a rigid tube"), None);
+        // A label line whose first sentence says pass and whose second names severities is a verdict.
+        assert_eq!(
+            parse_verdict("VERDICT: pass. There are no Critical or High findings. The findings below are Medium and Low.").map(|x| x.class),
+            Some(Verdict::Pass)
+        );
+        assert_eq!(st("MERGE OK. I found no Critical or High issues.\nmore"), pass);
+        assert_eq!(parse_verdict("**VERDICT: pass** (nothing Critical or High; the Medium items below do not block)").map(|x| x.class), Some(Verdict::Pass));
+        // A labelled verdict still beats the headline.
+        assert_eq!(st("PASS so far\n\nVerdict: FAIL"), Some(("FAIL".to_string(), Verdict::Findings, false)));
     }
 
     #[test]
@@ -1015,11 +1350,77 @@ mod findings {
     #[test]
     fn short_long_fenced_and_masked_lines_are_dropped() {
         let long = format!("- High: {}", "x".repeat(401));
+        let loose = format!("- {}", "word ".repeat(100));
         let t = format!(
-            "FINDINGS:\n- High: too short\n{long}\n```\n- High: this one is inside a code fence\n```\n- High: key is sk-ant-api03-AbCdEf0123456789AbCdEf0123456789\n- High: this one is fine and long enough\n"
+            "FINDINGS:\n- High: too short\n{long}\n{loose}\n```\n- High: this one is inside a code fence\n```\n- High: key is sk-ant-api03-AbCdEf0123456789AbCdEf0123456789\n- High: this one is fine and long enough\n"
         );
         let got = texts(&t);
-        assert_eq!(got, vec![(Some("High"), "this one is fine and long enough".to_string())]);
+        // A severity-led line that is too long is cut, not lost; a loose one that long is prose.
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert_eq!(got[0].0, Some("High"));
+        assert!(got[0].1.ends_with("...") && got[0].1.chars().count() <= Thresholds::FINDING_MAX_CHARS);
+        assert_eq!(got[1], (Some("High"), "this one is fine and long enough".to_string()));
+    }
+
+    #[test]
+    fn a_json_array_in_a_fence_gives_one_finding_per_object() {
+        let t = "VERDICT: FIX-REQUIRED\n\n```json\n[\n  {\"file\": \"src/net.rs\", \"line\": 41, \"summary\": \"High: the retry loop never backs off\", \"failure_scenario\": \"server down\"},\n  {\"file\": \"src/db.rs\", \"line\": 7, \"severity\": \"medium\", \"summary\": \"the pool is never closed on shutdown\"}\n]\n```\n";
+        assert_eq!(
+            texts(t),
+            vec![
+                (Some("High"), "the retry loop never backs off".to_string()),
+                (Some("Medium"), "the pool is never closed on shutdown".to_string()),
+            ]
+        );
+        // A fence with something else in it is not findings.
+        assert!(texts("```json\n{\"ok\": true}\n```\n").is_empty());
+        // One object per line, no outer array.
+        let t = "```\n[\n{\"summary\": \"the first object stands alone\"},\n{\"summary\": \"the second object stands alone\"}\n]\n```";
+        assert_eq!(texts(t).len(), 2);
+    }
+
+    #[test]
+    fn path_line_pipe_rows_are_findings() {
+        // A long location row is cut, not lost.
+        let row = format!("- src/big.rs:3 | logic | {}", "a long explanation ".repeat(40));
+        let got = texts(&row);
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!(got[0].1.ends_with("...") && got[0].1.chars().count() <= Thresholds::FINDING_MAX_CHARS);
+        let t = "VERDICT: FIX-REQUIRED\n\nsrc/net.rs:41 | High | the retry loop never backs off\n- crates/core/src/db.rs:7-9 (pool) | correctness | the pool is never closed on shutdown\n| # | Criterion | Verdict |\n|---|---|---|\n| 1 | src/a.rs:5 | PASS |\nplain prose | with a pipe but no location\n";
+        assert_eq!(
+            texts(t),
+            vec![
+                (Some("High"), "the retry loop never backs off".to_string()),
+                (None, "correctness: the pool is never closed on shutdown".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn items_under_a_severity_heading_take_its_severity() {
+        let t = "VERDICT: FIX-REQUIRED\n\n**High**\n1. `src/net.rs:41` the retry loop never backs off\n2. `src/db.rs:7` the pool is never closed on shutdown\n\n### Low\n- naming of the helper is inconsistent across files\n\nThat is everything I found.\n- a bullet after the prose that is not a finding\n";
+        assert_eq!(
+            texts(t),
+            vec![
+                (Some("High"), "`src/net.rs:41` the retry loop never backs off".to_string()),
+                (Some("High"), "`src/db.rs:7` the pool is never closed on shutdown".to_string()),
+                (Some("Low"), "naming of the helper is inconsistent across files".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn numbered_bold_severity_items_and_item_opened_sections() {
+        let t = "1. **High, `src/net.rs:41`.** The retry loop never backs off when the server is down.\n2. **Medium** \u{b7} `src/db.rs:7`: the pool is never closed on shutdown.\n\n4. **Top 2 defects:**\n   1. the parser accepts an empty name and then indexes it\n   2. `src/ui.rs:3`\n      - Defect: the dialog is never disposed\n   - Fix: dispose it\n5. **Summary:**\n   - this nested line is not a finding at all\n";
+        assert_eq!(
+            texts(t),
+            vec![
+                (Some("High"), "`src/net.rs:41`. The retry loop never backs off when the server is down.".to_string()),
+                (Some("Medium"), "`src/db.rs:7`: the pool is never closed on shutdown.".to_string()),
+                (None, "the parser accepts an empty name and then indexes it".to_string()),
+                (None, "`src/ui.rs:3` - the dialog is never disposed".to_string()),
+            ]
+        );
     }
 
     #[test]
