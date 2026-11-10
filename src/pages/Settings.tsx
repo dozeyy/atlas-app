@@ -466,8 +466,8 @@ export function Settings() {
         <Row label="Started in" tip="Time from launch to the first screen.">
           <span className="text-body text-ink-2">{info.firstPaintMs === null ? "Not measured" : `${info.firstPaintMs} ms`}</span>
         </Row>
-        <Row label="Privacy" tip="Atlas never sends your data anywhere. The only thing it asks the internet is whether a newer version exists.">
-          <span className="text-body text-ink-2">Stays on this computer</span>
+        <Row label="Privacy" tip="Atlas sends none of your chats or files anywhere. It goes online only to look for a new version and to load the Library.">
+          <span className="text-body text-ink-2">Your chats and files are not sent</span>
         </Row>
         {canUninstall && (
           <Row label="Uninstall" tip="Closes Atlas and asks whether to keep or remove its saved data. Your Claude Code chats are never touched.">

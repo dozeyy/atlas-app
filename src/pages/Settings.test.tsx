@@ -45,8 +45,8 @@ describe("Settings", () => {
     expect(screen.queryByRole("switch", { name: "Keep running when closed" })).not.toBeInTheDocument();
 
     await userEvent.click(within(rail).getByRole("button", { name: "About" }));
-    expect(screen.getByText("Privacy")).toHaveAttribute("title", expect.stringContaining("never sends your data"));
-    expect(screen.queryByText(/never sends your data/)).not.toBeInTheDocument();
+    expect(screen.getByText("Privacy")).toHaveAttribute("title", expect.stringContaining("sends none of your chats or files"));
+    expect(screen.queryByText(/sends none of your chats or files/)).not.toBeInTheDocument();
     expect(screen.getByText("Version")).toBeInTheDocument();
   });
 

@@ -133,12 +133,13 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
 function Privacy({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="Privacy" onClose={onClose} width={520} footer={<Close onClose={onClose} />}>
-      <Para>Your chats and files stay on this computer. No account, no analytics, no crash reports.</Para>
+      {/* Every word here was checked against the Rust side (update.rs, library.rs, setup/files.rs, connect.rs). Keep it that way. */}
+      <Para>Atlas has no account, no analytics and no crash reports.</Para>
       <Points
         items={[
-          { icon: Eye, title: "Reads", text: "Only the Claude folder you point it at." },
-          { icon: PencilSimple, title: "Writes", text: "Its own data, and an item only when you edit or remove it. A backup comes first." },
-          { icon: Globe, title: "Goes online", text: "Only to look for a new version and to fetch a skill you pick in the Library. None of your data is sent." },
+          { icon: Eye, title: "Reads", text: "Your Claude folder, and the Claude files inside your projects." },
+          { icon: PencilSimple, title: "Writes", text: "Its own data, what you change in your Claude files (backed up first), and the entry that connects Claude Code to Atlas." },
+          { icon: Globe, title: "Goes online", text: "Only to look for a new version, and to load the Library and what you install from it. Atlas sends none of your chats or files." },
         ]}
       />
     </Dialog>
