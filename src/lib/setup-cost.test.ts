@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { costWords, fmtUsd, isPerCall, itemHover, perMessage, rowFor, topRows, usdHover, weeklyTokens, windowLabel } from "./setup-cost";
+import { costWords, fmtUsd, isPerCall, itemHover, loadsWhere, perMessage, rowFor, topRows, usdHover, weeklyTokens, windowLabel } from "./setup-cost";
 import type { CostReport, CostRow } from "./setup-types";
 
 function row(over: Partial<CostRow>): CostRow {
@@ -83,6 +83,13 @@ describe("what an item shows", () => {
 
   it("says per message in compact tokens", () => {
     expect(perMessage(row({ tokens: 8804 }))).toBe("8.8k per message");
+  });
+
+  it("says where a ranking row loads, set against the every-chat headline", () => {
+    expect(loadsWhere({ global: true, loadsIn: "All chats" })).toBe("Every chat");
+    expect(loadsWhere({ global: false, loadsIn: "Chats in atlas" })).toBe("Only chats in atlas");
+    expect(loadsWhere({ global: false, loadsIn: "Chats that connect them" })).toBe("Only chats that connect them");
+    expect(loadsWhere({ global: false, loadsIn: "  " })).toBe("Some chats");
   });
 });
 

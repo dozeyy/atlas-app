@@ -104,6 +104,17 @@ export function titleCount(title: string): { label: string; count: string | null
   return m ? { label: m[1]!, count: m[2]! } : { label: title, count: null };
 }
 
+/**
+ * Where a ranking row loads, in words that set it against the headline ("loads in every chat"):
+ * "Every chat" for what the headline counts, "Only chats in atlas" / "Only chats that connect
+ * them" for what rides in some chats and so sits on top of it.
+ */
+export function loadsWhere(r: Pick<CostRow, "global" | "loadsIn">): string {
+  if (r.global) return "Every chat";
+  const where = r.loadsIn.trim();
+  return where ? `Only ${where.charAt(0).toLowerCase()}${where.slice(1)}` : "Some chats";
+}
+
 /** "8.8k per message" */
 export function perMessage(r: CostRow): string {
   return `${compact(r.tokens)} per message`;

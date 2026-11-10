@@ -1,4 +1,4 @@
-import { fmtUsd, rowTitle, titleCount, topRows, usdHover, weeklyTokens, windowLabel } from "../../lib/setup-cost";
+import { fmtUsd, loadsWhere, rowTitle, titleCount, topRows, usdHover, weeklyTokens, windowLabel } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
 import type { CostReport, SetupItem } from "../../lib/setup-types";
 import { MiniKind } from "./parts";
@@ -27,10 +27,14 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
       </h2>
       <p data-cost-headline title={total || undefined} className="mt-1 flex items-baseline gap-2 text-body text-ink-2">
         <span className="d d-tile text-ink">{compact(report.globalTokens)}</span>{" "}
-        tokens load with every message
+        tokens per message, in every chat
       </p>
 
-      <ol className="mt-3 space-y-2.5">
+      {/* The headline is what every chat carries with each message; the list ranks by the week
+          and says where each row loads. No second per-message figure sits on the surface: a row
+          that loads in some chats only can be bigger per message than the headline, and the two
+          read as a contradiction side by side. The exact per-message size is in each row's hover. */}
+      <ol aria-label={weekly ? `Biggest over the ${windowLabel(report)}` : "Biggest"} className="mt-3 space-y-2.5">
         {rows.map((r, i) => {
           const share = weeklyTokens(r) / max;
           const openable = onOpen && r.id !== null && known.has(r.id);
@@ -61,9 +65,7 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
                   <span className="text-caption text-ink-2">{weekly ? " a week" : " each"}</span>
                 </span>
               </div>
-              <p className="mt-0.5 truncate text-caption text-ink-2">
-                {r.loadsIn} - {compact(r.tokens)} per message
-              </p>
+              <p className="mt-0.5 truncate text-caption text-ink-2">{loadsWhere(r)}</p>
               <div aria-hidden="true" className="mt-1 h-1 overflow-hidden rounded-full bg-raised">
                 <div style={{ width: `${Math.max(3, Math.round(share * 100))}%` }} className="h-full rounded-full bg-accent/70" />
               </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Ring } from "../charts/Ring";
 import { getBackend } from "../../lib/ipc";
 import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
@@ -10,11 +10,15 @@ import type { SetupItem } from "../../lib/setup-types";
 import type { UsageRow } from "../../lib/usage-types";
 import { MiniKind } from "./parts";
 
-// A glance, not an inventory: the full lists are one tile away. These caps keep the panel short
-// enough that the whole Toolkit page fits a 1280x800 window beside the cost ranking. The dust
-// field holds about six rows of squares; past that it says how many more there are.
+// A glance, not an inventory: the full lists are one tile away. The favourites are capped, and
+// the unused show their first few names with the rest one press away.
 const TOP = 4;
-const DUST_CAP = 78;
+const NAMED = 8;
+
+/** One unused item: a small raised tag (control radius, never a pill) with its picture and name. */
+const TAG =
+  "inline-flex h-7 max-w-full items-center gap-1.5 rounded-control border border-transparent bg-raised pl-1 pr-2.5 text-caption font-medium text-ink transition-colors duration-[var(--dur-fast)]";
+const TAG_HOT = "hover:border-line-strong hover:text-accent-text";
 
 /**
  * Skills and agents joined to the last 30 days of real use, or null when the usage
@@ -63,19 +67,19 @@ export function useUsageRows(items: SetupItem[], reloadKey: number): UsageRow[] 
   return rows;
 }
 
-/** What a dust cell says on hover: its name, what it is, and when (if ever) it was last used. */
-function dustLine(it: SetupItem, r: UsageRow): string {
+/** What an unused item says on hover: its name, what it is, and when (if ever) it was last used. */
+function neverLine(it: SetupItem, r: UsageRow): string {
   const last = r.lastUsed ? `last used ${relativeTime(r.lastUsed)}` : "never used";
   return `${it.name} (${KIND_BY_ID[it.kind].singular}), ${last}`;
 }
 
 /**
- * Everything unused as a field of little squares: dozens fit in a handful of rows. Hover or
- * focus one to read its name in the line below; click to open it. Arrow keys walk the field
- * (one tab stop for the whole thing). Something added recently and not used since is never
- * used too: the uses are counted from the transcripts, so "too soon to tell" is never needed.
+ * Everything unused, by name: each one is its kind's picture and its name, A to Z, and opens
+ * when pressed. The first few show; "+12 more" lays out the rest in place. Something added
+ * recently and not used since is never used too: the uses are counted from the transcripts,
+ * so "too soon to tell" is never needed.
  */
-function DustField({
+function NeverList({
   never,
   byId,
   onOpen,
@@ -84,88 +88,54 @@ function DustField({
   byId: Map<string, SetupItem>;
   onOpen?: (id: string) => void;
 }) {
-  const [peek, setPeek] = useState<string | null>(null);
-  const field = useRef<HTMLDivElement>(null);
-  const shown = never.slice(0, DUST_CAP);
-  const hiddenCount = never.length - shown.length;
-
-  // Arrow keys move between squares; Up/Down pick the square nearest in the row above or below.
-  const onKey = (e: KeyboardEvent) => {
-    const keys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
-    if (!keys.includes(e.key)) return;
-    const cells = Array.from(field.current?.querySelectorAll<HTMLElement>("[data-dust]") ?? []);
-    const at = cells.indexOf(document.activeElement as HTMLElement);
-    if (at < 0) return;
-    e.preventDefault();
-    let next: HTMLElement | undefined;
-    if (e.key === "ArrowLeft") next = cells[at - 1];
-    else if (e.key === "ArrowRight") next = cells[at + 1];
-    else {
-      const here = cells[at]!.getBoundingClientRect();
-      const dir = e.key === "ArrowDown" ? 1 : -1;
-      const rows = cells.filter((c) => (c.getBoundingClientRect().top - here.top) * dir > 2);
-      const rowTop = rows.length ? (dir === 1 ? Math.min : Math.max)(...rows.map((c) => c.getBoundingClientRect().top)) : null;
-      next = rows
-        .filter((c) => Math.abs(c.getBoundingClientRect().top - (rowTop ?? 0)) < 2)
-        .sort((a, b) => Math.abs(a.getBoundingClientRect().left - here.left) - Math.abs(b.getBoundingClientRect().left - here.left))[0];
-    }
-    next?.focus();
-  };
-
-  const cell = (r: UsageRow, tab: boolean) => {
-    const it = byId.get(r.id)!;
-    const line = dustLine(it, r);
-    const look = "bg-chart-4/60 group-hover/cell:bg-chart-4 group-focus-visible/cell:bg-chart-4";
-    const face = (
-      <span
-        aria-hidden="true"
-        className={`block size-4 rounded-[5px] transition-[transform,background-color] duration-[var(--dur-fast)] group-hover/cell:scale-125 group-focus-visible/cell:scale-125 ${look}`}
-      />
-    );
-    const common = {
-      "data-dust": r.id,
-      title: line,
-      onMouseEnter: () => setPeek(line),
-      onMouseLeave: () => setPeek(null),
-      onFocus: () => setPeek(line),
-      onBlur: () => setPeek(null),
-      className: "group/cell flex size-[22px] shrink-0 items-center justify-center",
-    };
-    return onOpen ? (
-      <button key={r.id} type="button" aria-label={line} tabIndex={tab ? 0 : -1} onClick={() => onOpen(r.id)} {...common} className={`${common.className} cursor-pointer`}>
-        {face}
-      </button>
-    ) : (
-      <span key={r.id} role="img" aria-label={line} {...common}>
-        {face}
-      </span>
-    );
-  };
+  const [all, setAll] = useState(false);
+  const sorted = useMemo(
+    () => [...never].sort((a, b) => byId.get(a.id)!.name.localeCompare(byId.get(b.id)!.name, undefined, { numeric: true, sensitivity: "base" })),
+    [never, byId],
+  );
+  const shown = all ? sorted : sorted.slice(0, NAMED);
+  const rest = sorted.length - NAMED;
 
   return (
-    <div ref={field} onKeyDown={onKey}>
-      <div className="flex flex-wrap" data-dust-field>
-        {shown.map((r, i) => cell(r, i === 0))}
-        {hiddenCount > 0 && (
-          <span className="flex h-[22px] items-center pl-1.5 text-caption text-ink-2" title={`${hiddenCount} more never used, not drawn here`}>
-            +{hiddenCount}
-          </span>
-        )}
-      </div>
-      {never.length > 0 && (
-        <p aria-live="polite" className="mt-1.5 h-5 truncate text-caption text-ink-2">
-          {peek ?? "Gathering dust. Hover one to see which."}
-        </p>
+    <ul data-never-list className="flex flex-wrap gap-1.5">
+      {shown.map((r) => {
+        const it = byId.get(r.id)!;
+        const line = neverLine(it, r);
+        const face = (
+          <>
+            <MiniKind kind={it.kind} name={it.name} />
+            <span className="truncate">{it.name}</span>
+          </>
+        );
+        return (
+          <li key={r.id} className="min-w-0 max-w-full">
+            {onOpen ? (
+              <button type="button" data-never={r.id} title={line} onClick={() => onOpen(r.id)} className={`${TAG} ${TAG_HOT} press cursor-pointer`}>
+                {face}
+              </button>
+            ) : (
+              <span data-never={r.id} title={line} className={TAG}>
+                {face}
+              </span>
+            )}
+          </li>
+        );
+      })}
+      {rest > 0 && (
+        <li>
+          <button type="button" aria-expanded={all} onClick={() => setAll((v) => !v)} className={`${TAG} ${TAG_HOT} press cursor-pointer !bg-transparent !pl-2.5 !border-line text-ink-2`}>
+            {all ? "Show fewer" : `+${exact(rest)} more`}
+          </button>
+        </li>
       )}
-    </div>
+    </ul>
   );
 }
 
 /**
  * What gets used and what never does, over the last 30 days: a ring for how much of the
- * toolkit earns its place, the favourites beside it, and the unused as a field of dust you
- * can hover. Draws nothing at all when there is no data, so there is never a placeholder or
- * a "coming soon".
+ * toolkit earns its place, the favourites beside it, and the unused by name. Draws nothing
+ * at all when there is no data, so there is never a placeholder or a "coming soon".
  */
 export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | undefined; items: SetupItem[]; onOpen?: (id: string) => void }) {
   const model = useMemo(() => {
@@ -254,7 +224,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
           {never.length === 0 ? (
             <p className="text-body text-ink-2">Everything here has been used. Nice and tidy.</p>
           ) : (
-            <DustField never={never} byId={byId} onOpen={onOpen} />
+            <NeverList never={never} byId={byId} onOpen={onOpen} />
           )}
         </div>
       </div>
