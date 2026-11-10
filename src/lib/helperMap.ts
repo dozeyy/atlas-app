@@ -457,3 +457,73 @@ export function placePlate(layout: MapLayout, id: string, detail: string, view?:
   }
   return p;
 }
+
+// ---- names at rest ----------------------------------------------------------------------------
+// The map should read without pointing at anything: the helpers that did the most carry a short
+// name and their tokens beside them, wherever that covers nothing. The plate still holds the whole
+// name for every node.
+
+export interface RestLabel {
+  id: string;
+  /** Where the text starts (anchor "start") or ends (anchor "end"), in canvas pixels; it sits level with its node. */
+  x: number;
+  anchor: "start" | "end";
+  /** The name, shortened with "..." when it is long. */
+  name: string;
+  detail: string;
+}
+
+/** A resting name is one short line: longer ones end in "...". */
+export const REST_NAME_MAX = 22;
+/** At most this many helpers are named at rest, so a crowded map stays a picture, not a page. */
+export const REST_LIMIT = 8;
+const REST_CHAR_W = 6.6; // one 12 px semibold character, a little generous
+const REST_H = 30; // two lines: name and detail
+const REST_GAP = 8; // between a node and its name
+
+/** Cut a name to one short line. Never mid-air: no trailing space before the dots. */
+export function shortName(name: string, max = REST_NAME_MAX): string {
+  const n = name.trim();
+  return n.length <= max ? n : `${n.slice(0, max - 3).trimEnd()}...`;
+}
+
+/** The box a resting label takes, in canvas pixels (text is drawn at full size, so a zoomed-out canvas gives it more room). */
+export function restBox(l: RestLabel, y: number, zoom = 1): { x: number; y: number; w: number; h: number } {
+  const w = (Math.max(l.name.length, l.detail.length) * REST_CHAR_W) / zoom;
+  const h = REST_H / zoom;
+  return { x: l.anchor === "start" ? l.x : l.x - w, y: y - h / 2, w, h };
+}
+
+const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }, gap = 0) =>
+  a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+
+/**
+ * Which helpers carry their name at rest, and on which side. The biggest (by tokens) choose first;
+ * a name goes on the side away from the middle, else the other side, and is left off when either
+ * would touch a node, another name, the "Main chat" caption or the canvas edge.
+ */
+export function restLabels(layout: MapLayout, detailOf: (n: MapNode) => string, zoom = 1, limit = REST_LIMIT): RestLabel[] {
+  const cx = layout.width / 2;
+  const root = layout.nodes.find((n) => n.kind === "root");
+  // The caption under the main chat is taken ground.
+  const taken: { x: number; y: number; w: number; h: number }[] = root ? [{ x: root.x - 36 / zoom, y: root.y + root.r + 12, w: 72 / zoom, h: 24 / zoom }] : [];
+  const out: RestLabel[] = [];
+  const helpers = layout.nodes.filter((n) => n.kind === "helper").sort((a, b) => b.tokens - a.tokens || a.index - b.index);
+  for (const n of helpers) {
+    if (out.length >= limit) break;
+    const name = shortName(n.name);
+    const detail = detailOf(n);
+    const right = n.x >= cx;
+    for (const side of right ? (["start", "end"] as const) : (["end", "start"] as const)) {
+      const label: RestLabel = { id: n.id, x: side === "start" ? n.x + n.r + REST_GAP : n.x - n.r - REST_GAP, anchor: side, name, detail };
+      const box = restBox(label, n.y, zoom);
+      if (box.x < 4 || box.y < 4 || box.x + box.w > layout.width - 4 || box.y + box.h > layout.height - 4) continue;
+      if (layout.nodes.some((o) => o.id !== n.id && rectHitsCircle(box, o, 4))) continue;
+      if (taken.some((t) => overlaps(box, t, 4))) continue;
+      taken.push(box);
+      out.push(label);
+      break;
+    }
+  }
+  return out;
+}

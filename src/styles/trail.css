@@ -2159,7 +2159,8 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 .map-hit {
   fill: transparent;
 }
-/* A bubble wears the colour of how the helper ended; its icon is its model. */
+/* A helper is the same tile as its avatar in the list: its kind's icon (--c) on its kind's fill
+   (--cb), hollow when another helper started it. The dot on its corner (--o) is how it ended. */
 .map-body {
   transform-box: fill-box;
   transform-origin: center;
@@ -2180,27 +2181,40 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 .map-node.sel .map-dot {
   fill: color-mix(in srgb, var(--c) 34%, var(--surface));
 }
-.map-glyph {
-  fill: none;
-  stroke: var(--c, var(--ink-2));
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  pointer-events: none;
-}
 .map-icon {
   color: var(--c, var(--ink-2));
   pointer-events: none;
 }
-.map-glyph-fill {
-  fill: var(--c, var(--ink-2));
-  stroke: none;
+.map-back {
+  fill: var(--bg);
+}
+.map-tile {
+  fill: var(--cb);
+  stroke: color-mix(in srgb, var(--c) 28%, transparent);
+  stroke-width: 1;
+  transition: stroke var(--dur-fast) var(--ease-out);
+}
+.map-node.nested .map-tile {
+  fill: transparent;
+  stroke: var(--c);
+  stroke-width: 1.5;
+}
+.map-node:hover .map-tile,
+.map-node:focus-visible .map-tile,
+.map-node.sel .map-tile {
+  stroke: var(--c);
+}
+.map-outcome {
+  fill: var(--o);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+.map-node.root .map-icon {
+  color: var(--on-accent);
 }
 .map-node.root .map-dot {
   fill: var(--accent);
   stroke: var(--accent);
-}
-.map-node.root .map-glyph {
-  stroke: var(--on-accent);
 }
 .map-node.more .map-dot {
   stroke-dasharray: 3 3;
@@ -2235,6 +2249,26 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
 }
 .map-node.sel .map-name {
   fill: var(--ink);
+}
+/* A name at rest beside the biggest helpers; the plate takes over while its node is pointed at. */
+.map-rest {
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.map-rest .map-name {
+  fill: var(--ink);
+}
+.map-rest-detail {
+  font-size: 11px;
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.map-node:hover .map-rest,
+.map-node:focus-visible .map-rest {
+  opacity: 0;
 }
 /* The name plate: shown for the bubble pointed at or focused, placed clear of every other one. */
 .map-plate {
@@ -2278,9 +2312,6 @@ html[data-input="keyboard"] .rcpt-line-btn:focus-visible {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-}
-.map-legend-glyph .map-glyph {
-  stroke: var(--ink-2);
 }
 /* Enter: the lines draw out from the middle, then the dots pop in ring by ring. */
 .intro .map-link {

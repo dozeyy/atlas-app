@@ -1,9 +1,8 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, RefObject } from "react";
-import { MapGlyph } from "./MapGlyph";
 import { useIntro } from "../../lib/motion";
-import { layoutMap, MAIN_ID, pathTo, placePlate, ROOT_R, zoomFor, type MapNode, type Metric } from "../../lib/helperMap";
-import { agentLook } from "./helperKit";
+import { layoutMap, MAIN_ID, pathTo, placePlate, restLabels, ROOT_R, zoomFor, type MapNode, type Metric } from "../../lib/helperMap";
+import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, MainChatIcon, OUTCOMES } from "./helperKit";
 import { compact } from "../../lib/usage";
 import type { Outcome, Receipt } from "../../lib/types";
 
@@ -33,16 +32,13 @@ function useSize<T extends HTMLElement>(): [RefObject<T | null>, { width: number
   return [ref, size.width > 0 ? size : FALLBACK];
 }
 
-export const OUTCOME_LABEL: Record<Outcome, string> = { finished: "Finished", errored: "Errored", stopped: "Stopped" };
+export const OUTCOME_LABEL: Record<Outcome, string> = { finished: OUTCOMES.finished.label, errored: OUTCOMES.errored.label, stopped: OUTCOMES.stopped.label };
 
-/** The colour a node wears: how the helper ended where the transcript says, else neutral. */
+/** The colour of how a helper ended where the transcript says, else neutral: the dot on its corner. */
 export function outcomeColor(n: Pick<MapNode, "kind" | "outcome">): string {
   if (n.kind === "root") return "var(--accent)";
   if (n.kind === "more") return "var(--line-strong)";
-  if (n.outcome === "finished") return "var(--success)";
-  if (n.outcome === "errored") return "var(--danger)";
-  if (n.outcome === "stopped") return "var(--warning)";
-  return "var(--slate)";
+  return n.outcome ? OUTCOMES[n.outcome].color : "var(--slate)";
 }
 
 /** The one line under a name: the node's tokens and how it ended. */
@@ -52,14 +48,16 @@ export function nodeDetail(n: MapNode): string {
   return n.outcome ? `${tokens}, ${OUTCOME_LABEL[n.outcome].toLowerCase()}` : tokens;
 }
 
-/** A helper's look on the map: the same icon as its card in the list, by helper type. */
-const lookOf = (n: MapNode, types: Map<string, string | null>) => agentLook(types.get(n.thread?.agentId ?? "") ?? null);
+/** The side of a helper's tile: its bubble's width, a little in, so a square weighs what the circle did. */
+const tileSide = (n: MapNode) => Math.round(n.r * 1.8);
 
 /**
  * The helper map: the main chat in the middle, each helper hanging from the thread that started
- * it. A bubble wears its helper type's icon (the same as in the list) and the colour of how it ended; its size follows its
- * tokens. Names show only on a plate when a bubble is pointed at or focused, placed where it
- * covers no other bubble. A big tree grows past the pane and the pane scrolls.
+ * it. A helper is drawn as the same avatar it has in the list (its kind's icon on its kind's
+ * tile; hollow when another helper started it), sized by its tokens, with a dot on its corner for
+ * how it ended. The biggest helpers carry their name and tokens beside them wherever there is
+ * clear room; every node shows its whole name on a plate when pointed at or focused. The legend
+ * under the map names each kind that is on it. A big tree grows past the pane and the pane scrolls.
  */
 export function HelperMap({
   receipt,
@@ -83,8 +81,12 @@ export function HelperMap({
   // A tree bigger than the pane is shown a little smaller (names and plates stay full size).
   const zoom = useMemo(() => zoomFor(layout, size), [layout, size]);
   const lit = useMemo(() => pathTo(layout, hover ?? selected ?? MAIN_ID), [layout, hover, selected]);
-  const present = new Set(layout.nodes.map((n) => n.outcome).filter((o): o is Outcome => o !== null));
-  const looks = [...new Map(layout.nodes.filter((n) => n.kind === "helper").map((n) => lookOf(n, types)).map((l) => [l.label, l])).values()];
+  const labels = useMemo(() => new Map(restLabels(layout, (n) => `${compact(n.tokens)} tokens`, zoom).map((l) => [l.id, l])), [layout, zoom]);
+  const typeOf = (n: MapNode) => types.get(n.thread?.agentId ?? "") ?? null;
+  const helpers = layout.nodes.filter((n) => n.kind === "helper");
+  const present = new Set(helpers.map((n) => n.outcome).filter((o): o is Outcome => o !== null));
+  const kinds = new Set(helpers.map((n) => agentLook(typeOf(n)).kind));
+  const anyNested = helpers.some((n) => n.depth >= 2);
 
   const plateNode = hover ? layout.nodes.find((n) => n.id === hover) : undefined;
   const plate = useMemo(() => {
@@ -136,17 +138,27 @@ export function HelperMap({
               ))}
             </g>
             {layout.nodes.map((n) => {
-              const Icon = n.kind === "helper" ? lookOf(n, types).Icon : null;
-              const glyphSize = n.kind === "root" ? 30 : Math.round(Math.min(26, n.r * 1.15));
+              const helper = n.kind === "helper";
+              const look = helper ? agentLook(typeOf(n)) : null;
+              const side = tileSide(n);
+              const glyph = n.kind === "root" ? 24 : avatarIconSize(side);
+              const Icon = n.kind === "root" ? MainChatIcon : look?.Icon;
+              const label = labels.get(n.id);
+              const kindName = n.kind === "root" ? "" : helper ? `, ${avatarName(typeOf(n), n.depth >= 2 ? "nested" : "helper")}` : "";
               return (
                 <g key={n.id} transform={`translate(${n.x} ${n.y})`}>
                   <g
-                    className={`map-node${n.id === selected ? " sel" : ""}${lit.has(n.id) ? " on" : ""}${n.kind === "more" ? " more" : ""}${n.kind === "root" ? " root" : ""}`}
-                    style={{ ["--i" as string]: n.index, ["--c" as string]: outcomeColor(n) }}
+                    className={`map-node${n.id === selected ? " sel" : ""}${lit.has(n.id) ? " on" : ""}${n.kind === "more" ? " more" : ""}${n.kind === "root" ? " root" : ""}${helper && n.depth >= 2 ? " nested" : ""}`}
+                    style={{
+                      ["--i" as string]: n.index,
+                      ["--c" as string]: look?.fg ?? outcomeColor(n),
+                      ["--cb" as string]: look?.bg ?? "var(--raised)",
+                      ["--o" as string]: outcomeColor(n),
+                    }}
                     tabIndex={0}
                     role="button"
                     aria-pressed={n.id === selected}
-                    aria-label={`${n.name}, ${nodeDetail(n)}`}
+                    aria-label={`${n.name}, ${nodeDetail(n)}${kindName}`}
                     onClick={() => onSelect(n.id)}
                     onKeyDown={(e) => onKey(e, n.id)}
                     onPointerEnter={() => setHover(n.id)}
@@ -155,23 +167,44 @@ export function HelperMap({
                     onBlur={() => setHover((h) => (h === n.id ? null : h))}
                   >
                     <circle className="map-hit" r={n.r + 8} />
-                    <circle className="map-ring" r={n.r + 6} />
+                    {helper ? (
+                      <rect className="map-ring" x={-side / 2 - 5} y={-side / 2 - 5} width={side + 10} height={side + 10} rx={Math.round(side * 0.3) + 4} />
+                    ) : (
+                      <circle className="map-ring" r={n.r + 6} />
+                    )}
                     <g className="map-body">
-                      <circle className="map-dot" r={n.r} />
-                      {n.kind === "root" ? (
-                        <MapGlyph kind="chat" size={glyphSize} />
-                      ) : Icon ? (
-                        <Icon className="map-icon" x={-glyphSize / 2} y={-glyphSize / 2} size={glyphSize} weight="bold" aria-hidden="true" />
+                      {helper ? (
+                        <>
+                          {/* The same tile as the helper's avatar in the list, on a backing that hides the line under it. */}
+                          <rect className="map-back" x={-side / 2} y={-side / 2} width={side} height={side} rx={Math.round(side * 0.3)} />
+                          <rect className="map-tile" x={-side / 2} y={-side / 2} width={side} height={side} rx={Math.round(side * 0.3)} />
+                        </>
+                      ) : (
+                        <circle className="map-dot" r={n.r} />
+                      )}
+                      {Icon ? (
+                        <Icon className="map-icon" x={-glyph / 2} y={-glyph / 2} size={glyph} weight="duotone" aria-hidden="true" />
                       ) : (
                         <text className="map-plus" textAnchor="middle" dominantBaseline="central">
                           {`+${n.hidden.length}`}
                         </text>
                       )}
+                      {helper && n.outcome && <circle className="map-outcome" cx={side / 2 - 3} cy={-side / 2 + 3} r={5} />}
                     </g>
                     {n.kind === "root" && (
                       <text className="map-name" transform={`translate(0 ${ROOT_R + 28}) scale(${1 / zoom})`} textAnchor="middle">
                         Main chat
                       </text>
+                    )}
+                    {label && (
+                      <g className="map-rest" transform={`translate(${label.x - n.x} 0) scale(${1 / zoom})`} aria-hidden="true">
+                        <text className="map-name" textAnchor={label.anchor} y={-3}>
+                          {label.name}
+                        </text>
+                        <text className="map-rest-detail" textAnchor={label.anchor} y={12}>
+                          {label.detail}
+                        </text>
+                      </g>
                     )}
                   </g>
                 </g>
@@ -193,18 +226,25 @@ export function HelperMap({
           </svg>
         </div>
       </div>
-      <ul className="map-legend" aria-label="What the icons and colours mean">
-        {looks.map(({ Icon, label }) => (
-          <li key={label}>
-            <Icon size={14} weight="bold" aria-hidden="true" className="map-legend-glyph" />
-            {label}
+      {/* The key: every kind of helper on this map with its icon, then the shapes, then how they ended. */}
+      <ul className="map-legend" aria-label="What the icons, shapes and dots mean">
+        {HELPER_KINDS.filter((k) => kinds.has(k)).map((k) => (
+          <li key={k}>
+            <AgentAvatar type={k} size={20} quiet />
+            {agentLook(k).label}
           </li>
         ))}
+        {anyNested && (
+          <li>
+            <AgentAvatar type={null} size={20} level="nested" quiet />
+            Started by a helper
+          </li>
+        )}
         {(["finished", "errored", "stopped"] as Outcome[])
           .filter((o) => present.has(o))
           .map((o) => (
             <li key={o}>
-              <i aria-hidden="true" style={{ background: outcomeColor({ kind: "helper", outcome: o }) }} />
+              <i aria-hidden="true" style={{ background: OUTCOMES[o].color }} />
               {OUTCOME_LABEL[o]}
             </li>
           ))}
