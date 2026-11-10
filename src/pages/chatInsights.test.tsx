@@ -223,7 +223,7 @@ describe("Chat receipt and helper map", () => {
     const { row, detail } = await chatWithHelpers(backend);
     mountDetail(backend, row.sessionId);
     await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
-    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Show as a list" }));
     const a = detail.agents[0];
     await userEvent.click(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) })[0]);
     expect(await screen.findByRole("heading", { level: 2, name: a.name })).toBeInTheDocument();
@@ -271,9 +271,9 @@ describe("Chat receipt and helper map", () => {
     expect(screen.queryByRole("region", { name: "Spend as it ran" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Spend" })).toBeNull();
     await userEvent.click(screen.getByRole("radio", { name: "Helpers" }));
-    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Show as a list" }));
     const order = screen.getByRole("radiogroup", { name: "Order helpers by" });
-    expect(within(order).getByRole("radio", { name: "Tokens" })).toBeInTheDocument();
+    expect(within(order).getByRole("radio", { name: "Most tokens" })).toBeInTheDocument();
     expect(within(order).queryByRole("radio", { name: "Spend" })).toBeNull();
   });
 
@@ -282,7 +282,7 @@ describe("Chat receipt and helper map", () => {
     const { row, detail } = await chatWithHelpers(backend);
     mountDetail(backend, row.sessionId);
     await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
-    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Show as a list" }));
     expect(screen.queryByRole("group", { name: /^Helper map/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: new RegExp(esc(detail.agents[0].name)) }).length).toBeGreaterThan(0);
   });

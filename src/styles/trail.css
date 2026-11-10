@@ -2060,13 +2060,54 @@ html.reduced .nav-item:active .nav-face {
     padding: 0;
   }
 }
-/* Tighter still (a small window with the sidebar open): a tab's own switches take a second line
-   under the tabs, so the buttons on the right never jump between lines from tab to tab. */
-@container (max-width: 740px) {
-  .sd-sub {
-    order: 1;
-    flex-basis: 100%;
-  }
+/* Under the chat's name: the one figure, and one line of plain facts on its baseline (under it when
+   the two do not fit side by side). The line never wraps: the folder name gives way first, and its
+   hover has the whole path. */
+.sd-hero {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 16px;
+  min-width: 0;
+  margin-top: 4px;
+}
+.sd-line {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--text-body);
+  line-height: 20px;
+  color: var(--ink-2);
+}
+.sd-line > span {
+  flex: none;
+}
+.sd-line > span + span::before {
+  content: "\00b7";
+  margin: 0 8px;
+  opacity: 0.6;
+}
+.sd-line > .sd-line-where {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--ink);
+}
+/* Map or list: two small buttons beside the tabs, the one in use held down. */
+.sd-view {
+  display: flex;
+  gap: 2px;
+}
+.sd-view .btn-icon[aria-pressed="true"] .btn-face {
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 /* The receipt: plain lines, a hairline and a total, nothing boxed. */

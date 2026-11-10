@@ -35,14 +35,14 @@ export function modelTone(model: string): number {
  * "Opus 5.5 · high + Haiku 5.5": the models a session used under their full names (never a
  * family alone), each with its colour dot, on one quiet inline run. `effort` goes on `main`.
  */
-export function ModelDots({ models, main, effort }: { models: string[]; main?: string; effort?: string | null }) {
+export function ModelDots({ models, main, effort, hint }: { models: string[]; main?: string; effort?: string | null; /** The hover, when it says more than the ids. */ hint?: string }) {
   // A dated and an undated id of one model are one entry.
   const seen = new Map<string, string>();
   for (const m of models) if (!seen.has(modelLabel(m))) seen.set(modelLabel(m), m);
   const mainName = main ? modelLabel(main) : null;
   const list = [...seen].map(([name, id]) => [name === mainName ? modelWithEffort(id, effort) : name, id] as const);
   return (
-    <span title={models.join(" + ")} className="whitespace-nowrap">
+    <span title={hint ?? models.join(" + ")} className="whitespace-nowrap">
       {list.map(([family, id], i) => (
         <span key={family}>
           {i > 0 && " + "}

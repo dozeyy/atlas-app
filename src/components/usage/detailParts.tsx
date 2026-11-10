@@ -94,28 +94,50 @@ export function ClampText({ text, lines = 3, className = "" }: { text: string; l
   );
 }
 
-/** The four kinds of token, each with its figure. Cache reads sit apart (Q2). */
-export function Breakdown({ t }: { t: Tokens }) {
-  const rows: [string, number, string?][] = [
-    ["Input", t.input],
-    ["Output", t.output],
-    ["Cache writes, 5-minute", t.cacheWrite5m],
-    ["Cache writes, 1-hour", t.cacheWrite1h],
-    ["Cache reads", t.cacheRead, "Counted apart, not in the total above"],
+/**
+ * The four kinds of token, each with its exact figure. Cache reads sit apart (Q2). With `main`, the
+ * main chat's own figures stand beside the whole chat's (`t`), so nothing has to be switched to
+ * compare the two.
+ */
+export function Breakdown({ t, main }: { t: Tokens; main?: Tokens }) {
+  const rows: [string, (x: Tokens) => number, string?][] = [
+    ["Input", (x) => x.input],
+    ["Output", (x) => x.output],
+    ["Cache writes, 5-minute", (x) => x.cacheWrite5m],
+    ["Cache writes, 1-hour", (x) => x.cacheWrite1h],
+    ["Cache reads", (x) => x.cacheRead, "Counted apart, not in the total above"],
   ];
+  const cols: [string, Tokens][] = main ? [["Main chat", main], ["With helpers", t]] : [["Tokens", t]];
   return (
-    <Card>
-      <dl className="divide-y divide-line">
-        {rows.map(([name, value, note]) => (
-          <div key={name} className="flex items-baseline justify-between gap-4 px-5 py-2.5">
-            <dt className="text-body text-ink">
-              {name}
-              {note && <span className="ml-2 text-caption text-ink-2">{note}</span>}
-            </dt>
-            <dd className="text-body tabular-nums text-ink">{exact(value)}</dd>
-          </div>
-        ))}
-      </dl>
+    <Card className="overflow-hidden">
+      <table className="w-full text-body">
+        <caption className="sr-only">Tokens by kind</caption>
+        <thead className={main ? "text-caption text-ink-2" : "sr-only"}>
+          <tr className="border-b border-line">
+            <th scope="col" className="px-5 py-2 text-left font-medium">Kind</th>
+            {cols.map(([name]) => (
+              <th key={name} scope="col" className="px-5 py-2 text-right font-medium whitespace-nowrap">
+                {name}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([name, pick, note]) => (
+            <tr key={name} className="border-b border-line last:border-b-0">
+              <th scope="row" className="px-5 py-2.5 text-left font-normal text-ink">
+                {name}
+                {note && <span className="ml-2 text-caption text-ink-2">{note}</span>}
+              </th>
+              {cols.map(([col, x]) => (
+                <td key={col} className="px-5 py-2.5 text-right tabular-nums text-ink">
+                  {exact(pick(x))}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </Card>
   );
 }

@@ -298,7 +298,7 @@ describe("Helpers (subagents) inside a session", () => {
   /** The helper cards live behind the Helpers tab's List view. */
   async function openHelperList() {
     await userEvent.click(await screen.findByRole("radio", { name: "Helpers" }));
-    await userEvent.click(await screen.findByRole("radio", { name: "List" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Show as a list" }));
   }
 
   it("opens a session on its receipt: the main chat and its helpers, and a card per helper in the list", async () => {
@@ -335,15 +335,17 @@ describe("Helpers (subagents) inside a session", () => {
     expect(screen.getAllByRole("button", { name: new RegExp(esc(a.name)) }).length).toBeGreaterThan(0);
   });
 
-  it("switches the token breakdown between the main conversation and everything", async () => {
+  it("shows the main chat's token breakdown beside the whole chat's, with nothing to switch", async () => {
     const backend = sessionsBackend();
     const { row, detail } = await withHelpers(backend);
     mountDetail(backend, row.sessionId);
     await userEvent.click(await screen.findByRole("radio", { name: "Details" }));
     const section = await screen.findByRole("region", { name: "Token breakdown" });
+    expect(within(section).getByRole("columnheader", { name: "Main chat" })).toBeInTheDocument();
+    expect(within(section).getByRole("columnheader", { name: "With helpers" })).toBeInTheDocument();
     expect(within(section).getByText(row.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("radio", { name: "Main only" }));
     expect(within(section).getByText(detail.main.tokens.input.toLocaleString("en-US"))).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Main only" })).toBeNull();
   });
 });
 

@@ -10,6 +10,8 @@ import {
   Copy,
   FolderOpen,
   Hash,
+  ListBullets,
+  TreeStructure,
   UsersThree,
   Wrench,
 } from "@phosphor-icons/react";
@@ -335,12 +337,10 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
 function DetailsTab({
   id,
   d,
-  scope,
   bins,
 }: {
   id: string;
   d: SessionDetail;
-  scope: "all" | "main";
   bins: BarDatum[];
 }) {
   const { row, byModel, agents, main, files } = d;
@@ -390,7 +390,8 @@ function DetailsTab({
 
         <section id="sd-tokens" aria-label="Token breakdown" className="jump-target min-w-0">
           <h3 className="rcpt-head">Token breakdown</h3>
-          <Breakdown t={scope === "main" ? main.tokens : total} />
+          {/* With helpers, the main chat and the whole chat stand side by side: no switch to flip. */}
+          <Breakdown t={total} main={agents.length > 0 ? main.tokens : undefined} />
         </section>
 
         {/* The one chart of the run over time, in tokens; each bar's dollar estimate is in its hover.
@@ -495,7 +496,6 @@ export function SessionDetailView({
   const [tab, setTab] = useState<Tab>("receipt");
   const [view, setView] = useState<"map" | "list">("map");
   const [order, setOrder] = useState<"started" | "tokens">("started");
-  const [scope, setScope] = useState<"all" | "main">("all");
   const [picked, setPicked] = useState<string>(MAIN_ID);
   const [visitedMessages, setVisitedMessages] = useState(false);
   const costSeen = useRef<number | null>(null);
@@ -506,7 +506,6 @@ export function SessionDetailView({
       agentChat.current = id;
       setAgentId(null);
     }
-    setScope("all");
     setTab("receipt");
     setView("map");
     setPicked(MAIN_ID);
@@ -587,6 +586,7 @@ export function SessionDetailView({
   // How each helper ended comes with the receipt (it reads the files); the list shows it once it is in.
   const outcomes = new Map((receipt.data?.threads ?? []).flatMap((t) => (t.agentId ? [[t.agentId, t.outcome] as const] : [])));
   const hasHelpers = agents.length > 0;
+  const mix = effortMix(row.efforts);
   const shownTab: Tab = tab === "helpers" && !hasHelpers ? "receipt" : tab;
 
   const choose = (next: Tab) => {
@@ -609,82 +609,62 @@ export function SessionDetailView({
 
   return (
     <div className="@container session-fit">
-      <div className="flex shrink-0 items-start gap-3">
+      {/* Top to bottom: which chat, the one figure, one line of plain facts, then the tabs. */}
+      <div className="flex shrink-0 items-center gap-3">
         {back}
-        <div className="min-w-0 flex-1">
-          <h2 className="d d-figure truncate text-ink" title={name}>
-            {name}
-          </h2>
-          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 text-body text-ink-2">
-            <span className="font-medium text-ink">{row.projectName}</span>
-            <span>{formatWhen(row.startedAt)}</span>
-            <span>{formatDuration(row.durationMs)}</span>
-            <ModelDots models={row.models} main={row.mainModel} effort={topEffort(row.efforts)} />
-            {(row.efforts?.length ?? 0) > 1 && (
-              <span title="Reasoning effort of the main chat's replies (helpers are on their own cards)">{`Effort ${effortMix(row.efforts)}`}</span>
-            )}
-            {hasHelpers && <span>{plural(agents.length, "helper")}</span>}
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
-          <TokenFigure
-            tokens={row.tokens.total}
-            cost={row.cost}
-            id={`session:${id}:tokens`}
-            note={claudeCodeCostUsd !== null ? `Claude Code showed ${formatUsd(claudeCodeCostUsd)}.` : undefined}
-            className="d d-stat text-ink"
-          />
-        </div>
+        <h2 className="d d-figure min-w-0 flex-1 truncate text-ink" title={name}>
+          {name}
+        </h2>
+      </div>
+      <div className="sd-hero">
+        <TokenFigure
+          tokens={row.tokens.total}
+          cost={row.cost}
+          id={`session:${id}:tokens`}
+          note={claudeCodeCostUsd !== null ? `Claude Code showed ${formatUsd(claudeCodeCostUsd)}.` : undefined}
+          className="d d-hero text-ink"
+        />
+        <p className="sd-line">
+          <span className="sd-line-where" title={row.projectPath || row.projectName}>
+            {row.projectName}
+          </span>
+          <span>{formatWhen(row.startedAt)}</span>
+          <span title="From the first message to the last">{formatDuration(row.durationMs)}</span>
+          {/* The effort mix is exact detail: it is the second line of the model's hover, not a fact on the line. */}
+          <span>
+            <ModelDots
+              models={row.models}
+              main={row.mainModel}
+              effort={topEffort(row.efforts)}
+              hint={mix ? `${row.models.join(" + ")}\nReasoning effort in the main chat: ${mix}` : undefined}
+            />
+          </span>
+          {hasHelpers && <span>{plural(agents.length, "helper")}</span>}
+        </p>
       </div>
 
-      <div className="mt-4 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2">
+      {/* One row of tabs. A tab's own switch is two small buttons beside them, or sits in its pane. */}
+      <div className="mt-3 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2">
         <SegmentedControl label="Session view" value={shownTab} onChange={choose} options={tabs} />
         {shownTab === "helpers" && (
-          <div className="sd-sub flex items-center gap-2">
-            {view === "list" && (
-              <SegmentedControl
-                label="Order helpers by"
-                value={order}
-                onChange={setOrder}
-                options={[
-                  { value: "started", label: "Started" },
-                  { value: "tokens", label: "Tokens" },
-                ]}
-              />
-            )}
-            <SegmentedControl
-              label="Show helpers as"
-              value={view}
-              onChange={setView}
-              options={[
-                { value: "map", label: "Map" },
-                { value: "list", label: "List" },
-              ]}
-            />
-          </div>
-        )}
-        {shownTab === "details" && hasHelpers && (
-          <div className="sd-sub">
-            <SegmentedControl
-              label="Count tokens for"
-              value={scope}
-              onChange={setScope}
-              options={[
-                { value: "all", label: "With helpers" },
-                { value: "main", label: "Main only" },
-              ]}
-            />
+          <div className="sd-view" role="group" aria-label="Show helpers as">
+            <IconButton aria-label="Show as a map" title="Show as a map" aria-pressed={view === "map"} onClick={() => setView("map")}>
+              <TreeStructure size={16} aria-hidden="true" />
+            </IconButton>
+            <IconButton aria-label="Show as a list" title="Show as a list" aria-pressed={view === "list"} onClick={() => setView("list")}>
+              <ListBullets size={16} aria-hidden="true" />
+            </IconButton>
           </div>
         )}
         <div className="ml-auto flex items-center gap-2">
           {resume && (
-            <Button className="sd-act" title="Copy the command that reopens this chat in a terminal" onClick={() => void copyResume(resume)}>
+            <Button className="sd-act" title={"Copy resume command\nPaste it in a terminal to reopen this chat."} onClick={() => void copyResume(resume)}>
               <Copy size={14} aria-hidden="true" />
               <span className="sd-act-label">Copy resume</span>
             </Button>
           )}
           {row.projectPath && (
-            <Button className="sd-act" title={`Open folder: ${row.projectPath}`} onClick={() => void openFolder(id)}>
+            <Button className="sd-act" title={`Open folder\n${row.projectPath}`} onClick={() => void openFolder(id)}>
               <FolderOpen size={14} aria-hidden="true" />
               <span className="sd-act-label">Open folder</span>
             </Button>
@@ -718,7 +698,22 @@ export function SessionDetailView({
 
         {shownTab === "helpers" &&
           (view === "list" ? (
-            <HelperList agents={agents} order={order} sessionId={id} sessionTokens={sessionTokens} names={names} outcomes={outcomes} onOpen={setAgentId} />
+            <>
+              {agents.length > 1 && (
+                <div className="mb-3 flex justify-end">
+                  <SegmentedControl
+                    label="Order helpers by"
+                    value={order}
+                    onChange={setOrder}
+                    options={[
+                      { value: "started", label: "Started" },
+                      { value: "tokens", label: "Most tokens" },
+                    ]}
+                  />
+                </div>
+              )}
+              <HelperList agents={agents} order={order} sessionId={id} sessionTokens={sessionTokens} names={names} outcomes={outcomes} onOpen={setAgentId} />
+            </>
           ) : receipt.data ? (
             <div className="map-grid">
               <HelperMap receipt={receipt.data} sessionId={id} selected={picked} onSelect={setPicked} types={helperTypes} />
@@ -747,7 +742,7 @@ export function SessionDetailView({
           </div>
         )}
 
-        {shownTab === "details" && <DetailsTab id={id} d={d.data} scope={scope} bins={bins} />}
+        {shownTab === "details" && <DetailsTab id={id} d={d.data} bins={bins} />}
       </div>
     </div>
   );
