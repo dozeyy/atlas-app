@@ -198,7 +198,7 @@ export function Row({
             {tip && <Info size={14} aria-hidden="true" className="shrink-0 text-ink-2" />}
           </span>
         </div>
-        {hint && <div className="mt-0.5 text-body text-ink-2">{hint}</div>}
+        {hint && <div className="mt-0.5 text-pretty text-body text-ink-2">{hint}</div>}
       </div>
       {children && <div className="shrink-0">{children}</div>}
     </div>

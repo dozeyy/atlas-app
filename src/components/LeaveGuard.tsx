@@ -48,7 +48,7 @@ export function LeaveGuard() {
         </>
       }
     >
-      <p className="text-body text-ink">You have edits that are not saved. If you leave now they are lost.</p>
+      <p className="text-body text-ink">Edits you have not saved will be lost.</p>
     </Dialog>
   );
 }

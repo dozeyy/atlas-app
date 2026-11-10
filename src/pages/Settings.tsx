@@ -377,8 +377,9 @@ export function Settings() {
                 {status.state === "error"
                   ? status.error ?? "The usage cache could not be opened."
                   : `${plural(status.filesTracked, "session log")} read${status.lastIndexedAt ? `, updated ${agoText(status.lastIndexedAt)}` : ""}.`}
+                {/* The file is in the Atlas data folder two rows down; its full path waits in the hover. */}
                 <div className="mt-1 text-caption">
-                  {formatBytes(status.cacheBytes)} on disk. <Path>{status.cachePath}</Path>
+                  <span title={status.cachePath}>{formatBytes(status.cacheBytes)} on disk</span>
                 </div>
               </>
             ) : (
@@ -417,7 +418,7 @@ export function Settings() {
           <Button onClick={() => void backend.pricingReveal().catch(() => {})}>Show file</Button>
         </Row>
         <Row label="Atlas data" hint={<Path>{info.dataDir}</Path>}>
-          <Button onClick={() => void openDataDir()}>Open Atlas data folder</Button>
+          <Button onClick={() => void openDataDir()}>Open folder</Button>
         </Row>
       </>
     ),
@@ -433,7 +434,7 @@ export function Settings() {
                 : "Nothing saved yet"
           }
         >
-          <Button onClick={() => void backend.historyOpenFolder().catch(() => {})}>Open history folder</Button>
+          <Button onClick={() => void backend.historyOpenFolder().catch(() => {})}>Open folder</Button>
         </Row>
         <Row label="Keep up to" tip="Older copies of a file are let go once it passes this many. The newest are always kept.">
           <Stepper value={keep} onChange={setHistoryKeep} />
