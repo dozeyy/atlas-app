@@ -63,8 +63,10 @@ function Row({
           {head.item.kind === "agent" ? <AgentAvatar type={head.item.name} size={32} quiet /> : <KindTile kind={setupKind(head.item.kind)} size={32} quiet={!picked} />}
           <span className="min-w-0 flex-1">
             {/* The name gives way first. A cut name always keeps a letter, its dots and its whole
-                ending; past that the label gives way. The space is for screen readers and tests. */}
-            <span className="flex min-w-0 items-baseline text-body text-ink">
+                ending; past that the label gives way. The space is for screen readers and tests.
+                The line carries itself as its title: the TipLayer shows it only once a part is cut
+                short (or the project waits in it), and hands the hover to the row's tip otherwise. */}
+            <span title={first} className="flex min-w-0 items-baseline text-body text-ink">
               <span className="min-w-0 truncate font-semibold">{whatHappened(head)}</span>{" "}
               {!lib && (
                 <span className={`ml-1 shrink-[9999] truncate text-ink-2 ${nameEnd ? "min-w-[3.5ch]" : "min-w-0"}`}>

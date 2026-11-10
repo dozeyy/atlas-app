@@ -77,6 +77,39 @@ describe("TipLayer", () => {
     expect(btn).toHaveAttribute("aria-describedby", "atlas-tip");
   });
 
+  it("a tip that only repeats a name shown in full stays away and hands the hover to the row's tip", () => {
+    mount(
+      <button title="Opened on 3 Nov">
+        <span title="commit-helper" style={{ overflow: "hidden" }}>
+          commit-helper
+        </span>
+      </button>,
+    );
+    const name = screen.getByText("commit-helper");
+    fireEvent.pointerOver(name);
+    act(() => void vi.advanceTimersByTime(500));
+    expect(tipBox()).toHaveAttribute("data-open");
+    expect(tipBox().querySelector(".tt-head")).toHaveTextContent("Opened on 3 Nov");
+    expect(name).toHaveAttribute("title", "commit-helper");
+  });
+
+  it("the same tip shows once the name is cut short with an ellipsis", () => {
+    mount(
+      <button title="Opened on 3 Nov">
+        <span title="commit-helper" style={{ overflow: "hidden" }}>
+          commit-helper
+        </span>
+      </button>,
+    );
+    const name = screen.getByText("commit-helper");
+    Object.defineProperty(name, "scrollWidth", { value: 160, configurable: true });
+    Object.defineProperty(name, "clientWidth", { value: 80, configurable: true });
+    fireEvent.pointerOver(name);
+    act(() => void vi.advanceTimersByTime(500));
+    expect(tipBox()).toHaveAttribute("data-open");
+    expect(tipBox().querySelector(".tt-head")).toHaveTextContent("commit-helper");
+  });
+
   it("puts the title back when the pointer leaves, and hides", () => {
     mount();
     const btn = screen.getByRole("button", { name: "Open" });

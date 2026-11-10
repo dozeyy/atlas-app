@@ -10,7 +10,6 @@ import type { SetupItem } from "../../lib/setup-types";
 import { removedPath } from "./ConfirmDelete";
 import { ConflictChip, copyText, formatDate, ItemIcon, ScopeChip, SecretsChip, StateChip, TagChip, WarningMark } from "./parts";
 import { useItemCost } from "./CostContext";
-import { hoverTip } from "../usage/helperKit";
 
 interface ItemProps {
   item: SetupItem;
@@ -29,12 +28,14 @@ const MAX_CHIPS = 3;
 
 /**
  * The hover on a name: for a hook, the name Claude's settings use for it on a second line, so
- * someone who knows "PreToolUse" still finds it. A name shown as written gets no hover: a tip
- * that only repeats the words under the pointer adds nothing (Will, 2026-11-10).
+ * someone who knows "PreToolUse" still finds it. For every other item it is the name itself,
+ * which the TipLayer shows only while the name is cut short with an ellipsis: a tip that only
+ * repeats the words under the pointer adds nothing (Will, 2026-11-10), a cut name must be
+ * readable in full.
  */
-function nameHover(item: SetupItem): string | undefined {
+function nameHover(item: SetupItem): string {
   const shown = displayName(item);
-  return hoverTip(shown === item.name ? shown : `${shown}\n${item.name}`, shown);
+  return shown === item.name ? shown : `${shown}\n${item.name}`;
 }
 
 /**

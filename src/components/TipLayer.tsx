@@ -25,6 +25,39 @@ function textOf(el: Element): string {
   return el.getAttribute("title") || el.getAttribute("data-tip") || "";
 }
 
+const flat = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+
+/** Is any text in `el` cut short on screen: an ellipsis (`truncate`) or a clamp? */
+function isCut(el: Element): boolean {
+  const cut = (e: Element) => {
+    if (e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1) return false;
+    const s = getComputedStyle(e);
+    return s.overflowX === "hidden" || s.overflowY === "hidden" || s.overflowX === "clip" || s.overflowY === "clip";
+  };
+  if (cut(el)) return true;
+  for (const d of el.querySelectorAll("*")) if (cut(d)) return true;
+  return false;
+}
+
+/**
+ * The one rule for a tip that says what is already under the pointer (Will, 2026-11-10): a tip
+ * that only repeats a name shown in full adds nothing and stays away; the same tip on a name cut
+ * short with an ellipsis is the only way to read it, so it shows. A name that needs no tip hands
+ * the hover on to the next thing above it that has one (the row's own tip).
+ */
+function worthShowing(el: Element): boolean {
+  const text = flat(textOf(el));
+  if (!text) return false;
+  return text !== flat(el.textContent ?? "") || isCut(el);
+}
+
+/** The element whose tip a pointer or focus on `from` should show, if any. */
+function pick(from: Element | null): Element | null {
+  let el = from && from.closest ? from.closest(SELECTOR) : null;
+  while (el && !worthShowing(el)) el = el.parentElement?.closest(SELECTOR) ?? null;
+  return el;
+}
+
 /** `:focus-visible` is keyboard focus; engines without it (and jsdom) count every focus. */
 function keyboardFocused(el: Element): boolean {
   try {
@@ -178,8 +211,7 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
 
     const onOver = (e: PointerEvent) => {
       if (e.pointerType === "touch") return;
-      const t = e.target as Element | null;
-      const el = t && t.closest ? t.closest(SELECTOR) : null;
+      const el = pick(e.target as Element | null);
       pointer = { x: e.clientX, y: e.clientY };
       if (stillAt) {
         if (Math.hypot(pointer.x - stillAt.x, pointer.y - stillAt.y) < 4) return;
@@ -187,7 +219,7 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
       }
       if (el === target) return;
       if (target) release();
-      if (!el || !textOf(el)) return;
+      if (!el) return;
       take(el);
       arm(el, performance.now() - lastClosed < WARM_MS ? 0 : SHOW_MS);
     };
@@ -202,9 +234,8 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
     };
 
     const onFocusIn = (e: FocusEvent) => {
-      const t = e.target as Element | null;
-      const el = t && t.closest ? t.closest(SELECTOR) : null;
-      if (!el || !textOf(el) || !keyboardFocused(el)) return;
+      const el = pick(e.target as Element | null);
+      if (!el || !keyboardFocused(el)) return;
       if (el !== target) {
         if (target) release();
         take(el);
