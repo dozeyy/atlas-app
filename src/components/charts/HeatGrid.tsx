@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent } from "react";
 import { heatLayout } from "../../lib/chartPaths";
 import { useIntro } from "../../lib/motion";
 import { ChartTooltip } from "./ChartTooltip";
@@ -14,6 +14,8 @@ export const HEAT_CELL = 13;
 const MAX_CELL = 18;
 export const MIN_WEEKS = 12;
 export const MAX_WEEKS = 52;
+/** The Less/More key sits in the label row when the grid is at least this wide, else under it. */
+const LEGEND_INLINE_MIN = 280;
 
 /** How many whole weeks fit in `width`: at least MIN_WEEKS, at most a year. */
 export function heatWeeks(width: number): number {
@@ -36,7 +38,7 @@ export function HeatGrid({
   values: allValues,
   readouts: allReadouts,
   label,
-  footer,
+  legend = false,
 }: {
   id: string;
   /** Daily activity, oldest first, the last entry is today. Give it a year; the grid shows what fits. */
@@ -45,8 +47,8 @@ export function HeatGrid({
   readouts: Readout[];
   /** Says what the grid shows; the week count is added. */
   label: string;
-  /** Rendered under the grid with the number of weeks on show. */
-  footer?: (weeks: number) => ReactNode;
+  /** Show the Less/More colour key. */
+  legend?: boolean;
 }) {
   const intro = useIntro(id);
   const [active, setActive] = useState<number | null>(null);
@@ -119,12 +121,20 @@ export function HeatGrid({
           Today
         </text>
       </svg>
+      {legend && (
+        <span aria-hidden="true" className={`heat-key${width >= LEGEND_INLINE_MIN ? " in-row" : ""}`}>
+          Less
+          {[0, 1, 2, 3, 4, 5].map((b) => (
+            <i key={b} style={{ background: `var(--heat-${b})` }} />
+          ))}
+          More
+        </span>
+      )}
       <ChartTooltip tip={tip} width={width} />
       <span className="sr-only" aria-live="polite">
         {active !== null && readouts[active] ? `${readouts[active].title}: ${readouts[active].valueText}` : ""}
       </span>
     </div>
-    {footer?.(weeks)}
     </div>
   );
 }

@@ -102,7 +102,8 @@ describe("Now", () => {
   it("shows what the chat is doing, its tokens and its recent steps", async () => {
     mount(snap({ chats: [chat()] }));
     expect(await screen.findByText("Editing", { selector: ".nc-verb" })).toBeInTheDocument();
-    expect(screen.getByText("src/App.tsx", { selector: ".nc-target" })).toBeInTheDocument();
+    // The path is drawn as folders + file name (two spans), so read the line's whole text.
+    expect(document.querySelector(".nc-target")).toHaveTextContent(/^src\/App\.tsx$/);
     expect(screen.getByRole("heading", { level: 3, name: "Fix the build" })).toBeInTheDocument();
     expect(screen.getByText("1.2k", { selector: ".nc-spend-fig" })).toBeInTheDocument();
     // Tokens, not dollars: money only lives in the hover, called an estimate.

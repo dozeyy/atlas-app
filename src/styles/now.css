@@ -93,6 +93,17 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+/* A folder name longer than its line ends in an ellipsis inside its chip (the hover has all of
+   it); it is never sliced at the card's edge. */
+.chip.now-chip-name {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  line-height: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .now-band {
   flex: 0 1 auto;
@@ -131,7 +142,8 @@
 .now-rows {
   flex: 1 1 auto;
   min-height: 0;
-  margin: 0;
+  /* The 4 px of scrollbar room sits outside the column, so the rows end where the cards above do. */
+  margin: 0 -4px 0 0;
   padding: 0 4px 0 0;
   list-style: none;
   overflow-y: auto;
@@ -190,7 +202,8 @@
   align-items: center;
   gap: 0 8px;
   min-width: 0;
-  height: 22px;
+  /* A chip is 24 px tall: a shorter line shaved the bottom off every chip. */
+  height: 24px;
   margin: 2px 0 0;
   overflow: hidden;
 }
@@ -210,6 +223,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  /* As tall as a chip, so a chip that wrapped to the hidden second line shows no sliver. */
+  line-height: 24px;
   color: var(--ink-2);
 }
 
@@ -433,6 +448,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Room for the tails of g and y, which the tight line cut off; the layout does not move. */
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
 }
 
 .nc-target {
@@ -443,6 +461,34 @@
   font-family: var(--font-code);
   font-size: clamp(13px, 3cqmin, 20px);
   color: var(--ink-2);
+}
+
+/* A file path: the folders give way first (ellipsis), the file name stays whole while it fits. */
+.now-path {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: bottom;
+}
+.now-path-head {
+  /* Shrinks long before the file name does; keeps room for "C" and the ellipsis. */
+  flex: 0 1000000 auto;
+  min-width: 2ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A folder of one or two letters is never cut. */
+.now-path-head.is-short {
+  flex-shrink: 0;
+  min-width: auto;
+}
+.now-path-tail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The one quiet sign that work is going on: a slow clay sweep, only while it works. */
@@ -645,8 +691,11 @@ html.reduced .nc-sweep.is-on::after {
 /* Short (three chats): one row of head, doing, numbers, clock; the trail beneath. */
 @container nowcard (max-height: 235px) and (min-width: 721px) {
   .nc-body {
-    /* The title column gets the most room: it is the one part that is text and gets cut. */
-    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.2fr) minmax(88px, 0.6fr) auto;
+    /* The title column gets the most room: it is the one part that is text and gets cut.
+       The clock column is a fixed width (room for "1:13:26"), never as wide as its own digits:
+       a column sized by its content put the icon, the verb and the tokens at a different x on
+       every card, so nothing lined up down the list. */
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.2fr) minmax(88px, 0.6fr) 104px;
     grid-template-rows: minmax(0, 1fr) auto;
     grid-template-areas:
       "head doing numbers clock"
@@ -746,12 +795,6 @@ html.reduced .nc-sweep.is-on::after {
   }
 }
 
-@container nowcard (max-height: 150px) and (max-width: 720px) {
-  .nc-head .now-chips {
-    display: none;
-  }
-}
-
 /* Very short and wide (a small window with several chats): one row, the trail is dropped. */
 @container nowcard (max-height: 150px) and (min-width: 721px) {
   .nc-body {
@@ -772,7 +815,8 @@ html.reduced .nc-sweep.is-on::after {
    helpers are out): the same single row, the trail dropped, the verb never cut in two. */
 @container nowcard (max-height: 150px) and (max-width: 720px) {
   .nc-body {
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) auto auto;
+    /* Fixed number columns (room for "999k" and "1:13:26"), so the cards line up down the list. */
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) 64px 72px;
     grid-template-rows: minmax(0, 1fr);
     grid-template-areas: "head doing numbers clock";
     align-items: center;
@@ -796,6 +840,11 @@ html.reduced .nc-sweep.is-on::after {
   }
   .now-card .nc-title {
     font-size: 15px;
+  }
+  /* The folder and the model stay under the title: three chats with the same kind of name are
+     told apart by where they run. Title 18 + 4 + chips 24 fits the 50 px the card has. */
+  .nc-head .now-chips {
+    margin-top: 4px;
   }
 }
 
@@ -943,7 +992,10 @@ html.reduced .nc-sweep.is-on::after {
   min-width: 0;
 }
 .ht-name {
-  flex: 0 1 auto;
+  /* Never shrunk (a shrink of a fraction of a pixel already costs two letters and an ellipsis);
+     only capped, so a very long name still leaves the model its first letters. */
+  flex: 0 0 auto;
+  max-width: calc(100% - 8px - 4ch);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -952,9 +1004,14 @@ html.reduced .nc-sweep.is-on::after {
   font-weight: 600;
   color: var(--ink);
 }
-/* The exact model and effort ("Opus 5.5 · high"): never cut, the name gives way first. */
+/* The model and effort ("Opus 5.5 · high") give way first: the kind of helper is what a row is
+   read by, so its name stays whole while there is any room, and the model's own start (the
+   model name) outlasts its effort. The full label is on hover. */
 .ht-model {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
   color: var(--ink-2);
@@ -1064,22 +1121,32 @@ html.reduced .ht-status {
   animation: none !important;
 }
 
-/* Narrower: the token count goes first, then the trail and the words shrink. The model line and
-   the progress words keep their room. */
-@container ht (max-width: 780px) {
+/* Narrower: the trail shortens first, so the name ("General purpose") keeps its letters beside
+   the model line. */
+@container ht (max-width: 1000px) {
   .ht-row {
     --ht-trail: 120px;
+  }
+}
+/* Then the token count goes and the words shrink. The model line and the progress words keep
+   their room, and the status has room for "No progress for 12 min". (Up to 900 px: between 781
+   and 808 px the wide row did not fit, and the name was squeezed to nothing.) */
+@container ht (max-width: 900px) {
+  .ht-row {
+    --ht-trail: 104px;
     --ht-prog: 152px;
     gap: 10px;
-    grid-template-columns: 32px minmax(120px, 1fr) var(--ht-trail) var(--ht-prog) minmax(88px, 112px) 56px;
+    grid-template-columns: 32px minmax(120px, 1fr) var(--ht-trail) var(--ht-prog) minmax(88px, 136px) 56px;
   }
   .ht-tokens[data-opt] {
     display: none;
   }
 }
+/* The smallest window with the sidebar open: the trail and the status give the name what they can. */
 @container ht (max-width: 700px) {
   .ht-row {
-    --ht-trail: 80px;
+    --ht-trail: 64px;
+    grid-template-columns: 32px minmax(120px, 1fr) var(--ht-trail) var(--ht-prog) minmax(88px, 100px) 56px;
   }
 }
 

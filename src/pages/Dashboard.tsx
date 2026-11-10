@@ -108,21 +108,44 @@ function AboutNumbers({ data, status }: { data: DashboardData; status: UsageStat
   );
 }
 
-function DashboardSkeleton({ firstIndex }: { firstIndex: boolean }) {
+/**
+ * The page grid. Wide: two columns, each a stack of cards. Mid (the smallest window): the same
+ * cards in rows (week | today, activity | streak, then models with projects, then recent
+ * sessions across). Narrow: one column in that reading order.
+ */
+const PAGE_GRID =
+  "grid grid-cols-1 gap-4 @[600px]:grid-cols-2 @[740px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] @[900px]:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]";
+/** A card that runs the full width while the grid is two equal columns (600 to 739 px). */
+const PAGE_WIDE = "@[600px]:col-span-2 @[740px]:col-span-1";
+/** A column of the wide grid; below it the column dissolves and its cards join the page grid. */
+const PAGE_COLUMN = "contents @[900px]:block @[900px]:min-w-0 @[900px]:space-y-4";
+
+function DashboardSkeleton() {
   return (
     <div role="status" aria-label="Loading your usage">
-      <div className="grid grid-cols-1 gap-4 @[740px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <Card className="px-6 py-5">
+      {/* The same grid as the page it stands in for, so nothing jumps when the numbers land. */}
+      <div className={PAGE_GRID}>
+        <Card className={`px-6 py-5 ${PAGE_WIDE}`}>
           <Skeleton className="h-4 w-24" />
-          <Skeleton className="mt-4 h-14 w-56" />
-          <Skeleton className="mt-3 h-4 w-48" />
+          <Skeleton className="mt-4 h-14 w-56 max-w-full" />
+          <Skeleton className="mt-3 h-4 w-48 max-w-full" />
         </Card>
         <Card className="px-5 py-4">
           <Skeleton className="h-4 w-16" />
-          <Skeleton className="mt-4 size-[104px] !rounded-full" />
+          <Skeleton className="mt-4 size-[88px] !rounded-full" />
+        </Card>
+        {/* A small window shows the top row only, so the loading state stays on one screen. */}
+        <Card className="hidden px-5 py-4 @[740px]:block">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="mt-4 h-[144px] w-full" />
+        </Card>
+        <Card className="hidden px-5 py-4 @[600px]:block">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="mt-4 h-[120px] w-full" />
         </Card>
       </div>
-      {firstIndex && <p className="mt-4 text-body text-ink-2">Reading your history. This runs once.</p>}
+      {/* No words here: during the first read the banner above the page already says what is
+          happening and that it happens once. */}
     </div>
   );
 }
@@ -136,6 +159,8 @@ function modelItems(data: DashboardData): StackItem[] {
     value: headline(m.tokens),
     title: m.model,
   }));
+  // Biggest first by the number shown (the engine lists them by cost).
+  models.sort((a, b) => b.value - a.value);
   const top = models.slice(0, 3);
   const rest = models.slice(3);
   const restValue = rest.reduce((s, m) => s + m.value, 0);
@@ -177,6 +202,8 @@ export function Dashboard() {
   );
   const firstIndex = status?.state === "indexing" && !status.firstIndexDone;
   const nothing = data !== null && data.recent.length === 0 && data.month.tokens.total === 0 && data.month.sessions === 0;
+  // The banner above the page already says the engine failed and offers "Try again".
+  const engineDown = status?.state === "error";
 
   const open = (id: string) => {
     openSessionNext(id);
@@ -193,8 +220,8 @@ export function Dashboard() {
       value: last[i] ?? 0,
       axis: weekdayInitial(d),
       title: shortDay(d),
-      valueText: last[i] ? compact(last[i]) : "No activity",
-      detail: last[i] ? `tokens, ${points[i].cost.usd === null ? "no price" : `${formatUsd(points[i].cost.usd)} estimated`}` : "",
+      valueText: last[i] ? `${compact(last[i])} tokens` : "No activity",
+      detail: last[i] ? (points[i].cost.usd === null ? "No price" : `${formatUsd(points[i].cost.usd)} estimated`) : "",
     }));
     const usual = usualDay(daily.tokens.slice(-31, -1));
     return {
@@ -223,7 +250,9 @@ export function Dashboard() {
     const series = projectSeries.data?.series ?? null;
     if (!data) return { rows: [], count: null as number | null };
     const byKey = new Map((series ?? []).map((s) => [s.key, s]));
-    const rows = data.topProjects.slice(0, PROJECTS_SHOWN).map((p) => {
+    // Biggest first by the number shown (the engine lists them by cost).
+    const top = [...data.topProjects].sort((a, b) => headline(b.tokens) - headline(a.tokens)).slice(0, PROJECTS_SHOWN);
+    const rows = top.map((p) => {
       const s = byKey.get(p.projectKey);
       return { p, spark: s ? bin(s.points.map((pt) => headline(pt.tokens)), 10) : null };
     });
@@ -246,10 +275,10 @@ export function Dashboard() {
             ? "The sandbox copy could not be made, so nothing is shown. See Settings."
             : "Waiting for your Claude folder. Your usage appears here as soon as it is ready."}
         </p>
-      ) : dash.error && !cacheNotReady(status) ? (
+      ) : dash.error && !cacheNotReady(status) && !engineDown ? (
         <ErrorBlock title="Could not load your usage" message={dash.error} onRetry={() => dash.reload(false)} />
-      ) : !data || (nothing && firstIndex) ? (
-        <DashboardSkeleton firstIndex={firstIndex} />
+      ) : engineDown && !data ? null : !data || (nothing && firstIndex) ? (
+        <DashboardSkeleton />
       ) : nothing ? (
         <EmptyState
           icon={SquaresFour}
@@ -259,17 +288,17 @@ export function Dashboard() {
           body="Atlas reads the conversations Claude Code saves in your Claude folder. Use Claude Code once and the numbers show up here on their own."
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 @[900px]:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] @[900px]:items-start">
-          <div className="min-w-0 space-y-4">
-            <section aria-label="Last 7 days" className="rise @container" style={{ ["--i" as string]: 1 }}>
-              <Card className="flex h-full flex-col gap-3 px-6 pb-4 pt-4 @[520px]:flex-row @[520px]:justify-between">
+        <div className={`${PAGE_GRID} @[900px]:items-start`}>
+          <div className={PAGE_COLUMN}>
+            <section aria-label="Last 7 days" className={`rise @container order-1 min-w-0 ${PAGE_WIDE}`} style={{ ["--i" as string]: 1 }}>
+              <Card className="flex h-full flex-col gap-3 px-6 pb-4 pt-4 @[460px]:flex-row @[460px]:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="d d-figure text-ink">Last 7 days</h2>
                     {week?.delta != null && <Delta pct={week.delta} />}
                   </div>
                   <div
-                    className="my-2 flex items-baseline gap-2.5"
+                    className="my-2 flex flex-wrap items-baseline gap-x-2.5"
                     title={
                       data.week.tokens.cacheRead > 0
                         ? `${tokenHint(weekTokens, data.week.cost)}\nPlus ${exact(data.week.tokens.cacheRead)} cache reads, counted apart.`
@@ -289,18 +318,18 @@ export function Dashboard() {
                   </div>
                 </div>
                 {week && (
-                  <div className="w-full self-end @[520px]:w-[clamp(200px,40%,600px)] @[520px]:shrink-0">
+                  <div className="w-full self-end @[460px]:w-[clamp(168px,40%,600px)] @[460px]:shrink-0">
                     <Ridge id="dash:ridge" data={week.readouts} label="Tokens per day, last 7 days" height={112} />
                   </div>
                 )}
               </Card>
             </section>
 
-            <section aria-label="Activity" className="rise" style={{ ["--i" as string]: 3 }}>
+            <section aria-label="Activity" className={`rise order-4 min-w-0 @[740px]:order-3 ${PAGE_WIDE}`} style={{ ["--i" as string]: 3 }}>
               <ActivityCard today={today} />
             </section>
 
-            <div className="grid grid-cols-1 gap-4 @[740px]:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+            <div className="order-5 grid min-w-0 grid-cols-1 gap-4 @[600px]:col-span-2 @[620px]:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
             <section aria-label="Models" className="rise" style={{ ["--i" as string]: 5 }}>
               <Card className="h-full px-5 py-4">
                 <div className="flex items-baseline justify-between">
@@ -350,14 +379,14 @@ export function Dashboard() {
             </section>
             </div>
           </div>
-          <div className="min-w-0 space-y-4">
-            <section aria-label="Today" className="rise" style={{ ["--i" as string]: 2 }}>
-              <Card className="h-full px-5 py-3.5">
+          <div className={PAGE_COLUMN}>
+            <section aria-label="Today" className="rise order-2 min-w-0" style={{ ["--i" as string]: 2 }}>
+              <Card className="flex h-full flex-col px-5 py-3.5">
                 <div className="flex items-baseline justify-between">
                   <h2 className="d d-figure text-ink">Today</h2>
                   <span className="text-caption text-ink-2">so far</span>
                 </div>
-                <div className="mt-2.5 flex items-center gap-[18px]">
+                <div className="mt-2.5 flex flex-1 items-center gap-[18px]">
                   <Ring
                     id="dash:ring"
                     size={88}
@@ -392,7 +421,7 @@ export function Dashboard() {
               </Card>
             </section>
 
-            <section aria-label="On a roll" className="rise" style={{ ["--i" as string]: 4 }}>
+            <section aria-label="On a roll" className="rise order-3 min-w-0 @[740px]:order-4" style={{ ["--i" as string]: 4 }}>
               <Card className="h-full px-5 py-3.5">
                 <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <div className="flex items-center gap-2">
@@ -415,17 +444,7 @@ export function Dashboard() {
                     values={heat.values}
                     readouts={heat.readouts}
                     label="Daily activity"
-                    footer={() => (
-                      <div className="mt-3 flex items-center justify-end">
-                        <span aria-hidden="true" className="flex items-center gap-1 text-caption text-ink-2">
-                          Less
-                          {[0, 1, 2, 3, 4, 5].map((b) => (
-                            <i key={b} className="inline-block size-2.5 rounded-[3px]" style={{ background: `var(--heat-${b})` }} />
-                          ))}
-                          More
-                        </span>
-                      </div>
-                    )}
+                    legend
                   />
                 ) : (
                   <Skeleton className="h-[120px] w-full" />
@@ -433,7 +452,7 @@ export function Dashboard() {
               </Card>
             </section>
 
-          <section aria-label="Recent sessions" className="rise" style={{ ["--i" as string]: 7 }}>
+          <section aria-label="Recent sessions" className="rise @container order-6 min-w-0 @[600px]:col-span-2" style={{ ["--i" as string]: 7 }}>
             <SectionTitle
               aside={
                 <Button onClick={() => setView("sessions")}>

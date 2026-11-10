@@ -32,3 +32,15 @@ export function groupChats(snap: NowSnapshot): { running: NowChat[]; waiting: No
     finished: snap.recent.length > 0 ? snap.recent : snap.last ? [snap.last] : [],
   };
 }
+
+/**
+ * A file path split before its last part, so a tight line can drop folders and keep the file
+ * name ("src/compon.../Heatmap.tsx"). Anything that is not a plain path (a command, a search,
+ * a web address) is null and is cut at its end as usual.
+ */
+export function splitPath(target: string): { head: string; tail: string } | null {
+  if (/\s/.test(target) || target.includes("://")) return null;
+  const cut = Math.max(target.lastIndexOf("/"), target.lastIndexOf("\\"));
+  if (cut <= 0 || cut === target.length - 1) return null;
+  return { head: target.slice(0, cut), tail: target.slice(cut) };
+}

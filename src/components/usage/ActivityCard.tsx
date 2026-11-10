@@ -40,24 +40,37 @@ export function ActivityCard({ today }: { today: string }) {
   const points = tl.data?.points ?? [];
   const data: BarDatum[] = useMemo(
     () =>
-      points.map((p) => {
+      points.map((p, i) => {
         const tokens = headline(p.tokens);
+        // The newest bar says what it is in words: "Today" under the day that is today, "This week".
+        const newest = i === points.length - 1;
+        const axis =
+          newest && span.bucket === "week"
+            ? "This week"
+            : newest && span.bucket === "day" && p.start.slice(0, 10) === today
+              ? "Today"
+              : axisLabel(p.start, span.bucket);
         return {
           key: p.start,
           value: tokens,
-          axis: axisLabel(p.start, span.bucket),
+          axis,
           title: bucketTitle(p.start, span.bucket),
-          valueText: compact(tokens),
-          detail: `tokens, ${p.cost.usd === null ? "no price" : `${formatUsd(p.cost.usd)} estimated`}, ${plural(p.sessions, "session")} started`,
+          valueText: `${compact(tokens)} tokens`,
+          detail: `${p.cost.usd === null ? "No price" : `${formatUsd(p.cost.usd)} estimated`}, ${plural(p.sessions, "session")} started`,
         };
       }),
-    [points, span.bucket],
+    [points, span.bucket, today],
   );
+
+  // The accent bar is "now": the newest day or week, and on the hourly view the hour it is.
+  const hourNow = new Date().getHours();
+  const nowBar =
+    span.bucket === "hour" ? points.findIndex((p) => p.start.slice(0, 10) === today && Number(p.start.slice(11, 13)) === hourNow) : points.length - 1;
 
   const total = useMemo(() => points.reduce((s, p) => s + headline(p.tokens), 0), [points]);
 
   return (
-    <Card className="px-5 py-4">
+    <Card className="h-full px-5 py-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="d d-figure text-ink">Activity</h2>
@@ -123,6 +136,8 @@ export function ActivityCard({ today }: { today: string }) {
           label={`Tokens, ${RANGE_NAME[range].toLowerCase()}`}
           formatTick={compact}
           height={158}
+          highlight={nowBar}
+          anchor={span.bucket === "hour" ? "start" : "end"}
         />
       )}
     </Card>
