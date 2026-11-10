@@ -759,20 +759,21 @@ body:has(> .fixed.inset-0) .caption-buttons {
 .app-shell[data-side="collapsed"] .titlebar::after {
   transition-delay: 60ms; /* in step with the sidebar, which waits for the labels to fade */
 }
-/* The sidebar's four corner buttons (32 px each, --shell-inset from every edge of the column, one
-   --shell-gap between neighbours). Open: one row, menu / Settings / toggle at the left and Wrapped
-   at the far right. Folded: a 2 x 2 square at the top-left, Settings under the menu and Wrapped
-   under the toggle, so the folded column is exactly inset + 32 + gap + 32 + inset wide. Settings
-   and Wrapped are placed here (absolute in the row) and slide between the two layouts at the pace
-   of the fold; the toggle closes up its gap for Settings in the same time. */
+/* The sidebar's four corner buttons (32 px each, --shell-inset from every edge of the column).
+   Open: one row across the sidebar's width, menu / Settings / toggle / Wrapped with --shell-row-gap
+   between each pair (the width is built from this row: tokens.css). Folded: a 2 x 2 square at the
+   top-left with --shell-gap inside it, Settings under the menu and Wrapped under the toggle, so the
+   folded column is exactly inset + 32 + gap + 32 + inset wide. Settings and Wrapped are placed here
+   (absolute in the row) and slide between the two layouts at the pace of the fold; the toggle
+   closes up its gap for Settings in the same time. */
 .titlebar-left {
   display: flex;
   align-items: center;
-  gap: var(--shell-gap);
+  gap: var(--shell-row-gap);
   padding-left: var(--shell-inset);
 }
 .titlebar-toggle {
-  margin-left: calc(32px + var(--shell-gap)); /* Settings' place, held open in the row */
+  margin-left: calc(32px + var(--shell-row-gap)); /* Settings' place, held open in the row */
   transition: margin-left var(--side-dur) var(--ease-out);
 }
 .app-shell[data-side="collapsed"] .titlebar-toggle {
@@ -787,7 +788,7 @@ body:has(> .fixed.inset-0) .caption-buttons {
     left var(--side-dur) var(--ease-out);
 }
 .titlebar-settings {
-  left: calc(var(--shell-inset) + 32px + var(--shell-gap));
+  left: calc(var(--shell-inset) + 32px + var(--shell-row-gap));
 }
 .titlebar-gift {
   left: calc(var(--sidebar-w) - var(--shell-inset) - 32px);
@@ -801,6 +802,9 @@ body:has(> .fixed.inset-0) .caption-buttons {
 }
 .app-shell[data-side="collapsed"] .titlebar-gift {
   left: calc(var(--shell-inset) + 32px + var(--shell-gap));
+}
+.app-shell[data-side="collapsed"] .titlebar-left {
+  gap: var(--shell-gap);
 }
 .titlebar-corner[aria-current="page"] .btn-face,
 .titlebar-corner[aria-current="page"]:hover:not(:disabled) .btn-face {
@@ -1301,6 +1305,12 @@ html[data-input="keyboard"] .folder-head:focus-visible {
 .side-collapsed .side-foot {
   justify-content: center;
 }
+/* The Sandbox chip's words may take two lines open ("Preparing sandbox" is wider than the slim
+   column leaves it); the dot stays centred beside them. */
+.side [role="status"] .nav-label {
+  white-space: normal;
+  line-height: 1.25;
+}
 .side-collapsed [role="status"] {
   justify-content: center;
   padding-inline: 0;
@@ -1325,24 +1335,28 @@ html.reduced .titlebar::after {
 }
 /* macOS: the traffic lights sit at the left of the row, so the buttons start after them. The row
    is its own strip across the window and the sidebar starts below it. */
-html[data-platform="macos"] .titlebar-left {
+html[data-platform="macos"] .app-shell .titlebar-left {
   padding-left: 84px;
+  /* Two columns: the first after the traffic lights, the second --shell-inset from the sidebar's
+     right edge (160 - 84 - 64 - 4 = 8 between them). */
+  gap: calc(var(--sidebar-w) - 84px - 64px - var(--shell-inset));
 }
 /* After the traffic lights only two buttons fit in the sidebar's width, so on macOS Settings and
-   Wrapped keep the square's second row (under the menu and the toggle) in both states. */
-html[data-platform="macos"] .titlebar-toggle {
+   Wrapped keep the square's second row (under the menu and the toggle) in both states; the row is
+   its own strip, so the fold does not move them (these rules outrank the [data-side] ones). */
+html[data-platform="macos"] .app-shell .titlebar-toggle {
   margin-left: 0;
 }
-html[data-platform="macos"] .titlebar-corner {
+html[data-platform="macos"] .app-shell .titlebar-corner {
   top: calc(var(--shell-inset) + 32px + var(--shell-gap));
 }
-html[data-platform="macos"] .titlebar-settings {
+html[data-platform="macos"] .app-shell .titlebar-settings {
   left: 84px;
 }
-html[data-platform="macos"] .titlebar-gift {
-  left: calc(84px + 32px + var(--shell-gap));
+html[data-platform="macos"] .app-shell .titlebar-gift {
+  left: calc(var(--sidebar-w) - var(--shell-inset) - 32px);
 }
-html[data-platform="macos"] .side-main {
+html[data-platform="macos"] .app-shell .side-main {
   margin-top: calc(32px + var(--shell-gap));
 }
 html[data-platform="macos"] .titlebar {
