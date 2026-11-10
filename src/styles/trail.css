@@ -981,6 +981,40 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
 .session-grid > li {
   border-bottom: 1px solid var(--line);
 }
+/* A row's quiet line. Each row measures itself, so the same row works in a wide list and in the
+   Dashboard's narrow column. Two parts on a line that wraps and shows its first line only: the facts
+   (project, tokens, helpers, date) and the model. When both do not fit, the model wraps out of view
+   whole, never cut to a stub; then the project name shortens, down to a few letters at least. */
+.session-grid > li {
+  container: srow / inline-size;
+}
+.sl-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  align-content: flex-start;
+  height: var(--text-caption--line-height);
+}
+.sl-main {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 100%;
+}
+.sl-proj {
+  flex: 0 1 auto;
+  min-width: 56px; /* the dot and about five letters */
+  max-width: 224px;
+}
+/* A narrow column has room for the project, the tokens and the date: the helpers drop out whole,
+   and a removed file's note takes the date's place. */
+@container srow (max-width: 400px) {
+  .sl-helpers,
+  .sl-drop {
+    display: none;
+  }
+}
 @container (min-width: 1280px) {
   .session-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

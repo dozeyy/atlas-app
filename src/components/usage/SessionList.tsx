@@ -46,8 +46,8 @@ const DOT = (
   </span>
 );
 
-/** A project name past this many characters is the first thing on the meta line to shorten. */
-const LONG_PROJECT = 14;
+/** A project name up to this many characters is never cut: there is nothing left of it to read once it is. */
+const SHORT_PROJECT = 8;
 
 /** The row's model hover: the exact id, then the effort mix when one was recorded. */
 function effortTitle(row: SessionRow): string {
@@ -68,7 +68,7 @@ function effortTitle(row: SessionRow): string {
  *             whole date is then in its hover)
  *             >  the main model with its most used reasoning effort ("Opus 5.5 · high"; the
  *             full mix is in its hover; no effort recorded shows the model alone)
- *           A removed file adds "File removed" at the end, as plain text.
+ *           A removed file adds "File removed" after the date, as plain text.
  *   line 3  only when a message search found words inside this chat: one line of it, matches bold
  *
  * Rhythm: 14 px above and below, 4 px between the title and the meta (a 72 px row without a
@@ -98,50 +98,51 @@ export function SessionLine({
         <span title={name} className={`block w-full truncate text-lead font-bold ${row.name ? "text-ink" : "text-ink-2"}`}>
           {name}
         </span>
-        {/* One quiet line that never wraps. When it is tight the project name gives way (ellipsis); the tokens, helpers and date stay whole.
-            A long project name gives way first, down to a short stub, so the model after it is not the one cut. */}
-        <span className="mt-1 flex w-full min-w-0 items-baseline truncate text-caption text-ink-2">
-          <span
-            data-tip={row.projectPath || row.projectName}
-            className={`truncate ${row.projectName.length > LONG_PROJECT ? "min-w-24 shrink-[99]" : "min-w-0"}`}
-          >
-            <ProjectDot path={row.projectPath || row.projectName} />
-            {row.projectName}
-          </span>
-          <span className="shrink-0">{DOT}</span>
-          <span className="shrink-0">
-            <TokenText tokens={row.tokens.total} cost={row.cost} className="font-semibold text-ink" />
-            {barShare !== undefined && (
-              <span aria-hidden="true" className="tok-bar">
-                <i style={{ width: `${Math.round(barShare * 100)}%` }} />
+        {/* One quiet line that never wraps and never shows a stub. What gives way, in order: a long project name shortens to
+            its cap; the model drops out whole (it is on the chat's own page); the project shortens to a short stub; and in a
+            narrow column (the Dashboard's) the helpers drop out whole. Tokens and the date always stay. Rules: .sl-meta. */}
+        <span className="sl-meta mt-1 w-full min-w-0 truncate text-caption text-ink-2">
+          <span className="sl-main">
+            <span data-tip={row.projectPath || row.projectName} className={`truncate ${row.projectName.length > SHORT_PROJECT ? "sl-proj" : "flex-none"}`}>
+              <ProjectDot path={row.projectPath || row.projectName} />
+              {row.projectName}
+            </span>
+            <span className="flex-none">{DOT}</span>
+            <span className="flex-none">
+              <TokenText tokens={row.tokens.total} cost={row.cost} className="font-semibold text-ink" />
+              {barShare !== undefined && (
+                <span aria-hidden="true" className="tok-bar">
+                  <i style={{ width: `${Math.round(barShare * 100)}%` }} />
+                </span>
+              )}
+            </span>
+            {row.agentCount > 0 && (
+              <span className="sl-helpers flex-none">
+                {DOT}
+                <span
+                  title={`${plural(row.agentCount, "helper")} ran inside this session. Their usage is counted here.`}
+                  className="font-semibold text-accent-text"
+                >
+                  {plural(row.agentCount, "helper")}
+                </span>
+              </span>
+            )}
+            {/* A removed file's note matters more than the date when there is room for only one of them. */}
+            <span className={`flex-none ${row.missing ? "sl-drop" : ""}`}>
+              {DOT}
+              {dayKnown ? <span title={formatWhen(row.startedAt)}>{clockOf(row.startedAt)}</span> : formatWhen(row.startedAt)}
+            </span>
+            {row.missing && (
+              <span className="flex-none">
+                {DOT}
+                <span title="The file for this session is no longer on disk. Its numbers are kept.">File removed</span>
               </span>
             )}
           </span>
-          {row.agentCount > 0 && (
-            <span className="shrink-0">
-              {DOT}
-              <span
-                title={`${plural(row.agentCount, "helper")} ran inside this session. Their usage is counted here.`}
-                className="font-semibold text-accent-text"
-              >
-                {plural(row.agentCount, "helper")}
-              </span>
-            </span>
-          )}
-          <span className="shrink-0">
-            {DOT}
-            {dayKnown ? <span title={formatWhen(row.startedAt)}>{clockOf(row.startedAt)}</span> : formatWhen(row.startedAt)}
-          </span>
           {row.mainModel && (
-            <span className="min-w-0 truncate" title={effortTitle(row)}>
+            <span className="flex-none" title={effortTitle(row)}>
               {DOT}
               {modelWithEffort(row.mainModel, topEffort(row.efforts))}
-            </span>
-          )}
-          {row.missing && (
-            <span className="shrink-0">
-              {DOT}
-              <span title="The file for this session is no longer on disk. Its numbers are kept.">File removed</span>
             </span>
           )}
         </span>
