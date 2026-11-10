@@ -517,7 +517,7 @@ pub fn today_of(ctx: &QueryCtx) -> String {
 pub fn today(conn: &Connection, ctx: &QueryCtx) -> rusqlite::Result<Period> {
     let day = today_of(ctx);
     let rows = fetch_hours(conn, "substr(hour_local,1,10)", "''", &day, &day)?;
-    Ok(period(&rows, &day, &day, sessions_active(conn, ctx.tz, &day, &day)?))
+    Ok(period(&rows, &day, &day, sessions_started(conn, ctx.tz, &day, &day)?))
 }
 
 fn project_index(conn: &Connection) -> rusqlite::Result<HashMap<String, (String, String)>> {
@@ -541,12 +541,14 @@ pub fn base_name(path: &str) -> String {
 /// yesterday and carried on today counts for today: the cards show tokens by when they were
 /// used, so the session count must follow the same rule. Candidates come from the indexed
 /// `sessions` span; the per-session probe uses `messages_session`, so this stays cheap.
-fn sessions_active(conn: &Connection, tz: Tz, from_day: &str, to_day: &str) -> rusqlite::Result<u64> {
+/// Chats started in these local days: a chat (one session id; its helpers share it) counts on
+/// the day of its first reply. Every caller words this "started": a chat begun yesterday and
+/// still going today used to count today too (Will's PC 2026-11-09: 117 counted, 115 started).
+fn sessions_started(conn: &Connection, tz: Tz, from_day: &str, to_day: &str) -> rusqlite::Result<u64> {
     let lo = day_start_ms(tz, from_day);
     let hi = day_start_ms(tz, &add_days(to_day, 1));
     conn.query_row(
-        "SELECT COUNT(*) FROM sessions s WHERE s.messages > 0 AND s.last_ts >= ?1 AND s.first_ts < ?2 \
-         AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.session_id AND m.ts_utc_ms >= ?1 AND m.ts_utc_ms < ?2)",
+        "SELECT COUNT(*) FROM sessions s WHERE s.messages > 0 AND s.first_ts >= ?1 AND s.first_ts < ?2",
         [lo, hi],
         |r| r.get::<_, i64>(0),
     )
@@ -569,9 +571,9 @@ pub fn dashboard(conn: &Connection, ctx: &QueryCtx) -> rusqlite::Result<Dashboar
     let d30 = add_days(&today, -29);
     let by_day = fetch_hours(conn, "substr(hour_local,1,10)", "''", &d30, &today)?;
 
-    let today_p = period(&by_day, &today, &today, sessions_active(conn, ctx.tz, &today, &today)?);
-    let week_p = period(&by_day, &d7, &today, sessions_active(conn, ctx.tz, &d7, &today)?);
-    let month_p = period(&by_day, &d30, &today, sessions_active(conn, ctx.tz, &d30, &today)?);
+    let today_p = period(&by_day, &today, &today, sessions_started(conn, ctx.tz, &today, &today)?);
+    let week_p = period(&by_day, &d7, &today, sessions_started(conn, ctx.tz, &d7, &today)?);
+    let month_p = period(&by_day, &d30, &today, sessions_started(conn, ctx.tz, &d30, &today)?);
 
     let mut models: BTreeMap<&str, Acc> = BTreeMap::new();
     for r in &by_day {
@@ -1024,7 +1026,7 @@ pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlit
     let by_project_sessions = sessions_by_project(conn, ctx.tz, from, to)?;
     let sessions = match project {
         Some(k) => by_project_sessions.get(k).copied().unwrap_or(0),
-        None => sessions_active(conn, ctx.tz, from, to)?,
+        None => sessions_started(conn, ctx.tz, from, to)?,
     };
     let total = period(&rows, from, to, sessions);
 
@@ -1888,6 +1890,30 @@ mod tests {
         assert_eq!(bucket_of("2026-11-08", "month", false), "2026-11-01");
         assert_eq!(bucket_starts("2026-11-01", "2026-11-03", "day", false).len(), 3);
         assert_eq!(bucket_starts("2026-11-01", "2026-11-01", "hour", false).len(), 24);
+    }
+
+    #[test]
+    fn sessions_count_on_the_local_day_they_started() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::cache::migrate::migrate(&mut conn).unwrap();
+        // UTC-7. Local 2026-11-02 runs 07:00Z on the 2nd to 07:00Z on the 3rd.
+        let tz = Tz::Fixed(-7 * 3600);
+        let at = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap().timestamp_millis();
+        for (id, first, last, n) in [
+            ("yesterday-still-going", "2026-11-02T05:00:00Z", "2026-11-02T09:00:00Z", 4), // local 1st, 22:00
+            ("today", "2026-11-02T08:00:00Z", "2026-11-02T08:30:00Z", 2),
+            ("late-today", "2026-11-03T06:59:00Z", "2026-11-03T08:00:00Z", 2), // local 2nd, 23:59
+            ("tomorrow", "2026-11-03T07:00:00Z", "2026-11-03T07:10:00Z", 1),
+            ("no-replies", "2026-11-02T08:00:00Z", "2026-11-02T08:00:00Z", 0),
+        ] {
+            conn.execute(
+                "INSERT INTO sessions (session_id, first_ts, last_ts, messages) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![id, at(first), at(last), n],
+            )
+            .unwrap();
+        }
+        assert_eq!(sessions_started(&conn, tz, "2026-11-02", "2026-11-02").unwrap(), 2);
+        assert_eq!(sessions_started(&conn, tz, "2026-11-01", "2026-11-03").unwrap(), 4);
     }
 
     #[test]

@@ -155,6 +155,7 @@ function WaitRow({ chat, now }: { chat: NowChat; now: number }) {
         </h3>
         <p className="now-row-sub">
           {chat.title && <span className="chip">{chat.project}</span>}
+          {chat.model && <span className="chip">{modelWithEffort(chat.model, chat.effort)}</span>}
           <span className="now-row-doing" title={line}>
             {line}
           </span>

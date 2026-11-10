@@ -394,3 +394,9 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - `make-fixtures.py` main() used to delete every fixture, including the hand-made claude-agents, claude-items and setup-*-wire-keys.json; it now clears only its own folders.
 - Shares: percent() and the CLI say ">99%" rather than "100%" when another part exists.
 - Screen capture with other agents running: `CopyFromScreen` caught another agent's topmost Atlas window. PrintWindow(hwnd, 3) plus clicks posted to Chrome_RenderWidgetHostHWND is immune (used for docs/shots/accuracy/).
+
+## 2026-11-09 - Accuracy follow-ups (rebased on a040fe0)
+- Model ids are stored without a trailing `[..]` context suffix (line parser, so ledger and Now agree; `base_model_id`). Real data has 0 such lines in 255,640, so no cache migration; the effort migration stays v5 (main had none).
+- "Sessions started" (Dashboard today/week/month, tray, CLI, MCP) counted chats *active* in the range, not started: Will's cache 2026-11-09 had 117 active vs 115 started today. Now `sessions_started`: first reply in the local-day range (helpers share the chat's session id, so they never add to it).
+- One label rule: the Now helper rows (`helperProgress.modelEffort`) and the waiting card use `modelWithEffort`, as Sessions and Session Detail do. Geo is matched lowercased; `ByModel.known` drives "not priced".
+- Flaky under load (from the Now-tracker branch): `fsutil::a_read_only_target_fails_at_once_with_a_clear_message`; 6 clean workspace runs here.

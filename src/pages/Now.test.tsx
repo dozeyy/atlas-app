@@ -163,7 +163,7 @@ describe("Now", () => {
   it("keeps running, waiting and finished chats in three separate groups", async () => {
     mount(
       snap({
-        chats: [chat(), waiting()],
+        chats: [chat(), waiting({ model: "claude-opus-5-5", effort: "high" })],
         recent: [done({ tokens: 9_870 }), done({ sessionId: "d2", title: "Older chat", endedMs: Date.now() - 2 * 3_600_000 })],
       }),
     );
@@ -177,6 +177,8 @@ describe("Now", () => {
     expect(within(waitRow).getByText("Waiting for you")).toBeInTheDocument();
     expect(within(waitRow).getByText("48k")).toBeInTheDocument();
     expect(within(waitRow).getByText("4 min")).toBeInTheDocument();
+    // Same model chip as the running and finished cards.
+    expect(within(waitRow).getByText("Opus 5.5 · high")).toHaveClass("chip");
 
     const fin = screen.getByRole("region", { name: "Finished recently" });
     const rows = within(fin).getAllByRole("listitem");

@@ -305,7 +305,9 @@ fn message(raw: Raw) -> Result<LineEvent, Skip> {
         cwd: raw.cwd.filter(|c| !c.is_empty()).map(Cow::into_owned),
         agent_id: raw.agent_id.filter(|c| !c.is_empty()).map(Cow::into_owned),
         is_sidechain: raw.is_sidechain.unwrap_or(false),
-        model: model.into_owned(),
+        // Stored without a context suffix ("claude-opus-5-5[1m]" -> "claude-opus-5-5"): one model
+        // is one row in every by-model list, and the label and price are the same anyway.
+        model: crate::usage::naming::base_model_id(&model).to_string(),
         ts_ms: ts,
         input,
         output,
@@ -510,6 +512,14 @@ mod tests {
         assert_eq!(get(""), None);
         assert_eq!(get(r#","effort":"""#), None);
         assert_eq!(get(r#","effort":"<b>""#), None);
+    }
+
+    #[test]
+    fn a_context_suffix_is_stored_as_the_base_model() {
+        let p = Prefilter::new();
+        let line = a(r#"{"input_tokens":1,"output_tokens":1}"#, "").replace("claude-opus-5-5", "claude-opus-5-5[1m]");
+        let LineEvent::Message(m) = p.parse(line.as_bytes()).unwrap() else { panic!() };
+        assert_eq!(m.model, "claude-opus-5-5");
     }
 
     #[test]
