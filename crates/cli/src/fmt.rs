@@ -165,6 +165,18 @@ fn model_label(m: &str) -> String {
 /// The reasoning-effort mix as the app words it: one effort is just its name ("high"); a mix
 /// is each effort's share of the replies that had one, most used first ("high 93%, medium 7%").
 /// Empty when no reply said (never a guess).
+/// A share of a whole as people read it: a part that is there never shows as 0%, and a part
+/// that is not the whole never shows as 100% ("<1%", ">99%"). `p` is 0..=100.
+pub fn share_text(p: f64) -> String {
+    if p > 0.0 && p < 1.0 {
+        "<1%".into()
+    } else if p > 99.0 && p < 100.0 {
+        ">99%".into()
+    } else {
+        format!("{p:.0}%")
+    }
+}
+
 pub fn effort_mix(e: &[atlas_core::usage::query::EffortUse]) -> String {
     let total: u64 = e.iter().map(|x| x.replies).sum();
     match e {
@@ -174,7 +186,7 @@ pub fn effort_mix(e: &[atlas_core::usage::query::EffortUse]) -> String {
             .iter()
             .map(|x| {
                 let p = x.replies as f64 * 100.0 / total.max(1) as f64;
-                if p > 0.0 && p < 1.0 { format!("{} <1%", x.effort) } else { format!("{} {:.0}%", x.effort, p) }
+                format!("{} {}", x.effort, share_text(p))
             })
             .collect::<Vec<_>>()
             .join(", "),
@@ -279,7 +291,12 @@ mod tests {
         assert_eq!(effort_mix(&[]), "");
         assert_eq!(effort_mix(&[e("high", 40)]), "high");
         assert_eq!(effort_mix(&[e("high", 93), e("medium", 7)]), "high 93%, medium 7%");
-        assert_eq!(effort_mix(&[e("high", 999), e("max", 1)]), "high 100%, max <1%");
+        assert_eq!(effort_mix(&[e("high", 999), e("max", 1)]), "high >99%, max <1%");
+        assert_eq!(share_text(0.0), "0%");
+        assert_eq!(share_text(0.4), "<1%");
+        assert_eq!(share_text(45.6), "46%");
+        assert_eq!(share_text(99.6), ">99%");
+        assert_eq!(share_text(100.0), "100%");
     }
 
     #[test]

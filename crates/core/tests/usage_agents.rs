@@ -226,7 +226,7 @@ fn an_older_cache_is_migrated_and_re_read() {
     {
         let c = Connection::open(&db).unwrap();
         c.execute_batch(
-            "DROP TABLE agents; ALTER TABLE files DROP COLUMN tool_calls; ALTER TABLE sessions DROP COLUMN prompt_summary;
+            "DROP TABLE agents; ALTER TABLE files DROP COLUMN tool_calls; ALTER TABLE sessions DROP COLUMN prompt_summary; ALTER TABLE messages DROP COLUMN effort;
              UPDATE meta SET value='1' WHERE key='parser_version'; PRAGMA user_version = 1;",
         )
         .unwrap();

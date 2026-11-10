@@ -98,9 +98,22 @@ CREATE TABLE IF NOT EXISTS receipt_scan (
 
 /// The reasoning effort of each reply (`perTurnEffort`, else `effort`; NULL when the transcript
 /// has none). Additive: one nullable column. Existing caches are re-read once (PARSER_VERSION
-/// bump) so it fills in.
+/// bump) so it fills in. Adds the column only when it is missing, so a cache whose version was
+/// rolled back (or a test that fakes an older cache) still opens.
 fn m0005_effort(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-    tx.execute_batch("ALTER TABLE messages ADD COLUMN effort TEXT;")
+    if !has_column(tx, "messages", "effort")? {
+        tx.execute_batch("ALTER TABLE messages ADD COLUMN effort TEXT;")?;
+    }
+    Ok(())
+}
+
+fn has_column(tx: &rusqlite::Transaction, table: &str, column: &str) -> rusqlite::Result<bool> {
+    let n: i64 = tx.query_row(
+        &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
+        [column],
+        |r| r.get(0),
+    )?;
+    Ok(n > 0)
 }
 
 fn m0001(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {

@@ -100,8 +100,7 @@ fn pct(part: u64, whole: u64) -> String {
     if whole == 0 {
         return "0%".into();
     }
-    let p = part as f64 / whole as f64 * 100.0;
-    if p > 0.0 && p < 1.0 { "<1%".into() } else { format!("{p:.0}%") }
+    crate::fmt::share_text(part as f64 / whole as f64 * 100.0)
 }
 
 fn sessions(n: u64) -> String {

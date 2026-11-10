@@ -100,3 +100,29 @@ fn new_models_are_priced_and_unknown_ones_are_flagged() {
     let want = (110.0 * 8.0 + 140.0 * 40.0 + 1000.0 * 10.0 + 5000.0 * 0.2) / 1e6;
     assert!((fable.cost.usd.unwrap() - want).abs() < 1e-12, "{:?} vs {want}", fable.cost);
 }
+
+#[test]
+fn the_effort_column_migrates_in_and_a_rolled_back_version_still_opens() {
+    let data = tempfile::tempdir().unwrap();
+    // A version-4 cache (no effort column) gains it.
+    let old = data.path().join("v4.sqlite");
+    {
+        let mut c = rusqlite::Connection::open(&old).unwrap();
+        atlas_core::cache::migrate::migrate(&mut c).unwrap();
+        c.execute_batch("ALTER TABLE messages DROP COLUMN effort; PRAGMA user_version = 4;").unwrap();
+    }
+    let opened = atlas_core::cache::open_writer(&old).unwrap();
+    let n: i64 = opened.conn.query_row("SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name='effort'", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 1);
+    drop(opened);
+    // A cache that already has the column but says version 4 (rolled back) opens too.
+    let rolled = data.path().join("rolled.sqlite");
+    {
+        let mut c = rusqlite::Connection::open(&rolled).unwrap();
+        atlas_core::cache::migrate::migrate(&mut c).unwrap();
+        c.execute_batch("PRAGMA user_version = 4;").unwrap();
+    }
+    let opened = atlas_core::cache::open_writer(&rolled).unwrap();
+    let v: i64 = opened.conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+    assert_eq!(v, atlas_core::cache::SCHEMA_VERSION);
+}
