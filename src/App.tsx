@@ -98,7 +98,7 @@ export function App() {
       <TitleBar />
       {/* One straight divider from the top edge to the bottom: the sidebar's own right border. */}
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col bg-bg pt-[var(--titlebar-h)]">
+      <div className="page-pane flex min-w-0 flex-1 flex-col bg-bg pt-[var(--titlebar-h)]">
         <main ref={main} tabIndex={-1} aria-label={NAV.find((n) => n.view === view)?.label} className="min-h-0 flex-1 overflow-y-auto outline-none">
           <div
             key={view}

@@ -172,8 +172,17 @@ describe("Sessions", () => {
     await screen.findAllByRole("button", { name: /tokens/ });
     await userEvent.type(screen.getByRole("searchbox", { name: "Search chats" }), "zzzz-nothing");
     expect(await screen.findByText("No chats match")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    // Two ways to clear: the X in the field and the worded button in the empty state. Each brings the list back.
+    const clears = screen.getAllByRole("button", { name: "Clear search" });
+    expect(clears).toHaveLength(2);
+    await userEvent.click(screen.getByText("Clear search"));
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ }).length).toBeGreaterThan(0));
+    expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search chats" }), "zzzz-nothing");
+    expect(await screen.findByText("No chats match")).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole("button", { name: "Clear search" })[0]);
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ }).length).toBeGreaterThan(0));
+    expect(screen.getByRole("searchbox", { name: "Search chats" })).toHaveValue("");
   });
 
   it("shows an empty state when there are no sessions at all", async () => {

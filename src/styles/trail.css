@@ -933,7 +933,9 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   gap: 8px;
 }
 @container (max-width: 760px) {
-  .pick-strip {
+  /* "svg.chart" sets display too and is the stronger selector: without the parent here the strip
+     stayed and pushed the Open button onto a second row. */
+  .pick > .pick-strip {
     display: none;
   }
   .pick {
@@ -1382,6 +1384,34 @@ html[data-platform="macos"] .side {
   font-weight: 720;
   font-size: 17px;
   line-height: 22px;
+}
+
+/* ---- Toasts (components/Toasts.tsx) -------------------------------------------------------
+   A toast sits at the bottom of the page pane, centred in it (not under the sidebar). While one
+   is up the pane ends above it (--toast-room, set by the host), so a toast never lies over a
+   list row or a button: the list is a little shorter for a few seconds and still scrolls. With
+   a side sheet open the toast centres in the sheet instead (--toast-inset, set by the sheet). */
+.app-shell {
+  --toast-left: var(--sidebar-w);
+}
+.app-shell[data-side="collapsed"] {
+  --toast-left: var(--sidebar-w-collapsed);
+}
+.toast-host {
+  position: fixed;
+  left: var(--toast-inset, var(--toast-left, 0px));
+  right: 0;
+  bottom: 20px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  pointer-events: none;
+}
+.page-pane {
+  padding-bottom: var(--toast-room, 0px);
 }
 
 /* ---- Hover tip for every title (components/TipLayer.tsx) ----------------------------------

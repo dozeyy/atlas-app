@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { CheckCircle, Info, WarningCircle, X } from "@phosphor-icons/react";
 import { dismissToast, useToasts, type Toast } from "../state/toastStore";
 
@@ -12,7 +12,7 @@ function ToastCard({ toast }: { toast: Toast }) {
   return (
     <div
       role={toast.tone === "error" ? "alert" : "status"}
-      className="fade-in pointer-events-auto flex max-w-[min(520px,calc(var(--app-w)-32px))] items-center gap-3 rounded-card border border-line-strong bg-surface py-2.5 pl-4 pr-2 shadow-float"
+      className="fade-in pointer-events-auto flex max-w-[min(520px,100%)] items-center gap-3 rounded-card border border-line-strong bg-surface py-2.5 pl-4 pr-2 shadow-float"
     >
       <Icon size={18} weight="fill" aria-hidden="true" className={`shrink-0 ${TONE[toast.tone]}`} />
       <p className="selectable min-w-0 flex-1 text-body text-ink">{toast.message}</p>
@@ -49,12 +49,26 @@ function ToastCard({ toast }: { toast: Toast }) {
 /**
  * Mounted once in App. Sits above the page and the detail sheet. While a side sheet is open it
  * sets --toast-inset (the width the sheet leaves free), so toasts centre inside the sheet and
- * never straddle its edge.
+ * never straddle its edge. With no sheet open the toasts centre in the page pane, and the pane
+ * ends above them (--toast-room, `.page-pane` in trail.css): a toast never covers a row or a button.
  */
 export function ToastHost() {
   const toasts = useToasts();
+  const host = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const h = host.current?.offsetHeight ?? 0;
+    // A sheet covers the page: there the toast lies over the sheet's own bottom edge, not the page.
+    const inSheet = root.style.getPropertyValue("--toast-inset") !== "";
+    if (toasts.length === 0 || h === 0 || inSheet) root.style.removeProperty("--toast-room");
+    // The pane ends where the toasts begin (they sit 20 px off the bottom); the page's own bottom gutter is the gap.
+    else root.style.setProperty("--toast-room", `${h + 20}px`);
+    return () => {
+      root.style.removeProperty("--toast-room");
+    };
+  }, [toasts]);
   return (
-    <div aria-live="polite" className="pointer-events-none fixed bottom-5 left-[var(--toast-inset,0px)] right-0 z-[70] flex flex-col items-center gap-2 px-4">
+    <div ref={host} aria-live="polite" className="toast-host">
       {toasts.map((t) => (
         <ToastCard key={t.id} toast={t} />
       ))}

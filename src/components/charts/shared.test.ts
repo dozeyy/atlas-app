@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { stepIndex } from "./shared";
+import { clearPeak, stepIndex } from "./shared";
+
+describe("clearPeak (which bar gets the summit spark)", () => {
+  it("picks the one bar that stands clear of the rest", () => {
+    expect(clearPeak([2, 3, 9, 4, 3])).toBe(2);
+    expect(clearPeak([0, 0, 5, 12, 6, 0])).toBe(3);
+  });
+
+  it("plants nothing on level bars, a tie at the top, a lone bar or an empty chart", () => {
+    expect(clearPeak([5, 5, 5, 5])).toBe(-1);
+    expect(clearPeak([10, 10.2, 9.9, 10.1])).toBe(-1);
+    expect(clearPeak([3, 9, 9, 2])).toBe(-1);
+    expect(clearPeak([3, 9, 8.8, 2])).toBe(-1);
+    expect(clearPeak([0, 7, 0])).toBe(-1);
+    expect(clearPeak([4, 9])).toBe(-1);
+    expect(clearPeak([])).toBe(-1);
+    expect(clearPeak([0, 0])).toBe(-1);
+  });
+});
 
 describe("stepIndex (chart keyboard)", () => {
   it("starts from the right edge for Left/End and the left edge for Right", () => {

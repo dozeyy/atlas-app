@@ -5,7 +5,7 @@ import { useIntro } from "../../lib/motion";
 import { niceMax } from "../../lib/usage";
 import { ChartTooltip } from "./ChartTooltip";
 import type { TipAt } from "./ChartTooltip";
-import { stepIndex, useWidth } from "./shared";
+import { clearPeak, stepIndex, useWidth } from "./shared";
 import type { BarDatum } from "./shared";
 
 export type { BarDatum } from "./shared";
@@ -18,7 +18,7 @@ const BOTTOM = 22;
 /**
  * Activity bars. A bar grows from a fixed baseline; hover raises its top 4 px (scale from the
  * bottom edge) and fills it darker, a three-line tooltip follows, and the spark that sits
- * over the busiest bar steps aside while a tooltip is open. Keyboard: the group takes focus,
+ * over a clear single peak (`clearPeak`: level bars get none) steps aside while a tooltip is open. Keyboard: the group takes focus,
  * Left/Right (Home/End) read each bar. The pointer target is a separate full-height slot, so
  * the bar's growth never moves what the mouse is over.
  */
@@ -67,6 +67,7 @@ export function Bars({
     });
     return at;
   }, [data]);
+  const peak = useMemo(() => clearPeak(data.map((d) => d.value)), [data]);
 
   const labelEvery = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 64))));
   const cx = (i: number) => LEFT + i * slot + slot / 2;
@@ -158,11 +159,11 @@ export function Bars({
         })}
       </svg>
 
-      {busiest >= 0 && !calm && (
+      {peak >= 0 && !calm && (
         <span
           aria-hidden="true"
           className="spark summit"
-          style={{ position: "absolute", left: cx(busiest) - 9, top: Math.max(0, yOf(data[busiest].value) - 28), pointerEvents: "none" }}
+          style={{ position: "absolute", left: cx(peak) - 9, top: Math.max(0, yOf(data[peak].value) - 28), pointerEvents: "none" }}
         />
       )}
       <ChartTooltip tip={tip} width={width} />

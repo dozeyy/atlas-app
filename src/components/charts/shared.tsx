@@ -39,6 +39,26 @@ export interface BarDatum extends Readout {
   axis: string;
 }
 
+/**
+ * Which bar earns the summit spark, or -1 for none. The spark marks a peak, so it is planted only
+ * when one bar clearly stands over the rest: at least three bars have something in them, the top
+ * one is at least half again a typical bar (the median), and no other bar comes within 5% of it.
+ * Level bars, a tie at the top or a lone bar get no spark.
+ */
+export function clearPeak(values: number[]): number {
+  let at = -1;
+  values.forEach((v, i) => {
+    if (v > 0 && (at < 0 || v > values[at])) at = i;
+  });
+  if (at < 0) return -1;
+  const top = values[at];
+  const live = values.filter((v) => v > 0).sort((a, b) => a - b);
+  if (live.length < 3) return -1;
+  const median = live[Math.floor((live.length - 1) / 2)];
+  const runnerUp = live[live.length - 2];
+  return top >= median * 1.5 && runnerUp <= top * 0.95 ? at : -1;
+}
+
 /** Left/Right/Home/End/Escape over `n` items; Up/Down jump by `jump` (the heat grid uses 7). */
 export function stepIndex(key: string, at: number | null, n: number, jump = 0): number | null | undefined {
   if (n === 0) return undefined;

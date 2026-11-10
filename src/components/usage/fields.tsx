@@ -1,4 +1,5 @@
-import { CaretDown, MagnifyingGlass } from "@phosphor-icons/react";
+import { useRef } from "react";
+import { CaretDown, MagnifyingGlass, X } from "@phosphor-icons/react";
 
 /** A native select, dressed in the app's tokens. Native keeps keyboard and screen-reader behavior free. */
 export function SelectField({
@@ -52,6 +53,13 @@ export function SearchField({
   /** The taller toolbar height (--field-tall), the same as the buttons beside it. */
   tall?: boolean;
 }) {
+  const input = useRef<HTMLInputElement>(null);
+  // One clear button on every search field (the Toolkit's and the Library's look the same): it is
+  // there only while there is text, Escape does the same, and the browser's own X is hidden.
+  const clear = () => {
+    onChange("");
+    input.current?.focus();
+  };
   return (
     <label className="relative inline-flex min-w-[200px] flex-1">
       <span className="sr-only">{label}</span>
@@ -61,14 +69,35 @@ export function SearchField({
         className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-2 ${tall ? "left-3.5" : "left-3"}`}
       />
       <input
+        ref={input}
         type="search"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className={`selectable w-full rounded-control border border-line-strong bg-surface pr-3 text-body text-ink placeholder:text-ink-2 hover:bg-raised focus:bg-surface ${
-          tall ? "h-[var(--field-tall)] pl-9" : "h-8 pl-8"
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && value) {
+            e.preventDefault();
+            e.stopPropagation();
+            onChange("");
+          }
+        }}
+        className={`selectable w-full rounded-control border border-line-strong bg-surface text-body text-ink placeholder:text-ink-2 hover:bg-raised focus:bg-surface [&::-webkit-search-cancel-button]:hidden ${
+          tall ? "h-[var(--field-tall)] pl-9 pr-10" : "h-8 pl-8 pr-9"
         }`}
       />
+      {value && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={(e) => {
+            e.preventDefault();
+            clear();
+          }}
+          className={`press absolute top-1/2 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-control text-ink-2 hover:bg-raised hover:text-ink ${tall ? "right-2" : "right-1.5"}`}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+      )}
     </label>
   );
 }
