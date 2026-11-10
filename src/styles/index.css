@@ -394,6 +394,11 @@ html.reduced .pulse-dot,
 html.reduced .skeleton {
   animation: none !important;
 }
+/* Forced reduced motion (ATLAS_REDUCE_MOTION=1) leaves the same way: the short fade closeMs() waits for. */
+html.reduced .sheet-enter[data-closing],
+html.reduced .fade-in[data-closing] {
+  animation: fade-out var(--dur-close-reduced) var(--ease-out) forwards;
+}
 
 /* ---- Launch intro ------------------------------------------------------------
    The window is hidden and #root waits at 0.98 while the splash plays; at the
