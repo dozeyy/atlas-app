@@ -197,6 +197,7 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
       )}
       {selected && (
         <DetailSheet
+          key={selected.id}
           item={selected}
           all={byId}
           loads={loads}

@@ -35,6 +35,20 @@ describe("useClosing", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("is at rest again once onClose has run: a sheet kept mounted is visible and can close again", () => {
+    const onClose = vi.fn();
+    const { result } = renderHook(() => useClosing(onClose));
+    act(() => result.current.requestClose());
+    expect(result.current.closing).toBe(true);
+    act(() => vi.advanceTimersByTime(CLOSE_MS));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(result.current.closing).toBe(false);
+    act(() => result.current.requestClose());
+    expect(result.current.closing).toBe(true);
+    act(() => vi.advanceTimersByTime(CLOSE_MS));
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
   it("closes once however many times it is asked, and never after unmount", () => {
     const onClose = vi.fn();
     const { result, unmount } = renderHook(() => useClosing(onClose));

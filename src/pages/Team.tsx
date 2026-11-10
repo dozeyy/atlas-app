@@ -177,6 +177,7 @@ function Scorecard({
       )}
       {open && (
         <AgentSheet
+          key={open.agentType}
           card={open}
           toTs={data.toTs}
           onClose={closeSheet}
