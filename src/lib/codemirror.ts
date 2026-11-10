@@ -5,7 +5,7 @@
 // light and dark need no separate theme. Secret values arrive already masked
 // (bullets); the ranges only get a quiet "hidden" look, never the real value.
 
-import { Compartment, EditorState, type Extension, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
+import { Compartment, EditorState, type Extension, Prec, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, lineNumbers } from "@codemirror/view";
 import { HighlightStyle, StreamLanguage, syntaxHighlighting, type LanguageSupport } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
@@ -190,13 +190,15 @@ const editTheme = EditorView.theme({
 
 /**
  * Edit `text` in `parent`. `onChange` fires on every edit with the whole text;
- * `onSave` on Ctrl/Cmd+S. The caller owns `destroy()`.
+ * `onSave` on Ctrl/Cmd+S. `onEscape` is asked first on Escape, before the editor's own
+ * use of the key (clearing a selection): it returns true when it took the key, else the
+ * editor has it. The caller owns `destroy()`.
  */
 export async function mountEditor(
   parent: HTMLElement,
   text: string,
   language: string,
-  opts: { label: string; onChange: (text: string) => void; onSave: () => void },
+  opts: { label: string; onChange: (text: string) => void; onSave: () => void; onEscape?: () => boolean },
 ): Promise<Editor> {
   const [{ defaultKeymap, history, historyKeymap, indentWithTab }, { keymap }] = await Promise.all([
     import("@codemirror/commands"),
@@ -211,6 +213,9 @@ export async function mountEditor(
       doc: text,
       extensions: [
         history(),
+        // Above every other binding: a caller that wants Escape (leaving full window) gets it
+        // before the editor spends it on simplifying the selection.
+        Prec.highest(keymap.of([{ key: "Escape", run: () => opts.onEscape?.() ?? false }])),
         keymap.of([
           { key: "Mod-s", preventDefault: true, run: () => (opts.onSave(), true) },
           ...defaultKeymap,
