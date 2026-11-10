@@ -59,7 +59,7 @@
 
   /* Trail Map: heat ramp (cells only, exempt from contrast), chart hues, bars, lift. */
   --heat-0: #f0ebe4;
-  --heat-1: #f2d9c6;
+  --heat-1: #e9d1bf; /* 1.46:1 on the card, 1.2x heat-0's 1.19:1 (was #f2d9c6, 1.35:1) */
   --heat-2: #e9b394;
   --heat-3: #dc8a63;
   --heat-4: #c96442;
@@ -123,9 +123,9 @@
   --scrim: rgb(31 35 41 / 0.45);
 
   --heat-0: #dae0e7; /* a quiet cool grey, lighter than heat-1 so the ramp never dips (was #c9d0da) */
-  --heat-1: #f0d6c5;
-  --heat-2: #e9b394;
-  --heat-3: #dc8a63;
+  --heat-1: #d7c0b1; /* 1.47:1 on the card: heat-0 (1.12:1) and the old #f0d6c5 (1.17:1) were the same brightness */
+  --heat-2: #d2a286; /* 1.92:1 (was #e9b394, 1.56:1): heat-1..4 now step by ~1.3x */
+  --heat-3: #d0825e; /* 2.51:1 (was #dc8a63, 2.25:1) */
   --heat-4: #c96442;
   --heat-5: #7a3416;
   --chart-1: #b5573a;
@@ -183,8 +183,8 @@
   --scrim: rgb(0 0 0 / 0.55);
 
   --heat-0: #363634; /* 1.20:1 on the card: an empty day shows, and stays under heat-1 (was #2e2e2d, 1.07:1) */
-  --heat-1: #4a3226;
-  --heat-2: #7a4630;
+  --heat-1: #583c2d; /* 1.45:1: a real step up from heat-0, not a hue-only one (was #4a3226, 1.23:1) */
+  --heat-2: #834b34; /* 2.10:1, so the steps stay even (was #7a4630, 1.90:1) */
   --heat-3: #b35e3d;
   --heat-4: #e07a55;
   --heat-5: #f4ad8a;
@@ -241,8 +241,8 @@
     --scrim: rgb(0 0 0 / 0.55);
 
     --heat-0: #363634;
-    --heat-1: #4a3226;
-    --heat-2: #7a4630;
+    --heat-1: #583c2d;
+    --heat-2: #834b34;
     --heat-3: #b35e3d;
     --heat-4: #e07a55;
     --heat-5: #f4ad8a;
