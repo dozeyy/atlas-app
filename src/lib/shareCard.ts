@@ -1,5 +1,5 @@
 // Wrapped's end card, drawn to a canvas. The canvas on the page is the picture that gets saved, so
-// what Will sees is what leaves the app. It is laid out on a 452 x 420 grid and drawn at 3x
+// what you see is what leaves the app. It is laid out on a 452 x 420 grid and drawn at 3x
 // (1356 x 1260), so the preview stays sharp on a 2x screen at the size the sheet shows it. It is
 // drawn from the app's own tokens at the moment of drawing, so it matches the theme you see, and
 // from the numbers and names a ShareCard carries; it never sees a chat name or a prompt.

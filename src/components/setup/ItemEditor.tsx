@@ -96,7 +96,7 @@ function FileTabs({ files, current, onPick }: { files: SkillFile[]; current: str
 
 /**
  * Edit one item's text. Save = backup, atomic write, read back. If the file
- * changed on disk since it was opened, Will chooses instead of losing either side.
+ * changed on disk since it was opened, you choose instead of losing either side.
  * Saving keeps the editor open on the same file; a skill's other files are one tab away.
  */
 export function ItemEditor({

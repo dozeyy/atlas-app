@@ -7,7 +7,7 @@ const EN = "en-US";
 
 /**
  * 1234 -> "1.2k", 12_345 -> "12k", 289_400_000 -> "289M". Three digits or fewer before the unit
- * (Will, 2026-11-08): one decimal below 10, none above, and a roll-up to the next unit before a
+ * (2026-11-08): one decimal below 10, none above, and a roll-up to the next unit before a
  * fourth digit shows ("999.6" -> "1k", "999.9k" -> "1M"). Whole numbers under 1000.
  */
 export function compact(n: number): string {
@@ -61,7 +61,7 @@ export function costView(c: Cost): CostView {
 }
 
 /**
- * The hover for a token figure (Will, 2026-11-08: tokens are what shows, the API-price dollar
+ * The hover for a token figure (2026-11-08: tokens are what shows, the API-price dollar
  * estimate lives here). Two lines: the exact count, then the estimate, always called one.
  */
 export function tokenHint(tokens: number, c: Cost): string {

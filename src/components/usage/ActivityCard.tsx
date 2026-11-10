@@ -28,7 +28,7 @@ const TOKEN_MEANING = "Tokens count what you sent, what Claude wrote and what it
 
 /**
  * Tokens over time as activity bars, with a table twin for anyone who prefers numbers. Tokens only
- * (Will, 2026-11-08); the API-price estimate for a bar or a row is in its hover.
+ * (2026-11-08); the API-price estimate for a bar or a row is in its hover.
  */
 export function ActivityCard({ today }: { today: string }) {
   const backend = getBackend();

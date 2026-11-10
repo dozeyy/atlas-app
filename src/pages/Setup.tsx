@@ -181,7 +181,7 @@ function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot;
               {jsonNote}
             </p>
           )}
-          {/* Will's layout: the checklist, then the tiles (the way in to everything), then the numbers. */}
+          {/* The layout: the checklist, then the tiles (the way in to everything), then the numbers. */}
           <TopSlot items={counted} onCreate={setCreating} />
           <TypeTiles counts={counts} moreCount={moreCount} onOpen={openTile} />
           <Insights items={counted} loads={loads} cost={cost} onOpen={setSelectedId} />

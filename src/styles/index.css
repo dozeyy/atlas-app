@@ -337,7 +337,7 @@ html[data-input="keyboard"] :focus-within {
 }
 /*
  * Press feedback WITHOUT moving the hit box. Scaling the clicked element itself shrinks its
- * box, so a mouseup near the edge lands outside and the click is lost (Will, 2026-11-08).
+ * box, so a mouseup near the edge lands outside and the click is lost (2026-11-08).
  * The element keeps its box; its children shrink and a faint wash marks the press.
  */
 .press:active:not(:disabled) {

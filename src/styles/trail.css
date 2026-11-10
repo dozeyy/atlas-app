@@ -195,7 +195,7 @@
   isolation: isolate; /* so the slop below can sit under the face without leaving the button */
 }
 /*
- * HIT SLOP (Will, 2026-11-08: ~1-3% of presses at a card's or row's edge do nothing).
+ * HIT SLOP (2026-11-08: ~1-3% of presses at a card's or row's edge do nothing).
  * Root cause, traced with CDP: a click fires on the nearest common ancestor of the pointerdown
  * and pointerup targets, so a press that drifts even 1 px past the box before release never
  * reaches the button. The hover lift (-2px) and the press (scale .9925) also pull the visible
@@ -422,7 +422,7 @@
   width: 36px;
   height: 32px;
 }
-/* Sessions: the search and its two buttons sit one step taller (Will, 2026-11-08). The buttons take
+/* Sessions: the search and its two buttons sit one step taller (2026-11-08). The buttons take
    it here; the search box takes the same --field-tall from its `tall` prop (fields.tsx), because
    a rule in this layer loses to the field's own h-8 utility. That was the miss: the search stayed 28. */
 .toolbar-tall .options-trigger {
@@ -2640,7 +2640,7 @@ html.reduced .map-node:focus-visible .map-body {
 /* ---- Update icon (sidebar footer) ------------------------------------------------------------ */
 /* One 36 px square at the bottom-left, mirroring Settings. The button is a fixed box; the face
    inside carries the tint and the press, so the hit box never moves. It is drawn in the text colour
-   (white in dark, near-black in light), like Claude's own update button (Will, 2026-11-09). */
+   (white in dark, near-black in light), like Claude's own update button (2026-11-09). */
 .upd-btn {
   position: relative;
   flex: 1 1 0;
