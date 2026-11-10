@@ -3,7 +3,7 @@ import type { KeyboardEvent, RefObject } from "react";
 import { CaretUp } from "@phosphor-icons/react";
 import { useIntro } from "../../lib/motion";
 import { layoutMap, MAIN_ID, pathTo, placePlate, restLabels, ROOT_R, zoomFor, type MapNode, type Metric } from "../../lib/helperMap";
-import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, MainChatIcon, OUTCOMES } from "./helperKit";
+import { AgentAvatar, agentLook, avatarIconSize, avatarName, echoOffset, HELPER_KINDS, MainChatIcon, OUTCOMES, tilePath } from "./helperKit";
 import { compact } from "../../lib/usage";
 import type { Outcome, Receipt } from "../../lib/types";
 
@@ -193,6 +193,7 @@ export function HelperMap({
                       ["--i" as string]: n.index,
                       ["--c" as string]: look?.fg ?? outcomeColor(n),
                       ["--cb" as string]: look?.bg ?? "var(--raised)",
+                      ...(look ? { ["--ci" as string]: look.ink } : null),
                       ["--o" as string]: outcomeColor(n),
                     }}
                     tabIndex={0}
@@ -207,17 +208,19 @@ export function HelperMap({
                     onBlur={() => setHover((h) => (h === n.id ? null : h))}
                   >
                     <circle className="map-hit" r={n.r + 8} />
-                    {helper ? (
-                      <rect className="map-ring" x={-side / 2 - 5} y={-side / 2 - 5} width={side + 10} height={side + 10} rx={Math.round(side * 0.3) + 4} />
+                    {helper && look ? (
+                      <path className="map-ring" d={tilePath(look.shape, side, 5)} />
                     ) : (
                       <circle className="map-ring" r={n.r + 6} />
                     )}
                     <g className="map-body">
-                      {helper ? (
+                      {helper && look ? (
                         <>
-                          {/* The same tile as the helper's avatar in the list, on a backing that hides the line under it. */}
-                          <rect className="map-back" x={-side / 2} y={-side / 2} width={side} height={side} rx={Math.round(side * 0.3)} />
-                          <rect className="map-tile" x={-side / 2} y={-side / 2} width={side} height={side} rx={Math.round(side * 0.3)} />
+                          {/* The same tile as the helper's avatar in the list, on a backing that hides the line under it.
+                              A helper's helper has the corner of a second tile behind its top left, as in the list. */}
+                          {n.depth >= 2 && <path className="map-echo" d={tilePath(look.shape, side)} transform={`translate(${-echoOffset(side)} ${-echoOffset(side)})`} />}
+                          <path className="map-back" d={tilePath(look.shape, side)} />
+                          <path className="map-tile" d={tilePath(look.shape, side)} />
                         </>
                       ) : (
                         <circle className="map-dot" r={n.r} />

@@ -1895,7 +1895,11 @@ html[data-input="keyboard"] .x-del:focus-visible {
    its own colour, nothing filled, so the two levels tell apart without reading. */
 .helper-av.nested {
   background: transparent;
-  box-shadow: inset 0 0 0 1.5px currentColor;
+  /* The outline in its family's colour, and the corner of a second tile behind its top left:
+     "started by another helper" in two shape cues, not in fill against outline alone. */
+  box-shadow:
+    inset 0 0 0 1.5px var(--av, currentColor),
+    calc(-1 * var(--echo, 2px)) calc(-1 * var(--echo, 2px)) 0 0 color-mix(in srgb, var(--av, currentColor) 45%, transparent);
 }
 .helper-kid {
   position: relative;
@@ -2353,11 +2357,14 @@ html[data-input="keyboard"] .clamp-more:focus-visible {
   fill: color-mix(in srgb, var(--c) 34%, var(--surface));
 }
 .map-icon {
-  color: var(--c, var(--ink-2));
+  color: var(--ci, var(--c, var(--ink-2)));
   pointer-events: none;
 }
 .map-back {
   fill: var(--bg);
+}
+.map-echo {
+  fill: color-mix(in srgb, var(--c) 45%, transparent);
 }
 .map-tile {
   fill: var(--cb);
