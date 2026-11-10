@@ -7,6 +7,7 @@ import { prefersReducedMotion } from "../lib/motion";
 import { GROUP_CHIPS, groupEvents } from "../lib/historyModel";
 import { exact, shortDate } from "../lib/usage";
 import { useAtlas } from "../state/AtlasProvider";
+import { rememberSettingsSection } from "../lib/settingsSection";
 import { Card, PageTitle } from "../components/controls";
 import { EmptyState } from "../components/EmptyState";
 import { SearchField, SelectField } from "../components/usage/fields";
@@ -186,7 +187,13 @@ export function History() {
           seed={11}
           title="History is paused while Sandbox mode is on"
           body="Atlas keeps its copies of your real Claude folder only. Turn Sandbox mode off in Settings, under Claude folder, and History picks up where it left off."
-          action={{ label: "Open Settings", onClick: () => setView("settings") }}
+          action={{
+            label: "Open Settings",
+            onClick: () => {
+              rememberSettingsSection("folder");
+              setView("settings");
+            },
+          }}
         />
       </div>
     );

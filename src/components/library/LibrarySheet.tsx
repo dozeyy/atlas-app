@@ -11,6 +11,7 @@ import { KIND_BY_ID } from "../../lib/setup-model";
 import { PluginTile, tileState } from "./LibraryList";
 import { SafetyCheck } from "./SafetyCheck";
 import { getBackend } from "../../lib/ipc";
+import { useClosing } from "../../lib/useClosing";
 import { errorText } from "../../lib/setup-actions";
 import { entryTopic, insideWords, installBlock, isClean, itemFile, itemWord, languageOf, readingWords, sourceCaption } from "../../lib/library";
 import type { CatalogEntry, InnerItem, InstalledRow, LibraryDetail, LibraryProgress } from "../../lib/libraryTypes";
@@ -189,10 +190,11 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
   }, []);
 
   const loading = !detail && !error;
+  const { closing, requestClose } = useClosing(onClose);
   const close = useCallback(() => {
     if (loading) void getBackend().libraryCancel();
-    onClose();
-  }, [loading, onClose]);
+    requestClose();
+  }, [loading, requestClose]);
   const closeRef = useRef(close);
   closeRef.current = close;
 
@@ -213,7 +215,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
   const doInstall = async () => {
     if (!detail || !canInstall) return;
     const out = await installPlugin(target.pluginId, target.name, detail.token);
-    if (out) onClose();
+    if (out) requestClose();
     else load(true);
   };
   const doInstallRef = useRef(doInstall);
@@ -260,7 +262,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div aria-hidden="true" onClick={close} className="fade-in absolute inset-0 bg-[var(--scrim)]" />
+      <div aria-hidden="true" onClick={close} data-closing={closing || undefined} className="fade-in absolute inset-0 bg-[var(--scrim)]" />
       <div
         ref={panel}
         role="dialog"
@@ -269,6 +271,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
         aria-labelledby={titleId}
         tabIndex={-1}
         onKeyDown={onKey}
+        data-closing={closing || undefined}
         className="sheet-enter relative flex h-full w-[min(480px,100vw)] flex-col border-l border-line bg-bg shadow-float outline-none"
       >
         <header className="flex items-start gap-3 border-b border-line px-6 py-4">
@@ -417,7 +420,7 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
                   variant="danger-solid"
                   disabled={!!busy}
                   onClick={async () => {
-                    if (await uninstallPlugin(target.pluginId, target.name)) onClose();
+                    if (await uninstallPlugin(target.pluginId, target.name)) requestClose();
                   }}
                 >
                   {busy === "removing" ? "Removing..." : "Uninstall"}

@@ -130,9 +130,7 @@ export function CreateFlow({ kind, onClose }: { kind: CreateKind; onClose: () =>
               <span aria-hidden="true" className="mb-1.5 block text-body text-ink-2">
                 When should it run?
               </span>
-              <span className="block [&_select]:h-9">
-                <SelectField label="When should it run?" value={event} onChange={setEvent} options={HOOK_EVENTS} wide />
-              </span>
+              <SelectField label="When should it run?" value={event} onChange={setEvent} options={HOOK_EVENTS} wide tall />
             </div>
           )}
           <p className="text-caption text-ink-2">Next: a starting text to change. Nothing is written until you press Create.</p>

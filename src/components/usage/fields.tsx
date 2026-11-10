@@ -8,6 +8,7 @@ export function SelectField({
   onChange,
   options,
   wide = false,
+  tall = false,
 }: {
   label: string;
   value: string;
@@ -15,6 +16,8 @@ export function SelectField({
   options: { value: string; label: string }[];
   /** Fill the row (inside an options panel) instead of sizing to the text. */
   wide?: boolean;
+  /** The inputs' 36 px (a form), instead of the toolbar's 32 px. */
+  tall?: boolean;
 }) {
   return (
     <label className={`select-wrap relative inline-flex ${wide ? "w-full" : ""}`}>
@@ -24,7 +27,7 @@ export function SelectField({
         onChange={(e) => onChange(e.target.value)}
         // A long choice is cut by the field's width: the hover says it whole.
         title={options.find((o) => o.value === value)?.label}
-        className={`h-8 cursor-pointer ${wide ? "w-full" : "max-w-[220px]"}  appearance-none rounded-control border border-line-strong bg-surface py-0 pl-3 pr-8 text-body text-ink hover:bg-raised`}
+        className={`${tall ? "h-9" : "h-8"} cursor-pointer ${wide ? "w-full" : "max-w-[220px]"} appearance-none rounded-control border border-line-strong bg-surface py-0 pl-3 pr-8 text-body text-ink hover:bg-raised`}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>

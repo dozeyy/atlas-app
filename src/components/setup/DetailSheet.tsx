@@ -19,6 +19,7 @@ import { compact, exact } from "../../lib/usage";
 import type { CostReport, CostRow, MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
 import { Chip, ConflictChip, copyText, formatDate, formatSize, ItemIcon, PathText, ScopeChip, StateChip, TagChip } from "./parts";
 import { badge, kindWords } from "../../lib/tagWords";
+import { useClosing } from "../../lib/useClosing";
 
 const REVEAL_MS = 10_000;
 
@@ -467,6 +468,7 @@ export function DetailSheet({
   const [dirty, setDirty] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [discard, setDiscard] = useState<"close" | "stop" | null>(null);
+  const { closing, requestClose } = useClosing(onClose);
 
   // A different item always opens on its details, never inside the last one's editor.
   useEffect(() => {
@@ -498,7 +500,7 @@ export function DetailSheet({
     [all],
   );
   const hasFile = item.path !== null && item.scope !== "connector";
-  const tryClose = () => (editing && dirty ? setDiscard("close") : onClose());
+  const tryClose = () => (editing && dirty ? setDiscard("close") : requestClose());
   const tryStop = () => (dirty ? setDiscard("stop") : leaveEdit());
 
   // Focus moves in, and back to the card that opened it when the sheet closes.
@@ -592,7 +594,7 @@ export function DetailSheet({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div aria-hidden="true" onClick={tryClose} className="fade-in absolute inset-0 bg-[var(--scrim)]" />
+      <div aria-hidden="true" onClick={tryClose} data-closing={closing || undefined} className="fade-in absolute inset-0 bg-[var(--scrim)]" />
       <div
         ref={panel}
         role="dialog"
@@ -601,6 +603,7 @@ export function DetailSheet({
         aria-labelledby={titleId}
         tabIndex={-1}
         onKeyDown={onKey}
+        data-closing={closing || undefined}
         className="sheet-enter relative flex h-full w-[min(680px,var(--app-w))] flex-col overflow-y-auto border-l border-line bg-bg shadow-float outline-none"
       >
         <header className="sticky top-0 z-10 flex items-start gap-3 border-b border-line bg-bg px-6 py-4">
@@ -826,10 +829,10 @@ export function DetailSheet({
               <Button
                 variant="danger"
                 onClick={() => {
-                  const closing = discard === "close";
+                  const leaving = discard === "close";
                   setDiscard(null);
                   leaveEdit();
-                  if (closing) onClose();
+                  if (leaving) requestClose();
                 }}
               >
                 Discard
