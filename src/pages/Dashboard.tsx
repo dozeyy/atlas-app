@@ -33,7 +33,7 @@ import {
   weekdayInitial,
 } from "../lib/dashboardModel";
 import { usualDay } from "../lib/chartPaths";
-import { addDays, compact, exact, formatUsd, headline, localDay, modelLabel, plural, tokenHint } from "../lib/usage";
+import { addDays, compact, exact, formatUsd, headline, localDay, mergeModelRows, modelChoices, plural, tokenHint } from "../lib/usage";
 import type { BarDatum } from "../components/charts/Bars";
 import type { Dashboard as DashboardData, Timeline, UsageStatus } from "../lib/types";
 
@@ -62,7 +62,9 @@ function Notes({ data, status }: { data: DashboardData; status: UsageStatus | nu
   const notes: string[] = [];
   if (data.warnings.unknownModels.length > 0) {
     notes.push(
-      `No price for ${data.warnings.unknownModels.map(modelLabel).join(", ")}. Their tokens are counted, but they get no dollar estimate, so an estimate with a plus sign is higher in real life.`,
+      `No price for ${modelChoices(data.warnings.unknownModels)
+        .map((c) => c.label)
+        .join(", ")}. Their tokens are counted, but they get no dollar estimate, so an estimate with a plus sign is higher in real life.`,
     );
   }
   if (status && status.cwAssumedRows > 0) {
@@ -154,12 +156,13 @@ function DashboardSkeleton() {
 
 /** Top models as one stacked bar: three named, the rest folded into "Other". */
 function modelItems(data: DashboardData): StackItem[] {
-  // Full names ("Opus 5.5"); a model the price list does not know says so.
-  const models = data.byModel.map((m) => ({
+  // Full names ("Opus 5.5"), one row per name: ids that read as the same model are added together.
+  // A model the price list does not know says so.
+  const models = mergeModelRows(data.byModel).map((m) => ({
     key: m.model,
-    label: m.known ? modelLabel(m.model) : `${modelLabel(m.model)} (not priced)`,
+    label: m.known ? m.label : `${m.label} (not priced)`,
     value: headline(m.tokens),
-    title: m.model,
+    title: m.models.join(", "),
   }));
   // Biggest first by the number shown (the engine lists them by cost).
   models.sort((a, b) => b.value - a.value);
@@ -322,7 +325,7 @@ export function Dashboard() {
                     className="my-2 flex flex-wrap items-baseline gap-x-2.5"
                     title={
                       data.week.tokens.cacheRead > 0
-                        ? `${tokenHint(weekTokens, data.week.cost)}\nPlus ${exact(data.week.tokens.cacheRead)} cache reads, counted apart.`
+                        ? `${tokenHint(weekTokens, data.week.cost)}\nPlus ${exact(data.week.tokens.cacheRead)} reused (cache reads), counted apart.`
                         : tokenHint(weekTokens, data.week.cost)
                     }
                   >
