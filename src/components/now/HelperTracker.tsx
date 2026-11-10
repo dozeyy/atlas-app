@@ -78,7 +78,9 @@ function HelperRow({ helper, now }: { helper: NowHelper; now: number }) {
       <AgentAvatar type={helper.agentType} size={32} />
       <div className="ht-id">
         <p className="ht-head">
-          <span className="ht-name">{name}</span>
+          <span className="ht-name" title={name}>
+            {name}
+          </span>
           {model && (
             <span className="ht-model" title={helper.model ?? undefined}>
               {model}

@@ -154,7 +154,11 @@ function WaitRow({ chat, now }: { chat: NowChat; now: number }) {
           {name}
         </h3>
         <p className="now-row-sub">
-          {chat.title && <span className="chip">{chat.project}</span>}
+          {chat.title && (
+            <span className="chip now-chip-name" title={chat.project}>
+              {chat.project}
+            </span>
+          )}
           {chat.model && <span className="chip">{modelWithEffort(chat.model, chat.effort)}</span>}
           <span className="now-row-doing" title={line}>
             {line}
@@ -180,7 +184,11 @@ function DoneRow({ last, now }: { last: NowLast; now: number }) {
           {name}
         </h3>
         <p className="now-row-sub">
-          {last.title && <span className="chip">{last.project}</span>}
+          {last.title && (
+            <span className="chip now-chip-name" title={last.project}>
+              {last.project}
+            </span>
+          )}
           {last.model && <span className="chip">{modelWithEffort(last.model, last.effort)}</span>}
         </p>
       </div>
@@ -239,7 +247,11 @@ function ChatCard({ chat }: { chat: NowChat }) {
             {name}
           </h3>
           <div className="now-chips">
-            {chat.title && <span className="chip">{chat.project}</span>}
+            {chat.title && (
+            <span className="chip now-chip-name" title={chat.project}>
+              {chat.project}
+            </span>
+          )}
             {chat.model && <span className="chip">{modelWithEffort(chat.model, chat.effort)}</span>}
             {out > 0 && (
               <span
@@ -263,7 +275,9 @@ function ChatCard({ chat }: { chat: NowChat }) {
               <KindIcon kind={doing.kind} size={28} />
             </div>
             <div className="nc-doing-text" key={swapKey}>
-              <p className="d nc-verb">{doing.verb}</p>
+              <p className="d nc-verb" title={doing.verb}>
+                {doing.verb}
+              </p>
               {doing.target && (
                 <p className="nc-target" title={doing.target}>
                   {doing.target}

@@ -93,6 +93,17 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+/* A folder name longer than its line ends in an ellipsis inside its chip (the hover has all of
+   it); it is never sliced at the card's edge. */
+.chip.now-chip-name {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  line-height: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .now-band {
   flex: 0 1 auto;
@@ -131,7 +142,8 @@
 .now-rows {
   flex: 1 1 auto;
   min-height: 0;
-  margin: 0;
+  /* The 4 px of scrollbar room sits outside the column, so the rows end where the cards above do. */
+  margin: 0 -4px 0 0;
   padding: 0 4px 0 0;
   list-style: none;
   overflow-y: auto;
@@ -190,7 +202,8 @@
   align-items: center;
   gap: 0 8px;
   min-width: 0;
-  height: 22px;
+  /* A chip is 24 px tall: a shorter line shaved the bottom off every chip. */
+  height: 24px;
   margin: 2px 0 0;
   overflow: hidden;
 }
@@ -210,6 +223,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  /* As tall as a chip, so a chip that wrapped to the hidden second line shows no sliver. */
+  line-height: 24px;
   color: var(--ink-2);
 }
 
@@ -1064,22 +1079,32 @@ html.reduced .ht-status {
   animation: none !important;
 }
 
-/* Narrower: the token count goes first, then the trail and the words shrink. The model line and
-   the progress words keep their room. */
-@container ht (max-width: 780px) {
+/* Narrower: the trail shortens first, so the name ("General purpose") keeps its letters beside
+   the model line. */
+@container ht (max-width: 1000px) {
   .ht-row {
     --ht-trail: 120px;
+  }
+}
+/* Then the token count goes and the words shrink. The model line and the progress words keep
+   their room, and the status has room for "No progress for 12 min". (Up to 900 px: between 781
+   and 808 px the wide row did not fit, and the name was squeezed to nothing.) */
+@container ht (max-width: 900px) {
+  .ht-row {
+    --ht-trail: 104px;
     --ht-prog: 152px;
     gap: 10px;
-    grid-template-columns: 32px minmax(120px, 1fr) var(--ht-trail) var(--ht-prog) minmax(88px, 112px) 56px;
+    grid-template-columns: 32px minmax(120px, 1fr) var(--ht-trail) var(--ht-prog) minmax(88px, 136px) 56px;
   }
   .ht-tokens[data-opt] {
     display: none;
   }
 }
+/* The smallest window with the sidebar open: the trail and the status give the name what they can. */
 @container ht (max-width: 700px) {
   .ht-row {
-    --ht-trail: 80px;
+    --ht-trail: 64px;
+    grid-template-columns: 32px minmax(120px, 1fr) var(--ht-trail) var(--ht-prog) minmax(88px, 100px) 56px;
   }
 }
 
