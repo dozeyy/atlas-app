@@ -2279,6 +2279,11 @@ html.reduced .intro .spark-line,
 html.reduced .rise,
 html.reduced .row-in {
   animation-name: t-fade !important;
+}
+/* The ridge and spark lines are drawn on by a dash; faded in, they need the whole line. The ring
+   arc is NOT here: its dash is the share it shows, and "none" drew every ring at 100 %. */
+html.reduced .intro .ridge-stroke,
+html.reduced .intro .spark-line {
   stroke-dasharray: none;
 }
 html.reduced .ico,
