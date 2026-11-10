@@ -291,9 +291,11 @@ describe("Helpers (subagents) inside a session", () => {
     const row = page.rows.find((r) => r.agentCount > 0)!;
     const list = await screen.findAllByRole("button", { name: /tokens/ });
     const chip = `${row.agentCount} ${row.agentCount === 1 ? "helper" : "helpers"}`;
-    const line = list.find((b) => within(b).queryByText(chip) !== null)!;
+    // Find the row by its name: other sessions can carry the same helper count, and the list
+    // groups by folder, so its order is not the page's order.
+    const name = row.name ?? `Session in ${row.projectName}`;
+    const line = list.find((b) => within(b).queryByText(name) !== null && within(b).queryByText(chip) !== null)!;
     expect(line).toBeDefined();
-    expect(within(line).getByText(row.name ?? `Session in ${row.projectName}`)).toBeInTheDocument();
     // Text only: no chip, pill or box around the count.
     const count = within(line).getByText(chip);
     expect(count.className).toContain("text-accent-text");
