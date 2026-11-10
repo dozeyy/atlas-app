@@ -115,9 +115,14 @@ describe("Team: Scorecard", () => {
     const worker = await card("General purpose");
     expect(within(worker).getByText("Passed 9 of 12 reviews")).toBeInTheDocument();
     expect(within(worker).getByText(/^Usually 9 min and \d+ tool calls/)).toBeInTheDocument();
-    // The helper's own picture, and what the small chart plots, said on its face.
+    // The helper's own picture. What the small chart plots is said once under the cards, not on
+    // each one; a card's own hover has its numbers.
     expect(worker.querySelector("svg")).not.toBeNull();
-    expect(within(worker).getByText("Per week, last 12 weeks")).toBeInTheDocument();
+    expect(within(worker).queryByText(/last 12 weeks/)).not.toBeInTheDocument();
+    expect(worker.querySelector('[title^="Runs per week, last 12 weeks"]')).not.toBeNull();
+    expect(screen.getAllByText(/The small bars on a card are its runs per week, last 12 weeks\./)).toHaveLength(1);
+    // The model's effort is labelled: a bare "high" says nothing.
+    expect(within(worker).getByText(/, high effort$/)).toBeInTheDocument();
     expect(within(worker).getByText("Its work in review")).toBeInTheDocument();
 
     // 4 tied reviews: counts, no rate.
@@ -255,9 +260,14 @@ describe("Team: Caught in review", () => {
     // A project is offered by its folder, not by its position.
     const project = await within(sheet).findByRole("radio", { name: /CLAUDE\.md in atlas/ });
     await userEvent.click(project);
-    const field = within(sheet).getByRole("textbox", { name: "The line" }) as HTMLInputElement;
-    expect(field.tagName).toBe("INPUT");
+    // A box that wraps a long line so it is read whole; it is still one line in the file.
+    const field = within(sheet).getByRole("textbox", { name: "The line" }) as HTMLTextAreaElement;
+    expect(field.tagName).toBe("TEXTAREA");
     expect(field.maxLength).toBe(400);
+    await userEvent.clear(field);
+    await userEvent.click(field);
+    await userEvent.paste("- One\nline.");
+    expect(field.value).toBe("- One line.");
     // The line must start with a dash: nothing else can be saved.
     await userEvent.clear(field);
     await userEvent.type(field, "A heading would go here");
@@ -287,7 +297,10 @@ describe("Team: Caught in review", () => {
     expect(within(after).getByText("- Brand new rule text.")).toBeInTheDocument();
     expect(within(now).queryByText("- Brand new rule text.")).not.toBeInTheDocument();
     // A new rule file has no preview: the whole file is the editor.
-    await userEvent.click(within(sheet).getByRole("radio", { name: /A rule file/ }));
+    // It is named in words; the file name the engine made is in the path under it.
+    const own = within(sheet).getByRole("radio", { name: /A new rule file of its own/ });
+    expect(own.closest("label")).toHaveTextContent(/~\/\.claude\/rules\/.+\.md/);
+    await userEvent.click(own);
     expect(within(sheet).queryByRole("figure", { name: "After saving" })).not.toBeInTheDocument();
   });
 

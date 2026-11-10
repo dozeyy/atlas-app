@@ -1,32 +1,31 @@
 import { Card } from "../controls";
 import { AgentAvatar, helperName } from "../usage/helperKit";
 import { TokenText } from "../usage/TokenText";
-import { exact, modelWithEffort, plural } from "../../lib/usage";
-import { REVIEWER_WORDS, finishLine, rateSentence, reviewCountsLine, reviewerLine, usualLine, weeklyTitle } from "../../lib/teamModel";
+import { exact, plural } from "../../lib/usage";
+import { REVIEWER_WORDS, finishLine, modelLine, rateSentence, reviewCountsLine, reviewerLine, usualLine, weeklyTitle } from "../../lib/teamModel";
 import type { ReviewCounts, TypeCard } from "../../lib/teamTypes";
 
 /**
- * Twelve weeks of runs as small bars, this week in the accent. It says what it plots on its
- * face; the exact numbers are the hover. The sheet draws the same twelve weeks full size.
+ * Twelve weeks of runs as small bars, this week in the accent. What they plot is said once under
+ * the cards, not on each one; the exact numbers are the hover. The sheet draws the same twelve
+ * weeks full size.
  */
 function WeekBars({ weekly }: { weekly: number[] }) {
   const max = Math.max(1, ...weekly);
   const last = weekly.length - 1;
   return (
-    <span title={weeklyTitle(weekly)} className="flex shrink-0 flex-col items-end gap-1">
-      <span aria-hidden="true" className="flex h-7 items-end gap-0.5">
-        {weekly.map((v, i) => (
-          <span
-            key={i}
-            className="w-1 rounded-full"
-            style={{
-              height: v > 0 ? `${Math.max(14, Math.round((v / max) * 100))}%` : 2,
-              background: v > 0 ? (i === last ? "var(--accent)" : "var(--bar-rest)") : "var(--line-strong)",
-            }}
-          />
-        ))}
-      </span>
-      <span className="text-caption text-ink-2">{`Per week, last ${weekly.length} weeks`}</span>
+    <span title={weeklyTitle(weekly)} className="flex h-8 shrink-0 items-end gap-0.5">
+      {weekly.map((v, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className="w-1 rounded-full"
+          style={{
+            height: v > 0 ? `${Math.max(14, Math.round((v / max) * 100))}%` : 2,
+            background: v > 0 ? (i === last ? "var(--accent)" : "var(--bar-rest)") : "var(--line-strong)",
+          }}
+        />
+      ))}
     </span>
   );
 }
@@ -53,7 +52,7 @@ export function ScoreCard({ card, onOpen }: { card: TypeCard; onOpen: () => void
   const note = reviews ? (rate ? besidesPassed(reviews) : reviews.tied > 0 ? "Too few reviews for a rate" : "") : "";
   // Nothing judged yet is a state, not a result: said quietly.
   const quiet = card.reviewer ? /^No /.test(main) : !reviews || reviews.tied === 0;
-  const model = card.topModel ? modelWithEffort(card.topModel.model, card.topModel.effort) : "Model not known";
+  const model = card.topModel ? modelLine(card.topModel.model, card.topModel.effort) : "Model not known";
   const finish = finishLine(card);
   const usual = `${usualLine(card)}${finish ? ` \u00b7 ${finish}` : ""}`;
   // The engine makes the name from the type ("Ui builder"): the short forms go back in capitals.

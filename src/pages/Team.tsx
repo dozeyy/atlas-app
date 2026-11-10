@@ -12,7 +12,7 @@ import { getBackend } from "../lib/ipc";
 import { openAgentNext, openToolkitItemNext } from "../lib/nav";
 import { plural } from "../lib/usage";
 import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
-import { DEFAULT_PREFS, RANGES, STARTED_OPTIONS, filterCards, historyLine, loadPrefs, rangeDays, savePrefs, scorecardArgs } from "../lib/teamModel";
+import { DEFAULT_PREFS, RANGES, STARTED_OPTIONS, filterCards, historyLine, loadPrefs, rangeDays, savePrefs, scorecardArgs, weeklyLegend } from "../lib/teamModel";
 import type { RangeId, TeamPrefs, TeamView } from "../lib/teamModel";
 import type { ReviewTheme, RunRow, StartedFrom, ThemeExample } from "../lib/teamTypes";
 import { useAtlas } from "../state/AtlasProvider";
@@ -147,6 +147,7 @@ function Scorecard({
       )}
       <p className="mt-4 text-caption text-ink-2">
         {plural(data.totalRuns, "helper run")} in this range.
+        {cards.length > 0 ? ` ${weeklyLegend(cards[0].weekly.length)}` : ""}
         {history ? ` ${history}` : ""}
       </p>
       {open && (
