@@ -273,7 +273,7 @@ export function Sessions() {
           <EmptyState
             icon={ChatsCircle}
             seed={11}
-            className="min-h-[max(320px,calc(100vh-14.5rem))]"
+            className="min-h-[max(320px,calc(var(--app-h)-14.5rem))]"
             title="No chats match"
             body="Nothing fits the search and filters you set. Loosen them or start again."
           >
@@ -283,7 +283,7 @@ export function Sessions() {
           <EmptyState
             icon={ChatsCircle}
             seed={11}
-            className="min-h-[max(320px,calc(100vh-14.5rem))]"
+            className="min-h-[max(320px,calc(var(--app-h)-14.5rem))]"
             title="No sessions yet"
             body="Each Claude Code conversation shows up here with the tokens it used, when it ran and which project it belonged to."
           />

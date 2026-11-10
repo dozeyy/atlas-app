@@ -80,7 +80,7 @@ export function Preview({ body }: { body: string }) {
   const blocks = useMemo(() => parseMarkdown(body), [body]);
   if (blocks.length === 0) return <p className="text-body text-ink-2">There is no text in this file yet.</p>;
   return (
-    <div className="selectable max-h-[min(420px,50vh)] overflow-y-auto rounded-card border border-line bg-surface px-4 py-3">
+    <div className="selectable max-h-[min(420px,calc(var(--app-h)*0.5))] overflow-y-auto rounded-card border border-line bg-surface px-4 py-3">
       {blocks.map((b, i) => (
         <BlockView key={i} b={b} />
       ))}

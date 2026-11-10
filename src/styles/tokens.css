@@ -315,8 +315,8 @@
   /* Layout */
   --sidebar-w: 188px; /* fits the longest label and the streak; was 232 */
   /* The page fills the window; only its gutters scale (no fixed content width). */
-  --gutter: clamp(20px, 3.2vw, 64px);
-  --gutter-y: clamp(20px, 2.4vw, 44px);
+  --gutter: clamp(20px, calc(var(--app-w) * 0.032), 64px);
+  --gutter-y: clamp(20px, calc(var(--app-w) * 0.024), 44px);
   --sidebar-w-collapsed: 76px; /* the menu and sidebar buttons (6 + 32 + 32) fit above the icons */
   --titlebar-h: 40px; /* the row across the top: menu, sidebar toggle, caption buttons */
   /* Same numbers as MIN_WIDTH / MIN_HEIGHT in crates/app/src/main.rs. */

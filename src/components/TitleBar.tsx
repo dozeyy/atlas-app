@@ -79,15 +79,19 @@ function CaptionButtons() {
   const backend = getBackend();
   const [maximized, setMaximized] = useState(false);
 
-  // The middle button shows Restore while the window is maximized; a resize is when that can change.
+  // The middle button shows Restore while the window is maximized. Asked once, then told by Rust
+  // when it changes: nothing crosses IPC on each step of an edge drag.
   useEffect(() => {
     let alive = true;
-    const ask = () => backend.windowMaximized().then((m) => alive && setMaximized(m)).catch(() => {});
-    ask();
-    window.addEventListener("resize", ask);
+    let off: (() => void) | undefined;
+    backend.windowMaximized().then((m) => alive && setMaximized(m)).catch(() => {});
+    backend
+      .onMaximized((m) => alive && setMaximized(m))
+      .then((u) => (alive ? (off = u) : u()))
+      .catch(() => {});
     return () => {
       alive = false;
-      window.removeEventListener("resize", ask);
+      off?.();
     };
   }, [backend]);
 

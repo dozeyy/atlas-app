@@ -8,6 +8,8 @@ import { getBackend, inTauri } from "./lib/ipc";
 import { applyBoot } from "./lib/theme";
 import { armIntro, installIntroReveal } from "./lib/intro";
 import { installInputModality } from "./lib/inputModality";
+import { installScrollbars } from "./lib/scrollbars";
+import { installFrameSync } from "./lib/frameSync";
 import { startSetup } from "./state/setupStore";
 
 const backend = getBackend();
@@ -18,6 +20,9 @@ applyBoot(backend.boot());
 armIntro();
 installIntroReveal();
 installInputModality();
+installScrollbars();
+// Windows edge drags (crates/app/src/winframe.rs): a no-op outside WebView2.
+installFrameSync();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

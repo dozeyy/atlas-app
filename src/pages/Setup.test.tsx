@@ -687,7 +687,7 @@ describe("Setup page: a skill's files and actions", () => {
   it("keeps toasts inside the sheet while it is open and frees them when it closes", async () => {
     const root = document.documentElement;
     const dialog = await openSkill(/skill deep-research/);
-    expect(root.style.getPropertyValue("--toast-inset")).toContain("100vw");
+    expect(root.style.getPropertyValue("--toast-inset")).toContain("var(--app-w)");
     await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(root.style.getPropertyValue("--toast-inset")).toBe("");

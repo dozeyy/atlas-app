@@ -16,6 +16,8 @@ mod tour;
 mod tray;
 mod update;
 mod usage;
+#[cfg(windows)]
+mod winframe;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,6 +32,19 @@ use tauri::{Emitter, LogicalSize, Manager, RunEvent, WebviewWindow, WebviewWindo
 /// enforced here.
 const MIN_WIDTH: f64 = 900.0;
 const MIN_HEIGHT: f64 = 600.0;
+
+/// The page's caption button shows Restore while maximized. Told on change only, so an edge drag
+/// sends nothing to the page (it used to ask over IPC on every resize step).
+pub const MAXIMIZED_EVENT: &str = "atlas://window/maximized";
+static WAS_MAXIMIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn on_resized(w: &WebviewWindow) {
+    let max = w.is_maximized().unwrap_or(false);
+    if WAS_MAXIMIZED.swap(max, std::sync::atomic::Ordering::Relaxed) != max {
+        let _ = w.emit(MAXIMIZED_EVENT, max);
+    }
+    enforce_min_size(w);
+}
 
 fn enforce_min_size(w: &WebviewWindow) {
     if w.is_minimized().unwrap_or(false) || w.is_maximized().unwrap_or(false) || w.is_fullscreen().unwrap_or(false) {
@@ -100,6 +115,7 @@ fn main() {
             commands::frontend_ready,
             commands::window_control,
             commands::window_maximized,
+            commands::frame_ack,
             commands::set_unsaved,
             commands::leave_app,
             usage::usage_status,
@@ -243,10 +259,17 @@ fn main() {
             // The window-state plugin may have restored a size from a session that
             // ended small, and a program can resize the window to anything.
             enforce_min_size(&window);
+            // Edge drags keep the content still, as a native window does (winframe.rs).
+            #[cfg(windows)]
+            winframe::install(&window);
+            // The window-state plugin can restore the window maximized inside `.build()`, before
+            // this handler exists: start from what the window is now, or the first restore would
+            // look like no change and the caption button would stay on Restore.
+            WAS_MAXIMIZED.store(window.is_maximized().unwrap_or(false), std::sync::atomic::Ordering::Relaxed);
             let w = window.clone();
             window.on_window_event(move |e| {
                 if matches!(e, WindowEvent::Resized(_)) {
-                    enforce_min_size(&w);
+                    on_resized(&w);
                 }
             });
 

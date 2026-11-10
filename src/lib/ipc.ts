@@ -70,6 +70,7 @@ export const SEARCH_STATUS_EVENT = "atlas://search/status";
 export const NOW_UPDATE_EVENT = "atlas://now/update";
 export const NOW_FINISHED_EVENT = "atlas://now/finished";
 export const QUIT_ASK_EVENT = "atlas://quit-ask";
+export const MAXIMIZED_EVENT = "atlas://window/maximized";
 export const UPDATE_PROGRESS_EVENT = "atlas://update/progress";
 
 export type Unlisten = () => void;
@@ -138,6 +139,8 @@ export interface Backend {
   /** The page draws the title bar, so the caption buttons ask Rust to act on the window. */
   windowControl(action: "minimize" | "toggle-maximize" | "close"): Promise<void>;
   windowMaximized(): Promise<boolean>;
+  /** The window was maximized or restored (sent on change only, never per resize step). */
+  onMaximized(cb: (maximized: boolean) => void): Promise<Unlisten>;
   /** Tells Rust whether an editor holds edits that are not saved, so a close or quit can ask first. */
   setUnsaved(on: boolean): Promise<void>;
   /** Rust held back a quit because of unsaved edits; the page asks, and `leaveApp` carries it out. */
@@ -259,6 +262,7 @@ const tauriBackend: Backend = {
   },
   windowControl: (action) => invoke<void>("window_control", { action }),
   windowMaximized: () => invoke<boolean>("window_maximized"),
+  onMaximized: (cb) => listen<boolean>(MAXIMIZED_EVENT, (e) => cb(e.payload)),
   setUnsaved: (on) => invoke<void>("set_unsaved", { on }),
   onQuitAsk: (cb) => listen<null>(QUIT_ASK_EVENT, () => cb()),
   leaveApp: () => invoke<void>("leave_app"),
