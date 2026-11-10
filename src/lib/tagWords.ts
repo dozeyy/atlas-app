@@ -14,6 +14,7 @@ export interface TagWords {
   tip: string;
 }
 
+/** The middle dot between a scope and its name ("Project · atlas"), written as an escape so the source stays ASCII. */
 const DOT = " · ";
 
 /** "Project · atlas" -> "atlas"; a label without that part gives "". */

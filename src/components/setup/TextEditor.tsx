@@ -51,6 +51,10 @@ export function TextEditor({
   // Full window: the same editor (never remounted, so edits and undo stay) grows over the whole
   // Atlas window; Escape or the button brings it back. The sheet behind never sees that Escape.
   const [wide, setWide] = useState(false);
+  const wideRef = useRef(wide);
+  wideRef.current = wide;
+  // Set when the editor's own Escape binding leaves full window, read by the key handler below.
+  const escTaken = useRef(false);
 
   const textRef = useRef(initial);
   const seq = useRef(0);
@@ -85,6 +89,18 @@ export function TextEditor({
           setText(t);
         },
         onSave: () => submitRef.current(),
+        // Escape leaves full window even when the editor would have used it (a selection to
+        // simplify); the key then reaches onKey already taken. Not wide: the editor keeps it.
+        onEscape: () => {
+          if (!wideRef.current) return false;
+          escTaken.current = true;
+          // The same key event reaches onKey while it bubbles, before this runs.
+          queueMicrotask(() => {
+            escTaken.current = false;
+          });
+          setWide(false);
+          return true;
+        },
       });
       if (dead) ed.destroy();
       else {
@@ -135,13 +151,16 @@ export function TextEditor({
   }, [wide]);
 
   const onKey = (e: KeyboardEvent) => {
-    if (e.defaultPrevented) return;
-    if (e.key === "Escape" && wide) {
+    // The editor's own Escape binding (above) may have taken this key for leaving full window
+    // already; the sheet behind must still not see it.
+    if (e.key === "Escape" && (wide || escTaken.current)) {
+      escTaken.current = false;
       e.preventDefault();
       e.stopPropagation();
       setWide(false);
       return;
     }
+    if (e.defaultPrevented) return;
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") {
       e.preventDefault();
       e.stopPropagation();

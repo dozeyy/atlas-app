@@ -344,6 +344,28 @@ describe("Setup page: detail", () => {
     expect(card).toHaveFocus();
   });
 
+  it("a close started on one item never lands on the next: the sheet opened meanwhile stays, visible", async () => {
+    await open(backend);
+    await openTile("Skills");
+    const first = await screen.findByRole("button", { name: /skill commit-helper/ });
+    await userEvent.click(first);
+    const a = await screen.findByRole("dialog");
+    expect(within(a).getByRole("heading", { level: 2, name: "commit-helper" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(a.querySelector("[data-closing]") ?? a.closest("[data-closing]")).not.toBeNull();
+    // Another card is opened while the first sheet is still on its way out.
+    const other = screen.getAllByRole("button", { name: /^skill / }).find((c) => c !== first && !/commit-helper/.test(c.getAttribute("aria-label") ?? ""))!;
+    fireEvent.click(other);
+    const b = await screen.findByRole("dialog");
+    expect(within(b).queryByRole("heading", { level: 2, name: "commit-helper" })).not.toBeInTheDocument();
+    expect(b.querySelector("[data-closing]")).toBeNull();
+    expect(b.closest("[data-closing]")).toBeNull();
+    // Well past the exit time, the second sheet is still open and still not marked as leaving.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.getByRole("dialog")).toBe(b);
+    expect(b.querySelector("[data-closing]")).toBeNull();
+  });
+
   it("shows which item wins when two define the same thing", async () => {
     await open(backend);
     await openTile("Skills");

@@ -102,6 +102,8 @@ export function useSessionPages<Tag>(query: SessionQuery, key: string, tag: Tag,
         if (id !== seq.current) return;
         setBusy(false);
         if (from) {
+          // The page never came: a refresh reads only what is on screen, not the page that failed.
+          wanted.current = from.pages;
           setMoreError(message(e));
         } else if (!(silent && latest.current.data)) {
           setData(null);

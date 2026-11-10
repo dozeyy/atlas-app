@@ -28,7 +28,7 @@ export function Ring({
     <div
       role="img"
       aria-label={label}
-      className={`relative shrink-0${intro ? " intro" : ""}`}
+      className={`relative shrink-0 ${intro ? "intro" : ""}`}
       style={{ width: size, height: size }}
     >
       <svg className="chart" width={size} height={size} aria-hidden="true" style={{ transform: "rotate(-90deg)" }}>

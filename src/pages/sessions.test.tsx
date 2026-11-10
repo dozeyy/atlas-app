@@ -231,6 +231,29 @@ describe("Sessions: Show more", () => {
     await waitFor(() => expect(rows()).toBe(200));
   });
 
+  it("a Show more that fails is not re-read on the next refresh: the refresh keeps what is on screen", async () => {
+    const backend = mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    expect(rows()).toBe(50);
+    const real = backend.usage.sessionsList.bind(backend.usage);
+    const calls: (string | null)[] = [];
+    backend.usage.sessionsList = async (q) => {
+      calls.push(q.cursor ?? null);
+      if (q.cursor !== null) throw new Error("disk hiccup");
+      return real(q);
+    };
+    await userEvent.click(showMore());
+    await screen.findByRole("alert");
+    expect(rows()).toBe(50);
+    calls.length = 0;
+    // The engine's refresh reads page one again and stops there: the page that never came is not wanted.
+    backend.usage.emitChanged();
+    await new Promise((r) => setTimeout(r, 600));
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((c) => c === null)).toBe(true);
+    expect(rows()).toBe(50);
+  });
+
   it("keeps the loaded pages while a chat is open and after coming back from it", async () => {
     const backend = mount();
     await screen.findByRole("region", { name: "Pick up where you left off" });

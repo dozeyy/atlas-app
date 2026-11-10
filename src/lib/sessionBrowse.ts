@@ -61,6 +61,12 @@ export const NO_FOLDER = "No folder";
  * order, so more rows loading later only ever add to the end of a group or add groups at the
  * end; nothing moves. Chats with no folder go last, whatever their place in the list.
  */
+/** A folder with a path but no name reads as its last segment ("C:/work/atlas" -> "atlas"), never "No folder". */
+function lastSegment(path: string): string {
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+  return parts[parts.length - 1] || NO_FOLDER;
+}
+
 export function groupByFolder(rows: SessionRow[]): FolderGroup[] {
   const groups: FolderGroup[] = [];
   const at = new Map<string, FolderGroup>();
@@ -75,7 +81,7 @@ export function groupByFolder(rows: SessionRow[]): FolderGroup[] {
       if (row.startedAt > g.latest) g.latest = row.startedAt;
       continue;
     }
-    g = { key, name: key === "" ? NO_FOLDER : row.projectName || NO_FOLDER, path, rows: [row], tokens: row.tokens.total, latest: row.startedAt };
+    g = { key, name: key === "" ? NO_FOLDER : row.projectName || lastSegment(key), path, rows: [row], tokens: row.tokens.total, latest: row.startedAt };
     if (key === "") none = g;
     else {
       at.set(key, g);

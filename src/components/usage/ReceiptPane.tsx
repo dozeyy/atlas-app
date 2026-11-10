@@ -204,7 +204,10 @@ export function ReceiptPane({
   const wide = itemsOpen && box.w >= WIDE_PX && box.h > 0;
   const fit = wide ? fitColumn(box.h - FOOTER_PX, r.flags.length, Math.min(8, r.items.length)) : null;
   const flags = r.flags.slice(0, fit ? fit.flags : FLAGS_SHOWN);
-  const itemLimit = fit ? fit.items : flags.length > 0 ? 6 : 8;
+  const shown = fit ? fit.items : flags.length > 0 ? 6 : 8;
+  // A "1 smaller item" row is one row for one item that says less than the item itself would:
+  // a single leftover takes that row. The fold is only for two or more.
+  const itemLimit = r.items.length === shown + 1 ? shown + 1 : shown;
   // The figure is tokens, so the biggest in tokens comes first.
   const items = [...r.items].sort((a, b) => b.tokens - a.tokens).slice(0, itemLimit);
   // The ~ figures are sizes read off the results, not shares of the chat's tokens, so this list
