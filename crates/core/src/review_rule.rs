@@ -142,7 +142,9 @@ pub fn clean_label(label: &str) -> String {
     if words.is_empty() {
         words = all[start..].iter().map(|w| strip_line_suffix(w)).filter(|w| !looks_like_line_ref(w)).collect();
     }
-    let joined = words.join(" ");
+    // Removing backticks and links can join the pieces of a secret that was split by markup
+    // ("sk-ant-api03-abc`defghijklmno`"): mask once more on the finished sentence.
+    let joined = crate::setup::secrets::redact_inline(&words.join(" "));
     if joined.chars().count() <= LABEL_CHARS {
         return joined;
     }
@@ -180,10 +182,15 @@ pub fn validate_line(text: &str) -> Result<String, &'static str> {
     Ok(t.to_string())
 }
 
-/// Whether `file` already has exactly this line (ignoring trailing spaces and line endings).
+/// Whether the `## Caught in review` section of `file` already has exactly this line (ignoring
+/// trailing spaces and line endings). The same text in a code block or under another heading is
+/// not the rule being there, so it does not count.
 pub fn has_line(file: &[u8], line: &str) -> bool {
     let want = line.trim();
-    String::from_utf8_lossy(file).lines().any(|l| l.trim() == want)
+    let spans = line_spans(file);
+    let in_fence = fence_marks(file, &spans);
+    let Some((h, end)) = section_of(file, &spans, &in_fence, HEADING) else { return false };
+    (h + 1..end).any(|k| !in_fence[k] && String::from_utf8_lossy(&file[spans[k].0..spans[k].1]).trim() == want)
 }
 
 fn sentence(label: &str) -> String {
@@ -265,48 +272,13 @@ pub fn append_under_heading(file: &[u8], heading: &str, text: &str) -> Vec<u8> {
     let eol: &[u8] = if crlf { b"\r\n" } else { b"\n" };
     let lines_of = |t: &str| -> Vec<Vec<u8>> { t.replace("\r\n", "\n").trim_end_matches('\n').split('\n').map(|l| l.as_bytes().to_vec()).collect() };
     let new_lines = lines_of(text);
-    let body_start = if file.starts_with(&[0xEF, 0xBB, 0xBF]) { 3 } else { 0 };
 
-    // Walk the lines with their byte ranges (the terminator is part of the range).
-    let mut spans: Vec<(usize, usize, usize)> = Vec::new(); // (start, content_end, end)
-    let mut i = body_start;
-    while i < file.len() {
-        let start = i;
-        while i < file.len() && file[i] != b'\n' {
-            i += 1;
-        }
-        let nl = i < file.len();
-        let mut content_end = i;
-        if content_end > start && file[content_end - 1] == b'\r' {
-            content_end -= 1;
-        }
-        if nl {
-            i += 1;
-        }
-        spans.push((start, content_end, i));
-    }
-
-    let is_heading = |s: &(usize, usize, usize)| String::from_utf8_lossy(&file[s.0..s.1]).trim_end() == heading;
+    let spans = line_spans(file);
     let in_fence = fence_marks(file, &spans);
-    let head_idx = spans.iter().enumerate().position(|(k, s)| !in_fence[k] && is_heading(s));
 
     let mut out = Vec::with_capacity(file.len() + 128);
-    match head_idx {
-        Some(h) => {
-            // The section ends at the next heading (any level at or above this one) or the end.
-            let level = heading.chars().take_while(|c| *c == '#').count();
-            let mut end_line = spans.len();
-            for (k, s) in spans.iter().enumerate().skip(h + 1) {
-                if in_fence[k] {
-                    continue;
-                }
-                let t = String::from_utf8_lossy(&file[s.0..s.1]);
-                let hashes = t.chars().take_while(|c| *c == '#').count();
-                if hashes > 0 && hashes <= level && t.chars().nth(hashes) == Some(' ') {
-                    end_line = k;
-                    break;
-                }
-            }
+    match section_of(file, &spans, &in_fence, heading) {
+        Some((h, end_line)) => {
             // Insert after the last non-blank line of the section.
             let mut last = h;
             for (k, s) in spans.iter().enumerate().take(end_line).skip(h + 1) {
@@ -349,6 +321,49 @@ pub fn append_under_heading(file: &[u8], heading: &str, text: &str) -> Vec<u8> {
         }
     }
     out
+}
+
+/// The lines of `file` with their byte ranges `(start, content_end, end)`; the terminator is part
+/// of the range. A leading BOM is skipped.
+fn line_spans(file: &[u8]) -> Vec<(usize, usize, usize)> {
+    let mut spans = Vec::new();
+    let mut i = if file.starts_with(&[0xEF, 0xBB, 0xBF]) { 3 } else { 0 };
+    while i < file.len() {
+        let start = i;
+        while i < file.len() && file[i] != b'\n' {
+            i += 1;
+        }
+        let nl = i < file.len();
+        let mut content_end = i;
+        if content_end > start && file[content_end - 1] == b'\r' {
+            content_end -= 1;
+        }
+        if nl {
+            i += 1;
+        }
+        spans.push((start, content_end, i));
+    }
+    spans
+}
+
+/// The `heading` section as `(heading line, first line past the section)`, outside code fences.
+/// It ends at the next heading at or above its level, or the end of the file.
+fn section_of(file: &[u8], spans: &[(usize, usize, usize)], in_fence: &[bool], heading: &str) -> Option<(usize, usize)> {
+    let h = spans.iter().enumerate().position(|(k, s)| !in_fence[k] && String::from_utf8_lossy(&file[s.0..s.1]).trim_end() == heading)?;
+    let level = heading.chars().take_while(|c| *c == '#').count();
+    let mut end_line = spans.len();
+    for (k, s) in spans.iter().enumerate().skip(h + 1) {
+        if in_fence[k] {
+            continue;
+        }
+        let t = String::from_utf8_lossy(&file[s.0..s.1]);
+        let hashes = t.chars().take_while(|c| *c == '#').count();
+        if hashes > 0 && hashes <= level && t.chars().nth(hashes) == Some(' ') {
+            end_line = k;
+            break;
+        }
+    }
+    Some((h, end_line))
 }
 
 /// One line of the "what will change" preview.
@@ -606,9 +621,30 @@ mod tests {
     }
 
     #[test]
+    fn a_secret_split_by_markup_is_masked_after_the_markup_is_stripped() {
+        let c = clean_label("Leaks sk-ant-api03-abc`defghijklmnopqrstuv` in the log");
+        assert!(!c.contains("sk-ant"), "{c}");
+        assert!(!c.contains("defghijklmno"), "{c}");
+    }
+
+    #[test]
+    fn has_line_only_counts_inside_the_review_section_outside_fences() {
+        let l = "- Check before handing work back: run the tests.";
+        let in_fence = format!("# Notes\n\n```\n{l}\n```\n\n## Caught in review\n\n- other\n");
+        assert!(!has_line(in_fence.as_bytes(), l));
+        let other = format!("## Other\n\n{l}\n\n## Caught in review\n\n- other\n");
+        assert!(!has_line(other.as_bytes(), l));
+        let after = format!("## Caught in review\n\n- other\n\n## Later\n\n{l}\n");
+        assert!(!has_line(after.as_bytes(), l));
+        let inside = format!("## Caught in review\n\n- other\n{l}\n\n## Later\n");
+        assert!(has_line(inside.as_bytes(), l));
+        assert!(!has_line(b"", l));
+    }
+
+    #[test]
     fn has_line_ignores_line_endings_and_trailing_spaces() {
-        assert!(has_line(b"# A\r\n- Same.  \r\n", "- Same."));
-        assert!(!has_line(b"# A\n- Other.\n", "- Same."));
+        assert!(has_line(b"## Caught in review\r\n- Same.  \r\n", "- Same."));
+        assert!(!has_line(b"## Caught in review\n- Other.\n", "- Same."));
     }
 
     #[test]

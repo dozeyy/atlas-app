@@ -83,7 +83,7 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
   );
 }
 
-function Loaded({ snap, includeWorktrees, loads, error, onItemRequested }: { snap: SetupSnapshot; includeWorktrees: boolean; loads: number; error: string | null; onItemRequested: () => void }) {
+function Loaded({ snap, includeWorktrees, loads, error }: { snap: SetupSnapshot; includeWorktrees: boolean; loads: number; error: string | null }) {
   const { info } = useAtlas();
   const [tile, setTile] = useState<TileId | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -134,11 +134,9 @@ function Loaded({ snap, includeWorktrees, loads, error, onItemRequested }: { sna
     const id = peekPendingToolkitItem();
     if (!id) return;
     clearPendingToolkitItem();
-    // The item lives on "Your setup": a jump from the Team tab brings that tab forward first.
-    onItemRequested();
     // Another item replaces the one being edited: ask first when it holds unsaved edits.
     if (byId.has(id) && id !== selectedRef.current) guardLeave(() => setSelectedId(id));
-  }, [byId, onItemRequested]);
+  }, [byId]);
   useEffect(() => {
     takePending();
     return onNavRequest(takePending);
@@ -228,6 +226,8 @@ function firstTab(): ToolkitTab {
     clearPendingToolkitTab();
     return asked;
   }
+  // An item to open lives on "Your setup", whichever tab was left open last.
+  if (peekPendingToolkitItem()) return "setup";
   try {
     const saved = window.localStorage.getItem(TAB_KEY);
     return saved === "library" || saved === "team" ? saved : "setup";
@@ -255,9 +255,13 @@ export function Setup() {
     () =>
       onNavRequest(() => {
         const asked = peekPendingToolkitTab();
-        if (!asked) return;
-        clearPendingToolkitTab();
-        setTab(asked);
+        if (asked) {
+          clearPendingToolkitTab();
+          setTab(asked);
+        } else if (peekPendingToolkitItem()) {
+          // "Open this item" from another tab: Your setup mounts and takes it from its first render.
+          setTab("setup");
+        }
       }),
     [setTab],
   );
@@ -280,19 +284,14 @@ export function Setup() {
       </div>
       {tab === "library" ? (
         <LibraryTab />
+      ) : tab === "team" ? (
+        <Team onShowSetup={showSetup} />
+      ) : st.snapshot ? (
+        <Loaded snap={st.snapshot} includeWorktrees={st.includeWorktrees} loads={st.loads} error={st.status === "ready" ? st.error : null} />
+      ) : st.status === "error" ? (
+        <SetupError message={st.error ?? "Something went wrong."} onRetry={reloadSetup} />
       ) : (
-        <>
-          {tab === "team" && <Team onShowSetup={showSetup} />}
-          <div className={tab === "team" ? "hidden" : "contents"}>
-            {st.snapshot ? (
-              <Loaded snap={st.snapshot} includeWorktrees={st.includeWorktrees} loads={st.loads} error={st.status === "ready" ? st.error : null} onItemRequested={showSetup} />
-            ) : st.status === "error" ? (
-              <SetupError message={st.error ?? "Something went wrong."} onRetry={reloadSetup} />
-            ) : (
-              <SetupSkeleton />
-            )}
-          </div>
-        </>
+        <SetupSkeleton />
       )}
     </>
   );

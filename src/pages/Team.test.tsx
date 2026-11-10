@@ -8,7 +8,7 @@ import { MockBackend } from "../lib/mock";
 import { resetSetupStore } from "../state/setupStore";
 import { resetToasts } from "../state/toastStore";
 import { resetUnsaved } from "../state/unsavedStore";
-import { clearPendingAgent, clearPendingSession, onNavRequest, peekPendingAgent, peekPendingSession } from "../lib/nav";
+import { clearPendingAgent, clearPendingSession, clearPendingToolkitItem, onNavRequest, openToolkitItemNext, peekPendingAgent, peekPendingSession, peekPendingToolkitItem } from "../lib/nav";
 import type { Scorecard } from "../lib/teamTypes";
 
 class Backend extends MockBackend {
@@ -44,6 +44,7 @@ beforeEach(() => {
   resetUnsaved();
   clearPendingSession();
   clearPendingAgent();
+  clearPendingToolkitItem();
   backend = new Backend();
   setBackend(backend);
 });
@@ -68,6 +69,41 @@ describe("Team: a tab of the Toolkit", () => {
     await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
     expect(within(tabs).getByRole("radio", { name: "Your setup" })).toHaveAttribute("aria-checked", "true");
     expect(localStorage.getItem("atlas.toolkit.tab")).toBe("setup");
+  });
+
+  it("unmounts Your setup under Team, so its Escape and Ctrl+F do nothing there", async () => {
+    await openToolkit("setup");
+    await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
+    expect(await screen.findByPlaceholderText("Search skills")).toBeInTheDocument();
+    const tabs = await screen.findByRole("radiogroup", { name: "Toolkit view" });
+    await userEvent.click(within(tabs).getByRole("radio", { name: "Team" }));
+    await screen.findByRole("radiogroup", { name: "Team view" });
+    // Nothing of Your setup is left behind: no list, no search box, no key listeners.
+    expect(screen.queryByPlaceholderText("Search skills")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Skills, \d+$/ })).not.toBeInTheDocument();
+    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    const find = new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true });
+    act(() => {
+      window.dispatchEvent(esc);
+      window.dispatchEvent(find);
+    });
+    expect(esc.defaultPrevented).toBe(false);
+    expect(find.defaultPrevented).toBe(false);
+    // Back on Your setup it starts from the tiles, as it does on any fresh visit.
+    await userEvent.click(within(tabs).getByRole("radio", { name: "Your setup" }));
+    expect(await screen.findByRole("button", { name: /^Skills, \d+$/ })).toBeInTheDocument();
+  });
+
+  it("a jump to a Toolkit item from the Team tab opens Your setup and takes the item", async () => {
+    await openToolkit("team");
+    await screen.findByRole("radiogroup", { name: "Team view" });
+    act(() => {
+      openToolkitItemNext("does-not-exist");
+    });
+    const tabs = screen.getByRole("radiogroup", { name: "Toolkit view" });
+    await waitFor(() => expect(within(tabs).getByRole("radio", { name: "Your setup" })).toHaveAttribute("aria-checked", "true"));
+    expect(await screen.findByRole("button", { name: /^Skills, \d+$/ })).toBeInTheDocument();
+    await waitFor(() => expect(peekPendingToolkitItem()).toBeNull());
   });
 });
 

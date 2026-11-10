@@ -1472,6 +1472,15 @@ pub fn file_stamp(file: &Path) -> String {
     }
 }
 
+#[cfg(test)]
+type SwapHook = Box<dyn Fn(&Path)>;
+
+#[cfg(test)]
+thread_local! {
+    /// Lets a test play "another writer" in the gap between the swap and the read-back.
+    static AFTER_SWAP: std::cell::RefCell<Option<SwapHook>> = const { std::cell::RefCell::new(None) };
+}
+
 /// Add `text` under `heading` at the end of a Markdown file (the heading is added when missing)
 /// without touching any other byte: the BOM, line endings and every other section stay exactly
 /// as they were. `expected_stamp` is the stamp read when the user opened the sheet; a file that
@@ -1517,6 +1526,8 @@ pub fn apply_append(file: &Path, kind: &str, name: &str, heading: &str, text: &s
     let (id, dir) = new_backup(backups, &format!("save-{name}"))?;
     // Set once the new bytes are in place: from then on the backup is the way back and stays.
     let mut swapped = false;
+    // Set when what reads back is not what was written: those bytes are someone else's.
+    let mut foreign = false;
     let outcome = (|| -> Res<SaveOutcome> {
         if let Some(b) = &before {
             fs::write(dir.join("file-before"), b)?;
@@ -1543,16 +1554,28 @@ pub fn apply_append(file: &Path, kind: &str, name: &str, heading: &str, text: &s
         }
         atomic_write(file, &after)?;
         swapped = true;
+        #[cfg(test)]
+        AFTER_SWAP.with(|h| {
+            if let Some(f) = h.borrow().as_ref() {
+                f(file);
+            }
+        });
         let back = fs::read(file)?;
         if back != after {
+            foreign = true;
             return refuse("The file on disk is not what Atlas just wrote. Something else changed it at the same time.");
         }
         Ok(SaveOutcome { backup_id: Some(id.clone()), stamp: stamp_of(&back), note: None })
     })();
     match &outcome {
         Ok(_) => tag_backup(backups, &id, "user", summary),
-        // The file was replaced but did not read back as written: keep the backup (History and
-        // Undo can still put the old bytes back) and say so in History.
+        // The file was replaced but did not read back as written: keep the backup as a recovery
+        // copy and say so in History. The bytes on disk now are the other writer's, so no "saved"
+        // stamp is recorded: Undo refuses instead of overwriting their edit.
+        Err(_) if swapped && foreign => {
+            tag_backup(backups, &id, "user", summary);
+            forget_saved_stamp(backups, &id);
+        }
         Err(_) if swapped => tag_backup(backups, &id, "user", summary),
         // Nothing was changed on failure; the half-made backup is only clutter.
         Err(_) => {
@@ -2064,6 +2087,16 @@ pub fn tag_backup(backups: &Path, id: &str, source: &str, summary: &str) {
     let _ = write_manifest(&dir, &m);
 }
 
+/// Drop the "file right after the change" stamp and hash from a backup's manifest, so
+/// `restore_any` has nothing to compare against and refuses; the saved copy stays as a manual
+/// recovery copy.
+fn forget_saved_stamp(backups: &Path, id: &str) {
+    let Ok((mut m, dir)) = read_manifest(backups, id) else { return };
+    m.saved_stamp = None;
+    m.saved_sha = None;
+    let _ = write_manifest(&dir, &m);
+}
+
 /// The files a backup holds, as (name, bytes): the saved copy of the file and everything under
 /// `payload`. Used to check what a restore would bring back before it does. Anything that can't
 /// be read plainly (a link, a huge file, too many files) comes back under a name that is not
@@ -2446,5 +2479,36 @@ mod cli_entry_tests {
         assert!(!cli_entry_matches(&json!({"type": "http", "url": "https://a.example/mcp", "env": {"K": "v"}}), &asked));
         assert!(!cli_entry_matches(&json!({"type": "http", "url": "https://a.example/mcp", "headers": {"Authorization": "x"}}), &asked));
         assert!(!cli_entry_matches(&json!({}), &asked));
+    }
+}
+
+#[cfg(test)]
+mod append_race_tests {
+    use super::*;
+
+    #[test]
+    fn a_file_another_writer_changed_after_the_swap_keeps_the_backup_but_cannot_be_undone() {
+        let dir = std::env::temp_dir().join(format!("atlas-append-race-{}-{}", std::process::id(), now_ms()));
+        let backups = dir.join("backups");
+        fs::create_dir_all(&backups).unwrap();
+        let file = dir.join("CLAUDE.md");
+        fs::write(&file, b"# Mine\n").unwrap();
+        let stamp = stamp_of(&fs::read(&file).unwrap());
+        AFTER_SWAP.with(|h| *h.borrow_mut() = Some(Box::new(|f| fs::write(f, b"# Theirs, written a moment later\n").unwrap())));
+        let line = "- Check before handing work back: run the tests.";
+        let err = apply_append(&file, "instructions", "CLAUDE.md", crate::review_rule::HEADING, line, &stamp, "Made a review rule", &backups);
+        AFTER_SWAP.with(|h| *h.borrow_mut() = None);
+        assert!(matches!(err, Err(WriteError::Refused(_))), "the mismatch is reported");
+
+        // The backup stays as a recovery copy and History lists it, but Undo has nothing to compare against.
+        let listed = list_backups_detailed(&backups, 10);
+        assert_eq!(listed.len(), 1);
+        let row = &listed[0];
+        assert!(!row.can_restore, "no saved stamp, so no Undo over their edit");
+        assert_eq!(fs::read(backups.join(&row.backup_id).join("file-before")).unwrap(), b"# Mine\n");
+        let confine = Confine::new(&dir, &dir.join(".claude.json"), Vec::new());
+        assert!(restore_any(&backups, &row.backup_id, &confine).is_err());
+        assert_eq!(fs::read(&file).unwrap(), b"# Theirs, written a moment later\n", "their edit is untouched");
+        let _ = fs::remove_dir_all(&dir);
     }
 }
