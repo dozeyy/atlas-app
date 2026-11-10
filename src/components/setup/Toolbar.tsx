@@ -13,7 +13,7 @@ function Labeled({ label, checked, onChange, count }: { label: string; checked: 
       <Toggle checked={checked} onChange={onChange} label={label} />
       <span>
         {label}
-        {count ? <span className="ml-1 text-ink-2">({count})</span> : null}
+        {count ? <span className="ml-1.5 text-ink-2">{count}</span> : null}
       </span>
     </label>
   );

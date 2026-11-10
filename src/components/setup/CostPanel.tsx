@@ -1,4 +1,4 @@
-import { fmtUsd, rowTitle, topRows, usdHover, weeklyTokens, windowLabel } from "../../lib/setup-cost";
+import { fmtUsd, rowTitle, titleCount, topRows, usdHover, weeklyTokens, windowLabel } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
 import type { CostReport, SetupItem } from "../../lib/setup-types";
 import { MiniKind } from "./parts";
@@ -37,12 +37,19 @@ export function CostPanel({ report, items, onOpen }: { report: CostReport | null
           const hover = [`${exact(r.tokens)} tokens with every message${weekly ? `, ${exact(weeklyTokens(r))} over ${windowLabel(report)}` : ""}.`, usdHover(r, report)]
             .filter(Boolean)
             .join(" ");
+          const { label, count } = titleCount(rowTitle(r));
+          const title = (
+            <>
+              {label}
+              {count && <span className="ml-1.5 font-normal text-ink-2">{count}</span>}
+            </>
+          );
           const name = openable ? (
             <button type="button" onClick={() => onOpen(r.id!)} className="press min-w-0 cursor-pointer text-left text-body font-medium text-ink hover:text-accent-text">
-              <span className="block truncate">{rowTitle(r)}</span>
+              <span className="block truncate">{title}</span>
             </button>
           ) : (
-            <span className="min-w-0 truncate text-body font-medium text-ink">{rowTitle(r)}</span>
+            <span className="min-w-0 truncate text-body font-medium text-ink">{title}</span>
           );
           return (
             <li key={`${r.id ?? r.name}-${i}`} data-cost-row={r.id ?? r.name} title={hover}>

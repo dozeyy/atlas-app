@@ -711,7 +711,7 @@ export function DetailSheet({
                 <h4 className="mb-2 mt-4 text-body font-medium text-ink">
                   Projects{" "}
                   <span className="font-normal text-ink-2">
-                    ({mcp.onCount} of {mcp.totalProjects || mcp.perProject.length} on)
+                    {mcp.onCount} of {mcp.totalProjects || mcp.perProject.length} on
                   </span>
                 </h4>
                 <ul className="grid max-h-56 grid-cols-1 gap-1.5 overflow-y-auto sm:grid-cols-2">

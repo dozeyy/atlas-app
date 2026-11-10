@@ -95,6 +95,15 @@ export function rowTitle(r: CostRow): string {
   return project ? `${r.name} · ${project}` : r.name;
 }
 
+/**
+ * A title that ends in a bracketed count ("Other connected tools (19)") as its label and its
+ * count, so the count is set the way every Toolkit heading sets one: "Global 3", never "(3)".
+ */
+export function titleCount(title: string): { label: string; count: string | null } {
+  const m = /^(.*\S)\s*\((\d[\d,]*)\)$/.exec(title);
+  return m ? { label: m[1]!, count: m[2]! } : { label: title, count: null };
+}
+
 /** "8.8k per message" */
 export function perMessage(r: CostRow): string {
   return `${compact(r.tokens)} per message`;
