@@ -878,15 +878,18 @@ struct RunSample {
 /// What this cache cannot say is how a run ended (a killed or failed helper looks like a finished
 /// one); the ledger will.
 ///
-/// The time bound is in the `WHERE` of the inner scan (the `messages_ts` index), a day looser than
+/// The time bound is in the `WHERE` of the inner scan (the `messages_ts` index, named in the query:
+/// left alone the planner walks every helper file by `messages_file`, 224 ms against 60 ms for a
+/// week on a 127k-message cache, EXPLAIN QUERY PLAN 2026-11-09), a day looser than
 /// `since` so a run that began just before it is not cut short; the exact bound is on the run's
-/// last message in the `HAVING`.
+/// last message in the `HAVING`, where a helper with a message older than the loose bound is left
+/// out too: its span is only partly in view, so its lifetime tool-call total would not fit it.
 fn finished_runs(conn: &Connection, since: i64, over_by: i64) -> rusqlite::Result<Vec<RunSample>> {
     let mut st = conn.prepare_cached(
         "WITH seen AS ( \
            SELECT m.file_id AS file_id, m.ts_utc_ms AS ts, \
                   m.ts_utc_ms - LAG(m.ts_utc_ms) OVER (PARTITION BY m.file_id ORDER BY m.ts_utc_ms) AS gap \
-           FROM messages m \
+           FROM messages m INDEXED BY messages_ts \
            WHERE m.ts_utc_ms >= ?1 \
              AND m.file_id IN (SELECT file_id FROM agents WHERE agent_type IS NOT NULL AND agent_type <> '') \
          ) \
@@ -896,7 +899,8 @@ fn finished_runs(conn: &Connection, since: i64, over_by: i64) -> rusqlite::Resul
          JOIN files f ON f.file_id = s.file_id \
          WHERE f.tool_calls > 0 AND f.missing = 0 \
          GROUP BY a.session_id, a.agent_id \
-         HAVING MAX(s.ts) >= ?2 AND MAX(s.ts) <= ?3 AND COALESCE(MAX(s.gap), 0) <= ?4",
+         HAVING MAX(s.ts) >= ?2 AND MAX(s.ts) <= ?3 AND COALESCE(MAX(s.gap), 0) <= ?4 \
+                AND NOT EXISTS (SELECT 1 FROM messages o WHERE o.file_id = a.file_id AND o.ts_utc_ms < ?1)",
     )?;
     let loose = since - 86_400_000;
     let rows = st.query_map([loose, since, over_by, TYPICAL_RUN_GAP_MS], |r| {

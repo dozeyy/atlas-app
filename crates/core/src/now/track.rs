@@ -86,7 +86,12 @@ impl PlanTrack {
 
     fn apply(&mut self, op: PlanOp) {
         match op {
-            PlanOp::Set(steps) => self.edit(|s| *s = steps),
+            PlanOp::Set(steps) => {
+                // A whole new list (TodoWrite) replaces the tasks, so ids that did not fit the
+                // old one say nothing about this one.
+                self.irregular = false;
+                self.edit(|s| *s = steps)
+            }
             PlanOp::Add => self.edit(|s| s.push(StepState::Pending)),
             PlanOp::Update { id, status } => {
                 // Task ids count up from 1 in the order they were created.
@@ -579,6 +584,7 @@ impl Session {
             self.files[fi].effort = p.effort.clone();
         }
         let mut repeated = false;
+        let mut keyed = false;
         if let Some(m) = p.usage {
             if !is_sub && !m.model.is_empty() {
                 self.model = Some(m.model.clone());
@@ -587,6 +593,7 @@ impl Session {
             if is_sub && m.model.starts_with("claude-") {
                 self.files[fi].model = Some(m.model.clone());
             }
+            keyed = !m.key.is_empty();
             let counts = Counts {
                 input: m.input,
                 output: m.output,
@@ -620,8 +627,9 @@ impl Session {
         let ts = p.ts_ms.unwrap_or(0);
         // A new message of the helper after its turn ended (a lead's message reaches it as a
         // line the reader skips, so this is how a resume shows): possibly a new run. A repeat of
-        // a message already counted is not new.
-        if is_sub && self.files[fi].ended && !repeated {
+        // a message already counted is not new, and a line with no message id (no telling a repeat
+        // from a new message) is not a restart either.
+        if is_sub && self.files[fi].ended && keyed && !repeated {
             self.files[fi].mark_run(p.ts_ms, true);
         }
         if p.tools.is_empty() {
@@ -1452,6 +1460,40 @@ mod tests {
             META,
         );
         assert_eq!(s.chat(now_after()).helpers[0].plan, None);
+        // A whole new list (TodoWrite) after the odd ids starts clean: the count is back.
+        let todos = |a: &str, b: &str| format!(r#"{{"todos":[{{"content":"A","status":"{a}"}},{{"content":"B","status":"{b}"}}]}}"#);
+        let (_d, s) = with_helper(
+            &[],
+            &[
+                create("c1", "2026-11-08T10:00:02.000Z"),
+                update("u1", "9", "2026-11-08T10:00:03.000Z"),
+                tool("p1", "TodoWrite", &todos("in_progress", "pending"), "2026-11-08T10:00:04.000Z"),
+                tool("p2", "TodoWrite", &todos("completed", "in_progress"), "2026-11-08T10:00:05.000Z"),
+            ],
+            META,
+        );
+        assert_eq!(s.chat(now_after()).helpers[0].plan, Some(PlanCount { done: 1, total: 2 }));
+    }
+
+    #[test]
+    fn an_extra_line_with_no_message_id_after_a_helper_ended_is_not_a_new_run() {
+        let stray = r#"{"type":"assistant","timestamp":"2026-11-08T10:00:06.000Z","message":{"role":"assistant","content":[{"type":"text","text":"x"}]}}"#.to_string();
+        let (_d, s) = with_helper(
+            &[],
+            &[
+                prompt("2026-11-08T10:00:01.000Z"),
+                tool("h1", "Read", r#"{"file_path":"x"}"#, "2026-11-08T10:00:02.000Z"),
+                result("h1"),
+                tool("h2", "Read", r#"{"file_path":"y"}"#, "2026-11-08T10:00:03.000Z"),
+                result("h2"),
+                end("2026-11-08T10:00:05.000Z"),
+                stray,
+            ],
+            META,
+        );
+        let h = &s.chat(now_after()).helpers[0];
+        assert_eq!(h.tool_calls, 2);
+        assert_eq!(h.started_ms, crate::usage::time::parse_iso_ms("2026-11-08T10:00:01.000Z"));
     }
 
     #[test]

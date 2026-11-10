@@ -2,7 +2,7 @@
 """Leave a demo Claude folder with live helpers, for the Now tab's "Helpers at work" screenshots.
 
     python tools/make-demo-fixture.py OUT_DIR          (no --live)
-    python tools/replay-helpers.py OUT_DIR [--keep SECONDS] [--grow]
+    python tools/replay-helpers.py OUT_DIR [--keep SECONDS] [--grow] [--many N]
 
 Writes into OUT_DIR/home/.claude/projects only (never a real Claude folder; it refuses any path
 that is not a make-demo-fixture folder). It adds:
@@ -19,6 +19,7 @@ line, Opus 5.5 xhigh, Sonnet 5.5 with no effort line), to see the row's "model -
 
 --keep N keeps the live files fresh for N seconds (so Atlas, started after this, still finds them live);
 --grow also gives the first code-reviewer a new tool call every 4 seconds, to watch its fill move.
+--many N adds N more live helpers to the first chat (a long list, to check the page scrolls to the end).
 Everything is fiction. Timestamps are relative to the moment you run it.
 """
 import datetime
@@ -163,11 +164,19 @@ def main():
                  result_line(sid1, "t1", 2, t0 + datetime.timedelta(seconds=71), cwd1),
                  call_line(sid1, "t1", 3, now - datetime.timedelta(seconds=8), cwd1, model, "Bash", {"command": "cargo test --workspace"}, effort="medium")]
     h3_lines = calls(sid1, "x1", cwd1, haiku, now - datetime.timedelta(seconds=40), 4, 9)
-    live_chat(sid1, "maple-api", "Fix flaky login test", [
+    chat1 = [
         ("r1", "code-reviewer", "Read the diff and flag anything risky", h1_lines, 0),
         ("t1", "test-runner", "Run the suite and summarise failures", h2_lines, 0),
         ("x1", "Explore", "Look through the docs folder", h3_lines, 0),
-    ])
+    ]
+    # --many N: N more live helpers in the first chat, to see the page with a long list.
+    many = int(sys.argv[sys.argv.index("--many") + 1]) if "--many" in sys.argv else 0
+    kinds = (("Explore", "Look through the src folder"), ("code-reviewer", "Review the auth change"), ("general-purpose", "Draft the release notes"),
+             ("test-runner", "Run the unit tests"), ("Explore", "Find where sessions are stored"))
+    for i in range(many):
+        k, d = kinds[i % len(kinds)]
+        chat1.append((f"m{i}", k, d, calls(sid1, f"m{i}", cwd1, model, now - datetime.timedelta(seconds=30 + 20 * i), 3 + i, 8), 0))
+    live_chat(sid1, "maple-api", "Fix flaky login test", chat1)
 
     sid2 = "00000102-demo-4000-8000-000000000102"
     cwd2 = "/demo/pixel-garden"
