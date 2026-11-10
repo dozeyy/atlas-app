@@ -3,23 +3,28 @@ import type { PointerEvent } from "react";
 import { SidebarSimple } from "@phosphor-icons/react";
 import { AppMenu } from "./AppMenu";
 import { IconButton } from "./controls";
-import { GiftIcon } from "./GiftIcon";
 import { IconMotion } from "./IconMotion";
 import { NAV } from "./Sidebar";
 import { useKeyHints } from "../lib/keyHints";
 import { getBackend } from "../lib/ipc";
 import { useSidebar } from "../lib/useSidebar";
 import { useAtlas } from "../state/AtlasProvider";
+import type { View } from "../lib/types";
 
 /**
- * The row across the top of the window (like the Claude app): a drag region with the menu and
- * the sidebar toggle at the left, the window's three caption buttons at the right, and a 1 px
+ * The row across the top of the window (like the Claude app): a drag region with the sidebar's
+ * four corner buttons at the left, the window's three caption buttons at the right, and a 1 px
  * hairline under it. It lies over both columns; the sidebar column's colour runs up behind the
  * left end, so the divider between the columns is one straight line from the top edge to the
- * bottom. While the sidebar is folded the hairline runs the full width, which sets the two
- * buttons apart from the icons below them. Windows draws no title bar of its own (the window
- * has no frame), so the caption buttons are ours; macOS keeps its traffic lights (the buttons
- * start after them); Linux keeps its own frame and shows the row below it without them.
+ * bottom, and the hairline starts at that divider in both states.
+ *
+ * Open, the four sit in one row: menu, Settings, sidebar toggle, then Wrapped at the far right of
+ * the sidebar's top row. Folded, they close up into a 2 x 2 square at the top-left (Settings under
+ * the menu, Wrapped under the toggle), so the same buttons are in the same corner either way.
+ * Every one of them keeps the same 4 px to its column's edges (trail.css, --shell-inset).
+ * Windows draws no title bar of its own (the window has no frame), so the caption buttons are
+ * ours; macOS keeps its traffic lights (the buttons start after them); Linux keeps its own frame
+ * and shows the row below it without them.
  */
 export function TitleBar() {
   const { info } = useAtlas();
@@ -29,45 +34,49 @@ export function TitleBar() {
     <header data-tauri-drag-region className="titlebar">
       <div data-tauri-drag-region className="titlebar-left">
         <AppMenu />
+        {/* In the markup between the menu and the toggle, where it sits in the open row, so Tab
+            walks the row in reading order (folded, it walks the square down then across). */}
+        <CornerButton view="settings" className="titlebar-settings" />
         <IconButton
           aria-label="Sidebar"
           aria-expanded={!collapsed}
           aria-controls="app-sidebar"
           title={tip(`${collapsed ? "Show" : "Hide"} sidebar`, `${mod}+B`)}
+          className="titlebar-toggle"
           onClick={toggle}
         >
           <SidebarSimple size={18} aria-hidden="true" />
         </IconButton>
       </div>
-      <WrappedButton />
+      <CornerButton view="wrapped" className="titlebar-gift" />
       {info.platform === "windows" && <CaptionButtons />}
     </header>
   );
 }
 
 /**
- * Wrapped: an icon-only gift at the far right of the sidebar's top row (the toggle stays at the
- * left). Folded, the column is too narrow for both, so it drops under the toggle, centred over
- * the icons. It is a button of its own, not part of the drag region, so a click opens Wrapped and
- * a drag anywhere else on the row still moves the window.
+ * Settings and Wrapped: icon-only buttons of their own in the title bar row (their place is set in
+ * trail.css, and moves with the fold). Not part of the drag region, so a click opens the page and a
+ * drag anywhere else on the row still moves the window. The one you are on wears the accent tint.
  */
-function WrappedButton() {
+function CornerButton({ view: v, className }: { view: View; className: string }) {
   const { view, setView } = useAtlas();
   const { tip, mod } = useKeyHints();
-  const at = NAV.findIndex((n) => n.view === "wrapped");
-  const here = view === "wrapped";
+  const at = NAV.findIndex((n) => n.view === v);
+  const { label, icon: Icon, motion } = NAV[at];
+  const here = view === v;
   return (
     <IconButton
-      aria-label="Wrapped"
+      aria-label={label}
       aria-current={here ? "page" : undefined}
       // No tip once you are on it: an empty title (not a missing one, which the tip layer cannot
       // see change while it holds the old text) so nothing hangs over the page the click opened.
-      title={here ? "" : tip("Wrapped", `${mod}+${at + 1}`)}
-      className="titlebar-gift hover-host"
-      onClick={() => setView("wrapped")}
+      title={here ? "" : tip(label, `${mod}+${at + 1}`)}
+      className={`titlebar-corner ${className} hover-host`}
+      onClick={() => setView(v)}
     >
-      <IconMotion motion="gift" fill>
-        <GiftIcon />
+      <IconMotion motion={motion} fill>
+        <Icon />
       </IconMotion>
     </IconButton>
   );

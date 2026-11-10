@@ -716,7 +716,7 @@ html.reduced .options-panel {
   --side-now: var(--sidebar-w); /* where the title bar's hairline starts: at the sidebar's edge */
 }
 .app-shell[data-side="collapsed"] {
-  --side-now: 0px; /* folded: the hairline runs the full width, under the menu and toggle */
+  --side-now: var(--sidebar-w-collapsed); /* folded: still from the divider, so the 2 x 2 square is whole */
 }
 .titlebar {
   position: absolute;
@@ -759,29 +759,51 @@ body:has(> .fixed.inset-0) .caption-buttons {
 .app-shell[data-side="collapsed"] .titlebar::after {
   transition-delay: 60ms; /* in step with the sidebar, which waits for the labels to fade */
 }
+/* The sidebar's four corner buttons (32 px each, --shell-inset from every edge of the column, one
+   --shell-gap between neighbours). Open: one row, menu / Settings / toggle at the left and Wrapped
+   at the far right. Folded: a 2 x 2 square at the top-left, Settings under the menu and Wrapped
+   under the toggle, so the folded column is exactly inset + 32 + gap + 32 + inset wide. Settings
+   and Wrapped are placed here (absolute in the row) and slide between the two layouts at the pace
+   of the fold; the toggle closes up its gap for Settings in the same time. */
 .titlebar-left {
   display: flex;
   align-items: center;
-  padding-left: 6px;
+  gap: var(--shell-gap);
+  padding-left: var(--shell-inset);
 }
-/* Wrapped's gift: the far right of the sidebar's top row (right edge in line with Settings below).
-   Folded, it drops under the toggle and sits centred over the icons; the list moves down one row
-   to make room, at the pace of the fold. */
-.titlebar-gift {
+.titlebar-toggle {
+  margin-left: calc(32px + var(--shell-gap)); /* Settings' place, held open in the row */
+  transition: margin-left var(--side-dur) var(--ease-out);
+}
+.app-shell[data-side="collapsed"] .titlebar-toggle {
+  margin-left: 0;
+  transition-delay: 60ms;
+}
+.titlebar-corner {
   position: absolute;
-  top: 4px;
-  left: calc(var(--sidebar-w) - 13px - 32px);
+  top: var(--shell-inset);
   transition:
     top var(--side-dur) var(--ease-out),
     left var(--side-dur) var(--ease-out);
 }
-.app-shell[data-side="collapsed"] .titlebar-gift {
-  top: calc(var(--titlebar-h) + 8px + 2px); /* centred on the first row (36 px) of the list's old place */
-  left: calc((var(--sidebar-w-collapsed) - 1px) / 2 - 16px);
+.titlebar-settings {
+  left: calc(var(--shell-inset) + 32px + var(--shell-gap));
+}
+.titlebar-gift {
+  left: calc(var(--sidebar-w) - var(--shell-inset) - 32px);
+}
+.app-shell[data-side="collapsed"] .titlebar-corner {
+  top: calc(var(--shell-inset) + 32px + var(--shell-gap)); /* the second row of the square */
   transition-delay: 60ms;
 }
-.titlebar-gift[aria-current="page"] .btn-face,
-.titlebar-gift[aria-current="page"]:hover:not(:disabled) .btn-face {
+.app-shell[data-side="collapsed"] .titlebar-settings {
+  left: var(--shell-inset);
+}
+.app-shell[data-side="collapsed"] .titlebar-gift {
+  left: calc(var(--shell-inset) + 32px + var(--shell-gap));
+}
+.titlebar-corner[aria-current="page"] .btn-face,
+.titlebar-corner[aria-current="page"]:hover:not(:disabled) .btn-face {
   background: var(--accent-tint);
   color: var(--accent-text);
 }
@@ -789,15 +811,19 @@ body:has(> .fixed.inset-0) .caption-buttons {
   transition: margin-top var(--side-dur) var(--ease-out);
 }
 .side-collapsed .side-main {
-  margin-top: 38px; /* one row (36) and the gap (2) */
+  /* The list waits under the square's second row: that row (32) and the gap over it (4); with
+     the 8 the sidebar already pads below the title bar, the list sits 12 clear of the square. */
+  margin-top: calc(32px + var(--shell-gap));
   transition-delay: 60ms;
 }
-html.reduced .titlebar-gift,
+html.reduced .titlebar-corner,
+html.reduced .titlebar-toggle,
 html.reduced .side-main {
   transition: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  .titlebar-gift,
+  .titlebar-corner,
+  .titlebar-toggle,
   .side-main {
     transition: none !important;
   }
@@ -1243,7 +1269,10 @@ html[data-input="keyboard"] .folder-head:focus-visible {
 .side {
   width: var(--sidebar-w);
   overflow: hidden; /* labels are clipped, not wrapped, while the width moves */
-  padding-top: calc(var(--titlebar-h) + 8px);
+  /* 12 at the sides and the foot (the same, so what sits in the bottom corner is as far from the
+     bottom as from the side; it was a `pb-3` glued to a template literal, which Tailwind never
+     emitted, so the foot had no padding at all). */
+  padding: calc(var(--titlebar-h) + 8px) 12px 12px;
   border-right: 1px solid var(--line);
   transition: width var(--side-dur) var(--ease-out);
 }
@@ -1263,37 +1292,14 @@ html[data-input="keyboard"] .folder-head:focus-visible {
   opacity: 0;
   transition-delay: 0ms;
 }
-/* Settings at the foot: one square icon button in the bottom-right corner; centred under the
-   other icons when folded. */
-.nav-settings-row {
+/* The foot holds the update button when there is one (Settings moved up into the title bar row,
+   2026-11-10): the full row open, the icon alone centred under the nav icons when folded. */
+.side-foot {
   display: flex;
-  justify-content: flex-end;
-}
-.nav-settings-row .nav-solo {
-  margin-left: auto;
-}
-.side-collapsed .nav-settings-row {
-  justify-content: center;
-}
-/* Folded: the update icon stacks above Settings, both centred. */
-.side-collapsed .nav-settings-row {
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
 }
-.side-collapsed .nav-settings-row .nav-solo {
-  margin-left: 0;
-}
-.nav-settings-row {
-  align-items: center;
-  gap: 4px;
-}
-.nav-settings-row .nav-item {
-  width: 36px;
-}
-.nav-settings-row .nav-face {
+.side-collapsed .side-foot {
   justify-content: center;
-  padding: 0;
 }
 .side-collapsed [role="status"] {
   justify-content: center;
@@ -1321,6 +1327,23 @@ html.reduced .titlebar::after {
    is its own strip across the window and the sidebar starts below it. */
 html[data-platform="macos"] .titlebar-left {
   padding-left: 84px;
+}
+/* After the traffic lights only two buttons fit in the sidebar's width, so on macOS Settings and
+   Wrapped keep the square's second row (under the menu and the toggle) in both states. */
+html[data-platform="macos"] .titlebar-toggle {
+  margin-left: 0;
+}
+html[data-platform="macos"] .titlebar-corner {
+  top: calc(var(--shell-inset) + 32px + var(--shell-gap));
+}
+html[data-platform="macos"] .titlebar-settings {
+  left: 84px;
+}
+html[data-platform="macos"] .titlebar-gift {
+  left: calc(84px + 32px + var(--shell-gap));
+}
+html[data-platform="macos"] .side-main {
+  margin-top: calc(32px + var(--shell-gap));
 }
 html[data-platform="macos"] .titlebar {
   background: var(--bg);
@@ -1380,10 +1403,6 @@ html[data-platform="macos"] .side {
 .nav-item[aria-current="page"] {
   color: var(--accent-text);
   font-weight: 600;
-}
-/* An item with no sliding pill of its own (Settings, at the foot) takes the tint directly. */
-.nav-solo[aria-current="page"] {
-  background: var(--accent-tint);
 }
 
 /* ---- Theme picker (Settings) --------------------------------------------------------------- */
@@ -2818,7 +2837,7 @@ html.reduced .map-node:focus-visible .map-body {
 }
 
 /* ---- Update icon (sidebar footer) ------------------------------------------------------------ */
-/* One 36 px square at the bottom-left, mirroring Settings. The button is a fixed box; the face
+/* One 36 px square at the bottom-left (the row's height). The button is a fixed box; the face
    inside carries the tint and the press, so the hit box never moves. It is drawn in the text colour
    (white in dark, near-black in light), like Claude's own update button (2026-11-09). */
 .upd-btn {

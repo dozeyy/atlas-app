@@ -74,10 +74,10 @@ describe("sidebar folding", () => {
     expect(side()).toHaveClass("side-collapsed");
   });
 
-  it("Settings is an icon-only button at the foot; no streak chip in the sidebar", () => {
+  it("Settings is not in the sidebar (it is the gear in the title bar row); no streak chip either", () => {
     mount(false);
-    const settings = within(side()).getByRole("button", { name: "Settings" });
-    expect(settings).toHaveTextContent("");
+    expect(within(side()).queryByRole("button", { name: "Settings" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Settings" }).closest("header.titlebar")).not.toBeNull();
     expect(within(side()).queryByText(/day streak/)).not.toBeInTheDocument();
   });
 

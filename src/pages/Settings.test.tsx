@@ -110,12 +110,14 @@ describe("Settings", () => {
     mount();
     const sw = await screen.findByRole("switch", { name: "Show shortcuts" });
     expect(sw).toHaveAttribute("aria-checked", "false");
-    // Off: the gear is named with no keys.
-    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "Settings");
+    // Off: an icon-only button is named with no keys. (The gear itself carries no tip while you
+    // are on Settings, like Wrapped's gift on Wrapped, so the sidebar toggle stands in for it.)
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "");
+    expect(screen.getByRole("button", { name: "Sidebar" })).toHaveAttribute("title", "Hide sidebar");
     await userEvent.click(sw);
     await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").showShortcuts).toBe(true));
     expect(sw).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "Settings (Ctrl+6)");
+    expect(screen.getByRole("button", { name: "Sidebar" })).toHaveAttribute("title", "Hide sidebar (Ctrl+B)");
   });
 
   it("steps how many versions History keeps, inside 10 to 200", async () => {
