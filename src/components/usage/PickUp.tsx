@@ -34,12 +34,13 @@ export function PickUp({ row, onOpen }: { row: SessionRow; onOpen: (id: string) 
     [detail.data, row.durationMs],
   );
   // A trace needs a few steps that differ to say anything. A chat that is too short, or one whose
-  // steps are all alike, would draw a flat slab, so its space stays clear. The trace is smoothed
-  // monotonically, so it never dips below its baseline.
-  const shape = useMemo(() => sparkShape(values, W, H), [values]);
-  const hi = Math.max(0, ...values);
-  const lo = values.length ? Math.min(...values) : 0;
-  const trace = values.length >= 3 && !shape.empty && hi - lo >= hi * FLAT;
+  // steps are all alike, would draw a flat slab, so its space stays clear. The 48 steps are summed
+  // into 24 and smoothed monotonically (the Dashboard ridge's line), so the strip reads as a shape,
+  // never an EKG, and never dips below its baseline.
+  const shape = useMemo(() => sparkShape(values, W, H, 24), [values]);
+  const hi = Math.max(0, ...shape.values);
+  const lo = shape.values.length ? Math.min(...shape.values) : 0;
+  const trace = shape.values.length >= 3 && !shape.empty && hi - lo >= hi * FLAT;
   const color = `var(--chart-${projectTone(row.projectPath || row.projectName)})`;
   const name = sessionName(row);
 
@@ -74,8 +75,9 @@ export function PickUp({ row, onOpen }: { row: SessionRow; onOpen: (id: string) 
             <title>Tokens through the session</title>
             <line x1="0" x2={W} y1={shape.baseline} y2={shape.baseline} className="today-base" />
             <path d={shape.area} fill={color} opacity={0.16} />
-            <path d={shape.line} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
-            {shape.last && <circle cx={shape.last[0]} cy={shape.last[1]} r={2} fill={color} />}
+            {/* The project sparklines' line and end dot (Sparkline.tsx: 1.75 px, round caps, a 2.25 px dot). */}
+            <path d={shape.line} fill="none" stroke={color} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
+            {shape.last && <circle cx={shape.last[0]} cy={shape.last[1]} r={2.25} fill={color} />}
           </>
         )}
       </svg>

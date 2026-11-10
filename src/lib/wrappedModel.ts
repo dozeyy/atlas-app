@@ -212,8 +212,9 @@ export function novelsHint(tokens: number): string {
   );
 }
 
-/** 0..1 heights for the small ridge on the share card: the days in `n` even bins, then normalised. */
-export function cardRidge(dayTokens: number[], n = 40): number[] {
+/** 0..1 heights for the small ridge on the share card: the days in `n` even bins (shareCard.RIDGE_POINTS,
+ * so the card's curve goes through these bins exactly, not a second bucketing), then normalised. */
+export function cardRidge(dayTokens: number[], n = 32): number[] {
   if (dayTokens.length === 0) return [];
   const bins = Math.min(n, dayTokens.length);
   const out = new Array<number>(bins).fill(0);

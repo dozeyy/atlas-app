@@ -6,17 +6,22 @@ import { addDays, compact } from "../../lib/usage";
 import { barTop, heatLayout, ZERO_STUB } from "../../lib/chartPaths";
 import { hourLabel, longDay, WEEKDAYS_SHORT, weekdayTied } from "../../lib/wrappedModel";
 import type { SlideGraphic } from "../../lib/wrappedModel";
+import { SPARK_BOX, SPARK_PATHS } from "../../lib/sparkMark";
 
-/** The four-point clay spark: planted on a peak, and the trail's "you are here". Unit size 1. */
-export const SPARK = "M0-1Q.16-.16 1 0Q.16 .16 0 1Q-.16 .16-1 0Q-.16-.16 0-1Z";
-
-/** The spark's radius, how far its centre floats above the bar it marks, and the room a chart must keep
- * above its tallest bar so the whole spark (and the spring's overshoot while it pops in) is inside the
- * SVG. A chart sets its top from SPARK_HEAD instead of nudging one number, so a bar at 100 % never clips. */
-export const SPARK_SIZE = 11;
-export const SPARK_LIFT = 20;
+/** The spark's half-size (its box is 2x this), how far its centre floats above the bar it marks, and
+ * the room a chart must keep above its tallest bar so the whole spark (and the spring's overshoot
+ * while it pops in) is inside the SVG. A chart sets its top from SPARK_HEAD instead of nudging one
+ * number, so a bar at 100 % never clips. */
+export const SPARK_SIZE = 10;
+export const SPARK_LIFT = 19;
 export const SPARK_HEAD = SPARK_LIFT + Math.ceil(SPARK_SIZE * 1.25) + 3;
 
+/**
+ * The clay spark: the Atlas mark, planted on a peak (the same glyph as `.spark` elsewhere in the
+ * app, drawn from its path data here so it lives in the chart's own units). `size` is half its box.
+ * The pop (summit.css) is on a group with no transform of its own, centred on the peak: its fill-box
+ * origin is then the peak itself. (A transform-origin on the scaled group would be 512 units off.)
+ */
 export function Spark({
   x,
   y,
@@ -28,14 +33,16 @@ export function Spark({
   size: number;
   delay?: number;
 }) {
+  const k = (size * 2) / SPARK_BOX;
   return (
     <g transform={`translate(${x} ${y})`}>
-      <path
-        className="sm-spark"
-        d={SPARK}
-        transform={`scale(${size})`}
-        style={{ animationDelay: `${delay}ms` }}
-      />
+      <g className="sm-spark" data-size={size} style={{ animationDelay: `${delay}ms` }}>
+        <g transform={`scale(${k}) translate(${-SPARK_BOX / 2} ${-SPARK_BOX / 2})`}>
+          {SPARK_PATHS.map((d, i) => (
+            <path key={i} d={d} />
+          ))}
+        </g>
+      </g>
     </g>
   );
 }

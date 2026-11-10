@@ -8,9 +8,11 @@ function sparkBoxes(g: SlideGraphic) {
   const { container } = render(<Graphic g={g} />);
   const svg = container.querySelector("svg")!;
   const [vx, vy, vw, vh] = svg.getAttribute("viewBox")!.split(/\s+/).map(Number);
-  const boxes = [...svg.querySelectorAll("path.sm-spark")].map((p) => {
+  const boxes = [...svg.querySelectorAll("g.sm-spark")].map((p) => {
     const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(p.parentElement!.getAttribute("transform")!)!;
-    const s = Number(/scale\(([-\d.]+)\)/.exec(p.getAttribute("transform")!)![1]);
+    // The mark is the Atlas mark's paths in a 1024 box, scaled to 2 x size and centred on the group.
+    const s = Number(p.getAttribute("data-size"));
+    expect(p.querySelectorAll("path").length).toBeGreaterThan(0);
     return { l: Number(m[1]) - s, r: Number(m[1]) + s, t: Number(m[2]) - s, b: Number(m[2]) + s };
   });
   return { boxes, view: { l: vx, t: vy, r: vx + vw, b: vy + vh } };
