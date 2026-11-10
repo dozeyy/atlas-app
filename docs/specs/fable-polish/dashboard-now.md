@@ -111,6 +111,49 @@ Each is its own commit. Pictures are in `docs/shots/fable-pass/` (local only).
 6. LEFT. The crowded second line of a Recent sessions row in the narrow column: the row is
    the Sessions page's component and its order is Will's (2026-11-08). Shared request.
 
+### Now, second round (2026-11-09)
+
+What a person watching wants in two seconds: which chat, what it is doing now, how much, how
+long. Every change below serves that order. Pictures use the `dn-` labels.
+
+7. BUILT. Running cards line up down the list. The clock column was as wide as its own
+   digits ("2:06" against "13:26"), so the doing block and the token figure started at a
+   different x on every card. Fixed-width number columns. Principle: alignment (a column is
+   only a column if it starts in one place). Measured: icon tile at 408 / 607 px on all
+   three cards at 900 / 1180 wide (was 437, 430, 424 and 631, 631, 623).
+   `now-run3/dn-r3-before-*` against `now-run3/dn-r3-after-*`.
+8. BUILT. The small running card keeps its folder and model under the title. At the smallest
+   window the card hid them, so the 88 px card held one line of text beside two-line blocks
+   and three chats with similar titles could not be told apart. Same height, now three
+   two-line blocks (title + folder and model, doing + target, tokens + caption) and the
+   clock. Principle: density and hierarchy; the height earns its place, and a shorter card
+   (72 or 80 px) cannot hold the title and the chips. The card stays taller than a helper
+   row on purpose: a chat is the parent, a helper is its child.
+   `now-run3/dn-r3-after-*-900x600` against `now-run3/dn-r4-after-*-900x600`.
+9. BUILT. A helper's kind is never cut. At 900 wide a row read "General p..." beside a whole
+   "Sonnet 5.5 - medium". The kind is what a row is read by (Will: easy to know which agent
+   is which), so the name stays whole and the model label shortens from its end; the full
+   label is on hover. A shrink of a fraction of a pixel was already costing two letters, so
+   the name is capped, not shrunk. `now-run12/dn-many-before-*` against
+   `now-run12/dn-many-after-*` (12 helpers; `-stress` for long goals).
+10. BUILT. Helper rows read tokens, then the clock, like the chat cards above them and the
+    lists below. They had the two the other way round. Principle: consistency; the clock
+    owns the right edge at every width. `now-run3/dn-order-before-*` against
+    `now-run3/dn-order-after-*`.
+11. BUILT (polish). "No chats yet" and "No Claude folder found" each say what to do next in
+    one plain line. "Nothing running" already had "Last chat ended ..."; "Waiting for you" is
+    a list and needs none. `now/dn-empty-before-*` against `now/dn-empty-after-*`, same for
+    `now-nofolder`.
+12. BUILT (polish). The doing word ("Editing", "Running") kept losing the tails of g and y
+    to its tight line box.
+13. CHECKED, left as it is. Twelve helpers under one chat: each row is one line of name, one
+    line of goal (cut with the full text on hover), then fixed columns. It reads as a table,
+    not a wall of text; the avatar has its own 32 px first column in every row.
+14. LEFT. Nested helpers (a helper started by a helper) cannot be drawn: the Now data has no
+    parent for a helper. Needs the engine.
+15. LEFT. A very long folder name takes the whole chips row of a small card, so the model
+    chip drops out (never shaved). Only with 60-letter folder names.
+
 ## Suggestions for Will
 
 1. Recent sessions on the Dashboard: in the narrow right column the second line of each row
