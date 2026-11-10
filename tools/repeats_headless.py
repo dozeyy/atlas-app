@@ -240,6 +240,19 @@ def habits(data):
     return json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
 
 
+def forget_sessions(tmp):
+    """Real-login runs save their sessions (the 'no thanks' turn resumes one), so they would show up
+    in the person's own session list. Remove only the project folders named after this run's scratch
+    folder; nothing else in the Claude folder is touched."""
+    root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
+    if not root.is_dir():
+        return
+    slug = re.sub(r"[^A-Za-z0-9]", "-", tmp.name)  # Claude Code names project folders this way
+    for d in root.iterdir():
+        if d.is_dir() and d.name.endswith((slug, slug + "-work")):
+            shutil.rmtree(d, ignore_errors=True)
+
+
 def run_claude(args, tmp, claude, work, prompt, resume=None):
     cmd = [_shutil.which("claude") or "claude", "-p", prompt, "--plugin-dir", str(ROOT / "skill")]
     skills = ["Skill(atlas-repeats)", "Skill(atlas:atlas-repeats)"]
@@ -382,6 +395,8 @@ def main():
                 (OUT / f"{prefix}{scenario}-{i}.jsonl").write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in keep(events)) + "\n", encoding="utf-8")
                 print(f"{scenario} try {i}: {'PASS' if ok else 'FAIL'} offers={offers} tools={used} exit={code} {note} {err if code else ''}")
             finally:
+                if args.real_login:
+                    forget_sessions(tmp)
                 shutil.rmtree(tmp, ignore_errors=True)
         rows.append((scenario, args.tries, fired))
     if guard_before is not None:
