@@ -23,3 +23,6 @@ shots-webkit/
 dist-tour/
 # Atlas Setup's front end (built by npm run build:setup, embedded by crates/setup)
 dist-setup/
+
+# Screenshots hold real usage data: kept on this PC, never pushed (scrubbed from history 2026-11-09).
+docs/shots/

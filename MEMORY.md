@@ -513,3 +513,8 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Verified on Will's PC: Setup log "desktop shortcut: added" at 3.1 s, `Desktop\Atlas.lnk` targets `%LOCALAPPDATA%\atlas\atlas.exe`; the Settings switch removed and re-added it (shot `docs/shots/desktop-shortcut/settings-toggle.jpg`).
 - Version 0.1.1 everywhere (workspace Cargo.toml, both tauri.conf.json, package.json + lock, plugin.json); notes `docs/release-notes/0.1.1.md`.
 - Release v0.1.1 BLOCKED (2026-11-09): tag pushed, but every GitHub Actions job (release, build, mac-check) was refused before starting: "recent account payments have failed or your spending limit needs to be increased" (private repo minutes). Nothing was built or published. After Will fixes billing: `gh run rerun 42751522704 --repo dozeyy/atlas-app`, then `tools/publish-public.ps1 -Version 0.1.1`.
+
+## 2026-11-09 - atlas-app made public; history scrubbed first
+- Before going public (Actions billing on the private repo), every branch and tag was rewritten with git-filter-repo: `docs/shots/` (914 screenshots of real usage: paths, project names, session titles) removed from all history, and the one line naming Will's city redacted. Force-pushed all 11 remote branches + v0.1.1; the 25 old workflow runs (which pointed at the old commits) deleted.
+- Secrets scan of every blob: only fake test values. The signing key is a secret of the `release` environment, which only `v*` tags may use; fork PRs get a read-only token and no secrets.
+- `docs/shots/` is now in `.gitignore`: screenshots stay on this PC. The local-only branches and agent worktrees still carry the OLD history: never push them (they would re-upload the screenshots). Pre-scrub backup: a git bundle in the session scratchpad.
