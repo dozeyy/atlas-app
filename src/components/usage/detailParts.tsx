@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import { Card } from "../controls";
 import { CostText } from "./CostText";
 import { compact, effortMix, exact, headline, modelLabel, plural } from "../../lib/usage";
@@ -20,24 +20,66 @@ export function Stat({ label, children, sub, icon }: { label: string; children: 
   );
 }
 
+/** How long a list's width has to hold still before its clamped texts are measured again. */
+export const CLAMP_SETTLE_MS = 140;
+
+/** The width a list of clamped texts last settled at; null outside a `ClampList`. */
+const ClampWidth = createContext<number | null>(null);
+
+/**
+ * A list of clamped texts that share ONE size watcher. A long conversation holds hundreds of
+ * messages; with a watcher each, every one of them fired and read the layout on every frame of a
+ * pane resize. Here the list watches its own width, waits for it to settle, and the texts inside
+ * measure once for that width. Height changes (rows loading, a text opening) measure nothing.
+ */
+export function ClampList({ className, children, ...rest }: { className?: string; children: ReactNode } & Omit<HTMLAttributes<HTMLOListElement>, "className" | "children">) {
+  const ref = useRef<HTMLOListElement>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let timer = 0;
+    let last = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      if (w === last) return;
+      last = w;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setWidth(w), CLAMP_SETTLE_MS);
+    });
+    ro.observe(el);
+    return () => {
+      window.clearTimeout(timer);
+      ro.disconnect();
+    };
+  }, []);
+  return (
+    <ol ref={ref} className={className} {...rest}>
+      <ClampWidth.Provider value={width}>{children}</ClampWidth.Provider>
+    </ol>
+  );
+}
+
 /**
  * Long text cut to a few lines with a plain way to the rest. The whole text stays in the page (it
- * can be found and read out); the button shows only when something is actually cut.
+ * can be found and read out); the button shows only when something is actually cut. On its own it
+ * watches its own size; inside a `ClampList` it measures when the list's width settles instead.
  */
 export function ClampText({ text, lines = 3, className = "" }: { text: string; lines?: number; className?: string }) {
   const ref = useRef<HTMLParagraphElement>(null);
   const [open, setOpen] = useState(false);
   const [cut, setCut] = useState(false);
+  const listWidth = useContext(ClampWidth);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || open) return;
     const read = () => setCut(el.scrollHeight > el.clientHeight + 1);
     read();
-    if (typeof ResizeObserver === "undefined") return;
+    if (listWidth !== null || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(read);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [text, open, lines]);
+  }, [text, open, lines, listWidth]);
   return (
     <div className="min-w-0 flex-1">
       <p ref={ref} className={`${className}${open ? "" : " clamp-lines"}`} style={open ? undefined : { WebkitLineClamp: lines }}>

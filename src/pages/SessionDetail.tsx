@@ -17,7 +17,7 @@ import { Button, Card, IconButton, SegmentedControl } from "../components/contro
 import { Bars } from "../components/charts/Bars";
 import { IconMotion } from "../components/IconMotion";
 import { TokenText } from "../components/usage/TokenText";
-import { Breakdown, ClampText, ModelSplit, Stat } from "../components/usage/detailParts";
+import { Breakdown, ClampList, ClampText, ModelSplit, Stat } from "../components/usage/detailParts";
 import { HelperMap } from "../components/usage/HelperMap";
 import { HelperSlice } from "../components/usage/HelperSlice";
 import { AgentAvatar, ModelDots, OutcomeMark, sessionName, shownName, TokenFigure } from "../components/usage/helperKit";
@@ -298,7 +298,7 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
           ) : items.length === 0 && !busy ? (
             <p className="px-5 py-4 text-body text-ink-2">There are no readable messages in this session.</p>
           ) : (
-            <ol className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
+            <ClampList className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
               {items.map((m, i) => (
                 <li key={i} className="px-5 py-3">
                   <div className="flex items-baseline gap-3 text-caption text-ink-2">
@@ -313,7 +313,7 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
                   {m.truncated && <p className="mt-1 text-caption text-ink-2">Shortened. The full message is in the file.</p>}
                 </li>
               ))}
-            </ol>
+            </ClampList>
           )}
           {busy && (
             <div role="status" aria-label="Loading messages" className="px-5 py-3">
