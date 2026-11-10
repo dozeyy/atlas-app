@@ -780,7 +780,9 @@ struct FindingRec {
     project: String,
 }
 
-fn load_findings(conn: &Connection, from: Option<i64>, session: Option<&str>) -> rusqlite::Result<Vec<FindingRec>> {
+/// The findings of reviewer-type helpers only: a coder's "Issues fixed:" bullets or a quoted JSON
+/// sample in its report are not review findings.
+fn load_findings(conn: &Connection, ledger: &Ledger, from: Option<i64>, session: Option<&str>) -> rusqlite::Result<Vec<FindingRec>> {
     let mut st = conn.prepare_cached(
         "SELECT f.session_id, f.agent_id, f.severity, f.text, COALESCE(f.ts, r.last_ts, 0), r.agent_type,
                 COALESCE(s.project_path, '')
@@ -801,7 +803,14 @@ fn load_findings(conn: &Connection, from: Option<i64>, session: Option<&str>) ->
             project: super::query::base_name(&r.get::<_, String>(6)?),
         })
     })?;
-    rows.collect()
+    let mut out = Vec::new();
+    for r in rows {
+        let r = r?;
+        if ledger.reviewers.contains(&r.reviewer_type) {
+            out.push(r);
+        }
+    }
+    Ok(out)
 }
 
 /// Group findings (D14) and keep the groups of at least `min_findings` findings from at least
@@ -910,7 +919,7 @@ fn build_themes(
 pub fn review_themes(conn: &Connection, ctx: &QueryCtx, a: &ThemeArgs) -> rusqlite::Result<Themes> {
     let ledger = load_ledger(conn)?;
     let from = range_from(ctx, a.days);
-    let rows = load_findings(conn, from, None)?;
+    let rows = load_findings(conn, &ledger, from, None)?;
     let all = build_themes(&rows, Thresholds::THEME_MIN_FINDINGS, Thresholds::THEME_MIN_RUNS, &ledger);
     let limit = a.limit.map_or(DEFAULT_THEMES, |l| l.clamp(1, 50) as usize);
     Ok(Themes { from_ts: from, findings: rows.len() as u32, total: all.len() as u32, themes: all.into_iter().take(limit).collect() })
@@ -1069,7 +1078,7 @@ pub fn run_debrief(conn: &Connection, ctx: &QueryCtx, a: &DebriefArgs) -> rusqli
     let open: Vec<DebriefHelper> = helpers.iter().filter(|h| h.end_status.is_none()).cloned().collect();
 
     let to_ts = runs.iter().map(|r| r.last_ts).max().unwrap_or(0).max(chat_last);
-    let findings = load_findings(conn, Some(from), Some(sid))?;
+    let findings = load_findings(conn, &ledger, Some(from), Some(sid))?;
     let caught: Vec<Theme> = build_themes(&findings, 2, 2, &ledger).into_iter().take(2).collect();
     let _ = ctx;
     Ok(Some(RunDebrief {

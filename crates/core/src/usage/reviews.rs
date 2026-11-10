@@ -170,6 +170,53 @@ fn verdict_word_at(ws: &[String], i: usize) -> Option<(&'static str, Verdict, us
     VERDICTS.iter().find(|(v, _)| *v == w).map(|(v, c)| (*v, *c, 1))
 }
 
+/// "PASS | FAIL", "PASS / FAIL", "PASS or FAIL": two different verdict words with only a bar, a
+/// slash or "or" between them are a template or a choice, not a verdict. "pass, nothing blocked or
+/// rejected" and "FAIL - 4 passed, 2 failed or skipped" are not: the verdict words there are not
+/// each other's alternatives.
+fn is_choice(clause: &str) -> bool {
+    // (start, end, upper-cased word) of each alphabetic word.
+    let mut ws: Vec<(usize, usize, String)> = Vec::new();
+    let mut from = None;
+    for (i, c) in clause.char_indices().chain(std::iter::once((clause.len(), ' '))) {
+        let wc = c.is_ascii_alphabetic() || (c == '-' && from.is_some());
+        match (from, wc) {
+            (None, true) => from = Some(i),
+            (Some(s), false) => {
+                ws.push((s, i, clause[s..i].trim_end_matches('-').to_ascii_uppercase()));
+                from = None;
+            }
+            _ => {}
+        }
+    }
+    let class = |w: &str| VERDICTS.iter().find(|(v, _)| *v == w).map(|(_, c)| *c);
+    let bare = |s: &str| s.chars().all(|c| matches!(c, ' ' | '*' | '_' | '`' | '"' | '\u{201c}' | '\u{201d}'));
+    for i in 0..ws.len() {
+        let Some(a) = class(&ws[i].2) else { continue };
+        if let Some(next) = ws.get(i + 1) {
+            let sep = &clause[ws[i].1..next.0];
+            // A bar or slash directly between two verdict words.
+            if let Some(b) = class(&next.2)
+                && b != a
+                && sep.trim_matches([' ', '*', '_', '`']).len() == 1
+                && sep.contains(['|', '/'])
+            {
+                return true;
+            }
+            // "or" between two adjacent verdict words.
+            if next.2 == "OR"
+                && bare(&clause[ws[i].1..next.0])
+                && let Some(after) = ws.get(i + 2)
+                && bare(&clause[next.1..after.0])
+                && class(&after.2).is_some_and(|b| b != a)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// A `Verdict:` or `Overall:` label in a line, at a word boundary (not "verdicts", not "overall"
 /// as the middle of another word); `(start, end, is_verdict)` of each label word.
 fn labels(line: &str) -> Vec<(usize, usize, bool)> {
@@ -220,9 +267,7 @@ fn read_label(line: &str, start: usize, end: usize, is_verdict: bool) -> Option<
     // ... and not what follows a bracket or a semicolon ("VERDICT: pass (nothing Critical or High; ...)").
     let clause = rest.split(". ").next().unwrap_or(rest);
     let clause = clause.split([';', '(']).next().unwrap_or(clause);
-    let clause_ws = words(clause);
-    let classes: Vec<Verdict> = (0..clause_ws.len()).filter_map(|i| verdict_word_at(&clause_ws, i)).map(|(_, c, _)| c).collect();
-    if classes.iter().any(|c| *c != classes[0]) && (clause.contains('|') || clause.contains('/') || clause.to_ascii_uppercase().contains(" OR ")) {
+    if is_choice(clause) {
         return None;
     }
     let mut seen = 0;
@@ -335,7 +380,8 @@ fn status_verdict(text: &str) -> Option<VerdictLine> {
             match tok.as_str() {
                 "PARTIAL" => mk("PARTIAL", Verdict::Partial),
                 "BLOCKED" => mk("BLOCKED", Verdict::Other),
-                _ if lead_verdict(&rest).is_some() => {
+                // Only the contract's words and PASS / FAIL: "STATUS: ok" or "STATUS: approved" is not a verdict.
+                "PASS" | "FAIL" if lead_verdict(&rest).is_some() => {
                     let (word, class, _) = lead_verdict(&rest)?;
                     mk(word, class)
                 }
@@ -415,10 +461,16 @@ fn headline_verdict(text: &str) -> Option<VerdictLine> {
     }
     let plain = strip_code(first);
     let mk = |word: &str, class| Some(VerdictLine { word: word.to_string(), class, status: true });
-    if let Some((word, class, _)) = lead_verdict(plain.trim_start_matches(|c: char| !c.is_alphabetic()))
+    // PASS or FAIL opening the line, then the end of the line, a dot, colon, dash, bracket or "for":
+    // "Pass through the filter was reviewed" and "Fail-soft guards" state no verdict.
+    if let Some((word, class, after)) = lead_verdict(plain.trim_start_matches(|c: char| !c.is_alphabetic()))
         && matches!(word, "PASS" | "FAIL")
     {
-        return mk(word, class);
+        let t = after.trim_start_matches(['*', '_']).trim_start();
+        let for_word = t.get(..3).is_some_and(|f| f.eq_ignore_ascii_case("for")) && !t[3..].starts_with(|c: char| c.is_alphanumeric());
+        if t.is_empty() || t.starts_with(['.', ':', '-', '(', '\u{2014}', '\u{2013}']) || for_word {
+            return mk(word, class);
+        }
     }
     let head = plain.trim_start_matches(|c: char| !c.is_alphabetic());
     if all_pass_clause(head) || head.get(..8).is_some_and(|h| h.eq_ignore_ascii_case("merge ok")) {
@@ -721,19 +773,43 @@ fn json_findings(text: &str) -> Vec<(Option<&'static str>, String)> {
                 .filter_map(|l| serde_json::from_str::<serde_json::Value>(l.trim().trim_end_matches(',')).ok())
                 .collect(),
         };
-        for o in objects {
+        // A finding names where it is or how bad it is, next to its summary; a sample or a template
+        // in a fence ("summary": "one-sentence statement of the bug") does not. A block where fewer
+        // than half the objects qualify is not findings, and the text parser reads the report.
+        let mut found: Vec<(Option<&'static str>, String)> = Vec::new();
+        for o in &objects {
             let Some(summary) = ["summary", "title", "description", "text", "finding", "issue"].iter().find_map(|k| o.get(*k).and_then(|v| v.as_str())) else {
                 continue;
             };
+            let located = ["severity", "file", "line", "path"].iter().any(|k| o.get(*k).is_some_and(|v| !v.is_null()));
+            let placeholder = o.as_object().is_some_and(|m| m.values().filter_map(|v| v.as_str()).any(is_placeholder));
+            if !located || placeholder {
+                continue;
+            }
             let from_field = o.get("severity").and_then(|v| v.as_str()).and_then(|s| severity_of(s.trim()));
             let (sev, rest) = match leading_severity(summary.trim(), true) {
                 Some((s, rest)) => (from_field.or(Some(s)), rest),
                 None => (from_field, summary.trim()),
             };
-            out.push((sev, rest.to_string()));
+            found.push((sev, rest.to_string()));
+        }
+        if !objects.is_empty() && found.len() * 2 >= objects.len() {
+            out.extend(found);
         }
     }
     out
+}
+
+/// A template slot rather than a value: "<file>", "path/to/file", "one-sentence statement of the bug".
+fn is_placeholder(s: &str) -> bool {
+    let l = s.trim().to_ascii_lowercase();
+    (l.starts_with('<') && l.ends_with('>'))
+        || l.contains("path/to/")
+        || l.starts_with("one-sentence")
+        || l.starts_with("one sentence")
+        || l.starts_with("short description")
+        || l.starts_with("describe ")
+        || l == "file.ext"
 }
 
 /// A finding that is too long is cut at a word end rather than lost, when its severity says it is
@@ -1176,6 +1252,9 @@ mod verdict {
             ("STATUS: done. Verdict: PASS, with caveats under UNVERIFIED.", pass.clone()),
             ("Overall: pass/fail per criterion below", None),
             ("VERDICT: fail", fail.clone()),
+            ("VERDICT: pass, nothing blocked or rejected", pass.clone()),
+            ("Verdict: FAIL - 4 passed, 2 failed or skipped", fail.clone()),
+            ("VERDICT: FAIL (see 2 and 3) | owner: me", fail.clone()),
             ("VERDICT: FAIL", fail.clone()),
             ("VERDICT: fix-required (FAIL)", Some(("FIX-REQUIRED".to_string(), Verdict::Findings))),
             ("VERDICT: fix-required (one Medium; items 1-3 pass)", Some(("FIX-REQUIRED".to_string(), Verdict::Findings))),
@@ -1243,6 +1322,12 @@ mod verdict {
         assert_eq!(st("Checks ran against the build.\n\n1. **PASS.** a\n2. **PASS.** b"), None);
         assert_eq!(st("Checks 1, 2 and 4 passed. Check 3 is partial.\nmore"), None);
         assert_eq!(st("pass_through.rs was reviewed\nmore"), None);
+        assert_eq!(st("Pass through the filter was reviewed\nmore"), None);
+        assert_eq!(st("Failing tests were not rerun\nmore"), None);
+        assert_eq!(st("FAIL (two blockers)\nmore"), Some(("FAIL".to_string(), Verdict::Findings, true)));
+        assert_eq!(st("PASS\nmore"), pass);
+        assert_eq!(st("STATUS: approved"), None);
+        assert_eq!(st("STATUS: ok - all good"), None);
         assert_eq!(st("STATUS: done\nSTATUS: done"), None);
         assert_eq!(st("**Re-check of 581b3d8: pass.** All four fixes are in the code."), pass);
         assert_eq!(st("**SCORE 95/100: PASS** (borderline, pass mark 95). The head is f9a8.\nmore"), pass);
@@ -1290,6 +1375,9 @@ mod verdict {
             "Verdict: PASS | FAIL",
             "Verdict: PASS or FAIL",
             "Verdict: PASS/FAIL",
+            "Verdict: `PASS` / `FAIL`",
+            "Verdict: **PASS** or **FAIL**",
+            "Verdict: pass | fix-required",
             "Overall pass rate was 80% across the suite.",
             "Overall pass rate: it failed twice",
             "He said \"Verdict: PASS\" but the build is red.",
@@ -1375,8 +1463,15 @@ mod findings {
         // A fence with something else in it is not findings.
         assert!(texts("```json\n{\"ok\": true}\n```\n").is_empty());
         // One object per line, no outer array.
-        let t = "```\n[\n{\"summary\": \"the first object stands alone\"},\n{\"summary\": \"the second object stands alone\"}\n]\n```";
+        let t = "```\n[\n{\"file\": \"a.rs\", \"summary\": \"the first object stands alone\"},\n{\"file\": \"b.rs\", \"summary\": \"the second object stands alone\"}\n]\n```";
         assert_eq!(texts(t).len(), 2);
+        // A template or a sample is not findings: no location, a placeholder, or too few that qualify.
+        assert!(texts("Reply as:\n```json\n[{\"summary\": \"one-sentence statement of the bug\"}]\n```\n").is_empty());
+        assert!(texts("```json\n[{\"file\": \"path/to/file.ext\", \"line\": 1, \"summary\": \"one-sentence statement of the bug\"}]\n```\n").is_empty());
+        assert!(texts("```json\n[{\"summary\": \"a sample row with no location at all\"}, {\"summary\": \"another sample row, still none\"}]\n```\n").is_empty());
+        // ...and then the text parser reads the report around it.
+        let t = "FINDINGS:\n- High: the lock is taken twice on the same thread\n```json\n[{\"summary\": \"one-sentence statement of the bug\"}]\n```\n";
+        assert_eq!(texts(t), vec![(Some("High"), "the lock is taken twice on the same thread".to_string())]);
     }
 
     #[test]

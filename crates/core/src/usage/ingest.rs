@@ -268,6 +268,7 @@ fn load_known(dir: &Path) -> std::sync::Arc<Known> {
         return k.clone();
     }
     let mut k = prev.map(|(_, k)| (*k).clone()).unwrap_or_default();
+    let mut retry = false;
     if let Ok(rd) = std::fs::read_dir(dir) {
         for e in rd.flatten().take(5000) {
             let p = e.path();
@@ -277,7 +278,15 @@ fn load_known(dir: &Path) -> std::sync::Arc<Known> {
             }
             if let Some(stem) = name.strip_suffix(".meta.json") {
                 let id = naming::agent_id_of_stem(stem);
-                if let Some(br) = read_sidecar(&p).and_then(|m| m.worktree_branch) {
+                let meta = read_sidecar(&p);
+                // A sidecar that does not parse yet may be half written: read it again next time,
+                // unless it has sat there a few seconds (then it is simply odd).
+                if meta.is_none() && sidecar_is_fresh(&e) {
+                    retry = true;
+                    k.ids.insert(id);
+                    continue;
+                }
+                if let Some(br) = meta.and_then(|m| m.worktree_branch) {
                     k.branches.push((br, id.clone()));
                 }
                 k.ids.insert(id);
@@ -292,8 +301,18 @@ fn load_known(dir: &Path) -> std::sync::Arc<Known> {
     if g.len() >= KNOWN_FOLDERS {
         g.clear();
     }
-    g.insert(dir.to_path_buf(), (mtime, k.clone()));
+    // A folder with a sidecar still being written is listed again on the next call.
+    g.insert(dir.to_path_buf(), (if retry { None } else { mtime }, k.clone()));
     k
+}
+
+/// A file written within the last few seconds (it may still be growing).
+fn sidecar_is_fresh(e: &std::fs::DirEntry) -> bool {
+    e.metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_none_or(|age| age < std::time::Duration::from_secs(5))
 }
 
 /// Id-shaped names (`a` and 16 hex digits, like a helper's file name) in a prompt that no helper on
@@ -1541,4 +1560,24 @@ pub fn refresh_missing(conn: &mut Connection, file_ids: &[i64]) -> rusqlite::Res
         }
     }
     tx.commit()
+}
+
+#[cfg(test)]
+mod known_tests {
+    use super::*;
+
+    /// A sidecar that is half written when the folder is first listed is read again on the next
+    /// call, not remembered as read and empty.
+    #[test]
+    fn a_half_written_sidecar_is_read_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let side = dir.path().join("agent-a0000000000000009.meta.json");
+        std::fs::write(&side, r#"{"agentType":"coder","worktreeBran"#).unwrap();
+        let k = load_known(dir.path());
+        assert!(k.ids.contains("a0000000000000009"));
+        assert!(k.branches.is_empty());
+        std::fs::write(&side, r#"{"agentType":"coder","worktreeBranch":"claude/x"}"#).unwrap();
+        let k = load_known(dir.path());
+        assert_eq!(k.branches, vec![("claude/x".to_string(), "a0000000000000009".to_string())]);
+    }
 }
