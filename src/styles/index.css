@@ -91,6 +91,14 @@ button {
 }
 }
 
+/* Sheets and dialogs open under the title bar, never over it: the window's own buttons and the
+   strip you drag stay in reach while one is open. One rule, outside a layer so it wins over the
+   inset-0 class each of them carries, covers the shared Dialog and every side sheet (they are all
+   put straight into <body>). trail.css dims the row itself to match. */
+body > .fixed.inset-0 {
+  top: var(--titlebar-h);
+}
+
 /* Focus: the one place it is decided. A mouse click, a window coming back to the front and code that
    hands focus back (a closed menu, a sheet) never draw anything; only a real keyboard walk does, and
    then it is a soft neutral ring, never the accent. `lib/inputModality.ts` sets data-input on <html>

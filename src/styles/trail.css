@@ -698,6 +698,24 @@ html.reduced .options-panel {
   pointer-events: none;
   transition: left var(--side-dur) var(--ease-out);
 }
+/* While a sheet or dialog is open the row dims with the page and its menu, sidebar and Wrapped
+   buttons wait; Minimize, Maximize and Close stay lit and the row still drags the window. */
+body:has(> .fixed.inset-0) .titlebar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--scrim);
+  pointer-events: none;
+  animation: fade-in var(--dur) var(--ease-out) both;
+}
+body:has(> .fixed.inset-0) :is(.titlebar-left, .titlebar-gift) {
+  pointer-events: none;
+}
+body:has(> .fixed.inset-0) .caption-buttons {
+  position: relative;
+  z-index: 2;
+}
 .app-shell[data-side="collapsed"] .titlebar::after {
   transition-delay: 60ms; /* in step with the sidebar, which waits for the labels to fade */
 }
