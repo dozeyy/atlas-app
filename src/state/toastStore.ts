@@ -13,6 +13,7 @@ export interface Toast {
   message: string;
   tone: "info" | "success" | "error";
   action?: ToastAction;
+  leavesWithPage?: boolean;
 }
 
 export interface ToastInput {
@@ -21,6 +22,13 @@ export interface ToastInput {
   action?: ToastAction;
   /** How long it stays, in ms. Errors and toasts with an action stay longer. */
   ms?: number;
+  /**
+   * It belongs to the page it was raised on and leaves when the person goes to another one. Only
+   * for a toast whose Undo has another one-press way (an install can be uninstalled in the Library).
+   * A toast that is the only Undo (a delete, a removed plugin, a saved rule) is not marked: History
+   * keeps a copy to save by hand but has no Undo button, so that toast follows until it times out.
+   */
+  leavesWithPage?: boolean;
 }
 
 let toasts: Toast[] = [];
@@ -45,7 +53,7 @@ export function dismissToast(id: number): void {
 export function pushToast(input: ToastInput): number {
   const id = next++;
   const tone = input.tone ?? "info";
-  const toast: Toast = { id, message: input.message, tone, action: input.action };
+  const toast: Toast = { id, message: input.message, tone, action: input.action, leavesWithPage: input.leavesWithPage };
   // At most three at once: the oldest goes first.
   const keep = toasts.slice(-2);
   for (const gone of toasts.slice(0, toasts.length - keep.length)) dismissToast(gone.id);
@@ -57,6 +65,11 @@ export function pushToast(input: ToastInput): number {
   );
   emit();
   return id;
+}
+
+/** The person went to another page: the toasts that belong to the one they left go with it. */
+export function dismissPageToasts(): void {
+  for (const t of toasts.filter((x) => x.leavesWithPage)) dismissToast(t.id);
 }
 
 /** Tests: forget every toast. */

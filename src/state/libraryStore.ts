@@ -191,6 +191,8 @@ export async function installPlugin(pluginId: string, name: string, token: strin
       message: out.changed ? `Installed ${name}. Its files differ from the ones Atlas checked.` : `Installed ${name}.`,
       tone: out.changed ? "info" : "success",
       action: { label: "Undo", onClick: async () => void (await undoPlugin(out.backupId, name)) },
+      // Uninstall in the Library does the same, so this one need not follow onto other pages.
+      leavesWithPage: true,
     });
     return out;
   } catch (e) {

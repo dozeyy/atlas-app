@@ -10,6 +10,7 @@ import { App } from "./App";
 import { AtlasProvider } from "./state/AtlasProvider";
 import { setBackend } from "./lib/ipc";
 import { MockBackend } from "./lib/mock";
+import { pushToast, resetToasts } from "./state/toastStore";
 
 function mount() {
   setBackend(new MockBackend());
@@ -47,6 +48,19 @@ describe("navigation", () => {
     expect(await screen.findByRole("list", { name: "Changes" })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/lorem ipsum/i);
     expect(screen.getByRole("button", { name: "History" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("leaves a page's own toast behind on the way to another page, and keeps one that is the only Undo", async () => {
+    mount();
+    act(() => {
+      pushToast({ message: "Installed demo.", action: { label: "Undo", onClick: () => {} }, leavesWithPage: true });
+      pushToast({ message: "Deleted my-skill.", action: { label: "Undo", onClick: () => {} } });
+    });
+    expect(screen.getByText("Installed demo.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "History" }));
+    expect(screen.queryByText("Installed demo.")).not.toBeInTheDocument();
+    expect(screen.getByText("Deleted my-skill.")).toBeInTheDocument();
+    act(() => resetToasts());
   });
 
   it("jumps with Ctrl+number", async () => {

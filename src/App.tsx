@@ -10,6 +10,7 @@ import { refreshPaletteData } from "./lib/usePaletteData";
 import { TipLayer } from "./components/TipLayer";
 import { ToastHost } from "./components/Toasts";
 import { useAtlas } from "./state/AtlasProvider";
+import { dismissPageToasts } from "./state/toastStore";
 import { Dashboard } from "./pages/Dashboard";
 import { History } from "./pages/History";
 import { Now } from "./pages/Now";
@@ -91,6 +92,8 @@ export function App() {
       return;
     }
     main.current?.focus({ preventScroll: true });
+    // A toast that belongs to the page just left ("Installed x. Undo") does not follow.
+    dismissPageToasts();
   }, [view]);
 
   return (
