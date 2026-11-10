@@ -70,7 +70,7 @@ describe("Dashboard", () => {
     mount();
     await screen.findByRole("group", { name: /Tokens, last 30 days/ });
     const readout = screen.getByTestId("chart-readout");
-    expect(readout.getAttribute("title")).toMatch(/cache writes\.\nCache reads are listed apart\./);
+    expect(readout.getAttribute("title")).toMatch(/saved for reuse \(cache writes\)\.\nWhat it reused \(cache reads\) is listed apart\./);
     const card = screen.getByRole("region", { name: "Activity" });
     expect(within(card).queryByText(/Tokens count what you sent/)).not.toBeInTheDocument();
   });

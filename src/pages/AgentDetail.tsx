@@ -138,7 +138,7 @@ export function AgentDetailView({
             </div>
             <p
               className="mt-2 text-body text-ink-2"
-              title={`Counted once, inside the chat's total.${agent.tokens.cacheRead > 0 ? ` Plus ${compact(agent.tokens.cacheRead)} cache reads, counted apart.` : ""}`}
+              title={`Counted once, inside the chat's total.${agent.tokens.cacheRead > 0 ? ` Plus ${compact(agent.tokens.cacheRead)} reused (cache reads), counted apart.` : ""}`}
             >
               <span className="font-medium text-ink">{percent(frac)}</span>
               {" of the chat"}
