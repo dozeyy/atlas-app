@@ -72,7 +72,7 @@ export function HelperSlice({
             <Stack size={16} weight="duotone" />
           </span>
         ) : (
-          <AgentAvatar type={type} size={32} level={node.kind === "root" ? "main" : node.depth >= 2 ? "nested" : "helper"} />
+          <AgentAvatar type={type} size={32} level={node.kind === "root" ? "main" : node.depth >= 2 ? "nested" : "helper"} quiet={node.kind !== "root" && !!kind} />
         )}
         <div className="min-w-0">
           <h2 className="h-section truncate" title={node.name}>

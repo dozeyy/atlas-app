@@ -191,7 +191,7 @@ export function CollectionView({
         {empty ? (
           <EmptyState
             fill
-            seed={73}
+            seed={47}
             title={tile === "more" ? "Nothing here yet" : `No ${tileNoun(tile)} yet`}
             body={tileBlurb(tile)}
           >

@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Package } from "@phosphor-icons/react";
-import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, helperName, helperOfFile, kindLook, MainChatIcon, shownName, tileCorners, tilePath, type HelperKind } from "./helperKit";
+import { AgentAvatar, agentLook, avatarIconSize, avatarName, HELPER_KINDS, helperKind, helperName, helperOfFile, hoverTip, kindLook, MainChatIcon, shownName, tileCorners, tilePath, type HelperKind } from "./helperKit";
 import { typeName } from "../../lib/helperProgress";
 import { typeLabel } from "../../pages/AgentDetail";
 import { KINDS as SETUP_KINDS } from "../../lib/setup-model";
@@ -129,17 +129,18 @@ describe("helper icons", () => {
   it("keeps the shape other pages rely on: an icon, colour classes and a word", () => {
     const look = agentLook("code-reviewer");
     expect(look.Icon).toBeTruthy();
-    expect(look.tone).toMatch(/^bg-\S+ text-\S+$/);
+    expect(look.tone).toMatch(/^bg-\S+$/);
     expect(look.label).toBe("Review");
     expect(look.fg).toMatch(/^var\(--chart-[1-4]\)$/);
     expect(look.bg).toContain(look.fg);
-    expect(look.ink).toBe("var(--ink)");
+    // The glyph: ink pulled over halfway to the family's colour (screens.css draws the same on the HTML avatar).
+    expect(look.ink).toBe("color-mix(in srgb, var(--chart-2) 55%, var(--ink))");
   });
 
   it("tints a tile from the four chart colours only, and gives every family its own shape", () => {
     const looks = HELPER_KINDS.map(kindLook);
     for (const l of looks) {
-      expect([l.kind, l.tone]).toEqual([l.kind, expect.stringMatching(/^bg-chart-[1-4]\/30 text-ink$/)]);
+      expect([l.kind, l.tone]).toEqual([l.kind, expect.stringMatching(/^bg-chart-[1-4]\/30$/)]);
       expect([l.kind, l.bg]).toEqual([l.kind, expect.stringMatching(/^color-mix\(in srgb, var\(--chart-[1-4]\) 30%, transparent\)$/)]);
     }
     // One colour, one shape: the two say the same thing, so neither is needed alone.
@@ -226,7 +227,10 @@ describe("helper avatar", () => {
     // Hollow: the helper's tile has a fill class, its helper's tile has none (as on the map).
     expect([...helper.classList].some((c) => c.startsWith("bg-"))).toBe(true);
     expect([...nested.classList].some((c) => c.startsWith("bg-"))).toBe(false);
-    expect([...nested.classList].some((c) => c.startsWith("text-"))).toBe(true);
+    // Both wear the family's glyph and (filled) ring through one class; the main chat does not.
+    expect(helper.classList.contains("fam")).toBe(true);
+    expect(nested.classList.contains("fam")).toBe(true);
+    expect(main.classList.contains("fam")).toBe(false);
     // The second cue: the tile behind it, drawn from its family's colour (trail.css reads both).
     expect(nested.style.getPropertyValue("--av")).toBe("var(--chart-3)");
     expect(nested.style.getPropertyValue("--echo")).toBe("3px");
@@ -235,10 +239,27 @@ describe("helper avatar", () => {
     expect(main.getAttribute("aria-label")).toBe("Main session");
   });
 
-  it("stays silent when the words already stand beside it", () => {
+  it("drops its hover, not its name, when the words already stand beside it", () => {
     const { container } = render(<AgentAvatar type="verifier" quiet />);
     const av = container.querySelector(".helper-av")!;
-    expect(av.getAttribute("aria-hidden")).toBe("true");
     expect(av.hasAttribute("title")).toBe(false);
+    expect(av.getAttribute("role")).toBe("img");
+    expect(av.getAttribute("aria-label")).toBe("Test helper");
+  });
+});
+
+describe("hover tips", () => {
+  it("refuses a tip that only repeats the words already on or beside the element", () => {
+    expect(hoverTip("General purpose", "General purpose")).toBeUndefined();
+    expect(hoverTip("  general   purpose ", "General purpose")).toBeUndefined();
+    expect(hoverTip("Code reviewer", "Reviews", "Code reviewer")).toBeUndefined();
+    expect(hoverTip("", "anything")).toBeUndefined();
+    expect(hoverTip(null, "anything")).toBeUndefined();
+  });
+
+  it("keeps a tip that says more than the label", () => {
+    expect(hoverTip("Before tool use\nPreToolUse", "Before tool use")).toBe("Before tool use\nPreToolUse");
+    expect(hoverTip("general-purpose", "General purpose")).toBe("general-purpose");
+    expect(hoverTip("Agent", undefined)).toBe("Agent");
   });
 });

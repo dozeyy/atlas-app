@@ -34,7 +34,7 @@ export function NoSetup() {
   return (
     <EmptyState
       fill
-      seed={67}
+      seed={9}
       title="No toolkit found here"
       body="Atlas found no skills, agents, commands or settings. If your Claude folder lives somewhere else, choose it in Settings."
     />

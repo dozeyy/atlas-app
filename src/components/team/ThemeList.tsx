@@ -28,7 +28,7 @@ function Who({ list, nameOf, extra, none }: { list: { agentType: string; count: 
     <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
       {list.map((x) => (
         <li key={x.agentType} className="flex min-w-0 max-w-full items-center gap-1.5">
-          <AgentAvatar type={x.agentType} size={20} />
+          <AgentAvatar type={x.agentType} size={20} quiet />
           <span title={nameOf(x.agentType)} className="min-w-0 truncate">
             {nameOf(x.agentType)}
           </span>
@@ -83,7 +83,7 @@ function ThemeRow({
               {theme.foundInWorkBy.length > 0 && (
                 <span title={`Found in work by ${theme.foundInWorkBy.map((x) => nameOf(x.agentType)).join(", ")}`} className="flex shrink-0 items-center gap-1">
                   {theme.foundInWorkBy.slice(0, 3).map((x) => (
-                    <AgentAvatar key={x.agentType} type={x.agentType} size={20} />
+                    <AgentAvatar key={x.agentType} type={x.agentType} size={20} quiet />
                   ))}
                 </span>
               )}

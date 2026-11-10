@@ -13,7 +13,7 @@ import {
   ArrowsSplit,
 } from "@phosphor-icons/react";
 import { IconMotion, type Motion } from "../IconMotion";
-import { AgentAvatar, agentLook } from "../usage/helperKit";
+import { AgentAvatar } from "../usage/helperKit";
 import { displayName, enabledTone, KIND_BY_ID, type Tone } from "../../lib/setup-model";
 import { badge, conflictWords, scopeWords, stateWords } from "../../lib/tagWords";
 import { formatBytes } from "../../lib/labels";
@@ -160,21 +160,16 @@ export function KindTile({
   );
 }
 
-/** What an agent's avatar says on hover: that it is an agent, and which sort when the avatar shows one. */
-function agentTip(name: string): string {
-  const sort = agentLook(name).label;
-  return /other/i.test(sort) ? "Agent" : `Agent: ${sort}`;
-}
-
 /**
  * The picture beside an item's name. An agent wears the avatar it has on Now, Sessions and Team
  * (one mapping, in helperKit), so the same helper looks the same everywhere; every other kind
- * shows its kind icon. Hovering either says what it is.
+ * shows its kind icon. Hovering a kind icon says what it is; an agent's avatar says nothing,
+ * the name beside it already does (Will, 2026-11-10: "it shouldn't just say general purpose").
  */
 export function ItemIcon({ item, size = 36 }: { item: Pick<SetupItem, "kind" | "name">; size?: number }) {
   if (item.kind === "agent") {
     return (
-      <span title={agentTip(item.name)} className="flex shrink-0 self-start">
+      <span className="flex shrink-0 self-start">
         <AgentAvatar type={item.name} size={size} quiet />
       </span>
     );
@@ -186,7 +181,7 @@ export function ItemIcon({ item, size = 36 }: { item: Pick<SetupItem, "kind" | "
 export function MiniKind({ kind, name }: { kind: string; name: string }) {
   if (kind === "agent") {
     return (
-      <span title={agentTip(name)} className="flex shrink-0 self-center">
+      <span className="flex shrink-0 self-center">
         <AgentAvatar type={name} size={20} quiet />
       </span>
     );

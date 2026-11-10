@@ -94,7 +94,7 @@ function NothingInRange({ onClearFilters }: { onClearFilters: () => void }) {
   const backend = getBackend();
   const all = useFetched(() => backend.teamScorecard({ days: null, startedFrom: "all" }), []);
   if (!all.data && !all.error) return <CardsSkeleton />;
-  if (all.data && all.data.totalRuns === 0) return <EmptyState title={NO_RUNS_TITLE} body={NO_RUNS_BODY} seed={11} fill />;
+  if (all.data && all.data.totalRuns === 0) return <EmptyState title={NO_RUNS_TITLE} body={NO_RUNS_BODY} seed={29} fill />;
   return (
     <EmptyState
       variant="no-match"
@@ -152,18 +152,18 @@ function Scorecard({
     <>
       {data.types.length === 0 ? (
         reading ? (
-          <EmptyState title={READING_TITLE} body={READING_BODY} seed={11} fill />
+          <EmptyState title={READING_TITLE} body={READING_BODY} seed={29} fill />
         ) : narrowed ? (
           <NothingInRange onClearFilters={onClearFilters} />
         ) : (
-          <EmptyState title={NO_RUNS_TITLE} body={NO_RUNS_BODY} seed={11} fill />
+          <EmptyState title={NO_RUNS_TITLE} body={NO_RUNS_BODY} seed={29} fill />
         )
       ) : cards.length === 0 ? (
         <EmptyState variant="no-match" fill query={filter.trim()} body="Try fewer words." action={{ onClick: onClearFilter }} />
       ) : (
         <div className="team-grid">
           {cards.map((c) => (
-            <ScoreCard key={c.agentType} card={c} onOpen={() => onOpenType(c.agentType)} />
+            <ScoreCard key={c.agentType} card={c} toTs={data.toTs} onOpen={() => onOpenType(c.agentType)} />
           ))}
         </div>
       )}
@@ -224,7 +224,7 @@ function ReviewView({
                 ? `${plural(data.findings, "finding")} so far. A problem shows up here once at least 2 reviews raise it, 3 times in all.`
                 : "When a reviewer sends work back, the problems it keeps finding collect here, and you can turn one into a rule."
           }
-          seed={23}
+          seed={41}
           fill
         />
       ) : (

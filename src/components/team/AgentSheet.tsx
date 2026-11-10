@@ -72,7 +72,7 @@ export function AgentSheet({
   return (
     <SideSheet
       title={name}
-      lead={<AgentAvatar type={card.agentType} size={40} />}
+      lead={<AgentAvatar type={card.agentType} size={40} quiet />}
       subtitle={
         <span>
           {card.reviewer ? `${REVIEWER_WORDS} \u00b7 ` : ""}

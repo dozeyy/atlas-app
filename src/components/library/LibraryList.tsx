@@ -80,6 +80,32 @@ const TOPIC_ICON: Record<Topic, { Icon: ComponentType<IconProps>; motion: Motion
   plugin: { Icon: Package, motion: "tilt" },
 };
 
+/**
+ * A topic's family, by the chart colour it shares with the helper avatars (helperKit): what makes
+ * things is clay (1), what reads and finds is slate (2), what checks is sand (3), what runs and
+ * holds is neutral (4). The tile's glyph wears it at rest, so a shelf of tiles is not a column of
+ * grey; the row's hover brings the glyph to ink.
+ */
+export const TOPIC_FAMILY: Record<Topic, 1 | 2 | 3 | 4> = {
+  build: 1,
+  design: 1,
+  style: 1,
+  skills: 1,
+  commands: 1,
+  agents: 1,
+  hooks: 1,
+  documents: 2,
+  web: 2,
+  data: 2,
+  language: 2,
+  review: 3,
+  security: 3,
+  git: 4,
+  loop: 4,
+  cloud: 4,
+  plugin: 4,
+};
+
 const MARK = {
   on: { Icon: CheckCircle, tone: "text-success", weight: "fill" },
   off: { Icon: CheckCircle, tone: "text-ink-2", weight: "bold" },
@@ -102,7 +128,7 @@ export function PluginTile({ topic, state, size = 32 }: { topic: Topic; state: T
       data-tile-topic={topic}
       data-tile-state={state}
       title={TOPIC_WORD[topic]}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, ["--tile" as string]: `var(--chart-${TOPIC_FAMILY[topic]})` }}
       className={`lib-tile relative flex shrink-0 items-center justify-center ${state === "none" || state === "off" ? "" : "lib-tile-own"}`}
     >
       <IconMotion motion={motion} size={Math.round(size * 0.56)}>

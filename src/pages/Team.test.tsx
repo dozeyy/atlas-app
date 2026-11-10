@@ -120,6 +120,11 @@ describe("Team: Scorecard", () => {
     expect(worker.querySelector("svg")).not.toBeNull();
     expect(within(worker).queryByText(/last 12 weeks/)).not.toBeInTheDocument();
     expect(worker.querySelector('[title^="Runs per week, last 12 weeks"]')).not.toBeNull();
+    // Each bar says its own week and count; the last one is this week's, in the accent.
+    const bars = worker.querySelectorAll(".team-week");
+    expect(bars).toHaveLength(12);
+    expect(bars[0].getAttribute("title")).toMatch(/^\d+ runs?, week of [A-Z][a-z]{2} \d+$/);
+    expect(bars[11]).toHaveClass("team-week-today");
     expect(screen.getAllByText(/The small bars on a card are its runs per week, last 12 weeks\./)).toHaveLength(1);
     // The model's effort is labelled: a bare "high" says nothing.
     expect(within(worker).getByText(/, high effort$/)).toBeInTheDocument();

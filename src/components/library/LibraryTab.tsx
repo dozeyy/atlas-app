@@ -226,7 +226,7 @@ export function LibraryTab() {
         fill
         title={nothingInstalled ? "Nothing installed yet" : "Nothing here yet"}
         body={nothingInstalled ? "Plugins and skills you add from the Library show up here." : "This marketplace lists no plugins. Pick All to see the rest."}
-        seed={7}
+        seed={31}
       />
     );
   } else {

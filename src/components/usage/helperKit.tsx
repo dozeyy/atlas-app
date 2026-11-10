@@ -118,14 +118,20 @@ export interface Look {
  *   look   slate, an arch             explores, plans, reviews
  *   check  sand, a shield             tests, debugs, measures
  *   run    neutral, a leaf            releases, tidies, everything else
- * The tint is 30% of the chart colour: strong enough to tell the four apart under an ink glyph.
+ * The tint is 30% of the chart colour, the glyph is ink pulled a little over halfway to that colour
+ * (>= 4.3:1 on the tint in every theme, measured 2026-11-10), and a 1 px ring of the colour at 55%
+ * edges the tile, so a family reads at 20 px and on every theme: the tint alone left the neutral
+ * "run" tiles looking like plain grey next to clay, slate and sand (graphic review, 2026-11-10).
+ * The HTML avatar gets the glyph and the ring from `.helper-av.fam` (screens.css); the map draws
+ * them from `ink` and `fg`.
  */
 const tint = (n: number) => `color-mix(in srgb, var(--chart-${n}) 30%, transparent)`;
+const glyph = (n: number) => `color-mix(in srgb, var(--chart-${n}) 55%, var(--ink))`;
 const FAMILIES = {
-  make: { tone: "bg-chart-1/30 text-ink", fg: "var(--chart-1)", bg: tint(1), ink: "var(--ink)", shape: "tile" },
-  look: { tone: "bg-chart-2/30 text-ink", fg: "var(--chart-2)", bg: tint(2), ink: "var(--ink)", shape: "arch" },
-  check: { tone: "bg-chart-3/30 text-ink", fg: "var(--chart-3)", bg: tint(3), ink: "var(--ink)", shape: "shield" },
-  run: { tone: "bg-chart-4/30 text-ink", fg: "var(--chart-4)", bg: tint(4), ink: "var(--ink)", shape: "leaf" },
+  make: { tone: "bg-chart-1/30", fg: "var(--chart-1)", bg: tint(1), ink: glyph(1), shape: "tile" },
+  look: { tone: "bg-chart-2/30", fg: "var(--chart-2)", bg: tint(2), ink: glyph(2), shape: "arch" },
+  check: { tone: "bg-chart-3/30", fg: "var(--chart-3)", bg: tint(3), ink: glyph(3), shape: "shield" },
+  run: { tone: "bg-chart-4/30", fg: "var(--chart-4)", bg: tint(4), ink: glyph(4), shape: "leaf" },
 } as const satisfies Record<string, { tone: string; fg: string; bg: string; ink: string; shape: TileShape }>;
 
 /**
@@ -237,6 +243,21 @@ export function agentLook(type: string | null): Look {
   return kindLook(helperKind(type));
 }
 
+/**
+ * A hover tip earns its place by adding something the eye cannot already read (Will, 2026-11-10:
+ * "if you hover over it, it shouldn't just say general purpose"). Pass the words that already
+ * stand on or beside the element; a tip that only repeats one of them is refused (undefined),
+ * so the element gets no tip at all. A tip for text that may be cut short, or for a mark with no
+ * words, is not run through this: it adds the words themselves.
+ */
+export function hoverTip(tip: string | null | undefined, ...visible: (string | null | undefined)[]): string | undefined {
+  if (!tip) return undefined;
+  const flat = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+  const want = flat(tip);
+  if (!want) return undefined;
+  return visible.some((v) => v && flat(v) === want) ? undefined : tip;
+}
+
 /** Where a thread sits in the chat: the chat itself, a helper it started, or a helper started by another helper. */
 export type AvatarLevel = "main" | "helper" | "nested";
 
@@ -261,7 +282,8 @@ export const MainChatIcon = ChatCircleText;
  * sits is told by shape too: the main chat is a solid clay circle, a helper a tinted tile, and a
  * helper started by another helper the same tile hollow with a second tile showing behind its top
  * left (two cues, so it never rests on fill against outline alone). It names itself in its hover
- * and to a screen reader unless `quiet` (when the same words already stand beside it).
+ * and to a screen reader; `quiet` (the same words already stand beside it) drops only the hover,
+ * never the name a screen reader gets.
  */
 export function AgentAvatar({
   type,
@@ -277,13 +299,16 @@ export function AgentAvatar({
   const { Icon, tone, shape, fg } = agentLook(type);
   const name = avatarName(type, level);
   const Glyph = level === "main" ? MainChatIcon : Icon;
-  // Hollow means no fill at all: the colour class stays, the background class goes (a utility
-  // would win over .helper-av.nested, and the list would not match the map).
-  const paint = level === "main" ? "bg-accent text-on-accent" : level === "nested" ? `${tone.replace(/\bbg-\S+\s*/g, "")} nested` : tone;
+  // `fam` paints the glyph and the ring in the family's colour (--av). Hollow means no fill at
+  // all: the background class goes (a utility would win over .helper-av.nested, and the list
+  // would not match the map).
+  const paint = level === "main" ? "bg-accent text-on-accent" : level === "nested" ? "fam nested" : `${tone} fam`;
   const corners = level === "main" ? "50%" : tileCorners(shape, size).map((r) => `${r}px`).join(" ");
   return (
     <span
-      {...(quiet ? { "aria-hidden": true } : { role: "img", "aria-label": name, title: name })}
+      role="img"
+      aria-label={name}
+      {...(quiet ? {} : { title: name })}
       style={{ width: size, height: size, borderRadius: corners, ["--av" as string]: fg, ["--echo" as string]: `${echoOffset(size)}px` }}
       className={`helper-av flex shrink-0 items-center justify-center ${paint}`}
     >

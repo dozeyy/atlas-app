@@ -184,7 +184,7 @@ export function History() {
         {/* The one way out is a press away, not a sentence to follow (the shared empty state, one action). */}
         <EmptyState
           fill
-          seed={11}
+          seed={14}
           title="History is paused while Sandbox mode is on"
           body="Atlas keeps its copies of your real Claude folder only. Turn Sandbox mode off in Settings, under Claude folder, and History picks up where it left off."
           action={{
@@ -204,7 +204,7 @@ export function History() {
         <PageTitle title="History" />
         <EmptyState
           fill
-          seed={11}
+          seed={14}
           title="Atlas is taking its first look"
           body="It is reading your Claude folder now. Changes you make from here on show up on this page, newest first."
         />
@@ -261,7 +261,7 @@ export function History() {
             action={{ onClick: showEverything, label: q.trim() && (group !== "all" || project !== "") ? "Clear search and filters" : q.trim() ? "Clear search" : "Clear filters" }}
           />
         ) : (
-          <EmptyState seed={11} className="min-h-[240px]" title="No changes yet" body="Changes to your Claude setup show up here, newest first." />
+          <EmptyState seed={14} className="min-h-[240px]" title="No changes yet" body="Changes to your Claude setup show up here, newest first." />
         )
       ) : wide ? (
         // The list gets half: its rows are sentences, and a diff wraps inside its pane.
