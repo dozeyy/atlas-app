@@ -88,7 +88,7 @@ export function HeatGrid({
       onKeyDown={onKey}
       onBlur={() => setActive(null)}
       onPointerLeave={() => setActive(null)}
-      className={`chart-wrap inline-block max-w-full${intro ? " intro" : ""}`}
+      className={`chart-wrap inline-block max-w-full ${intro ? "intro" : ""}`}
       style={{ width }}
     >
       <svg className="chart" width={width} height={height} aria-hidden="true">

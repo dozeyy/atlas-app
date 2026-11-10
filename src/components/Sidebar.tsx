@@ -71,7 +71,7 @@ export function Sidebar() {
   return (
     <aside
       id="app-sidebar"
-      className={`side flex shrink-0 flex-col${collapsed ? " side-collapsed" : ""}`}
+      className={`side flex shrink-0 flex-col ${collapsed ? "side-collapsed" : ""}`}
       style={{ background: info.backdrop ? "var(--sidebar-glass)" : "var(--sidebar-solid)" }}
     >
       <nav aria-label="Main" className="side-main relative flex flex-col gap-0.5">

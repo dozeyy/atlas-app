@@ -219,7 +219,7 @@ function HelperList({
 
   if (nested) {
     return (
-      <ul className={`grid grid-cols-1 gap-2${intro ? " intro" : ""}`}>
+      <ul className={`grid grid-cols-1 gap-2 ${intro ? "intro" : ""}`}>
         {roots.map((r) => (
           <li key={r.agent.agentId}>
             <HelperBranch node={r} names={names} outcomes={outcomes} sessionTokens={sessionTokens} onOpen={onOpen} />
@@ -229,7 +229,7 @@ function HelperList({
     );
   }
   return (
-    <ul className={`grid grid-cols-1 gap-2 @2xl:grid-cols-2${intro ? " intro" : ""}`}>
+    <ul className={`grid grid-cols-1 gap-2 @2xl:grid-cols-2 ${intro ? "intro" : ""}`}>
       {flat.map((a, i) => (
         <li key={a.agentId} className="@2xl:[&:last-child:nth-child(odd)]:col-span-2">
           <HelperCard
