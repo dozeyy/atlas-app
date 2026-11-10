@@ -448,6 +448,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Room for the tails of g and y, which the tight line cut off; the layout does not move. */
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
 }
 
 .nc-target {
