@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatsCircle, MagnifyingGlass, Scales } from "@phosphor-icons/react";
 import { EmptyState } from "../components/EmptyState";
-import { SegmentedControl } from "../components/controls";
+import { Button, SegmentedControl } from "../components/controls";
 import { AgentSheet } from "../components/team/AgentSheet";
 import { RuleSheet } from "../components/team/RuleSheet";
 import { ScoreCard } from "../components/team/ScoreCard";
@@ -84,6 +84,7 @@ function ThemesSkeleton() {
 function Scorecard({
   prefs,
   filter,
+  onClearFilter,
   onOpenType,
   onSheetRuns,
   openType,
@@ -93,6 +94,7 @@ function Scorecard({
 }: {
   prefs: TeamPrefs;
   filter: string;
+  onClearFilter: () => void;
   onOpenType: (t: string) => void;
   onSheetRuns: (r: RunRow) => void;
   openType: string | null;
@@ -133,7 +135,9 @@ function Scorecard({
           fill
         />
       ) : cards.length === 0 ? (
-        <EmptyState icon={MagnifyingGlass} title={`No helper matches ${filter.trim()}`} body="Try fewer words." seed={7} fill />
+        <EmptyState icon={MagnifyingGlass} title={`No helper matches ${filter.trim()}`} body="Try fewer words." seed={7} fill>
+          <Button onClick={onClearFilter}>Clear search</Button>
+        </EmptyState>
       ) : (
         <div className="team-grid">
           {cards.map((c) => (
@@ -275,6 +279,7 @@ export function Team({ onShowSetup }: { onShowSetup: () => void }) {
           <Scorecard
             prefs={prefs}
             filter={filter}
+            onClearFilter={() => setFilter("")}
             openType={openType}
             onOpenType={setOpenType}
             closeSheet={() => setOpenType(null)}

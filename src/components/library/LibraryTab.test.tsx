@@ -115,6 +115,12 @@ describe("Library tab: opening", () => {
     expect(screen.queryByRole("button", { name: /^code-review\./ })).not.toBeInTheDocument();
     await userEvent.type(screen.getByRole("searchbox", { name: "Search plugins and skills" }), "zzz");
     expect(await screen.findByText("Nothing matches pdfzzz")).toBeInTheDocument();
+    // The dead end offers the way out: one press brings the list back and leaves the caret in the box.
+    await userEvent.click(screen.getByText("Clear search"));
+    expect(await row("pdf-tools")).toBeInTheDocument();
+    const box = screen.getByRole("searchbox", { name: "Search plugins and skills" });
+    expect(box).toHaveValue("");
+    expect(box).toHaveFocus();
   });
 
   it("says what to do when the catalog cannot be reached", async () => {

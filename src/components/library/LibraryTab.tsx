@@ -184,7 +184,19 @@ export function LibraryTab() {
               : "This marketplace lists no plugins. Pick All to see the rest."
         }
         seed={7}
-      />
+      >
+        {/* The way out is offered right here, not back up in the search box. */}
+        {lib.query && (
+          <Button
+            onClick={() => {
+              setQuery("");
+              search.current?.focus();
+            }}
+          >
+            Clear search
+          </Button>
+        )}
+      </EmptyState>
     );
   } else {
     body = (
