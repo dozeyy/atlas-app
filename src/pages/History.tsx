@@ -8,8 +8,7 @@ import { prefersReducedMotion } from "../lib/motion";
 import { GROUP_CHIPS, groupEvents, shortDate } from "../lib/historyModel";
 import { exact } from "../lib/usage";
 import { useAtlas } from "../state/AtlasProvider";
-import { Card, PageTitle } from "../components/controls";
-import { CountUp } from "../components/CountUp";
+import { Button, Card, PageTitle } from "../components/controls";
 import { EmptyState } from "../components/EmptyState";
 import { SearchField, SelectField } from "../components/usage/fields";
 import { ErrorBlock, Skeleton } from "../components/usage/StateBlocks";
@@ -27,7 +26,8 @@ function Hero({ o, now, onPick }: { o: HistoryOverview; now: number; onPick: (da
       <Card className="grid grid-cols-1 items-center gap-x-10 gap-y-2 px-5 py-2 @[740px]:grid-cols-[auto_minmax(0,1fr)]">
         <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
           <div>
-            <CountUp value={o.watchedEvents} format={exact} id="hist:seen" className="d d-hero text-ink" />
+            {/* A plain number: History is a calm page, nothing counts up here. */}
+            <div className="d d-hero text-ink">{exact(o.watchedEvents)}</div>
             <div className="text-body text-ink-2">changes seen</div>
           </div>
           <div>
@@ -153,6 +153,12 @@ export function History() {
 
   const o = overview.data;
   const filtered = group !== "all" || project !== "" || q.trim() !== "";
+  const showEverything = () => {
+    setGroup("all");
+    setProject("");
+    setText("");
+    setQ("");
+  };
 
   if (overview.loading && !o && !overview.error) {
     return (
@@ -179,8 +185,8 @@ export function History() {
           fill
           seed={11}
           icon={PauseCircle}
-          title="History is paused while Sandbox Mode is on"
-          body="Atlas keeps its copies of your real Claude folder only. Turn Sandbox Mode off in Settings and History picks up where it left off."
+          title="History is paused while Sandbox mode is on"
+          body="Atlas keeps its copies of your real Claude folder only. Turn Sandbox mode off in Settings, under Claude folder, and History picks up where it left off."
         />
       </div>
     );
@@ -218,12 +224,15 @@ export function History() {
             </div>
             <div className="ml-auto flex min-w-max flex-1 items-center justify-end gap-2">
               {o.projects.length > 0 && (
-                <SelectField
-                  label="Project"
-                  value={project}
-                  onChange={setProject}
-                  options={[{ value: "", label: "All projects" }, ...o.projects.map((p) => ({ value: p, label: p }))]}
-                />
+                // The picker cuts a long project name; the hover says which one is chosen.
+                <span className="inline-flex" title={project || undefined}>
+                  <SelectField
+                    label="Project"
+                    value={project}
+                    onChange={setProject}
+                    options={[{ value: "", label: "All projects" }, ...o.projects.map((p) => ({ value: p, label: p }))]}
+                  />
+                </span>
               )}
               <SearchField value={text} onChange={setText} label="Search changes" placeholder="Search changes" />
             </div>
@@ -236,9 +245,12 @@ export function History() {
       ) : list.loading && list.events.length === 0 ? (
         <Skeleton className="h-64" />
       ) : list.events.length === 0 ? (
-        <p role="status" className="py-10 text-center text-body text-ink-2">
-          {filtered ? "Nothing matches that. Try another filter or search." : "No changes yet."}
-        </p>
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <p role="status" className="text-body text-ink-2">
+            {filtered ? "Nothing matches that. Try another filter or search." : "No changes yet."}
+          </p>
+          {filtered && <Button onClick={showEverything}>Show everything</Button>}
+        </div>
       ) : wide ? (
         <div className="rise grid min-h-[240px] flex-1 grid-cols-[minmax(300px,380px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-6" style={rise(3)}>
           <div className="min-h-0 overflow-y-auto pr-1">

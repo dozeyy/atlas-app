@@ -122,9 +122,12 @@ describe("History", () => {
     expect(screen.getByRole("list", { name: "Changes" })).toBeInTheDocument();
   });
 
-  it("is honest while Sandbox Mode pauses it", async () => {
+  it("is honest while Sandbox mode pauses it", async () => {
     mount((b) => (b.history.paused = true));
-    expect(await screen.findByText(/History is paused while Sandbox Mode is on/)).toBeInTheDocument();
+    // Written "Sandbox mode", as the sidebar, Settings and Help write it.
+    expect(await screen.findByText(/History is paused while Sandbox mode is on/)).toBeInTheDocument();
+    // It says where the switch is.
+    expect(screen.getByText(/in Settings, under Claude folder/)).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Changes" })).not.toBeInTheDocument();
   });
 
