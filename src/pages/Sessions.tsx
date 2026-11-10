@@ -71,6 +71,14 @@ export function Sessions() {
   useLayoutEffect(() => {
     if (selected === null && listPane.current) listPane.current.scrollTop = listTop.current;
   }, [selected]);
+  // The list's scrollbar sits in the page's gutter (the pane grows by the bar's width, whatever
+  // that is on this system), so the card is exactly as wide as the toolbar above it.
+  useLayoutEffect(() => {
+    const el = listPane.current;
+    if (!el || el.offsetWidth === 0) return;
+    const bar = `${el.offsetWidth - el.clientWidth}px`;
+    if (el.style.getPropertyValue("--sb") !== bar) el.style.setProperty("--sb", bar);
+  });
   const [text, setText] = useState("");
   const [project, setProject] = useState(() => peekPendingProject() ?? "");
   useEffect(() => {
@@ -198,6 +206,7 @@ export function Sessions() {
         onOpen={setSelected}
         index={i < PAGE ? i : 0}
         snippet={chat.snippets.get(r.sessionId)}
+        query={titleQ}
         barShare={shareOfMax(r.tokens.total, maxRow)}
         dayKnown={byTime}
       />
@@ -328,7 +337,7 @@ export function Sessions() {
             onScroll={(e) => {
               listTop.current = e.currentTarget.scrollTop;
             }}
-            className="-mx-2 min-h-0 flex-1 overflow-y-auto px-2 pb-1"
+            className="sessions-pane min-h-0 flex-1 overflow-y-auto px-2 pb-1"
             data-testid="sessions-scroll"
           >
           <Card>

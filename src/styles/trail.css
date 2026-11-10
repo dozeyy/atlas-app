@@ -793,6 +793,24 @@ html.reduced .side-main {
 }
 
 /* ---- Sessions: the pick-up card, day bands, project dots, token hairlines ------------------- */
+/* The list pane. 8 px of side room so a keyboard ring on a row is not cut; the scrollbar's own
+   width (--sb, measured) goes into the page's gutter, so the card lines up with the toolbar. */
+.sessions-pane {
+  margin: 0 calc(-8px - var(--sb, 0px)) 0 -8px;
+  scrollbar-gutter: stable;
+}
+/* A typed word found in a chat's title: heavier and underlined in clay, nothing boxed. */
+.sl-hit {
+  border-radius: 3px;
+  background: var(--accent-tint);
+  box-shadow: 0 0 0 2px var(--accent-tint);
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 .proj-dot {
   display: inline-block;
   width: 8px;

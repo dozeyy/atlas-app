@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { projectTone } from "../../lib/sessionBrowse";
-import { clockTime, effortMix, formatWhen, modelWithEffort, plural, topEffort } from "../../lib/usage";
+import { clockTime, effortMix, formatWhen, modelWithEffort, percent, plural, topEffort } from "../../lib/usage";
 import type { SessionRow } from "../../lib/types";
 import type { SnippetPart } from "../../lib/searchTypes";
 import { sessionName } from "./helperKit";
@@ -18,17 +18,55 @@ export function SessionGrid({ children }: { children: ReactNode }) {
   );
 }
 
-/** A found message, cut to one line: the words that matched are heavier and darker, nothing is boxed. */
+/** A found message, cut to one line: the words that matched are marked the way a title's are. */
 export function Snippet({ parts }: { parts: SnippetPart[] }) {
   return (
     <>
       {parts.map((p, i) =>
         p.hit ? (
-          <span key={i} className="font-semibold text-ink">
+          <mark key={i} className="sl-hit font-semibold text-ink">
             {p.text}
-          </span>
+          </mark>
         ) : (
           <span key={i}>{p.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+/**
+ * `text` cut where the typed words are found (any case, anywhere in a word), so a row can mark
+ * why it is in the list. Nothing typed, or nothing found: the text comes back whole.
+ */
+export function hitParts(text: string, query: string | undefined): SnippetPart[] {
+  const words = (query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+  const low = text.toLowerCase();
+  if (words.length === 0 || low.length !== text.length) return [{ text, hit: false }];
+  const marks = new Array<boolean>(text.length).fill(false);
+  for (const w of words) for (let i = low.indexOf(w); i >= 0; i = low.indexOf(w, i + w.length)) marks.fill(true, i, i + w.length);
+  const parts: SnippetPart[] = [];
+  for (let i = 0; i < text.length; ) {
+    let j = i + 1;
+    while (j < text.length && marks[j] === marks[i]) j++;
+    parts.push({ text: text.slice(i, j), hit: marks[i] });
+    i = j;
+  }
+  return parts;
+}
+
+/** Text with the typed words marked. */
+function Marked({ text, query }: { text: string; query?: string }) {
+  if (!query) return <>{text}</>;
+  return (
+    <>
+      {hitParts(text, query).map((p, i) =>
+        p.hit ? (
+          <mark key={i} className="sl-hit">
+            {p.text}
+          </mark>
+        ) : (
+          p.text
         ),
       )}
     </>
@@ -81,11 +119,14 @@ export function SessionLine({
   snippet,
   barShare,
   dayKnown = false,
+  query,
 }: {
   row: SessionRow;
   onOpen: (id: string) => void;
   index?: number;
   snippet?: SnippetPart[];
+  /** What is typed in the search box: where it is found in the title or the project, it is marked. */
+  query?: string;
   /** This chat's tokens as a share (0 to 1) of the biggest chat in view: draws a hairline bar by the count. */
   barShare?: number;
   /** The row sits under a band that names its day: it says the time only, never the day twice. */
@@ -96,22 +137,26 @@ export function SessionLine({
     <li className="row-in" style={{ ["--i" as string]: index }}>
       <button type="button" onClick={() => onOpen(row.sessionId)} className="row-btn flex-col justify-center px-5 py-3.5">
         <span title={name} className={`block w-full truncate text-lead font-bold ${row.name ? "text-ink" : "text-ink-2"}`}>
-          {name}
+          <Marked text={name} query={query} />
         </span>
         {/* One quiet line that never wraps and never shows a stub. What gives way, in order: a long project name shortens to
             its cap; the model drops out whole (it is on the chat's own page); the project shortens to a short stub; and in a
             narrow column (the Dashboard's) the helpers drop out whole. Tokens and the date always stay. Rules: .sl-meta. */}
         <span className="sl-meta mt-1 w-full min-w-0 truncate text-caption text-ink-2">
           <span className="sl-main">
-            <span data-tip={row.projectPath || row.projectName} className={`truncate ${row.projectName.length > SHORT_PROJECT ? "sl-proj" : "flex-none"}`}>
+            {/* The dot and the hairline each say what they are when pointed at. */}
+            <span
+              data-tip={`${row.projectPath || row.projectName}\nThe dot is this project's colour in every list.`}
+              className={`truncate ${row.projectName.length > SHORT_PROJECT ? "sl-proj" : "flex-none"}`}
+            >
               <ProjectDot path={row.projectPath || row.projectName} />
-              {row.projectName}
+              <Marked text={row.projectName} query={query} />
             </span>
             <span className="flex-none">{DOT}</span>
             <span className="flex-none">
               <TokenText tokens={row.tokens.total} cost={row.cost} className="font-semibold text-ink" />
               {barShare !== undefined && (
-                <span aria-hidden="true" className="tok-bar">
+                <span aria-hidden="true" className="tok-bar" data-tip={barShare >= 1 ? "The biggest chat in this list" : `${percent(barShare)} of the biggest chat in this list`}>
                   <i style={{ width: `${Math.round(barShare * 100)}%` }} />
                 </span>
               )}
