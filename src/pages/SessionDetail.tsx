@@ -18,7 +18,7 @@ import { Bars } from "../components/charts/Bars";
 import { Ridge } from "../components/charts/Ridge";
 import { IconMotion } from "../components/IconMotion";
 import { TokenText } from "../components/usage/TokenText";
-import { Breakdown, ModelSplit, Stat } from "../components/usage/detailParts";
+import { Breakdown, ClampText, ModelSplit, Stat } from "../components/usage/detailParts";
 import { HelperMap } from "../components/usage/HelperMap";
 import { HelperSlice } from "../components/usage/HelperSlice";
 import { AgentAvatar, ModelDots, OutcomeMark, sessionName, TokenFigure } from "../components/usage/helperKit";
@@ -298,7 +298,10 @@ function Conversation({ sessionId, names }: { sessionId: string; names: Map<stri
                     {m.agentId && <span>{names.get(m.agentId) ?? "A helper"}</span>}
                     {m.ts !== null && <span>{formatWhen(m.ts)}</span>}
                   </div>
-                  <p className="selectable mt-1 whitespace-pre-wrap break-words text-body text-ink">{m.text}</p>
+                  {/* A long message shows six lines and a way to the rest, so the page reads as turns, not one wall. */}
+                  <div className="mt-1">
+                    <ClampText text={m.text} lines={6} className="selectable whitespace-pre-wrap break-words text-body text-ink" />
+                  </div>
                   {m.truncated && <p className="mt-1 text-caption text-ink-2">Shortened. The full message is in the file.</p>}
                 </li>
               ))}
