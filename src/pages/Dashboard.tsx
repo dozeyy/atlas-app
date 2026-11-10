@@ -449,7 +449,7 @@ export function Dashboard() {
               </Card>
             </section>
 
-          <section aria-label="Recent sessions" className="rise order-6 min-w-0 @[740px]:col-span-2" style={{ ["--i" as string]: 7 }}>
+          <section aria-label="Recent sessions" className="rise @container order-6 min-w-0 @[740px]:col-span-2" style={{ ["--i" as string]: 7 }}>
             <SectionTitle
               aside={
                 <Button onClick={() => setView("sessions")}>
