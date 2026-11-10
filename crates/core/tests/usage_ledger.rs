@@ -138,6 +138,16 @@ fn a_version_4_cache_migrates_and_matches_a_fresh_index() {
     let again = start_in(&config, data, Tz::Fixed(0));
     assert_eq!(again.one("PRAGMA user_version"), atlas_core::cache::SCHEMA_VERSION);
     assert_eq!(totals(&again), fresh);
+    // The 4 -> 6 path creates every column and table the ledger writes (m0005 then m0006).
+    for (table, col) in [("agent_runs", "last_msg_key"), ("agent_runs", "active_ms"), ("agent_runs", "seg_start"), ("agent_notices", "file_id")] {
+        assert_eq!(again.one(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name='{col}'")), 1, "{table}.{col}");
+    }
+    assert_eq!(again.one("SELECT COUNT(*) FROM sqlite_master WHERE name='agent_link_pending'"), 1);
+    assert_eq!(
+        again.one("SELECT COUNT(*) FROM agent_notices WHERE file_id = 0"),
+        0,
+        "every notice remembers the chat file that wrote it"
+    );
     assert_eq!(
         again.db().query_row("SELECT agent_setting FROM sessions WHERE session_id=?1", [S2], |r| r.get::<_, Option<String>>(0)).unwrap().as_deref(),
         Some("code-reviewer")

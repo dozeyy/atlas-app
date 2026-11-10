@@ -200,15 +200,42 @@ CREATE INDEX IF NOT EXISTS agent_run_models_file ON agent_run_models(file_id);
 
 /// How long a helper really worked: `active_ms` is the sum of its finished stretches, `seg_start`
 /// the start of the stretch it is in (NULL = its first line), `resumes` how many times a message
-/// woke it after it had finished. Added columns only; guarded so a database that has them is fine.
+/// woke it after it had finished, `last_msg_key` the last assistant message counted in the model mix
+/// (a message that straddles two reads is counted once). The parent chat's notices remember their
+/// file (a rewritten chat drops them), and a dispatch that names a helper whose files are not there
+/// yet waits in `agent_link_pending` until they are. Added columns and tables only; guarded so a
+/// database that has them is fine.
 fn m0007(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-    for (col, def) in [("active_ms", "INTEGER NOT NULL DEFAULT 0"), ("resumes", "INTEGER NOT NULL DEFAULT 0"), ("seg_start", "INTEGER")] {
-        let has: bool = tx.query_row("SELECT COUNT(*) FROM pragma_table_info('agent_runs') WHERE name = ?1", [col], |r| r.get::<_, i64>(0))? > 0;
+    let add = |table: &str, col: &str, def: &str| -> rusqlite::Result<()> {
+        let has: bool = tx.query_row(
+            &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
+            [col],
+            |r| r.get::<_, i64>(0),
+        )? > 0;
         if !has {
-            tx.execute_batch(&format!("ALTER TABLE agent_runs ADD COLUMN {col} {def};"))?;
+            tx.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {def};"))?;
         }
-    }
-    Ok(())
+        Ok(())
+    };
+    add("agent_runs", "active_ms", "INTEGER NOT NULL DEFAULT 0")?;
+    add("agent_runs", "resumes", "INTEGER NOT NULL DEFAULT 0")?;
+    add("agent_runs", "seg_start", "INTEGER")?;
+    add("agent_runs", "last_msg_key", "TEXT")?;
+    add("agent_notices", "file_id", "INTEGER NOT NULL DEFAULT 0")?;
+    tx.execute_batch(
+        r#"
+CREATE INDEX IF NOT EXISTS agent_notices_file ON agent_notices(file_id);
+CREATE TABLE IF NOT EXISTS agent_link_pending (
+  session_id TEXT NOT NULL,
+  tool_use_id TEXT NOT NULL,
+  token TEXT NOT NULL,                -- a helper id the dispatch prompt named that had no files yet
+  file_id INTEGER NOT NULL,
+  PRIMARY KEY (session_id, tool_use_id, token)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS agent_link_pending_token ON agent_link_pending(session_id, token);
+CREATE INDEX IF NOT EXISTS agent_link_pending_file ON agent_link_pending(file_id);
+"#,
+    )
 }
 
 fn m0001(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {

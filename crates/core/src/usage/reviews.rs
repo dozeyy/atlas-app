@@ -203,7 +203,23 @@ fn read_label(line: &str, start: usize, end: usize, is_verdict: bool) -> Option<
         return None;
     }
     let sep_ok = rest.chars().take(9).take_while(|c| !c.is_alphanumeric()).any(|c| matches!(c, ':' | '-' | '=' | '\u{2014}' | '\u{2013}'));
+    // "Overall pass rate was 80%": a label with no separator is a sentence, not a verdict line. The
+    // one exception is a line that opens with the label and its verdict word and then ends or
+    // opens a bracket ("overall PASS (two caveats)").
+    if !sep_ok {
+        let bare = at_start
+            && lead_verdict(rest)
+                .is_some_and(|(_, _, after)| !after.trim_start_matches(['*', '_', ' ']).starts_with(|c: char| c.is_alphanumeric()));
+        if !bare {
+            return None;
+        }
+    }
     let ws = words(rest);
+    // "Verdict: PASS | FAIL" / "PASS or FAIL": a template or a choice, not a verdict.
+    let classes: Vec<Verdict> = (0..ws.len()).filter_map(|i| verdict_word_at(&ws, i)).map(|(_, c, _)| c).collect();
+    if classes.iter().any(|c| *c != classes[0]) && (rest.contains('|') || rest.contains('/') || up.contains(" OR ")) {
+        return None;
+    }
     let mut seen = 0;
     let mut i = 0;
     while i < ws.len() && seen < 10 {
@@ -235,55 +251,120 @@ fn read_label(line: &str, start: usize, end: usize, is_verdict: bool) -> Option<
     None
 }
 
-/// The `STATUS:` line of a final text (the contract's `done | partial | blocked`): `partial` is
-/// said as it is, `blocked` is "other", a verdict word as the first word is that verdict, and a
-/// `done` counts as a verdict only when the rest of the line names exactly one kind of verdict
-/// word ("STATUS: done. All 6 criteria PASS"). A bare `done` states no verdict.
+/// The lines of a final text that can state a verdict: not inside a fenced code block and not a
+/// quote (a reviewer quoting the author's claim, or a template in a fence, states nothing).
+fn visible_lines(text: &str) -> impl Iterator<Item = &str> {
+    let mut fenced = false;
+    text.lines().filter(move |l| {
+        let t = l.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            fenced = !fenced;
+            return false;
+        }
+        !fenced && !t.starts_with('>')
+    })
+}
+
+/// A line without its `inline code` spans (a path or an identifier in backticks is not a word).
+fn strip_code(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_code = false;
+    for c in s.chars() {
+        if c == '`' {
+            in_code = !in_code;
+            out.push(' ');
+        } else if !in_code {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// The first word of `s` (letters and inner hyphens, after any markup or punctuation) and what
+/// follows it. None when the word runs into a path or identifier (`fail_case.rs`, `pass/x`, `ok2`).
+fn lead_word(s: &str) -> Option<(String, &str)> {
+    let start = s.find(|c: char| c.is_ascii_alphabetic())?;
+    let body = &s[start..];
+    let len = body.find(|c: char| !(c.is_ascii_alphabetic() || c == '-')).unwrap_or(body.len());
+    let tok = body[..len].trim_end_matches('-');
+    let after = &body[len..];
+    let mut next = after.chars();
+    match next.next() {
+        Some(c) if c.is_alphanumeric() || matches!(c, '_' | '/' | '\\') => return None,
+        Some('.') if next.next().is_some_and(|d| d.is_alphanumeric() || d == '_') => return None,
+        _ => {}
+    }
+    Some((tok.to_ascii_uppercase(), after))
+}
+
+/// A verdict word at the head of `s`, "FIX REQUIRED" read whole: `(word, class, rest)`.
+fn lead_verdict(s: &str) -> Option<(&'static str, Verdict, &str)> {
+    let (tok, after) = lead_word(s)?;
+    if tok == "FIX"
+        && let Some((n, rest)) = lead_word(after)
+        && n == "REQUIRED"
+        && after.starts_with(' ')
+    {
+        return Some(("FIX-REQUIRED", Verdict::Findings, rest));
+    }
+    VERDICTS.iter().find(|(v, _)| *v == tok).map(|(v, c)| (*v, *c, after))
+}
+
+/// The `STATUS:` line of a final text (the contract's `done | partial | blocked`), the last one: a
+/// verdict word as its first word is that verdict ("STATUS: PASS"), `partial` is said as it is,
+/// `blocked` is "other", and `done` carries a verdict only when a verdict word follows it directly
+/// after a separator ("STATUS: done - PASS", "STATUS: done: FAIL"). A bare `done`, or a verdict-like
+/// word in the sentence after it, in a path or in a code span, states no verdict.
 fn status_verdict(text: &str) -> Option<VerdictLine> {
-    for line in text.lines() {
+    let mut out = None;
+    for line in visible_lines(text) {
         let t = line.trim_start_matches(|c: char| !is_word_char(c));
         let Some(head) = t.get(..6) else { continue };
         if !head.eq_ignore_ascii_case("status") || t[6..].chars().next().is_some_and(is_word_char) {
             continue;
         }
-        let ws = words(&t[6..]);
-        let first = ws.iter().position(|w| !w.is_empty())?;
+        let rest = strip_code(&t[6..]);
         let mk = |word: &str, class| Some(VerdictLine { word: word.to_string(), class, status: true });
-        return match ws[first].as_str() {
-            "PARTIAL" => mk("PARTIAL", Verdict::Partial),
-            "BLOCKED" => mk("BLOCKED", Verdict::Other),
-            _ => {
-                let mut found: Vec<(&'static str, Verdict)> = Vec::new();
-                let mut i = first;
-                while i < ws.len() {
-                    if let Some((word, class, n)) = verdict_word_at(&ws, i) {
-                        found.push((word, class));
-                        i += n;
-                    } else {
-                        i += 1;
-                    }
+        out = (|| {
+            let (tok, after) = lead_word(&rest)?;
+            match tok.as_str() {
+                "PARTIAL" => mk("PARTIAL", Verdict::Partial),
+                "BLOCKED" => mk("BLOCKED", Verdict::Other),
+                _ if lead_verdict(&rest).is_some() => {
+                    let (word, class, _) = lead_verdict(&rest)?;
+                    mk(word, class)
                 }
-                let (w0, c0) = *found.first()?;
-                // Mixed words ("check 1 PASS, check 2 FAIL") state no single verdict.
-                found.iter().all(|(_, c)| *c == c0).then(|| VerdictLine { word: w0.to_string(), class: c0, status: true })
+                "DONE" => {
+                    let sep = after.trim_start();
+                    let after_sep = sep.strip_prefix([':', '-', '\u{2014}', '\u{2013}', '.', ',', ';'])?;
+                    let (word, class, _) = lead_verdict(after_sep.trim_start_matches([' ', '-', '\u{2014}', '\u{2013}', '*']))?;
+                    mk(word, class)
+                }
+                _ => None,
             }
-        };
+        })();
     }
-    None
+    out
 }
 
-/// The verdict a final text states. First the first line with a `Verdict` or `Overall` label (up to
-/// the words after it: "VERDICT: pass", "**Overall: FAIL**", "Verdict: all 6 criteria PASS"); else
-/// the `STATUS:` line (see `status_verdict`). Nothing stated is `None`, never a guess.
+/// The verdict a final text states: the last line with a `Verdict` or `Overall` label and a
+/// separator ("VERDICT: pass", "**Overall: FAIL**", "Verdict: all 6 criteria PASS"), outside code
+/// fences and quotes; else the last `STATUS:` line (see `status_verdict`). "Overall pass rate was
+/// 80%" and "Verdict: PASS | FAIL" state nothing. Nothing stated is `None`, never a guess.
 pub fn parse_verdict(text: &str) -> Option<VerdictLine> {
-    for line in text.lines() {
+    let mut found = None;
+    for line in visible_lines(text) {
         for (start, end, is_verdict) in labels(line) {
+            // A label inside quotation marks is somebody else's claim.
+            if line[..start].trim_end_matches(['*', '_', ' ']).ends_with(['"', '\u{201c}']) {
+                continue;
+            }
             if let Some(v) = read_label(line, start, end, is_verdict) {
-                return Some(v);
+                found = Some(v);
             }
         }
     }
-    status_verdict(text)
+    found.or_else(|| status_verdict(text))
 }
 
 // ---------------------------------------------------------------- finding lines (D8)
@@ -778,7 +859,6 @@ mod verdict {
             "VERDICT - PASS",
             "VERDICT \u{2014} pass",
             "## Verdict\nignored\n",
-            "  > Verdict : pass",
             "Intro\n\nVERDICT: PASS (with two notes)\nFINDINGS: none",
         ] {
             let want = if t.starts_with("## Verdict") { None } else { pass.clone() };
@@ -828,7 +908,16 @@ mod verdict {
         assert_eq!(st("**STATUS: partial.** Checks 1 to 3 PASS. Check 4 cannot run."), Some(("PARTIAL".into(), Verdict::Partial, true)));
         assert_eq!(st("STATUS: blocked"), Some(("BLOCKED".into(), Verdict::Other, true)));
         // A verdict word in the line counts when it is the only kind.
-        assert_eq!(st("STATUS: done. All 4 criteria PASS."), Some(("PASS".into(), Verdict::Pass, true)));
+        assert_eq!(st("STATUS: done - PASS"), Some(("PASS".into(), Verdict::Pass, true)));
+        assert_eq!(st("STATUS: done: FAIL (see item 2)"), Some(("FAIL".into(), Verdict::Findings, true)));
+        // A verdict word later in the sentence, in a path or in a code span is no verdict.
+        assert_eq!(st("STATUS: done. All 4 criteria PASS."), None);
+        assert_eq!(st("STATUS: done - added tests/fail_case.rs"), None);
+        assert_eq!(st("STATUS: done - fixed the merge conflict"), None);
+        assert_eq!(st("STATUS: done - wrapped it in a code block"), None);
+        assert_eq!(st("STATUS: done - `FAIL` is now an enum variant"), None);
+        assert_eq!(st("STATUS: done, the pass rate is 80%"), None);
+        assert_eq!(st("STATUS: fail_case.rs added"), None);
         assert_eq!(st("STATUS: PASS (no blocking findings)"), Some(("PASS".into(), Verdict::Pass, true)));
         assert_eq!(st("**STATUS: PASS** (no blocking defects)"), Some(("PASS".into(), Verdict::Pass, true)));
         assert_eq!(st("STATUS: done. Check 1 PASS, check 2 FAIL."), None);
@@ -844,8 +933,8 @@ mod verdict {
     }
 
     #[test]
-    fn the_first_verdict_line_wins_and_a_number_is_no_word() {
-        assert_eq!(v("VERDICT: FIX-REQUIRED\nlater\nVERDICT: PASS"), Some(("FIX-REQUIRED".to_string(), Verdict::Findings)));
+    fn the_last_verdict_line_wins_and_a_number_is_no_word() {
+        assert_eq!(v("VERDICT: FIX-REQUIRED\nlater\nVERDICT: PASS"), Some(("PASS".to_string(), Verdict::Pass)));
         assert_eq!(v("VERDICT: 3\nnothing"), None);
         // Prose before the word is skipped; a prose line with no word is no verdict; a later real
         // line still counts; FIX REQUIRED reads whole.
@@ -855,6 +944,26 @@ mod verdict {
         assert_eq!(v("VERDICT: FIX REQUIRED"), Some(("FIX-REQUIRED".to_string(), Verdict::Findings)));
         assert_eq!(v("no verdict anywhere in this text"), None);
         assert_eq!(v(""), None);
+    }
+
+    #[test]
+    fn quotes_fences_templates_and_sentences_state_no_verdict() {
+        for t in [
+            "> Verdict: PASS\n(the author's claim)",
+            "The author wrote:\n> Overall: PASS\nbut it fails.",
+            "Template:\n```\nVERDICT: PASS | FAIL\n```",
+            "Verdict: PASS | FAIL",
+            "Verdict: PASS or FAIL",
+            "Verdict: PASS/FAIL",
+            "Overall pass rate was 80% across the suite.",
+            "Overall pass rate: it failed twice",
+            "He said \"Verdict: PASS\" but the build is red.",
+        ] {
+            assert_eq!(v(t), None, "{t:?}");
+        }
+        // The report's own line after a quoted one still counts, and the last one wins.
+        assert_eq!(v("> Verdict: PASS\n\nVerdict: FAIL"), Some(("FAIL".to_string(), Verdict::Findings)));
+        assert_eq!(v("Verdict: PASS\n\nAfter the rerun:\nVerdict: FAIL"), Some(("FAIL".to_string(), Verdict::Findings)));
     }
 
     #[test]

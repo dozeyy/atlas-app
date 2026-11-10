@@ -12,7 +12,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 
 use super::reader::open_read_only;
@@ -41,6 +41,9 @@ pub struct FileTask {
     pub folder_session: String,
     /// A new version of the path: read from 0.
     pub reset: bool,
+    /// A chat that ran as an agent (the earlier reads saw its agent-setting line): the lines after
+    /// that point are its run, and a read that starts later must keep tracking them.
+    pub agent_chat: bool,
 }
 
 #[derive(Debug, Default)]
@@ -265,6 +268,7 @@ pub fn plan(
         let mut ident = tx.prepare_cached(
             "UPDATE files SET fs_id=?2, head_hash=?3, offset=?4, last_seen_at=?5, missing=0 WHERE file_id=?1",
         )?;
+        let mut chat_run = tx.prepare_cached("SELECT 1 FROM agent_runs WHERE file_id = ?1 AND agent_id = '' LIMIT 1")?;
         let mut insert = tx.prepare_cached(
             "INSERT INTO files(path, fs_id, head_hash, session_id, is_subagent, last_seen_at) VALUES(?1,?2,?3,?4,?5,?6)",
         )?;
@@ -300,6 +304,10 @@ pub fn plan(
                     let reset = force || id != row.fs_id || !same_head || cur_len < row.offset;
                     let new_hash = head_hash(&mut file, cur_len).unwrap_or_default();
                     let start = if reset { 0 } else { row.offset };
+                    let agent_chat = !reset
+                        && start > 0
+                        && !f.is_subagent
+                        && chat_run.query_row([row.file_id], |_| Ok(())).optional()?.is_some();
                     ident.execute(params![row.file_id, id, new_hash, start as i64, now_secs])?;
                     if row.missing {
                         plan.flipped.push(row.file_id);
@@ -313,6 +321,7 @@ pub fn plan(
                         is_subagent: f.is_subagent,
                         folder_session: f.folder_session.clone(),
                         reset,
+                        agent_chat,
                     });
                     let _ = &mut touch;
                 }
@@ -337,6 +346,7 @@ pub fn plan(
                         is_subagent: f.is_subagent,
                         folder_session: f.folder_session.clone(),
                         reset: true,
+                        agent_chat: false,
                     });
                 }
             }
