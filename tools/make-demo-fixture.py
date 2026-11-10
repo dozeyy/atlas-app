@@ -6,7 +6,8 @@
 Each transcript's write time is its last entry's time, as on a machine where the chats really ran
 (a fresh write time on every file would read as "every chat is running" on the Now page).
 --live also leaves two of today's chats live (written now): one working on an edit, one waiting
-for you; their paths go to OUT_DIR/live.txt so a caller can keep them fresh.
+for you, the working one with a helper beside it; their paths go to OUT_DIR/live.txt so a
+caller can keep them fresh (touch them at least every 30 s).
 
 OUT_DIR gets a copy of fixtures/claude-setup/home (so the Toolkit has skills, agents, hooks and so on)
 plus about 90 days of made-up Claude Code transcripts that end today: a streak that reaches today,
@@ -76,6 +77,20 @@ def stamp(t):
     return t.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
+# Reasoning effort per reply, the way Claude Code records it (`perTurnEffort`). Picked from the ids,
+# not from `rng`, so every other number in the demo stays the same. Some chats record none (older
+# Claude Code), and those must show no effort at all.
+EFFORTS = {"claude-opus-5-5": ("high", "xhigh"), "claude-sonnet-5-5": ("high", "medium"), "claude-haiku-5-5": ("low", "medium")}
+
+
+def effort_for(sid, n, model):
+    key = sum(sid.encode()) + (n % 100) // 7
+    if sum(sid.encode()) % 9 == 0:
+        return None
+    pair = EFFORTS.get(model)
+    return pair and pair[0 if key % 5 else 1]
+
+
 def msg(sid, n, t, model, cwd, rng, big, side=False, agent=None):
     rec = {
         "type": "assistant",
@@ -97,6 +112,9 @@ def msg(sid, n, t, model, cwd, rng, big, side=False, agent=None):
     }
     if agent:
         rec["agentId"] = agent
+    effort = effort_for(sid + (agent or ""), n, model)
+    if effort:
+        rec["perTurnEffort"] = effort
     return rec
 
 
@@ -130,7 +148,7 @@ def append_live(path, sid, cwd, model, now, waiting):
         at = now - datetime.timedelta(seconds=20)
     lines.append({
         "type": "assistant", "uuid": f"al-{sid[:8]}", "sessionId": sid, "timestamp": stamp(at), "cwd": cwd,
-        "isSidechain": False, "version": "2.1.296", "requestId": f"req_live_{sid[:8]}",
+        "isSidechain": False, "version": "2.1.296", "requestId": f"req_live_{sid[:8]}", "perTurnEffort": "high",
         "message": {"id": f"msg_live_{sid[:8]}", "type": "message", "role": "assistant", "model": model,
                     "stop_reason": stop, "content": content,
                     "usage": {"input_tokens": 40, "output_tokens": 300, "cache_creation_input_tokens": 1200,
@@ -140,6 +158,26 @@ def append_live(path, sid, cwd, model, now, waiting):
         for ln in lines:
             f.write(json.dumps(ln, separators=(",", ":")) + "\n")
     # Left with a fresh write time: these two are the live ones.
+    if waiting:
+        return [path]
+    # The working chat also has a helper running beside it (its own model and effort).
+    sub = os.path.join(os.path.dirname(path), sid, "subagents")
+    os.makedirs(sub, exist_ok=True)
+    helper = os.path.join(sub, "agent-livehelp.jsonl")
+    with open(helper, "w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps({
+            "type": "assistant", "uuid": f"ah-{sid[:8]}", "sessionId": sid, "timestamp": stamp(now - datetime.timedelta(seconds=10)),
+            "cwd": cwd, "isSidechain": True, "agentId": "livehelp", "version": "2.1.296", "requestId": f"req_lh_{sid[:8]}",
+            "perTurnEffort": "low",
+            "message": {"id": f"msg_lh_{sid[:8]}", "type": "message", "role": "assistant", "model": "claude-haiku-5-5",
+                        "stop_reason": "tool_use",
+                        "content": [{"type": "tool_use", "id": f"toolu_lh_{sid[:8]}", "name": "Grep", "input": {"pattern": "rounding"}}],
+                        "usage": {"input_tokens": 20, "output_tokens": 80, "cache_creation_input_tokens": 600,
+                                  "cache_read_input_tokens": 9000}},
+        }, separators=(",", ":")) + "\n")
+    with open(os.path.join(sub, "agent-livehelp.meta.json"), "w", encoding="utf-8", newline="\n") as f:
+        json.dump({"agentType": "Explore", "description": "Find the rounding callers", "toolUseId": "toolu_livehelp", "spawnDepth": 1}, f)
+    return [path, helper]
 
 
 def main():
@@ -222,10 +260,11 @@ def main():
                     with open(base + ".meta.json", "w", encoding="utf-8", newline="\n") as f:
                         json.dump(meta, f, separators=(",", ":"))
     if live:
+        fresh = []
         for (path, sid, cwd, model), waiting in zip(today[:2], (False, True)):
-            append_live(path, sid, cwd, model, now, waiting)
+            fresh += append_live(path, sid, cwd, model, now, waiting)
         with open(os.path.join(out, "live.txt"), "w", encoding="utf-8", newline="\n") as f:
-            f.writelines(p + "\n" for p, _, _, _ in today[:2])
+            f.writelines(p + "\n" for p in fresh)
     print(f"demo folder: {os.path.join(home, '.claude')}  ({n_sess} sessions{', 2 live' if live else ''})")
 
 

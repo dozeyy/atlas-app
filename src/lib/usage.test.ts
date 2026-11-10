@@ -11,12 +11,15 @@ import {
   formatUsd,
   headline,
   localDay,
+  effortMix,
   modelLabel,
+  modelWithEffort,
   niceMax,
   percent,
   plural,
   rangeFor,
   tokenHint,
+  topEffort,
 } from "./usage";
 import type { Tokens } from "./types";
 
@@ -68,6 +71,8 @@ describe("numbers", () => {
     expect(percent(0)).toBe("0%");
     expect(percent(0.004)).toBe("<1%");
     expect(percent(0.456)).toBe("46%");
+    expect(percent(0.996)).toBe(">99%");
+    expect(percent(1)).toBe("100%");
   });
 
   it("counts the headline as input, output and cache writes, never cache reads", () => {
@@ -133,6 +138,41 @@ describe("models", () => {
     expect(modelLabel("claude-haiku-4-5-20251001")).toBe("Haiku 4.5");
     expect(modelLabel("claude-fable-5-1")).toBe("Fable 5.1");
     expect(modelLabel("some-other-model")).toBe("some-other-model");
+  });
+
+  it("names every family with its full version, even one it has never seen", () => {
+    expect(modelLabel("claude-opus-5-5")).toBe("Opus 5.5");
+    expect(modelLabel("claude-opus-5-5-20261101")).toBe("Opus 5.5");
+    expect(modelLabel("claude-fable-5-2")).toBe("Fable 5.2");
+    expect(modelLabel("claude-mythos-5-2")).toBe("Mythos 5.2");
+    expect(modelLabel("claude-nova-9-1")).toBe("Nova 9.1");
+    expect(modelLabel("claude-opus-4-1-20250805")).toBe("Opus 4.1");
+    expect(modelLabel("<synthetic>")).toBe("<synthetic>");
+    expect(modelLabel("claude-opus")).toBe("claude-opus");
+  });
+});
+
+describe("effort", () => {
+  const mix = (...v: [string, number][]) => v.map(([effort, replies]) => ({ effort, replies }));
+
+  it("takes the most used effort and never guesses one", () => {
+    expect(topEffort(mix(["high", 9], ["low", 1]))).toBe("high");
+    expect(topEffort([])).toBeNull();
+    expect(topEffort(undefined)).toBeNull();
+  });
+
+  it("says the mix as shares of the replies that recorded one", () => {
+    expect(effortMix(mix(["high", 3]))).toBe("high");
+    expect(effortMix(mix(["high", 93], ["medium", 7]))).toBe("high 93%, medium 7%");
+    expect(effortMix(mix(["high", 999], ["low", 1]))).toBe("high >99%, low <1%");
+    expect(effortMix([])).toBe("");
+    expect(effortMix(null)).toBe("");
+  });
+
+  it("puts the effort after the full model name, or leaves it off", () => {
+    expect(modelWithEffort("claude-opus-5-5", "high")).toBe("Opus 5.5 · high");
+    expect(modelWithEffort("claude-opus-5-5", null)).toBe("Opus 5.5");
+    expect(modelWithEffort("claude-fable-5-2", undefined)).toBe("Fable 5.2");
   });
 });
 

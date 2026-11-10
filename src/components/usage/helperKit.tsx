@@ -6,7 +6,7 @@ import type { ComponentType } from "react";
 import { Compass, Eye, Flask, Lightning, MapTrifold, Robot } from "@phosphor-icons/react";
 import type { IconProps } from "@phosphor-icons/react";
 import { CountUp } from "../CountUp";
-import { compact, costView, formatUsd, modelLabel, tokenHint } from "../../lib/usage";
+import { compact, costView, formatUsd, modelLabel, modelWithEffort, tokenHint } from "../../lib/usage";
 import type { Cost, SessionRow } from "../../lib/types";
 
 // ---- names -------------------------------------------------------------------
@@ -27,16 +27,18 @@ export function modelTone(model: string): number {
   return 4;
 }
 
-/** "Sonnet + Haiku": the families a session used, each with its colour dot, on one quiet inline run. */
-export function ModelDots({ models }: { models: string[] }) {
+/**
+ * "Opus 5.5 · high + Haiku 5.5": the models a session used under their full names (never a
+ * family alone), each with its colour dot, on one quiet inline run. `effort` goes on `main`.
+ */
+export function ModelDots({ models, main, effort }: { models: string[]; main?: string; effort?: string | null }) {
+  // A dated and an undated id of one model are one entry.
   const seen = new Map<string, string>();
-  for (const m of models) {
-    const family = modelLabel(m).split(" ")[0] ?? m;
-    if (!seen.has(family)) seen.set(family, m);
-  }
-  const list = [...seen];
+  for (const m of models) if (!seen.has(modelLabel(m))) seen.set(modelLabel(m), m);
+  const mainName = main ? modelLabel(main) : null;
+  const list = [...seen].map(([name, id]) => [name === mainName ? modelWithEffort(id, effort) : name, id] as const);
   return (
-    <span title={models.map(modelLabel).join(" + ")} className="whitespace-nowrap">
+    <span title={models.join(" + ")} className="whitespace-nowrap">
       {list.map(([family, id], i) => (
         <span key={family}>
           {i > 0 && " + "}
@@ -52,14 +54,14 @@ export function ModelDots({ models }: { models: string[] }) {
   );
 }
 
-export function ModelChip({ model, className = "" }: { model: string; className?: string }) {
+export function ModelChip({ model, effort, className = "" }: { model: string; effort?: string | null; className?: string }) {
   return (
     <span
-      title={model}
+      title={effort ? `${model}, reasoning effort ${effort}` : model}
       className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-bg px-2 text-caption text-ink-2 ${className}`}
     >
       <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: `var(--chart-${modelTone(model)})` }} />
-      {modelLabel(model)}
+      {modelWithEffort(model, effort)}
     </span>
   );
 }

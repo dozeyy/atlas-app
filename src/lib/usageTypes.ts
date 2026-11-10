@@ -61,11 +61,26 @@ export interface Period {
   sessions: number;
 }
 
+/** Replies that ran at one reasoning effort ("low" ... "max"). Most used first. */
+export interface EffortUse {
+  effort: string;
+  replies: number;
+}
+
 export interface ModelUse {
   model: string;
   known: boolean;
   tokens: Tokens;
   cost: Cost;
+  /** Per reasoning effort; empty when the transcripts gave none (never guessed). */
+  efforts?: EffortUse[];
+}
+
+export interface ModelSpend {
+  model: string;
+  tokens: Tokens;
+  cost: Cost;
+  efforts?: EffortUse[];
 }
 
 export interface ProjectUse {
@@ -91,6 +106,10 @@ export interface SessionRow {
   endedAt: number;
   durationMs: number;
   models: string[];
+  /** The main conversation's model (most tokens), "" when unknown. */
+  mainModel?: string;
+  /** The main conversation's reasoning efforts, most used first; empty when none recorded. */
+  efforts?: EffortUse[];
   messages: number;
   subagentMessages: number;
   tokens: Tokens;
@@ -211,6 +230,7 @@ export interface AgentSummary {
   spawnDepth: number;
   model: string;
   models: string[];
+  efforts?: EffortUse[];
   messages: number;
   tokens: Tokens;
   cost: Cost;
@@ -234,7 +254,7 @@ export interface AgentDetail {
   projectName: string;
   agent: AgentSummary;
   parentName: string | null;
-  byModel: { model: string; tokens: Tokens; cost: Cost }[];
+  byModel: ModelSpend[];
   timeline: MessagePoint[];
   file: { path: string; isSubagent: boolean; missing: boolean } | null;
   prompt: string | null;
@@ -245,7 +265,7 @@ export interface AgentDetail {
 
 export interface SessionDetail {
   row: SessionRow;
-  byModel: { model: string; tokens: Tokens; cost: Cost }[];
+  byModel: ModelSpend[];
   byAgent: { agentId: string | null; messages: number; tokens: Tokens; cost: Cost }[];
   /** The helpers, in the order they started. `row` is main plus every helper. */
   agents: AgentSummary[];

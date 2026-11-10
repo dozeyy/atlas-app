@@ -13,6 +13,7 @@ import type {
   ItemUse,
   MainThread,
   MessagePoint,
+  EffortUse,
   ModelUse,
   Period,
   PricingInfo,
@@ -152,6 +153,7 @@ function helpersFor(rand: () => number, start: number, endCap: number, mainModel
       spawnDepth: nested ? 2 : 1,
       model,
       models: [model],
+      efforts: mockEfforts(messages, 1),
       messages,
       tokens: t,
       cost: costOf(model, t),
@@ -219,6 +221,8 @@ function build(now: Date): MockSession[] {
         endedAt: Math.min(start + dur, now.getTime()),
         durationMs: Math.min(dur, now.getTime() - start),
         models,
+        mainModel: model,
+        efforts: mockEfforts(messages, 0),
         messages: messages + agents.reduce((s, a) => s + a.messages, 0),
         subagentMessages: agents.reduce((s, a) => s + a.messages, 0),
         tokens: all,
@@ -232,6 +236,21 @@ function build(now: Date): MockSession[] {
     }
   }
   return out.sort((a, b) => b.startedAt - a.startedAt);
+}
+
+/**
+ * A believable effort mix from numbers the session already has (no extra random draws, so the
+ * rest of the mock stays the same): mostly one effort, sometimes a second one, now and then none.
+ */
+function mockEfforts(messages: number, salt: number): EffortUse[] {
+  const ladder = ["high", "medium", "xhigh", "low"];
+  const k = (messages + salt) % 7;
+  if (k === 6) return [];
+  const top = ladder[k % ladder.length];
+  if (k < 3 || messages < 4) return [{ effort: top, replies: messages }];
+  const second = ladder[(k + 1) % ladder.length];
+  const minor = Math.max(1, Math.round(messages / 8));
+  return [{ effort: top, replies: messages - minor }, { effort: second, replies: minor }];
 }
 
 function periodOf(list: MockSession[]): Period {
@@ -469,15 +488,25 @@ export class MockUsage {
       ...this.points(s.main.tokens, s.model, s.main.messages, s.startedAt, s.durationMs, null),
       ...s.agents.flatMap((a) => this.points(a.tokens, a.model, a.messages, a.startedAt, a.durationMs, a.agentId)),
     ].sort((x, y) => x.ts - y.ts);
-    const byModel = new Map<string, { tokens: Tokens; costs: Cost[] }>();
-    for (const part of [{ model: s.model, tokens: s.main.tokens, cost: s.main.cost }, ...s.agents.map((a) => ({ model: a.model, tokens: a.tokens, cost: a.cost }))]) {
-      const cur = byModel.get(part.model) ?? { tokens: zero(), costs: [] };
-      byModel.set(part.model, { tokens: add(cur.tokens, part.tokens), costs: [...cur.costs, part.cost] });
+    const byModel = new Map<string, { tokens: Tokens; costs: Cost[]; efforts: Map<string, number> }>();
+    const parts = [
+      { model: s.model, tokens: s.main.tokens, cost: s.main.cost, efforts: s.efforts ?? [] },
+      ...s.agents.map((a) => ({ model: a.model, tokens: a.tokens, cost: a.cost, efforts: a.efforts ?? [] })),
+    ];
+    for (const part of parts) {
+      const cur = byModel.get(part.model) ?? { tokens: zero(), costs: [], efforts: new Map<string, number>() };
+      for (const e of part.efforts) cur.efforts.set(e.effort, (cur.efforts.get(e.effort) ?? 0) + e.replies);
+      byModel.set(part.model, { tokens: add(cur.tokens, part.tokens), costs: [...cur.costs, part.cost], efforts: cur.efforts });
     }
     const dir = PROJECTS.find((p) => p.name === s.projectName)!.key;
     return {
       row: publicRow(s),
-      byModel: [...byModel.entries()].map(([model, v]) => ({ model, tokens: v.tokens, cost: sumCost(v.costs) })),
+      byModel: [...byModel.entries()].map(([model, v]) => ({
+        model,
+        tokens: v.tokens,
+        cost: sumCost(v.costs),
+        efforts: [...v.efforts].map(([effort, replies]) => ({ effort, replies })).sort((x, y) => y.replies - x.replies),
+      })),
       byAgent: [
         { agentId: null, messages: s.main.messages, tokens: s.main.tokens, cost: s.main.cost },
         ...s.agents.map((a) => ({ agentId: a.agentId, messages: a.messages, tokens: a.tokens, cost: a.cost })),
@@ -534,7 +563,7 @@ export class MockUsage {
       projectName: s.projectName,
       agent: this.summary(a),
       parentName: a.parentAgentId ? (s.agents.find((x) => x.agentId === a.parentAgentId)?.name ?? null) : null,
-      byModel: [{ model: a.model, tokens: a.tokens, cost: a.cost }],
+      byModel: [{ model: a.model, tokens: a.tokens, cost: a.cost, efforts: a.efforts ?? [] }],
       timeline: this.points(a.tokens, a.model, a.messages, a.startedAt, a.durationMs, a.agentId),
       file: { path: `projects/${dir}/${sessionId}/subagents/agent-${a.agentId}.jsonl`, isSubagent: true, missing: false },
       prompt: a.prompt,

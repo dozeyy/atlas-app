@@ -6,7 +6,7 @@
 // hover text and are never the figure on screen. A line is never dropped, only folded into
 // "N other helpers".
 
-import { compact, formatUsd, modelLabel, plural } from "./usage";
+import { compact, formatUsd, modelLabel, modelWithEffort, plural } from "./usage";
 import type { Receipt, ReceiptFlag, ReceiptItem, ReceiptThread } from "./types";
 
 /** An estimate in dollars, marked as one, for hover text: "about $3.20". */
@@ -71,8 +71,17 @@ export function whatItUsed(r: Receipt): SpendLine[] {
 /** Cache reads, listed apart from the total (they are re-reads of what is already stored). */
 export const cacheReads = (r: Receipt): { tokens: number; usd: number } => ({ tokens: r.tokenKinds.cacheRead, usd: r.kinds.cacheRead });
 
-export function byModel(r: Receipt): SpendLine[] {
-  const lines: SpendLine[] = r.models.map((m) => ({ key: m.model, label: modelLabel(m.model), tokens: m.tokens, usd: m.usd, agentId: null, kind: "model" as const, model: m.model }));
+/** One line per model: "Opus 5.5 \u00b7 high" when `effortOf` knows the model's most used effort. */
+export function byModel(r: Receipt, effortOf?: (model: string) => string | null | undefined): SpendLine[] {
+  const lines: SpendLine[] = r.models.map((m) => ({
+    key: m.model,
+    label: modelWithEffort(m.model, effortOf?.(m.model)),
+    tokens: m.tokens,
+    usd: m.usd,
+    agentId: null,
+    kind: "model" as const,
+    model: m.model,
+  }));
   return [...lines, ...other(left(r, lines))];
 }
 

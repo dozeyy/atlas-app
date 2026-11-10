@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { Card } from "../controls";
 import { CostText } from "./CostText";
-import { compact, exact, headline, modelLabel, plural } from "../../lib/usage";
+import { compact, effortMix, exact, headline, modelLabel, plural } from "../../lib/usage";
 import type { Cost, Tokens } from "../../lib/types";
+import type { EffortUse } from "../../lib/usageTypes";
 
 /** A small number card: a label, one figure, an optional line under it. */
 export function Stat({ label, children, sub, icon }: { label: string; children: ReactNode; sub?: ReactNode; icon?: ReactNode }) {
@@ -44,8 +45,12 @@ export function Breakdown({ t }: { t: Tokens }) {
   );
 }
 
-/** Usage split by model: a name, its tokens, its cost. */
-export function ModelSplit({ rows }: { rows: { model: string; tokens: Tokens; cost: Cost }[] }) {
+/**
+ * Usage split by model: the full name ("Opus 5.5"), its reasoning-effort mix under it when the
+ * transcripts recorded one, "not priced" for a model the price list does not know, its tokens
+ * and its cost.
+ */
+export function ModelSplit({ rows }: { rows: { model: string; tokens: Tokens; cost: Cost; efforts?: EffortUse[] }[] }) {
   return (
     <Card className="overflow-hidden">
       <table className="w-full text-body">
@@ -60,7 +65,11 @@ export function ModelSplit({ rows }: { rows: { model: string; tokens: Tokens; co
         <tbody className="tabular-nums">
           {rows.map((r) => (
             <tr key={r.model} className="border-b border-line last:border-b-0">
-              <th scope="row" className="px-5 py-2 text-left font-normal text-ink">{modelLabel(r.model)}</th>
+              <th scope="row" className="px-5 py-2 text-left font-normal text-ink" title={r.model}>
+                {modelLabel(r.model)}
+                {r.cost.usd === null && <span className="ml-2 text-caption text-ink-2">not priced</span>}
+                {effortMix(r.efforts) && <span className="block text-caption text-ink-2">{`Effort ${effortMix(r.efforts)}`}</span>}
+              </th>
               <td className="px-3 py-2 text-right" title={exact(headline(r.tokens))}>{compact(headline(r.tokens))}</td>
               <td className="px-5 py-2 text-right"><CostText cost={r.cost} /></td>
             </tr>

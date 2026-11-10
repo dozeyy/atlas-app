@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { projectTone } from "../../lib/sessionBrowse";
-import { formatWhen, plural } from "../../lib/usage";
+import { effortMix, formatWhen, modelWithEffort, plural, topEffort } from "../../lib/usage";
 import type { SessionRow } from "../../lib/types";
 import type { SnippetPart } from "../../lib/searchTypes";
 import { sessionName } from "./helperKit";
@@ -46,6 +46,12 @@ const DOT = (
   </span>
 );
 
+/** The row's model hover: the exact id, then the effort mix when one was recorded. */
+function effortTitle(row: SessionRow): string {
+  const mix = effortMix(row.efforts);
+  return mix ? `${row.mainModel}, reasoning effort: ${mix}` : `${row.mainModel}, no reasoning effort recorded`;
+}
+
 /**
  * One session. Its helpers (subagents) are counted inside it and shown on its page, never as rows
  * of their own. A row is a list row, not a card: it washes on hover, never lifts, and the whole
@@ -55,6 +61,8 @@ const DOT = (
  *   line 2  the meta line, 12/16, in Will's order (2026-11-08), left to right:
  *             which project / folder  >  the tokens (bold; the API-price estimate is in its
  *             hover)  >  whether helpers ran (accent-colored text, no chip)  >  when it happened
+ *             >  the main model with its most used reasoning effort ("Opus 5.5 · high"; the
+ *             full mix is in its hover; no effort recorded shows the model alone)
  *           A removed file adds "File removed" at the end, as plain text.
  *   line 3  only when a message search found words inside this chat: one line of it, matches bold
  *
@@ -110,6 +118,12 @@ export function SessionLine({
             {DOT}
             {formatWhen(row.startedAt)}
           </span>
+          {row.mainModel && (
+            <span className="min-w-0 truncate" title={effortTitle(row)}>
+              {DOT}
+              {modelWithEffort(row.mainModel, topEffort(row.efforts))}
+            </span>
+          )}
           {row.missing && (
             <span className="shrink-0">
               {DOT}

@@ -129,7 +129,13 @@ function DashboardSkeleton({ firstIndex }: { firstIndex: boolean }) {
 
 /** Top models as one stacked bar: three named, the rest folded into "Other". */
 function modelItems(data: DashboardData): StackItem[] {
-  const models = data.byModel.map((m) => ({ key: m.model, label: modelLabel(m.model), value: headline(m.tokens), title: m.model }));
+  // Full names ("Opus 5.5"); a model the price list does not know says so.
+  const models = data.byModel.map((m) => ({
+    key: m.model,
+    label: m.known ? modelLabel(m.model) : `${modelLabel(m.model)} (not priced)`,
+    value: headline(m.tokens),
+    title: m.model,
+  }));
   const top = models.slice(0, 3);
   const rest = models.slice(3);
   const restValue = rest.reduce((s, m) => s + m.value, 0);

@@ -86,6 +86,8 @@ export interface NowChat {
   title: string | null;
   project: string;
   model: string | null;
+  /** The reasoning effort of the newest reply; null when the transcript gives none. */
+  effort?: string | null;
   state: "working" | "waiting";
   startedMs: number | null;
   /** While waiting: how long the last stretch of work took, ms. */
@@ -107,6 +109,7 @@ export interface NowLast {
   title: string | null;
   project: string;
   model: string | null;
+  effort?: string | null;
   endedMs: number;
   /** Tokens the chat used, when Atlas read the whole chat; null when only its tail was read. */
   tokens: number | null;
