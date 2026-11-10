@@ -3,7 +3,7 @@ import { Package, X } from "@phosphor-icons/react";
 import { Button, IconButton, Toggle } from "../controls";
 import { Chip, KindTile } from "../setup/parts";
 import { KIND_BY_ID } from "../../lib/setup-model";
-import { ROW_H, installBlock, itemWord, sourceCaption, type LibraryRow } from "../../lib/library";
+import { NO_CLI, ROW_H, installBlock, itemWord, sourceCaption, type LibraryRow } from "../../lib/library";
 import type { ItemKind } from "../../lib/libraryTypes";
 import { removeItem, setPluginEnabled, uninstallPlugin, type LibraryState } from "../../state/libraryStore";
 
@@ -151,7 +151,11 @@ function Row({
   // the source rail narrows the list, and the row follows. The source column gives way first,
   // sooner on a row that carries the "Changed" chip and its button.
   const sourceFrom = confirm || !source ? "" : changed ? "@min-[860px]:block" : "@min-[620px]:block";
-  const second2 = reason ?? second;
+  // A reason that is this row's own takes the second line. The one every row shares (no Claude
+  // Code command) is said once, above the list; the row keeps its description and the greyed
+  // Install button carries the reason as its tooltip.
+  const own = reason === NO_CLI ? null : reason;
+  const second2 = own ?? second;
 
   return (
     <div
@@ -173,7 +177,7 @@ function Row({
           <span title={name} className="block truncate text-body font-semibold text-ink">
             {name}
           </span>
-          <span title={second2} className={`block truncate text-caption ${reason ? "text-warning" : "text-ink-2"}`}>
+          <span title={second2} className={`block truncate text-caption ${own ? "text-warning" : "text-ink-2"}`}>
             {second2}
           </span>
         </span>

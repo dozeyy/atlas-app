@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowsClockwise, GithubLogo, MagnifyingGlass, Package, X } from "@phosphor-icons/react";
+import { ArrowsClockwise, GithubLogo, MagnifyingGlass, Package, WarningCircle, X } from "@phosphor-icons/react";
 import { Button, IconButton } from "../controls";
 import { EmptyState } from "../EmptyState";
 import { SelectField } from "../usage/fields";
@@ -236,11 +236,18 @@ export function LibraryTab() {
         </span>
       </div>
 
-      {(!cli || lib.view?.sandbox) && !loading && (
+      {/* Said once, here, in the warning colour with its icon; the rows below keep their descriptions. */}
+      {!cli && !loading && (
+        <p role="note" className="flex shrink-0 items-start gap-2 rounded-control bg-warning-tint px-3 py-2 text-body text-warning">
+          <WarningCircle size={16} weight="fill" aria-hidden="true" className="mt-0.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">{NO_CLI}</span> Adding skills and agents from a GitHub link still works.
+          </span>
+        </p>
+      )}
+      {lib.view?.sandbox && !loading && (
         <p role="note" className="shrink-0 text-caption text-ink-2">
-          {!cli && `${NO_CLI} Adding skills and agents from a GitHub link still works.`}
-          {!cli && lib.view?.sandbox ? " " : ""}
-          {lib.view?.sandbox && "Sandbox Mode is on: installs go to the copy, not your real folder."}
+          Sandbox Mode is on: installs go to the copy, not your real folder.
         </p>
       )}
 

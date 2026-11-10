@@ -209,13 +209,16 @@ describe("Library tab: installing (D20, D24, D19 words)", () => {
     expect(screen.getByText(COMMAND_SOURCE)).toBeInTheDocument();
   });
 
-  it("without Claude Code's command, plugin rows say so, and a GitHub link still installs loose items", async () => {
+  it("without Claude Code's command, the list says so once and rows keep their descriptions; a GitHub link still installs loose items", async () => {
     mount((b) => {
       b.library.cli = false;
     });
     await openLibraryTab();
-    expect(await installBtn("pdf-tools")).toBeDisabled();
-    expect(screen.getAllByText(NO_CLI).length).toBeGreaterThan(1); // each row, and the notice above the list
+    const install = await installBtn("pdf-tools");
+    expect(install).toBeDisabled();
+    expect(install).toHaveAttribute("title", NO_CLI); // the greyed button says why on hover
+    expect(screen.getAllByText(NO_CLI)).toHaveLength(1); // once, in the notice above the list
+    expect(screen.getByText("Read, merge, split and fill PDF files.")).toBeInTheDocument(); // the row still says what it is
 
     await userEvent.click(screen.getByRole("button", { name: "Add from GitHub" }));
     const dialog = await screen.findByRole("dialog", { name: "Add from GitHub" });
