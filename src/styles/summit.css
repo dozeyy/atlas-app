@@ -98,7 +98,7 @@
    (Start, Next and Replay are different widths; with space-between it slid about). */
 .sm-foot {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 1fr minmax(0, auto) 1fr;
   align-items: center;
   gap: 12px;
 }
@@ -111,8 +111,42 @@
   justify-self: end;
 }
 
+.sm-foot-mid {
+  min-width: 0;
+  text-align: center;
+}
+
 .sm-foot-at {
   font-variant-numeric: tabular-nums;
+}
+
+/* On the recap card: Replay, then the primary button where Next was on every slide before it. */
+.sm-foot-end {
+  display: flex;
+  gap: 8px;
+}
+
+/* What Save image has to say takes the place of the count, and all the room between the buttons:
+   a path is long. One line; the whole path is its hover. */
+.sm-foot[data-note] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.sm-foot-note {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 12px/18px var(--font-ui);
+  color: var(--ink-2);
+}
+
+.sm-foot-note:empty {
+  display: none;
+}
+
+.sm-foot-note[data-bad] {
+  color: var(--danger);
 }
 
 /* The sheet's place while the story is being read (Wrapped.tsx): same box, same corners. */
@@ -505,90 +539,20 @@
   position: absolute;
   inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
 }
 
-/* The canvas is 904 x 840; the preview is that picture, as large as the frame has room for. */
+/* The canvas is 904 x 840. The card is the only thing on its sheet, so the preview is that picture
+   as tall as the frame allows with a 36 px margin above and below. */
 .sm-card {
   display: block;
   flex: none;
-  width: 500px;
-  height: auto;
+  width: auto;
+  height: 553px;
   aspect-ratio: 452 / 420;
   border: 1px solid var(--line);
   border-radius: var(--r-sheet);
-}
-
-/* Save image and its status line are the app's own controls, so they keep the app's own size on
-   screen: this box holds their room in frame pixels, and the inner one is laid out in real pixels
-   and scaled back by 1 / --sm-k. */
-.sm-card-save {
-  --save-w: 420px;
-  --save-h: 58px;
-  position: relative;
-  flex: none;
-  width: calc(var(--save-w) / var(--sm-k, 1));
-  height: calc(var(--save-h) / var(--sm-k, 1));
-}
-
-.sm-card-save-in {
-  position: absolute;
-  left: 0;
-  top: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  width: var(--save-w);
-  transform: scale(calc(1 / var(--sm-k, 1)));
-  transform-origin: 0 0;
-}
-
-.sm-card-status {
-  min-height: 18px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 400 12px/18px var(--font-ui);
-  color: var(--ink-2);
-}
-
-.sm-card-status[data-bad] {
-  color: var(--danger-text, var(--ink));
-}
-
-/* A small window: the card takes the sheet's height and the button stands beside it, so the card's
-   own small print stays readable. The status line hangs under the button and may wrap. */
-.sm-scaler[data-small] .sm-cardwrap {
-  flex-direction: row;
-  gap: calc(20px / var(--sm-k, 1));
-}
-
-.sm-scaler[data-small] .sm-card {
-  width: auto;
-  height: 561px;
-}
-
-.sm-scaler[data-small] .sm-card-save {
-  --save-w: 148px;
-  --save-h: 32px;
-}
-
-.sm-scaler[data-small] .sm-card-save-in {
-  align-items: flex-start;
-}
-
-.sm-scaler[data-small] .sm-card-status {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  min-height: 0;
-  white-space: normal;
-  overflow-wrap: anywhere;
 }
 
 /* ---- motion that is only a fade, or nothing ---- */
