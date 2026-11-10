@@ -186,3 +186,30 @@ fn tree(dir: &Path) -> Vec<(String, u64, std::time::SystemTime)> {
     out.sort();
     out
 }
+
+// With no chat given and no CLAUDE_CODE_SESSION_ID, the answer starts with one plain line on stdout
+// that says which chat it picked, so "this chat" is never silently another one.
+#[test]
+fn a_picked_chat_is_named_in_the_first_line() {
+    let s = Scratch::new();
+    let t = s.text(&["--project", "ledger"]);
+    let (first, rest) = t.split_once('\n').unwrap();
+    assert!(first.starts_with("Couldn't tell which chat this is, so this is the newest chat with helpers: "), "{first}");
+    assert!(first.ends_with(" ago)."), "{first}");
+    assert_eq!(rest, s.text(&["--session", S1]), "the rest is the plain debrief of that chat");
+    // A given chat, and an explicit --last, have no such line.
+    assert!(!s.text(&["--session", S1]).contains("Couldn't tell"));
+    assert!(!s.text(&["--last", "--project", "ledger"]).contains("Couldn't tell"));
+    let v: Value = serde_json::from_slice(&s.run(&["--project", "ledger", "--json"]).stdout).unwrap();
+    assert_eq!(v["note"], first);
+    assert_eq!(v["text"].as_str().unwrap(), rest);
+}
+
+// The chat's own model is on the Models line, first.
+#[test]
+fn the_models_line_names_the_chat_model_first() {
+    let s = Scratch::new();
+    let t = s.text(&["--session", S1]);
+    let models = t.lines().find(|l| l.starts_with("Models: ")).unwrap();
+    assert!(models.contains(" (chat), "), "{models}");
+}

@@ -50,8 +50,8 @@ pub struct ThemesToolArgs {
 #[schemars(crate = "rmcp::schemars")]
 #[serde(rename_all = "camelCase")]
 pub struct DebriefToolArgs {
-    /// The chat's session id (the id of this conversation, or any past chat).
-    pub session_id: String,
+    /// The chat's session id. Leave it out when you do not know it: the answer is then the newest chat that used helpers, and its first line says which chat that is.
+    pub session_id: Option<String>,
     /// Only what happened at or after this time: an ISO time (2026-11-09T14:00:00Z), a day, or epoch milliseconds. Default: the start of the chat.
     pub since: Option<String>,
     /// low (default: at most 10 lines) or high (at most 40 lines, one line per helper).
@@ -124,7 +124,7 @@ impl AtlasServer {
 
     #[tool(
         name = "get_run_debrief",
-        description = "A short plain-words debrief of what one chat's helpers did: how long the run took, how many helpers and how they ended, the models and reasoning efforts, what the reviewers said (passed, asked for changes, sent back), tokens, anything still open and what reviewers caught. Facts only, a few lines: fold them into the report you are writing, in the user's own style and length. The same text as `atlas-usage debrief`. Detail high adds one line per helper. Read-only. The first call may take a while while Atlas reads the chats.",
+        description = "A short plain-words debrief of what one chat's helpers did (sessionId is optional: left out, it is the newest chat that used helpers, and the first line of the answer says which chat it picked; keep that line when you pass the facts on): how long the run took, how many helpers and how they ended, the models and reasoning efforts, what the reviewers said (passed, asked for changes, sent back), tokens, anything still open and what reviewers caught. Facts only, a few lines: fold them into the report you are writing, in the user's own style and length. The same text as `atlas-usage debrief`. Detail high adds one line per helper. Read-only. The first call may take a while while Atlas reads the chats.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn get_run_debrief(&self, Parameters(a): Parameters<DebriefToolArgs>) -> Result<CallToolResult, ErrorData> {
@@ -137,12 +137,29 @@ impl AtlasServer {
             Ok(s) => s,
             Err(e) => return Ok(fail(e)),
         };
-        let args = DebriefArgs { session_id: a.session_id.trim().to_string(), since };
         let opts = Options { high, cost: a.include_cost.unwrap_or(false) };
+        let given = a.session_id.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
         let usage = Arc::clone(&self.usage);
-        let r = tokio::task::spawn_blocking(move || usage.debrief(&args)).await;
+        let r = tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
+            // No id: the newest chat with helpers, named in the first line of the answer.
+            let (id, note) = match given {
+                Some(id) => (id, None),
+                None => match usage.newest_chat()? {
+                    Some((id, line)) => (id, Some(line)),
+                    None => return Ok(None),
+                },
+            };
+            Ok(usage.debrief(&DebriefArgs { session_id: id, since })?.map(|d| {
+                let t = debrief_text::render(&d, &opts);
+                match note {
+                    Some(n) => format!("{n}\n{t}"),
+                    None => t,
+                }
+            }))
+        })
+        .await;
         Ok(match r {
-            Ok(Ok(Some(d))) => text(debrief_text::render(&d, &opts)),
+            Ok(Ok(Some(t))) => text(t),
             Ok(Ok(None)) => fail("No chat with that id."),
             Ok(Err(e)) => fail(e),
             Err(_) => fail(BUSY),

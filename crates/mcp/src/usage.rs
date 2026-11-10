@@ -80,6 +80,16 @@ impl Usage {
         self.ready()?.run_debrief(a)
     }
 
+    /// The chat to debrief when the caller does not know its own id: the newest one that used
+    /// helpers (else the newest chat), in any project, with the plain line that says which chat it is.
+    pub fn newest_chat(&self) -> Result<Option<(String, String)>, String> {
+        let engine = self.ready()?;
+        let q: atlas_core::usage::query::SessionQuery = serde_json::from_value(json!({ "sort": "start", "dir": "desc", "limit": 100 })).map_err(|e| e.to_string())?;
+        let rows = engine.sessions_list(&q)?.rows;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+        Ok(atlas_core::usage::debrief_text::pick_newest(&rows).map(|(row, has_helpers)| (row.session_id.clone(), atlas_core::usage::debrief_text::fallback_line(row, has_helpers, now))))
+    }
+
     /// `period`: today | yesterday | 7d | 30d | month | all. `project`: part of a project name.
     pub fn summary(&self, period: &str, project: Option<&str>) -> Result<Value, String> {
         let engine = self.ready()?;

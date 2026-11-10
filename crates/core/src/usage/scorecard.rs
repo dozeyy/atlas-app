@@ -723,7 +723,7 @@ pub fn agent_scorecard(conn: &Connection, ctx: &QueryCtx, a: &ScorecardArgs) -> 
                     headless: r.headless(),
                     project_key: r.project_key.clone(),
                     project: super::query::base_name(&r.project_path),
-                    worktree_branch: r.worktree_branch.clone(),
+                    worktree_branch: r.worktree_branch.as_deref().and_then(safe_branch),
                     model: ledger.models.get(&(r.session_id.clone(), r.agent_id.clone())).and_then(|m| top_of(m)),
                 }
             })
@@ -985,6 +985,9 @@ pub struct RunDebrief {
     /// The last line of the chat or any helper in the window.
     pub to_ts: i64,
     pub wall_ms: i64,
+    /// The chat's own most used model and effort in the window (None: it wrote nothing there).
+    #[serde(default)]
+    pub chat_model: Option<ModelUse>,
     pub helpers: Vec<DebriefHelper>,
     pub ends: EndCounts,
     pub reviews: DebriefReviews,
@@ -1006,6 +1009,16 @@ fn goal_of(text: &str) -> Option<String> {
     let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
     let flat: String = line.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
     if crate::search::mask::mask_secrets(&flat).as_ref() != flat {
+        return None;
+    }
+    Some(if flat.chars().count() > GOAL_CHARS { flat.chars().take(GOAL_CHARS - 3).collect::<String>() + "..." } else { flat })
+}
+
+/// A branch name as it may leave Atlas: dropped whole when the secret mask would change it (the same
+/// rule as a goal), one line, cut like a goal.
+fn safe_branch(b: &str) -> Option<String> {
+    let flat: String = b.trim().chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    if flat.is_empty() || crate::search::mask::mask_secrets(&flat).as_ref() != flat {
         return None;
     }
     Some(if flat.chars().count() > GOAL_CHARS { flat.chars().take(GOAL_CHARS - 3).collect::<String>() + "..." } else { flat })
@@ -1037,6 +1050,17 @@ pub fn run_debrief(conn: &Connection, ctx: &QueryCtx, a: &DebriefArgs) -> rusqli
     let all: Vec<Group> = usage.values().flatten().copied().collect();
     let (tokens, cost) = sum_groups(&all);
 
+    // The chat's own thread: its most used model and effort.
+    let chat_model = {
+        let mut st = conn.prepare_cached(
+            "SELECT model, COALESCE(effort, ''), COUNT(*) FROM messages WHERE session_id = ?1 AND agent_id IS NULL AND ts_utc_ms >= ?2 AND model <> '' GROUP BY 1, 2",
+        )?;
+        let rows: Vec<(String, String, u32)> = st
+            .query_map(params![sid, from], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?.max(0) as u32)))?
+            .collect::<rusqlite::Result<_>>()?;
+        top_of(&rows)
+    };
+
     let ledger = load_ledger(conn)?;
     let runs: Vec<&RunRec> = ledger.runs.iter().filter(|r| r.session_id == sid && !r.agent_id.is_empty() && r.first_ts >= from).collect();
     let mut goals: HashMap<String, String> = HashMap::new();
@@ -1061,7 +1085,7 @@ pub fn run_debrief(conn: &Connection, ctx: &QueryCtx, a: &DebriefArgs) -> rusqli
         tokens: usage.get(&r.agent_id).map_or(0, |g| sum_groups(g).0.total),
         model: ledger.models.get(&(r.session_id.clone(), r.agent_id.clone())).and_then(|m| top_of(m)),
         goal: goals.get(&r.agent_id).cloned(),
-        worktree_branch: r.worktree_branch.clone(),
+        worktree_branch: r.worktree_branch.as_deref().and_then(safe_branch),
     };
     let helpers: Vec<DebriefHelper> = {
         let mut v: Vec<DebriefHelper> = runs.iter().map(|r| helper_of(r)).collect();
@@ -1116,6 +1140,7 @@ pub fn run_debrief(conn: &Connection, ctx: &QueryCtx, a: &DebriefArgs) -> rusqli
         from_ts: from,
         to_ts,
         wall_ms: (to_ts - from).max(0),
+        chat_model,
         helpers,
         ends,
         reviews: rv,
@@ -1125,4 +1150,18 @@ pub fn run_debrief(conn: &Connection, ctx: &QueryCtx, a: &DebriefArgs) -> rusqli
         open,
         caught,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_branch;
+
+    #[test]
+    fn a_branch_that_looks_like_a_secret_is_dropped_not_shown() {
+        assert_eq!(safe_branch("worktree-agent-w4branch").as_deref(), Some("worktree-agent-w4branch"));
+        assert_eq!(safe_branch("  feature/parser  ").as_deref(), Some("feature/parser"));
+        assert_eq!(safe_branch("fix-sk-ant-api03-AbCdEf0123456789xyzXYZ"), None);
+        assert_eq!(safe_branch("ghp_abcdefghijklmnop1234567890ABCD"), None);
+        assert_eq!(safe_branch(""), None);
+    }
 }

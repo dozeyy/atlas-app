@@ -144,6 +144,8 @@ fn the_three_tools_are_listed_read_only_in_both_modes() {
             assert_eq!(t["annotations"]["readOnlyHint"], true, "{name}");
             assert_eq!(t["annotations"]["openWorldHint"], false, "{name}");
             assert!(t["description"].as_str().unwrap().contains("Read-only"), "{name}");
+            let required = t["inputSchema"]["required"].as_array().map_or(0, |r| r.len());
+            assert_eq!(required, 0, "{name} needs no argument");
         }
         assert!(tools.iter().any(|t| t["name"] == "find_repeated_requests"), "the other tools are still there");
     }
@@ -181,6 +183,14 @@ fn get_run_debrief_returns_the_same_text_as_the_cli_and_writes_nothing() {
 
     let (err, _, none) = c.call("get_run_debrief", json!({"sessionId": S2}));
     assert!(!err && none.lines().any(|l| l == "Helpers: none"), "{none}");
+
+    // No session id (a model cannot know its own): the newest chat that used helpers, and the first
+    // line says which chat it picked.
+    let (err, _, picked) = c.call("get_run_debrief", json!({}));
+    assert!(!err, "{picked}");
+    let (first, rest) = picked.split_once('\n').unwrap();
+    assert!(first.starts_with("Couldn't tell which chat this is, so this is the newest chat with helpers: ") && first.ends_with(" ago)."), "{first}");
+    assert_eq!(rest, want("debrief-ledger-s1-low.txt"));
 
     // Nothing in the Claude folder changed: same files, sizes and modified times, folders included.
     drop(c);

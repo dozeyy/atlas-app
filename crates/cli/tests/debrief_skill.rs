@@ -63,6 +63,9 @@ fn it_only_runs_the_debrief_through_the_launcher_and_only_when_asked() {
     assert!(body.contains("Never impose a format") && body.contains("terse user"), "style rules");
     assert!(body.contains("only if the report already has headed sections"), "no Atlas heading by default");
     assert!(body.contains("too old for the debrief"), "the old-program line");
+    // The picked-chat line is kept, and any other failure is one sentence with no retry.
+    assert!(body.contains("Couldn't tell which chat this is") && body.contains("keep that line, word for word"), "the fallback line is kept");
+    assert!(body.contains("Any other error") && body.contains("Don't retry"), "one sentence on any other failure");
 }
 
 fn dir_has_launcher() -> bool {

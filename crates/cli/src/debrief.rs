@@ -22,7 +22,7 @@ USAGE
   atlas-usage debrief [--session ID | --last] [--since TIME] [--detail low|high] [--cost] [--json]
 
   --session ID     the chat to debrief (default: $CLAUDE_CODE_SESSION_ID, else the newest chat in
-                   this folder's project that used helpers, which the program says on stderr)
+                   this folder's project that used helpers, named in a first line of the output)
   --last           the newest chat in this folder's project that used helpers (else the newest chat)
   --since TIME     only what happened at or after TIME: an ISO time (2026-11-09T14:00:00Z), a day
                    (2026-11-09) or epoch milliseconds. Default: the start of the chat.
@@ -103,23 +103,28 @@ pub fn run(args: Vec<String>) -> Result<Option<String>, Failure> {
     out.map(Some)
 }
 
-/// The newest chat of this folder's project that used helpers, else the newest chat there.
+/// The newest chat of this folder's project that used helpers, else the newest chat there, with
+/// the plain line that says which chat it is.
 fn newest(ctx: &Ctx, project: Option<&str>) -> Result<(String, String), String> {
     let (key, name, _) = resolve_project(ctx, project)?;
     let q: SessionQuery = serde_json::from_value(json!({ "projects": [key], "sort": "start", "dir": "desc", "limit": 40 })).map_err(|e| e.to_string())?;
     let rows = ctx.engine.sessions_list(&q)?.rows;
-    let pick = rows.iter().find(|r| r.agent_count > 0).or_else(|| rows.first()).ok_or_else(|| format!("no chats recorded for {name}"))?;
-    Ok((pick.session_id.clone(), name))
+    let (row, has_helpers) = debrief_text::pick_newest(&rows).ok_or_else(|| format!("no chats recorded for {name}"))?;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+    Ok((row.session_id.clone(), debrief_text::fallback_line(row, has_helpers, now)))
 }
 
 fn debrief(ctx: &Ctx, o: &Opts) -> Result<String, Failure> {
     let given = if o.last { None } else { real_id(o.session.clone()).or_else(|| real_id(std::env::var("CLAUDE_CODE_SESSION_ID").ok())) };
+    // When the chat was picked, not given, the answer starts with one plain line that says which
+    // chat it is (on stdout: that is what the caller reads). `--last` asked for the newest, so no line.
+    let mut note: Option<String> = None;
     let id = match given {
         Some(id) => id,
         None => {
-            let (id, project) = newest(ctx, o.project.as_deref()).map_err(|e| fail(e, 1))?;
+            let (id, line) = newest(ctx, o.project.as_deref()).map_err(|e| fail(e, 1))?;
             if !o.last {
-                eprintln!("atlas-usage: no session id was given, so this is the newest chat in {project} that used helpers.");
+                note = Some(line);
             }
             id
         }
@@ -131,9 +136,12 @@ fn debrief(ctx: &Ctx, o: &Opts) -> Result<String, Failure> {
         .ok_or_else(|| fail("No chat with that id.", 2))?;
     let text = debrief_text::render(&d, &Options { high: o.high, cost: o.cost });
     if !o.json {
-        return Ok(text);
+        return Ok(match note {
+            Some(n) => format!("{n}\n{text}"),
+            None => text,
+        });
     }
-    let v = json!({ "kind": "debrief", "detail": if o.high { "high" } else { "low" }, "text": text, "debrief": d, "costIsEstimate": true });
+    let v = json!({ "kind": "debrief", "detail": if o.high { "high" } else { "low" }, "text": text, "note": note, "debrief": d, "costIsEstimate": true });
     serde_json::to_string_pretty(&v).map_err(|e| fail(e.to_string(), 1))
 }
 

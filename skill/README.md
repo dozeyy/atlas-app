@@ -149,6 +149,8 @@ It needs only this plugin. The same text is available by hand and, with the Atla
 connector, from the `get_run_debrief` tool (plus `get_agent_scorecard` and `get_review_themes`):
 
 ```
+atlas-usage debrief                            # this chat ($CLAUDE_CODE_SESSION_ID); if unknown, the newest
+                                               # chat that used helpers, named in a first line
 atlas-usage debrief --last                     # the newest chat in this folder that used helpers
 atlas-usage debrief --session <id> --detail high   # one line per helper
 atlas-usage debrief --since 2026-11-09T14:00:00Z   # only what happened after that time

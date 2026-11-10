@@ -13,6 +13,7 @@
 
 use std::collections::BTreeMap;
 
+use super::query::SessionRow;
 use super::scorecard::{DebriefHelper, RunDebrief};
 
 pub const LOW_LINES: usize = 10;
@@ -53,7 +54,7 @@ pub fn render(d: &RunDebrief, o: &Options) -> String {
     // (name, text); the name decides what is dropped first when the text is too long.
     let mut lines: Vec<(&'static str, String)> = vec![("Ran", format!("Ran: {}", duration(d.wall_ms))), ("Helpers", helpers_line(d))];
     if !d.helpers.is_empty() {
-        lines.extend(models_line(&d.helpers).map(|t| ("Models", t)));
+        lines.extend(models_line(d).map(|t| ("Models", t)));
         lines.extend(reviews_line(d).map(|t| ("Reviews", t)));
     }
     lines.push(("Tokens", tokens_line(d, o.cost)));
@@ -105,6 +106,35 @@ pub fn render(d: &RunDebrief, o: &Options) -> String {
     text
 }
 
+// ---------------------------------------------------------------- which chat
+
+/// The chat a debrief falls back to when nobody said which: the newest one that used helpers,
+/// else the newest chat. `rows` are newest first. The flag is true when it has helpers.
+pub fn pick_newest(rows: &[SessionRow]) -> Option<(&SessionRow, bool)> {
+    rows.iter().find(|r| r.agent_count > 0).map(|r| (r, true)).or_else(|| rows.first().map(|r| (r, false)))
+}
+
+/// The one plain line that goes first in the answer when the chat was picked, not given. A title the
+/// secret mask would change is replaced by "Session in <project>".
+pub fn fallback_line(row: &SessionRow, has_helpers: bool, now_ms: i64) -> String {
+    let named = row.name.as_deref().map(|n| clean(n, 60)).filter(|n| !n.is_empty() && crate::search::mask::mask_secrets(n).as_ref() == n.as_str());
+    let title = named.unwrap_or_else(|| format!("Session in {}", clean(&row.project_name, 40)));
+    let which = if has_helpers { "the newest chat with helpers" } else { "the newest chat" };
+    format!("Couldn't tell which chat this is, so this is {which}: {title} ({}).", ago(now_ms - row.ended_at))
+}
+
+/// "just now", "5 minutes ago", "3 hours ago", "2 days ago".
+pub fn ago(ms: i64) -> String {
+    let s = ms.max(0) / 1000;
+    let (n, unit) = match s {
+        0..=59 => return "just now".into(),
+        60..=3599 => (s / 60, "minute"),
+        3600..=86_399 => (s / 3600, "hour"),
+        _ => (s / 86_400, "day"),
+    };
+    format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" })
+}
+
 // ---------------------------------------------------------------- lines
 
 /// Types by helper count, most first, then by name.
@@ -136,24 +166,27 @@ fn helpers_line(d: &RunDebrief) -> String {
     format!("Helpers: {} ({}): {}.", d.helpers.len(), parts.join(", "), ends.join(", "))
 }
 
-fn models_line(helpers: &[DebriefHelper]) -> Option<String> {
+/// The chat's own model first (marked "chat"), then the helpers' most used combinations, so this
+/// line and the Tokens line describe the same work.
+fn models_line(d: &RunDebrief) -> Option<String> {
     let mut by: BTreeMap<(String, String), usize> = BTreeMap::new();
-    for h in helpers {
+    for h in &d.helpers {
         if let Some(m) = &h.model {
             *by.entry((m.model_name.clone(), m.effort.clone().unwrap_or_default())).or_default() += 1;
         }
     }
-    if by.is_empty() {
-        return None;
-    }
     let mut v: Vec<((String, String), usize)> = by.into_iter().collect();
     v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     let name = |(m, e): &(String, String)| if e.is_empty() { clean(m, 24) } else { format!("{} {}", clean(m, 24), clean(e, 12)) };
-    let mut parts: Vec<String> = v.iter().take(3).map(|(k, n)| format!("{} ({n})", name(k))).collect();
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(m) = &d.chat_model {
+        parts.push(format!("{} (chat)", name(&(m.model_name.clone(), m.effort.clone().unwrap_or_default()))));
+    }
+    parts.extend(v.iter().take(3).map(|(k, n)| format!("{} ({n})", name(k))));
     if v.len() > 3 {
         parts.push(format!("and {} more", v.len() - 3));
     }
-    Some(format!("Models: {}", parts.join(", ")))
+    (!parts.is_empty()).then(|| format!("Models: {}", parts.join(", ")))
 }
 
 fn reviews_line(d: &RunDebrief) -> Option<String> {
@@ -378,6 +411,7 @@ mod tests {
             from_ts: 0,
             to_ts: 4_320_000,
             wall_ms: 4_320_000,
+            chat_model: None,
             ends: EndCounts { finished: helpers.len() as u32, ..Default::default() },
             helpers,
             reviews: DebriefReviews::default(),
@@ -451,6 +485,43 @@ mod tests {
         assert_eq!(high.lines().filter(|l| l.starts_with("- ")).count(), 3, "{high}");
         assert!(high.contains("- code-reviewer \"goal number 1\": finished, asked for changes (FIX-REQUIRED), 12.3k tokens, 2m, Sonnet 5.5 high"), "{high}");
         assert!(high.contains(", passed, "), "{high}");
+    }
+
+    #[test]
+    fn models_name_the_chat_first() {
+        let mut d = debrief((1..=2).map(|i| helper(i, "coder")).collect());
+        d.chat_model = Some(ModelUse { model: "claude-opus-5-5".into(), model_name: "Opus 5.5".into(), effort: Some("high".into()), messages: 9, runs: 1 });
+        let t = render(&d, &Options::default());
+        assert!(t.contains("\nModels: Opus 5.5 high (chat), Sonnet 5.5 high (2)\n"), "{t}");
+    }
+
+    #[test]
+    fn the_fallback_line_names_the_chat_and_how_old_it_is() {
+        let mut row = SessionRow {
+            session_id: "s".into(),
+            title: None,
+            name: Some("Fix the parser".into()),
+            name_source: "title".into(),
+            agent_count: 3,
+            project_name: "ledger".into(),
+            project_path: "/p".into(),
+            started_at: 0,
+            ended_at: 1_000_000,
+            duration_ms: 0,
+            models: Vec::new(),
+            main_model: String::new(),
+            efforts: Vec::new(),
+            messages: 0,
+            subagent_messages: 0,
+            tokens: Tokens::default(),
+            cost: Cost::default(),
+            missing: false,
+        };
+        let now = 1_000_000 + 2 * 3_600_000;
+        assert_eq!(fallback_line(&row, true, now), "Couldn't tell which chat this is, so this is the newest chat with helpers: Fix the parser (2 hours ago).");
+        row.name = None;
+        assert_eq!(fallback_line(&row, false, 1_000_000 + 30_000), "Couldn't tell which chat this is, so this is the newest chat: Session in ledger (just now).");
+        assert_eq!((ago(60_000), ago(86_400_000 * 3)), ("1 minute ago".to_string(), "3 days ago".to_string()));
     }
 
     #[test]
