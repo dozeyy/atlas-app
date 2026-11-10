@@ -75,10 +75,70 @@ code,
   user-select: text;
 }
 
+/* ---- Code text: the one class ---------------------------------------------------------------
+   Anything set in the code face (a command, a path, a key name, a file's raw text) uses
+   `.code-text` (or its older name `.mono`, or a <code> element): the code face at the ramp's
+   caption size and ALWAYS weight 400. Outside a layer on purpose, so a bold parent (a heading, a
+   row title, a button) or a `font-semibold` class next to it can never make code read heavy.
+   Do not write `font-mono` by hand: it takes its parent's weight and size. An exact value (an id,
+   a commit, a full path) belongs behind Details or a hover, not on the surface. */
+.code-text,
 .mono,
-code {
+code,
+pre {
   font-family: var(--font-code);
   font-size: 12px;
+  font-weight: 400;
+  font-variation-settings: normal;
+  letter-spacing: 0;
+}
+.code-text {
+  line-height: 16px;
+}
+
+/* ---- Headings: the rule ---------------------------------------------------------------------
+   A page has ONE title and at most two heading levels under it. Nothing else is a heading.
+
+   Page title   <h1>. A top-level page (Dashboard, Sessions, Toolkit...) is already named by the
+                sidebar, so its h1 is `PageTitle` (read out, not drawn). A page you drill into (one
+                chat, one helper, one Toolkit list) draws it: `.h-page`, Recursive 24/28, weight
+                720. It is the only Recursive heading on a page; 24 px above it comes from the
+                page's own padding, 16 px below it before the first block.
+   Section      <h2 class="h-section">. Names a card, a pane, a dialog section, an empty state:
+                the system face, 16/24, weight 600, ink. 12 px below it to its content; 24 px
+                above it when it follows another block (the card's own padding when it is the
+                first thing in a card).
+   Group        <h3 class="h-sub">. A label over a group inside a section (a settings group, a
+                list of keys): the system face, 12/16, weight 600, ink-2, sentence case, never
+                capitals. 8 px below it; 16 px above it when it follows another group.
+
+   Recursive (`.d`) is for the page title and for figures (a count, a total, a date as a headline
+   number). Never for a section or group heading, body, buttons, nav, inputs, tables or code.
+   In the components layer, so a page can still add colour or truncation with a utility class. */
+@layer components {
+.h-page {
+  font-family: var(--font-display);
+  font-variation-settings: var(--display-axes);
+  font-size: 24px;
+  line-height: 28px;
+  font-weight: 720;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.h-section {
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.h-sub {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
 }
 
 /* In the base layer on purpose. Outside a layer this reset beat every colour, weight and size
