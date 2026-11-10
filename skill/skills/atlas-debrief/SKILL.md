@@ -28,7 +28,7 @@ newest chat itself: keep that line, word for word, before the facts.
 
 ## Say it in their style
 
-Fold the facts into the report you are already writing, the way the user likes reports.
+Answer with these facts, the way the user likes reports.
 Never impose a format.
 
 - A terse user gets one or two lines. A detailed user gets a short section.
