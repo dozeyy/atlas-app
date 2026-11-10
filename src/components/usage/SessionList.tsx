@@ -46,6 +46,9 @@ const DOT = (
   </span>
 );
 
+/** A project name past this many characters is the first thing on the meta line to shorten. */
+const LONG_PROJECT = 14;
+
 /** The row's model hover: the exact id, then the effort mix when one was recorded. */
 function effortTitle(row: SessionRow): string {
   const mix = effortMix(row.efforts);
@@ -87,10 +90,16 @@ export function SessionLine({
   return (
     <li className="row-in" style={{ ["--i" as string]: index }}>
       <button type="button" onClick={() => onOpen(row.sessionId)} className="row-btn flex-col justify-center px-5 py-3.5">
-        <span className={`block w-full truncate text-lead font-bold ${row.name ? "text-ink" : "text-ink-2"}`}>{name}</span>
-        {/* One quiet line that never wraps. When it is tight the project name gives way (ellipsis); the tokens, helpers and date stay whole. */}
+        <span title={name} className={`block w-full truncate text-lead font-bold ${row.name ? "text-ink" : "text-ink-2"}`}>
+          {name}
+        </span>
+        {/* One quiet line that never wraps. When it is tight the project name gives way (ellipsis); the tokens, helpers and date stay whole.
+            A long project name gives way first, down to a short stub, so the model after it is not the one cut. */}
         <span className="mt-1 flex w-full min-w-0 items-baseline truncate text-caption text-ink-2">
-          <span className="min-w-0 truncate">
+          <span
+            data-tip={row.projectPath || row.projectName}
+            className={`truncate ${row.projectName.length > LONG_PROJECT ? "min-w-24 shrink-[99]" : "min-w-0"}`}
+          >
             <ProjectDot path={row.projectPath || row.projectName} />
             {row.projectName}
           </span>

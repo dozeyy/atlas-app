@@ -888,6 +888,19 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   line-height: 16px;
   color: var(--ink-2);
 }
+.pick-main > .pick-meta {
+  display: flex;
+  align-items: baseline;
+}
+.pick-meta > * {
+  flex: none;
+}
+.pick-meta > .pick-proj {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .pick-meta > i {
   margin: 0 6px;
   font-style: normal;

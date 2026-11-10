@@ -186,6 +186,23 @@ describe("Sessions: the first view", () => {
     expect(bands[0].querySelectorAll(".session-grid > li").length).toBeGreaterThan(0);
   });
 
+  it("leaves no stale rows behind when the order goes to Most tokens and back to Newest first", async () => {
+    mount();
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    const rows = () => document.querySelectorAll(".session-grid > li").length;
+    const before = rows();
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Newest first" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Most tokens" }));
+    await waitFor(() => expect(document.querySelectorAll(".day-section").length).toBe(0));
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Most tokens" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Newest first" }));
+    await screen.findByRole("region", { name: "Pick up where you left off" });
+    // Every day has one band and every chat one row: the page on screen is always laid out in its own order.
+    const days = [...document.querySelectorAll(".day-name")].map((d) => d.textContent);
+    expect(new Set(days).size).toBe(days.length);
+    expect(rows()).toBe(before);
+  });
+
   it("drops the card as soon as a search narrows the list", async () => {
     mount();
     await screen.findByRole("region", { name: "Pick up where you left off" });

@@ -16,6 +16,8 @@ import type { SessionRow } from "../../lib/types";
 
 const W = 144;
 const H = 30;
+/** Steps closer together than this share of the tallest read as a flat line, not a shape. */
+const FLAT = 0.08;
 
 /**
  * The newest chat as a card above the list: what it was, how big, how long ago, and the shape of
@@ -31,20 +33,29 @@ export function PickUp({ row, onOpen }: { row: SessionRow; onOpen: (id: string) 
     () => timelineBars(detail.data?.timeline ?? [], row.durationMs).map((b) => b.value),
     [detail.data, row.durationMs],
   );
-  // A trace needs a few steps to say anything; with fewer, only the floor is drawn. It is smoothed
+  // A trace needs a few steps that differ to say anything. A chat that is too short, or one whose
+  // steps are all alike, would draw a flat slab, so its space stays clear. The trace is smoothed
   // monotonically, so it never dips below its baseline.
   const shape = useMemo(() => sparkShape(values, W, H), [values]);
-  const trace = values.length >= 3 && !shape.empty;
+  const hi = Math.max(0, ...values);
+  const lo = values.length ? Math.min(...values) : 0;
+  const trace = values.length >= 3 && !shape.empty && hi - lo >= hi * FLAT;
   const color = `var(--chart-${projectTone(row.projectPath || row.projectName)})`;
+  const name = sessionName(row);
 
   return (
     <section aria-label="Pick up where you left off" className="pick card">
       <button type="button" className="pick-main row-btn" onClick={() => onOpen(row.sessionId)}>
         <span className="pick-kicker">Pick up where you left off</span>
-        <span className="pick-title">{sessionName(row)}</span>
+        <span className="pick-title" title={name}>
+          {name}
+        </span>
+        {/* When it is tight the project name gives way (ellipsis); the tokens, helpers and date stay whole, as in the rows. */}
         <span className="pick-meta">
-          <ProjectDot path={row.projectPath || row.projectName} />
-          {row.projectName}
+          <span className="pick-proj" title={row.projectPath || row.projectName}>
+            <ProjectDot path={row.projectPath || row.projectName} />
+            {row.projectName}
+          </span>
           <i aria-hidden="true">&middot;</i>
           <TokenText tokens={row.tokens.total} cost={row.cost} className="font-semibold text-ink" />
           {row.agentCount > 0 && (
@@ -54,14 +65,14 @@ export function PickUp({ row, onOpen }: { row: SessionRow; onOpen: (id: string) 
             </>
           )}
           <i aria-hidden="true">&middot;</i>
-          {formatWhen(row.startedAt)}
+          <span>{formatWhen(row.startedAt)}</span>
         </span>
       </button>
       <svg aria-hidden="true" focusable="false" width={W} height={H} className="pick-strip chart">
-        <title>Tokens through the chat</title>
-        <line x1="0" x2={W} y1={shape.baseline} y2={shape.baseline} className="today-base" />
         {trace && (
           <>
+            <title>Tokens through the chat</title>
+            <line x1="0" x2={W} y1={shape.baseline} y2={shape.baseline} className="today-base" />
             <path d={shape.area} fill={color} opacity={0.16} />
             <path d={shape.line} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
             {shape.last && <circle cx={shape.last[0]} cy={shape.last[1]} r={2} fill={color} />}

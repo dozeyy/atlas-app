@@ -32,6 +32,12 @@ const SORTS = {
 } as const;
 type SortKey = keyof typeof SORTS;
 const SORT_CHOICES = (Object.keys(SORTS) as SortKey[]).map((value) => ({ value, label: SORTS[value].label }));
+/**
+ * The order each loaded page came back in. While a new order is on its way the old page stays on
+ * screen, and it has to be laid out by its own order: day bands over a page sorted by tokens repeat
+ * the same day, and rows get left behind.
+ */
+const pageOrder = new WeakMap<SessionPage, SortKey>();
 
 const SPANS = [
   { value: "all", label: "All time", days: 0 },
@@ -108,7 +114,14 @@ export function Sessions() {
     };
   }, [titleQ, chat.ids, project, model, span, sortKey]);
 
-  const first = useFetched(() => backend.sessionsList(query), [JSON.stringify(query), info.config?.projectsDir ?? null]);
+  const first = useFetched(
+    () =>
+      backend.sessionsList(query).then((p) => {
+        pageOrder.set(p, sortKey);
+        return p;
+      }),
+    [JSON.stringify(query), info.config?.projectsDir ?? null],
+  );
   useLiveReload(first.reload);
 
   // Every chat there is: the "of N" in the count when the list is narrowed.
@@ -161,9 +174,10 @@ export function Sessions() {
   const note = typed.length >= 2 ? searchNote(chat) : null;
 
   // The newest chat gets a card of its own, but only on the plain newest-first list.
-  const pick = !filtered && sortKey === "newest" && first.data && rows.length > 0 ? rows[0] : null;
+  const shownSort = (first.data && pageOrder.get(first.data)) ?? sortKey;
+  const pick = !filtered && shownSort === "newest" && first.data && rows.length > 0 ? rows[0] : null;
   // Time-ordered lists fall under a band per day; the other orders stay one flat list.
-  const byTime = SORTS[sortKey].sort === "started";
+  const byTime = SORTS[shownSort].sort === "started";
   const groups = byTime ? groupByDay(rows, new Date()) : [];
   const maxRow = Math.max(0, ...rows.map((r) => r.tokens.total));
   const maxDay = Math.max(0, ...groups.filter((_, gi) => !(gi === groups.length - 1 && cursor !== null)).map((g) => g.tokens));
@@ -275,9 +289,15 @@ export function Sessions() {
             seed={11}
             className="min-h-[max(320px,calc(var(--app-h)-14.5rem))]"
             title="No chats match"
-            body="Nothing fits the search and filters you set. Loosen them or start again."
+            body={
+              typed && changed > 0
+                ? "Nothing fits the search and filters you set. Loosen them or start again."
+                : typed
+                  ? "Nothing fits what you typed. Try fewer words."
+                  : "Nothing fits the filters you set. Loosen them or start again."
+            }
           >
-            <Button onClick={clear}>Clear filters</Button>
+            <Button onClick={clear}>{typed && changed > 0 ? "Clear search and filters" : typed ? "Clear search" : "Clear filters"}</Button>
           </EmptyState>
         ) : total === 0 ? (
           <EmptyState
@@ -336,7 +356,7 @@ export function Sessions() {
                 <Button onClick={loadMore} disabled={busy}>
                   {busy ? "Loading..." : "Show more"}
                 </Button>
-                <span className="text-caption text-ink-2">{`Showing ${rows.length} of ${total}`}</span>
+                <span className="text-caption text-ink-2">{`Showing ${exact(rows.length)} of ${exact(total)}`}</span>
                 {moreError && (
                   <span role="alert" className="text-caption text-danger">
                     {moreError}
