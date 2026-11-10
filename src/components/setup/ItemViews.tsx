@@ -5,7 +5,7 @@ import { pushToast } from "../../state/toastStore";
 import type { KeyboardEvent } from "react";
 import { KIND_BY_ID, relativeTime } from "../../lib/setup-model";
 import type { SetupItem } from "../../lib/setup-types";
-import { ConflictChip, copyText, KindTile, ScopeChip, SecretsChip, StateChip, TagChip, WarningMark } from "./parts";
+import { ConflictChip, copyText, formatDate, KindTile, ScopeChip, SecretsChip, StateChip, TagChip, WarningMark } from "./parts";
 import { useItemCost } from "./CostContext";
 
 interface ItemProps {
@@ -81,11 +81,15 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
         <KindTile kind={item.kind} />
         <span className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span className="flex items-start justify-between gap-2 pr-6">
-            <span className="truncate text-body font-semibold text-ink">{item.name}</span>
+            <span title={item.name} className="truncate text-body font-semibold text-ink">
+              {item.name}
+            </span>
             {showState ? <StateChip enabled={item.enabled} /> : null}
           </span>
           {item.description ? (
-            <span className="line-clamp-2 text-body text-ink-2">{item.description}</span>
+            <span title={item.description} className="line-clamp-2 text-body text-ink-2">
+              {item.description}
+            </span>
           ) : (
             <span className="text-body text-ink-2 opacity-70">No description</span>
           )}
@@ -103,7 +107,11 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, onDelete }: ItemP
             {item.conflict && <ConflictChip conflict={item.conflict} />}
             {item.hasSecrets && <SecretsChip />}
             <WarningMark warnings={item.warnings} />
-            {item.modifiedMs ? <span className="ml-auto text-caption text-ink-2">{relativeTime(item.modifiedMs)}</span> : null}
+            {item.modifiedMs ? (
+              <span title={`Last changed ${formatDate(item.modifiedMs)}`} className="ml-auto text-caption text-ink-2">
+                {relativeTime(item.modifiedMs)}
+              </span>
+            ) : null}
           </span>
         </span>
       </Card>
@@ -129,12 +137,20 @@ export const ItemRow = memo(function ItemRow({ item, onOpen, mono }: ItemProps &
       aria-label={`${KIND_BY_ID[item.kind].singular} ${item.name}, ${item.scopeLabel}`}
       className="flex min-h-9 w-full cursor-pointer items-center gap-3 border-b border-line px-4 py-1.5 text-left transition-colors duration-[var(--dur-fast)] [contain-intrinsic-size:auto_36px] [content-visibility:auto] last:border-b-0 hover:bg-raised active:bg-raised"
     >
-      <span className={`min-w-0 flex-1 truncate text-body text-ink ${mono ? "mono" : "font-medium"}`}>{item.name}</span>
-      {item.description && <span className="hidden max-w-[34%] truncate text-caption text-ink-2 md:block">{item.description}</span>}
-      {item.usedBy !== null && (
+      <span title={item.name} className={`min-w-0 flex-1 truncate text-body text-ink ${mono ? "mono" : "font-medium"}`}>
+        {item.name}
+      </span>
+      {/* A counted row (a hook script) says how many hooks use it once, in words; its description is the same count. */}
+      {item.usedBy !== null ? (
         <span className="shrink-0 text-caption text-ink-2">
-          {item.usedBy === 0 ? "Not used" : `Used by ${item.usedBy}`}
+          {item.usedBy === 0 ? "Not used by any hook" : `Used by ${item.usedBy} ${item.usedBy === 1 ? "hook" : "hooks"}`}
         </span>
+      ) : (
+        item.description && (
+          <span title={item.description} className="hidden max-w-[34%] truncate text-caption text-ink-2 md:block">
+            {item.description}
+          </span>
+        )
       )}
       {cost && (
         <span data-item-cost title={cost.hover} className="shrink-0 text-caption text-ink-2">

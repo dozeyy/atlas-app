@@ -77,8 +77,10 @@ export function GroupBody({
       <>
         {permissionBuckets(items).map((b) => (
           <div key={b.id} className="mb-4 last:mb-0">
-            <h3 className="mb-2 text-body font-medium text-ink-2">
-              {BUCKET_TITLE[b.id]} <span className="font-normal">({b.items.length})</span>
+            {/* Same small heading as a place ("Global 3"): name, then the count. */}
+            <h3 className="mb-2 flex items-baseline gap-2 text-body font-medium text-ink-2">
+              {BUCKET_TITLE[b.id]}
+              <span className="font-normal">{b.items.length}</span>
             </h3>
             <Rows items={b.items} onOpen={onOpenItem} mono />
           </div>

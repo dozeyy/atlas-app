@@ -358,6 +358,17 @@ export function tileTitle(id: TileId): string {
   return id === "more" ? "More" : KIND_BY_ID[id].plural;
 }
 
+/** A tile's name as it reads in the middle of a sentence: "skills", "output styles", but "MCP servers". */
+export function tileNoun(id: TileId): string {
+  const t = tileTitle(id);
+  return /^[A-Z]{2}/.test(t) ? t : t.charAt(0).toLowerCase() + t.slice(1);
+}
+
+/** What the search box of an open tile says. The More tile holds several kinds, so it has its own words. */
+export function searchPlaceholder(id: TileId): string {
+  return id === "more" ? "Search everything else" : `Search ${tileNoun(id)}`;
+}
+
 export function tileBlurb(id: TileId): string {
   return id === "more" ? "Settings files, the status line, hook scripts, keybindings and everything else." : KIND_BY_ID[id].blurb;
 }

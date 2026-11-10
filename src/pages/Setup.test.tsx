@@ -68,7 +68,8 @@ async function open(b: Backend) {
 async function openTile(label: string) {
   await userEvent.click(await screen.findByRole("button", { name: new RegExp(`^${label}, \\d+$`) }));
   // A tile has no page header: the search box ("Search skills") is what says which one is open.
-  return screen.findByPlaceholderText(`Search ${label.toLowerCase()}`);
+  // The name reads as in a sentence: lower-case, except a leading acronym ("Search MCP servers").
+  return screen.findByPlaceholderText(`Search ${/^[A-Z]{2}/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1)}`);
 }
 
 async function openTilesReady() {
@@ -134,7 +135,7 @@ describe("Setup page: main view", () => {
       [...root.querySelectorAll<HTMLElement>(".press")].filter((e) => /content-visibility|overflow-hidden|\btruncate\b/.test(e.className)).map((e) => e.getAttribute("aria-label") ?? e.textContent);
     expect(bad(document)).toEqual([]);
     await userEvent.click(await screen.findByRole("button", { name: /^More, \d+$/ }));
-    await screen.findByPlaceholderText("Search more");
+    await screen.findByPlaceholderText("Search everything else");
     expect(bad(document)).toEqual([]);
     await userEvent.click(screen.getByRole("button", { name: "Back to Toolkit" }));
     await userEvent.click(await screen.findByRole("button", { name: /^Skills, \d+$/ }));
