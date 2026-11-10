@@ -119,7 +119,7 @@ function DeleteAsk({ item, onKeep, onGone }: { item: SetupItem; onKeep: (refocus
       role="group"
       aria-label={`Delete ${name}?`}
       data-item-ask
-      className="card item-ask flex h-full min-h-[104px] gap-3 p-3.5"
+      className="card item-ask flex h-full min-h-[104px] gap-3 p-3"
       onKeyDown={(e) => {
         if (e.key !== "Escape") return;
         // The page's own Escape (back to the Toolkit) must not also run.
@@ -133,7 +133,7 @@ function DeleteAsk({ item, onKeep, onGone }: { item: SetupItem; onKeep: (refocus
       }}
     >
       <ItemIcon item={item} />
-      <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <span className="flex min-w-0 flex-1 flex-col gap-2">
         <span title={nameHover(item)} className="truncate text-body font-semibold text-ink">
           Delete {name}?
         </span>
@@ -211,10 +211,10 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, canDelete }: Item
         onKeyDown={(e) => onCopyKey(e, item)}
         aria-label={`${KIND_BY_ID[item.kind].singular} ${displayName(item)}, ${item.scopeLabel}${item.enabled.label ? `, ${item.enabled.label}` : ""}`}
         hitClassName="h-full min-h-[104px]"
-        className="flex min-h-[104px] gap-3 p-3.5"
+        className="flex min-h-[104px] gap-3 p-3"
       >
         <ItemIcon item={item} />
-        <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <span className="flex min-w-0 flex-1 flex-col gap-2">
           <span className="flex items-start justify-between gap-2 pr-6">
             <span title={nameHover(item)} className="truncate text-body font-semibold text-ink">
               {displayName(item)}
@@ -233,7 +233,7 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, canDelete }: Item
               <span className="d d-small text-ink">{cost.figure}</span> {cost.unit}
             </span>
           )}
-          <span className="mt-auto flex flex-wrap items-center gap-1.5 pt-0.5">
+          <span className="mt-auto flex flex-wrap items-center gap-2 pt-0.5">
             <ScopeChip scope={item.scope} label={item.scopeLabel} />
             {shown.map((c) => {
               const { label, title } = chipWords(item, c);
@@ -275,7 +275,7 @@ export const ItemRow = memo(function ItemRow({ item, onOpen, mono }: ItemProps &
       onClick={() => onOpen(item.id)}
       onKeyDown={(e) => onCopyKey(e, item)}
       aria-label={`${KIND_BY_ID[item.kind].singular} ${displayName(item)}, ${item.scopeLabel}`}
-      className="flex min-h-9 w-full cursor-pointer items-center gap-3 border-b border-line px-4 py-1.5 text-left transition-colors duration-[var(--dur-fast)] [contain-intrinsic-size:auto_36px] [content-visibility:auto] last:border-b-0 hover:bg-raised active:bg-raised"
+      className="flex min-h-9 w-full cursor-pointer items-center gap-3 border-b border-line px-4 py-2 text-left transition-colors duration-[var(--dur-fast)] [contain-intrinsic-size:auto_36px] [content-visibility:auto] last:border-b-0 hover:bg-raised active:bg-raised"
     >
       <span title={nameHover(item)} className={`min-w-0 flex-1 truncate text-body text-ink ${mono && displayName(item) === item.name ? "mono" : "font-medium"}`}>
         {displayName(item)}

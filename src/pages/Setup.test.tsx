@@ -340,7 +340,7 @@ describe("Setup page: detail", () => {
     expect(localStorage.getItem(FILE_DETAILS_KEY)).toBe("1");
     localStorage.removeItem(FILE_DETAILS_KEY);
     await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument(), { timeout: 3000 }); // the sheet slides out first (--dur-close)
     expect(card).toHaveFocus();
   });
 

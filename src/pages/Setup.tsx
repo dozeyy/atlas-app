@@ -73,7 +73,7 @@ function MissingProjects({ projects, items, onOpen }: { projects: SetupProject[]
             const mine = byProject.get(p.id) ?? [];
             return (
               <li key={p.id} className="border-b border-line last:border-b-0">
-                <div className="px-4 py-2.5">
+                <div className="px-4 py-2">
                   <div className="text-body font-medium text-ink">{p.name}</div>
                   <div className="selectable text-ink-2">
                     <PathText path={p.path} />

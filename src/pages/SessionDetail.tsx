@@ -84,7 +84,7 @@ function HelperCard({
   const tokens = headline(agent.tokens);
   const frac = share(tokens, sessionTokens);
   const dot = (
-    <span aria-hidden="true" className="mx-1.5 text-ink-2/60">
+    <span aria-hidden="true" className="mx-2 text-ink-2/60">
       &middot;
     </span>
   );
