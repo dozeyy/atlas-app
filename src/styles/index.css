@@ -310,10 +310,10 @@ html[data-input="keyboard"] :focus-within {
   }
 }
 .sheet-enter[data-closing] {
-  animation: sheet-out 180ms var(--ease-out) forwards;
+  animation: sheet-out var(--dur-close) var(--ease-out) forwards;
 }
 .fade-in[data-closing] {
-  animation: fade-out 180ms var(--ease-out) forwards;
+  animation: fade-out var(--dur-close) var(--ease-out) forwards;
 }
 
 /* Dialogs rise in place; the checklist's finish gives one small, warm pop. */
@@ -387,7 +387,7 @@ html[data-input="keyboard"] :focus-within {
   /* Leaving with reduced motion: a short fade in place, no slide. */
   .sheet-enter[data-closing],
   .fade-in[data-closing] {
-    animation: fade-out 120ms var(--ease-out) forwards;
+    animation: fade-out var(--dur-close-reduced) var(--ease-out) forwards;
   }
 }
 html.reduced .pulse-dot,

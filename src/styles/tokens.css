@@ -295,6 +295,10 @@
   --dur-fast: 120ms;
   --dur: 180ms;
   --dur-slow: 250ms;
+  /* A sheet or scrim leaving: the one source for the exit animation (index.css) and for how
+     long useClosing waits before the thing unmounts. */
+  --dur-close: 180ms;
+  --dur-close-reduced: 120ms;
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
   --travel: 8px;
   --press-scale: 0.97;
