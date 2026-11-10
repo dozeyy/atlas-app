@@ -3,11 +3,11 @@
 // (tokens.css); nothing here invents a value.
 
 import type { ComponentType } from "react";
-import { Compass, Eye, Flask, Lightning, MapTrifold, Robot } from "@phosphor-icons/react";
+import { Broom, Bug, ChatCircleText, Compass, Eye, Flask, Gauge, Hammer, Lightning, MapTrifold, Package, PaintBrush, PencilLine, Robot } from "@phosphor-icons/react";
 import type { IconProps } from "@phosphor-icons/react";
 import { CountUp } from "../CountUp";
 import { compact, costView, formatUsd, modelLabel, modelWithEffort, tokenHint } from "../../lib/usage";
-import type { Cost, SessionRow } from "../../lib/types";
+import type { Cost, Outcome, SessionRow } from "../../lib/types";
 
 // ---- names -------------------------------------------------------------------
 
@@ -68,33 +68,169 @@ export function ModelChip({ model, effort, className = "" }: { model: string; ef
 
 // ---- helper avatars ----------------------------------------------------------
 
-interface Look {
+// One icon per kind of work, so a row of helpers tells its kinds apart by shape first and colour
+// second. The list, the map, the helper's own page and Now all draw the same avatar.
+
+/** The kinds of work a helper does. Every helper type lands on exactly one. */
+export type HelperKind =
+  | "explore"
+  | "plan"
+  | "review"
+  | "test"
+  | "build"
+  | "design"
+  | "debug"
+  | "docs"
+  | "ops"
+  | "chore"
+  | "perf"
+  | "general"
+  | "other";
+
+export interface Look {
   Icon: ComponentType<IconProps>;
+  /** Tailwind classes for an HTML avatar: the tile's fill and the icon's colour. */
   tone: string;
-  /** What the icon stands for, for the helper map's legend. */
+  /** What the icon stands for, in a word: the legend's text. */
   label: string;
+  kind: HelperKind;
+  /** The same two colours as CSS values, for drawing the avatar in SVG (the helper map). */
+  fg: string;
+  bg: string;
+}
+
+const TONES = {
+  clay: { tone: "bg-accent-tint text-accent-text", fg: "var(--accent-text)", bg: "var(--accent-tint)" },
+  slate: { tone: "bg-raised text-slate", fg: "var(--slate)", bg: "var(--raised)" },
+  amber: { tone: "bg-warning-tint text-warning", fg: "var(--warning)", bg: "var(--warning-tint)" },
+  green: { tone: "bg-success-tint text-success", fg: "var(--success)", bg: "var(--success-tint)" },
+  blue: { tone: "bg-info-tint text-info", fg: "var(--info)", bg: "var(--info-tint)" },
+  plain: { tone: "bg-raised text-ink-2", fg: "var(--ink-2)", bg: "var(--raised)" },
+} as const;
+
+/** Each kind's icon, colour and name. Thirteen kinds, thirteen different icons (a test holds that). */
+const KINDS: Record<HelperKind, { Icon: ComponentType<IconProps>; label: string; tone: keyof typeof TONES }> = {
+  explore: { Icon: Compass, label: "Explore", tone: "slate" },
+  plan: { Icon: MapTrifold, label: "Plan", tone: "amber" },
+  review: { Icon: Eye, label: "Review", tone: "green" },
+  test: { Icon: Flask, label: "Test", tone: "blue" },
+  build: { Icon: Hammer, label: "Build", tone: "clay" },
+  design: { Icon: PaintBrush, label: "Design", tone: "blue" },
+  debug: { Icon: Bug, label: "Debug", tone: "amber" },
+  docs: { Icon: PencilLine, label: "Writing", tone: "slate" },
+  ops: { Icon: Package, label: "Release", tone: "green" },
+  chore: { Icon: Broom, label: "Chores", tone: "plain" },
+  perf: { Icon: Gauge, label: "Speed", tone: "blue" },
+  general: { Icon: Lightning, label: "General", tone: "clay" },
+  other: { Icon: Robot, label: "Other", tone: "plain" },
+};
+
+/** The kinds in the order a legend lists them. */
+export const HELPER_KINDS = Object.keys(KINDS) as HelperKind[];
+
+/**
+ * Which kind a helper type is, from the words in its name. Order matters: the more telling word
+ * wins, so "code-reviewer" reviews (it does not build), "ui-builder" designs, "crash-investigator"
+ * debugs and "verify-auditor" tests.
+ */
+const RULES: [RegExp, HelperKind][] = [
+  [/bug|crash|debug|diagnos|troubleshoot/, "debug"],
+  [/perf|profil|optimi[sz]|benchmark/, "perf"],
+  [/test|verif|\bqa\b|valid/, "test"],
+  [/review|audit|critic|critique/, "review"],
+  [/explor|search|research|find|fetch|investigat|recon/, "explore"],
+  [/doc|writ|guide|changelog|readme/, "docs"],
+  [/plan|architect|advis|strateg/, "plan"],
+  [/releas|deploy|packag|publish|\bops\b|infra/, "ops"],
+  [/design|\bui\b|\bux\b|styl|brand|asset|visual|frontend/, "design"],
+  [/chore|mechanic|cleanup|clean-up|tidy|format|lint|rename|housekeep/, "chore"],
+  [/general/, "general"],
+  [/code|coder|coding|build|\bdev|engineer|implement|refactor|program|\bmod|port/, "build"],
+];
+
+export function helperKind(type: string | null): HelperKind {
+  const t = (type ?? "").toLowerCase();
+  for (const [re, kind] of RULES) if (re.test(t)) return kind;
+  return "other";
+}
+
+/** A kind's icon, colours and name. */
+export function kindLook(kind: HelperKind): Look {
+  const k = KINDS[kind];
+  return { Icon: k.Icon, label: k.label, kind, ...TONES[k.tone] };
 }
 
 /** An icon and a color per kind of helper, so a row of them reads at a glance. The list and the map both use it. */
 export function agentLook(type: string | null): Look {
-  const t = (type ?? "").toLowerCase();
-  if (/explor|search|research|find/.test(t)) return { Icon: Compass, tone: "bg-raised text-slate", label: "Explore" };
-  if (/plan|architect/.test(t)) return { Icon: MapTrifold, tone: "bg-warning-tint text-warning", label: "Plan" };
-  if (/review|audit/.test(t)) return { Icon: Eye, tone: "bg-success-tint text-success", label: "Review" };
-  if (/test|verif|qa/.test(t)) return { Icon: Flask, tone: "bg-success-tint text-success", label: "Test" };
-  if (/general|code|build|dev/.test(t)) return { Icon: Lightning, tone: "bg-accent-tint text-accent-text", label: "General purpose" };
-  return { Icon: Robot, tone: "bg-raised text-ink-2", label: "Other helper" };
+  return kindLook(helperKind(type));
 }
 
-export function AgentAvatar({ type, size = 40 }: { type: string | null; size?: number }) {
+/** Where a thread sits in the chat: the chat itself, a helper it started, or a helper started by another helper. */
+export type AvatarLevel = "main" | "helper" | "nested";
+
+/** What an avatar says when pointed at or read out: "Review helper", "Main chat". */
+export function avatarName(type: string | null, level: AvatarLevel = "helper"): string {
+  if (level === "main") return "Main chat";
+  const { kind, label } = agentLook(type);
+  const name = kind === "other" ? "Helper" : `${label} helper`;
+  return level === "nested" ? `${name}, started by another helper` : name;
+}
+
+/** The icon inside an avatar sits on the 16 / 20 / 24 grid. */
+export function avatarIconSize(size: number): number {
+  return size >= 40 ? 24 : size >= 32 ? 20 : 16;
+}
+
+/** The main chat's icon, wherever it stands beside helpers. */
+export const MainChatIcon = ChatCircleText;
+
+/**
+ * A helper's face. The icon is its kind of work; the shape is where it sits: the main chat is a
+ * solid clay circle, a helper a tinted tile, a helper started by another helper the same tile
+ * hollow. It names itself in its hover and to a screen reader unless `quiet` (when the same words
+ * already stand beside it).
+ */
+export function AgentAvatar({
+  type,
+  size = 40,
+  level = "helper",
+  quiet = false,
+}: {
+  type: string | null;
+  size?: number;
+  level?: AvatarLevel;
+  quiet?: boolean;
+}) {
   const { Icon, tone } = agentLook(type);
+  const name = avatarName(type, level);
+  const Glyph = level === "main" ? MainChatIcon : Icon;
   return (
     <span
-      aria-hidden="true"
-      style={{ width: size, height: size }}
-      className={`flex shrink-0 items-center justify-center rounded-card ${tone}`}
+      {...(quiet ? { "aria-hidden": true } : { role: "img", "aria-label": name, title: name })}
+      style={{ width: size, height: size, borderRadius: level === "main" ? "50%" : Math.round(size * 0.3) }}
+      className={`helper-av flex shrink-0 items-center justify-center ${level === "main" ? "bg-accent text-on-accent" : tone}${level === "nested" ? " nested" : ""}`}
     >
-      <Icon size={Math.round(size * 0.55)} weight="duotone" />
+      <Glyph size={avatarIconSize(size)} weight="duotone" />
+    </span>
+  );
+}
+
+// ---- how a helper ended --------------------------------------------------------
+
+/** The word and the colour for how a helper ended. The list, the map and the slice share them. */
+export const OUTCOMES: Record<Outcome, { label: string; color: string }> = {
+  finished: { label: "Finished", color: "var(--success)" },
+  errored: { label: "Errored", color: "var(--danger)" },
+  stopped: { label: "Stopped", color: "var(--warning)" },
+};
+
+/** A dot and a word: how a helper ended. Never the colour alone. */
+export function OutcomeMark({ outcome }: { outcome: Outcome }) {
+  const o = OUTCOMES[outcome];
+  return (
+    <span className="inline-flex flex-none items-baseline gap-1.5 whitespace-nowrap">
+      <i aria-hidden="true" className="size-2 shrink-0 self-center rounded-full" style={{ background: o.color }} />
+      {o.label}
     </span>
   );
 }
