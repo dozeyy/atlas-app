@@ -1,28 +1,28 @@
 ---
 name: atlas-debrief
-description: Plain-words facts about what a chat's helpers (subagents) did, to fold into a recap of a helper run. Needs only this plugin.
-when_to_use: Only when the user asks for a debrief or recap of a helper run, or an orchestrated run just ended and they asked for one. Never on your own initiative and never every turn.
+description: Exact facts about this chat's helpers (subagents) - count, models and effort, tokens, how each ended, review verdicts.
+when_to_use: Only when the user asks for detail on the helpers (agents, models, tokens). A plain "debrief me" gets your normal recap, no Atlas. Never on your own initiative, never every turn.
 allowed-tools: Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --detail low), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --detail high), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --detail low --cost), Bash(sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --detail high --cost)
 ---
 
 # Debrief a helper run
 
-Only because the user asked for a debrief or recap of the helpers, or for one at the end
-of an orchestrated run. Otherwise say nothing about it.
+Only because the user asked for detail on the helpers: what each did, their models,
+tokens or reviews. A plain "debrief me" or "what did you do" is your own normal recap:
+do not run this. Never at the end of a run on its own. Otherwise say nothing about it.
 
 ## Get the facts
 
-Run it with the Bash tool (on Windows that is Git Bash). Copy this command character for
+Run it with the Bash tool (Git Bash on Windows). Copy this command character for
 character, keeping the `..`: it is pre-approved only in exactly this form.
 `sh "${CLAUDE_SKILL_DIR}/../atlas/bin/atlas-usage.sh" debrief --detail low`
 
 - It debriefs this chat. Do not add a session id.
 - `--detail high` only if they want each helper listed.
 - `--cost` after the detail only if they asked what it cost (an estimate, not a bill).
-- Default timeout; never wait on it.
 
-You get a few lines of facts: Ran, Helpers, Models, Reviews, Tokens, sometimes Biggest,
-Open, Changed (worktree branches only), Caught. Counts and labels, nothing graded.
+You get lines of facts: Ran, Helpers, Models, Reviews, Tokens, sometimes Biggest, Open,
+Changed (worktree branches only), Caught.
 A first line starting "Couldn't tell which chat this is" means the program picked the
 newest chat itself: keep that line, word for word, before the facts.
 
@@ -35,7 +35,7 @@ Never impose a format.
 - An "Atlas" heading only if the report already has headed sections.
 - Keep what matters: helpers that stopped or never finished, reviews that asked for
   changes, anything open. Never repeat a fact the report already states.
-- No advice, grades or praise.
+- No advice or grades.
 
 ## When it fails
 

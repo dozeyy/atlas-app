@@ -58,6 +58,9 @@ fn it_only_runs_the_debrief_through_the_launcher_and_only_when_asked() {
     let when = get(&fm, "when_to_use");
     assert!(when.starts_with("Only when the user asks"), "{when}");
     assert!(when.contains("Never on your own initiative") && when.contains("never every turn"), "{when}");
+    // Asked for by name only: a plain "debrief me" stays Claude's own recap, without Atlas (Will, 2026-11-09).
+    assert!(when.contains("A plain \"debrief me\" gets your normal recap, no Atlas"), "{when}");
+    assert!(body.contains("do not run this") && body.contains("Never at the end of a run on its own"), "plain debriefs skip Atlas");
     assert!(body.contains("Do not add a session id"), "it debriefs the current chat through the session environment");
     assert!(body.contains("worktree branches only"), "Changed is labelled as branches");
     assert!(body.contains("Never impose a format") && body.contains("terse user"), "style rules");
