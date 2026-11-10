@@ -53,7 +53,7 @@ function About({ onClose }: { onClose: () => void }) {
   const { info } = useAtlas();
   const rows: [string, string][] = [
     ["Version", info.version],
-    ["Build", info.build],
+    ["Build", info.build === "release" ? "Release" : "Debug"],
     ["System", PLATFORM_NAME[info.platform]],
     ["Licence", "Proprietary. Not licensed for redistribution."],
   ];
@@ -87,6 +87,9 @@ function Guide({ onClose }: { onClose: () => void }) {
             <b className="font-semibold text-ink">Toolkit</b> holds what you have set up for Claude: skills, agents, commands and the rest. Open a type to read, edit or remove an item. Removing asks first and keeps a backup, so Undo works.
           </>,
           <>
+            <b className="font-semibold text-ink">History</b> shows every change to your Claude files, newest first, with the lines that changed. Copy or save any earlier version.
+          </>,
+          <>
             <b className="font-semibold text-ink">Settings</b> picks the theme and which Claude folder Atlas reads. Sandbox mode works on a copy, so nothing real changes while you try things.
           </>,
         ]}
@@ -104,7 +107,8 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
         {shortcutGroups(info.platform).map((g) => (
           <section key={g.title} aria-label={g.title}>
             <h3 className="mb-2 text-caption font-semibold uppercase tracking-wide text-ink-2">{g.title}</h3>
-            <dl className="grid grid-cols-[minmax(0,auto)_1fr] gap-x-6 gap-y-2">
+            {/* One key column for every group, so the right-hand column starts on one line down the sheet. */}
+            <dl className="grid grid-cols-[9rem_minmax(0,1fr)] gap-x-6 gap-y-2">
               {g.rows.map((r) => (
                 <div key={r.keys} className="contents">
                   <dt>

@@ -88,6 +88,8 @@ export function Sidebar() {
         {sb.enabled && (
           <div
             role="status"
+            // Folded, only the dot fits: the words wait in the hover.
+            title={collapsed ? (sb.state === "preparing" ? "Preparing sandbox" : sb.state === "failed" ? "Sandbox failed" : "Sandbox mode") : undefined}
             className="flex items-center gap-2 rounded-control border border-line bg-warning-tint px-3 py-2 text-caption font-medium text-ink"
           >
             <span
