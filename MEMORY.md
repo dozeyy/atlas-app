@@ -476,3 +476,9 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Official entry vs directory listing: a commit pinned on both sides decides the match and ref is ignored (the listing never carries a ref, 0 of 3,602); ref compared only when a side has no commit. Without that, 30+ clean plugins (amd-skills, learn-with-coursera) were always 2 clicks.
 - Accepted risks (in docs/specs/skill-library.md): ~3,350 external directory entries whose official entry isn't visible locally; a local official clone older than the catalog; the Local re-hash -> copy gap (rollback is the backstop).
 - Verifier lesson: authors edit the tree mid-verification, so verifiers build from `git archive <sha>` and kill only exact PIDs.
+
+## 2026-11-09 - Team tab merged (391e2ef)
+- Branch worktree-agent-a8fc93e917890e6b1, head 98eda63. Toolkit tab row = Your setup | Library | Team (Library's segmented control; Left/Right wrap all three); Your setup is unmounted on the other tabs (hidden-but-mounted kept its window key listeners alive: Esc reset Setup's view under Team).
+- Real-app verifier PASS on 7f65688: scorecard numbers match a recount, Make this a rule byte-exact (BOM + CRLF kept, one heading + one line), backup in setup-backups/, History row, toast Undo sha-identical, preview follows edits, no empty-state flash after first index (50 ms sampling).
+- Rule safety: target id = project folder re-resolved on Save; redact before and after markup stripping; @words, backticks and links dropped; server enforces a single `- ` line (no heading/fence, <= 400 chars); `has_line` only looks in `## Caught in review` outside fences; a file another writer changed right after the swap keeps its backup but no saved stamp, so Undo refuses.
+- Team view prefs stay in localStorage (existing UI-pref pattern, D21 deviation noted in the spec). History page has no Undo button; Undo is on the toast.
