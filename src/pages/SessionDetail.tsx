@@ -17,7 +17,7 @@ import { Button, Card, IconButton, SegmentedControl } from "../components/contro
 import { Bars } from "../components/charts/Bars";
 import { Ridge } from "../components/charts/Ridge";
 import { IconMotion } from "../components/IconMotion";
-import { CostText } from "../components/usage/CostText";
+import { TokenText } from "../components/usage/TokenText";
 import { Breakdown, ModelSplit, Stat } from "../components/usage/detailParts";
 import { HelperMap } from "../components/usage/HelperMap";
 import { HelperSlice } from "../components/usage/HelperSlice";
@@ -47,23 +47,29 @@ type Tab = "receipt" | "helpers" | "messages" | "details";
 function HelperCard({
   agent,
   parentName,
-  sessionUsd,
+  sessionTokens,
   index,
   onOpen,
 }: {
   agent: AgentSummary;
   parentName: string | null;
-  sessionUsd: number;
+  /** The chat's tokens, counted the same way as the helper's (the headline kind). */
+  sessionTokens: number;
   index: number;
   onOpen: (id: string) => void;
 }) {
-  const frac = share(agent.cost.usd ?? 0, sessionUsd);
+  // Tokens lead here as everywhere else (the dollar estimate is in the hover), and the share is the
+  // same share the receipt and the helper map show for this helper.
+  const tokens = headline(agent.tokens);
+  const frac = share(tokens, sessionTokens);
   return (
     <Card onClick={() => onOpen(agent.agentId)} className="flex flex-col gap-3 p-4">
       <div className="flex items-start gap-3">
         <AgentAvatar type={agent.agentType} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-body font-semibold text-ink">{agent.name}</div>
+          <div className="truncate text-body font-semibold text-ink" title={agent.name}>
+            {agent.name}
+          </div>
           <div className="flex min-w-0 items-center gap-1 truncate text-caption text-ink-2">
             {parentName ? (
               <>
@@ -77,15 +83,13 @@ function HelperCard({
         </div>
         <div className="shrink-0 text-right">
           <div className="d d-small text-ink">
-            <CostText cost={agent.cost} />
+            <TokenText tokens={tokens} cost={agent.cost} unit="" />
           </div>
-          <div className="text-caption tabular-nums text-ink-2" title={`${exact(headline(agent.tokens))} tokens`}>
-            {compact(headline(agent.tokens))} tokens
-          </div>
+          <div className="text-caption text-ink-2">tokens</div>
         </div>
       </div>
       <div>
-        <div className="share-bar" role="img" aria-label={`${percent(frac)} of the session's spend`}>
+        <div className="share-bar" role="img" aria-label={`${percent(frac)} of the session's tokens`}>
           <i style={{ width: `${Math.max(frac > 0 ? 2 : 0, frac * 100)}%`, ["--i" as string]: Math.min(index, 12) }} />
         </div>
         <div className="mt-1 text-caption text-ink-2">{`${percent(frac)} of the session`}</div>
@@ -109,12 +113,12 @@ function HelperCard({
 function HelperBranch({
   node,
   names,
-  sessionUsd,
+  sessionTokens,
   onOpen,
 }: {
   node: HelperNode;
   names: Map<string, string>;
-  sessionUsd: number;
+  sessionTokens: number;
   onOpen: (id: string) => void;
 }) {
   const a = node.agent;
@@ -123,7 +127,7 @@ function HelperBranch({
       <HelperCard
         agent={a}
         parentName={a.parentAgentId ? (names.get(a.parentAgentId) ?? null) : null}
-        sessionUsd={sessionUsd}
+        sessionTokens={sessionTokens}
         index={node.index}
         onOpen={onOpen}
       />
@@ -131,7 +135,7 @@ function HelperBranch({
         <ul className="helper-kids">
           {node.kids.map((k) => (
             <li key={k.agent.agentId} className="helper-kid">
-              <HelperBranch node={k} names={names} sessionUsd={sessionUsd} onOpen={onOpen} />
+              <HelperBranch node={k} names={names} sessionTokens={sessionTokens} onOpen={onOpen} />
             </li>
           ))}
         </ul>
@@ -148,28 +152,28 @@ function HelperList({
   agents,
   order,
   sessionId,
-  sessionUsd,
+  sessionTokens,
   names,
   onOpen,
 }: {
   agents: AgentSummary[];
   order: "started" | "spend";
   sessionId: string;
-  sessionUsd: number;
+  sessionTokens: number;
   names: Map<string, string>;
   onOpen: (id: string) => void;
 }) {
   const intro = useIntro(`helpers:${sessionId}`);
   const roots = useMemo(() => helperTree(agents), [agents]);
   const nested = order === "started" && roots.some((r) => r.kids.length > 0);
-  const flat = order === "spend" ? [...agents].sort((a, b) => (b.cost.usd ?? 0) - (a.cost.usd ?? 0)) : agents;
+  const flat = order === "spend" ? [...agents].sort((a, b) => headline(b.tokens) - headline(a.tokens)) : agents;
 
   if (nested) {
     return (
       <ul className={`grid grid-cols-1 gap-3${intro ? " intro" : ""}`}>
         {roots.map((r) => (
           <li key={r.agent.agentId}>
-            <HelperBranch node={r} names={names} sessionUsd={sessionUsd} onOpen={onOpen} />
+            <HelperBranch node={r} names={names} sessionTokens={sessionTokens} onOpen={onOpen} />
           </li>
         ))}
       </ul>
@@ -182,7 +186,7 @@ function HelperList({
           <HelperCard
             agent={a}
             parentName={a.parentAgentId ? (names.get(a.parentAgentId) ?? null) : null}
-            sessionUsd={sessionUsd}
+            sessionTokens={sessionTokens}
             index={i}
             onOpen={onOpen}
           />
@@ -378,7 +382,7 @@ function DetailsTab({
           </section>
         )}
 
-        <section id="sd-files" aria-label="Files" className="jump-target min-w-0">
+        <section id="sd-files" aria-label="Files" className="jump-target min-w-0 @3xl:col-span-2">
           <h3 className="rcpt-head">{`Files (${files.length})`}</h3>
           <Card>
             <ul className="max-h-40 divide-y divide-line overflow-y-auto">
@@ -526,7 +530,7 @@ export function SessionDetailView({
   const { row, agents, claudeCodeCostUsd } = d.data;
   const name = sessionName(row);
   const resume = resumeCommand(id, row.projectPath, info.platform);
-  const sessionUsd = row.cost.usd ?? 0;
+  const sessionTokens = headline(row.tokens);
   const names = new Map(agents.map((a) => [a.agentId, a.name]));
   const helperTypes = new Map(agents.map((a) => [a.agentId, a.agentType]));
   const hasHelpers = agents.length > 0;
@@ -583,7 +587,7 @@ export function SessionDetailView({
       <div className="mt-4 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2">
         <SegmentedControl label="Session view" value={shownTab} onChange={choose} options={tabs} />
         {shownTab === "helpers" && (
-          <div className="flex items-center gap-2">
+          <div className="sd-sub flex items-center gap-2">
             {view === "list" && (
               <SegmentedControl
                 label="Order helpers by"
@@ -607,27 +611,29 @@ export function SessionDetailView({
           </div>
         )}
         {shownTab === "details" && hasHelpers && (
-          <SegmentedControl
-            label="Count tokens for"
-            value={scope}
-            onChange={setScope}
-            options={[
-              { value: "all", label: "With helpers" },
-              { value: "main", label: "Main only" },
-            ]}
-          />
+          <div className="sd-sub">
+            <SegmentedControl
+              label="Count tokens for"
+              value={scope}
+              onChange={setScope}
+              options={[
+                { value: "all", label: "With helpers" },
+                { value: "main", label: "Main only" },
+              ]}
+            />
+          </div>
         )}
         <div className="ml-auto flex items-center gap-2">
           {resume && (
-            <Button title="Copy the command that reopens this chat in a terminal" onClick={() => void copyResume(resume)}>
+            <Button className="sd-act" title="Copy the command that reopens this chat in a terminal" onClick={() => void copyResume(resume)}>
               <Copy size={14} aria-hidden="true" />
-              Copy resume
+              <span className="sd-act-label">Copy resume</span>
             </Button>
           )}
           {row.projectPath && (
-            <Button title={`Open ${row.projectPath}`} onClick={() => void openFolder(id)}>
+            <Button className="sd-act" title={`Open folder: ${row.projectPath}`} onClick={() => void openFolder(id)}>
               <FolderOpen size={14} aria-hidden="true" />
-              Open folder
+              <span className="sd-act-label">Open folder</span>
             </Button>
           )}
           {onJump && siblings && at >= 0 && (
@@ -658,7 +664,7 @@ export function SessionDetailView({
 
         {shownTab === "helpers" &&
           (view === "list" ? (
-            <HelperList agents={agents} order={order} sessionId={id} sessionUsd={sessionUsd} names={names} onOpen={setAgentId} />
+            <HelperList agents={agents} order={order} sessionId={id} sessionTokens={sessionTokens} names={names} onOpen={setAgentId} />
           ) : receipt.data ? (
             <div className="map-grid">
               <HelperMap receipt={receipt.data} sessionId={id} selected={picked} onSelect={setPicked} types={helperTypes} />

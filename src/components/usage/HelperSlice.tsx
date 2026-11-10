@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { ArrowRight, Warning } from "@phosphor-icons/react";
 import { Button } from "../controls";
+import { EndLine } from "./EndLine";
 import { ModelChip } from "./helperKit";
 import { MAP_BY, OUTCOME_LABEL, outcomeColor } from "./HelperMap";
 import { layoutMap, MAIN_ID, type MapNode } from "../../lib/helperMap";
@@ -79,12 +80,13 @@ export function HelperSlice({
         </div>
       </div>
 
-      <div className="mt-3 flex items-baseline gap-3">
+      {/* In a narrow slice the share drops to its own line whole, never "81% of the" over "chat". */}
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-3">
         <span className="d d-stat tabular-nums text-ink" title={node.usd > 0 ? `${node.name}: ${tokensText(node.tokens)}, ${guess(node.usd)}` : undefined}>
           {compact(node.tokens)}
         </span>
         <span className="text-body text-ink-2">tokens</span>
-        <span className="text-body tabular-nums text-ink-2">{`${percent(share(node.tokens, total))} of the chat`}</span>
+        <span className="whitespace-nowrap text-body tabular-nums text-ink-2">{`${percent(share(node.tokens, total))} of the chat`}</span>
       </div>
       {subtotal - node.tokens >= 1 && <div className="text-caption tabular-nums text-ink-2">{`${tokensText(subtotal)} with the helpers it started`}</div>}
 
@@ -135,7 +137,7 @@ export function HelperSlice({
             {[...t.items].sort((a, b) => b.tokens - a.tokens).slice(0, 2).map((i, n) => (
               <li key={`${i.kind}:${i.tool}:${i.path ?? ""}:${n}`} className="rcpt-item" title={itemTitleFull(i)}>
                 <div className="min-w-0">
-                  <div className="truncate text-body text-ink">{itemTitle(i)}</div>
+                  <EndLine text={itemTitle(i)} path={i.path} className="text-body text-ink" />
                   {itemDetail(i) && <div className="truncate text-caption text-ink-2">{itemDetail(i)}</div>}
                 </div>
                 <span className="shrink-0 text-body tabular-nums text-ink">{`~${compact(i.tokens)}`}</span>

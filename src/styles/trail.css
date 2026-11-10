@@ -1916,6 +1916,31 @@ html.reduced .nav-item:active .nav-face {
   overflow-x: hidden;
   overflow-y: auto;
 }
+/* When the tab row is tight, "Copy resume" and "Open folder" keep their icons and drop their words
+   (still read out, still in the hover), so the row stays one line and the two buttons stay in the
+   same place whichever tab is open. */
+@container (max-width: 960px) {
+  .sd-act-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .sd-act .btn-face {
+    width: 34px;
+    padding: 0;
+  }
+}
+/* Tighter still (a small window with the sidebar open): a tab's own switches take a second line
+   under the tabs, so the buttons on the right never jump between lines from tab to tab. */
+@container (max-width: 740px) {
+  .sd-sub {
+    order: 1;
+    flex-basis: 100%;
+  }
+}
 
 /* The receipt: plain lines, a hairline and a total, nothing boxed. */
 .rcpt-head {

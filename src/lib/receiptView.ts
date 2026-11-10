@@ -100,6 +100,19 @@ export function itemDetail(i: ReceiptItem): string {
   return "";
 }
 
+/**
+ * A line that ends in a path, as the part up to the last folder and the file name, so a tight line
+ * can shorten the folders and keep the name. Null when it does not end in `path`, or the path is a
+ * bare name with nothing to shorten.
+ */
+export function tailSplit(text: string, path: string | null | undefined): [string, string] | null {
+  if (!path || !text.endsWith(path)) return null;
+  const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1;
+  if (cut <= 0 || cut >= path.length) return null;
+  const at = text.length - (path.length - cut);
+  return [text.slice(0, at), text.slice(at)];
+}
+
 /** The hover text of a line item: its tokens and the dollar estimate behind them. */
 export const itemTitleFull = (i: ReceiptItem): string => `${itemTitle(i)}: about ${compact(i.tokens)} tokens${i.usd !== null && i.usd >= 0.005 ? `, ${guess(i.usd)}` : ""}`;
 
