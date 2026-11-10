@@ -44,12 +44,12 @@ const sonnet: ModelUse = { model: "claude-sonnet-5-5", modelName: "Sonnet 5.5", 
 const haiku: ModelUse = { model: "claude-haiku-5-5", modelName: "Haiku 5.5", effort: null, messages: 12, runs: 2 };
 
 const SPECS: Spec[] = [
-  { type: "general-purpose", name: "General purpose", reviewer: false, runs: 18, headless: 6, passed: 9, sentBack: 3, model: sonnet, tokensPerRun: 420_000, minutes: 9, calls: 38, projects: ["atlas", "willhenry"] },
+  { type: "general-purpose", name: "General purpose", reviewer: false, runs: 18, headless: 6, passed: 9, sentBack: 3, model: sonnet, tokensPerRun: 420_000, minutes: 9, calls: 38, projects: ["atlas", "site"] },
   { type: "ui-builder", name: "UI builder", reviewer: false, runs: 8, headless: 0, passed: 3, sentBack: 1, model: sonnet, tokensPerRun: 910_000, minutes: 17, calls: 64, projects: ["atlas"] },
-  { type: "code-reviewer", name: "Code reviewer", reviewer: true, runs: 11, headless: 2, passed: 0, sentBack: 0, verdicts: [6, 3, 1, 1], model: opus, tokensPerRun: 260_000, minutes: 6, calls: 22, projects: ["atlas", "deskify"] },
+  { type: "code-reviewer", name: "Code reviewer", reviewer: true, runs: 11, headless: 2, passed: 0, sentBack: 0, verdicts: [6, 3, 1, 1], model: opus, tokensPerRun: 260_000, minutes: 6, calls: 22, projects: ["atlas", "pixel-garden"] },
   { type: "verifier", name: "Verifier", reviewer: true, runs: 6, headless: 0, passed: 0, sentBack: 0, verdicts: [4, 1, 0, 1], model: sonnet, tokensPerRun: 180_000, minutes: 5, calls: 19, projects: ["atlas"] },
   { type: "Explore", name: "Explore", reviewer: false, runs: 4, headless: 0, passed: 0, sentBack: 0, model: haiku, tokensPerRun: 90_000, minutes: 2, calls: 12, projects: ["atlas"] },
-  { type: "chore-runner", name: "Chore runner", reviewer: false, runs: 2, headless: 0, passed: 0, sentBack: 0, model: haiku, tokensPerRun: 40_000, minutes: 1, calls: 7, projects: ["deskify"] },
+  { type: "chore-runner", name: "Chore runner", reviewer: false, runs: 2, headless: 0, passed: 0, sentBack: 0, model: haiku, tokensPerRun: 40_000, minutes: 1, calls: 7, projects: ["pixel-garden"] },
 ];
 
 const cost = (usd: number): Cost => ({ usd, complete: true, unpricedTokens: 0 });
@@ -307,8 +307,8 @@ const THEMES: Omit<ReviewTheme, "lastSeen">[] = [
     ],
     notTied: 1,
     reviewers: [{ agentType: "code-reviewer", count: 7 }],
-    projects: ["atlas", "deskify"],
-    projectPaths: ["/mock/work/atlas", "/mock/work/deskify"],
+    projects: ["atlas", "pixel-garden"],
+    projectPaths: ["/mock/work/atlas", "/mock/work/pixel-garden"],
     examples: [
       { text: "The response can be null here and the next line reads a field from it.", sessionId: "mock-session-code-reviewer-0", agentId: "agent-code-reviewer-0", ts: Date.now() - DAY },
       { text: "No check that the reply exists before use.", sessionId: "mock-session-code-reviewer-1", agentId: "agent-code-reviewer-1", ts: Date.now() - 2 * DAY },
@@ -339,8 +339,8 @@ const THEMES: Omit<ReviewTheme, "lastSeen">[] = [
     foundInWorkBy: [{ agentType: "general-purpose", count: 2 }],
     notTied: 1,
     reviewers: [{ agentType: "verifier", count: 3 }],
-    projects: ["willhenry"],
-    projectPaths: ["/mock/work/willhenry"],
+    projects: ["site"],
+    projectPaths: ["/mock/work/site"],
     examples: [],
   },
 ];

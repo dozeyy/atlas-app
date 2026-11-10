@@ -28,8 +28,8 @@ describe("history sentences", () => {
 
   it("says where an item applies", () => {
     expect(scopeText(item("a"))).toBe("Every project");
-    expect(scopeText({ ...item("a"), scope: "project", project: "gazette" })).toBe("gazette");
-    expect(scopeText({ ...item("a"), scope: "local", project: "gazette" })).toBe("gazette, just you");
+    expect(scopeText({ ...item("a"), scope: "project", project: "newsletter" })).toBe("newsletter");
+    expect(scopeText({ ...item("a"), scope: "local", project: "newsletter" })).toBe("newsletter, just you");
   });
 
   it("labels days relative to today", () => {

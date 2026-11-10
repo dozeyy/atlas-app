@@ -69,18 +69,20 @@ function addKinds(a: ReceiptKinds, b: ReceiptKinds): ReceiptKinds {
   };
 }
 
-function itemsFor(k: number, name: string, spend: number, bigMain: boolean): ReceiptItem[] {
+// A result is written into the chat once, so a thread's line items are a share of what that thread
+// wrote (11 % and 5 %, the same shares as their cost): the lines always add up to less than the chat.
+function itemsFor(k: number, name: string, spend: number, bigMain: boolean, written: number): ReceiptItem[] {
   return [0, 1].map((n) => {
     const p = POOL[(k + n * 2) % POOL.length];
     const count = bigMain && n === 0 ? 7 : p.kind === "read" ? 1 + ((k + n) % 4) : p.kind === "outputs" ? 6 + k : 1;
-    const per = p.kind === "output" ? 48_000 : 4000 * (1 + ((k * 3 + n) % 5));
+    const share = n === 0 ? 0.11 : 0.05;
     return {
       kind: p.kind,
       tool: p.tool,
       path: p.path,
       count,
-      tokens: p.kind === "output" ? per : per * count,
-      usd: spend * (n === 0 ? 0.11 : 0.05),
+      tokens: Math.max(100, Math.round((written * share) / 100) * 100),
+      usd: spend * share,
       thread: name,
     };
   });
@@ -92,7 +94,7 @@ export function buildMockReceipt(sessionId: string, totalUsd: number, main: Mock
     const kinds = mockKinds(t.model, t.tokens, rates);
     const usd = sumKinds(kinds);
     const bigMain = k === 0 && t.messages >= 40;
-    const items = itemsFor(k, t.name, kinds.cacheWrite + kinds.cacheRead, bigMain);
+    const items = itemsFor(k, t.name, kinds.cacheWrite + kinds.cacheRead, bigMain, t.tokens.total);
     const flags: ReceiptFlag[] = [];
     if (bigMain) {
       flags.push({ kind: "repeat_read", label: "docs/tech.md", agentId: null, count: 7, tokens: items[0].tokens, usd: items[0].usd, minutes: null, model: null, tools: [] });

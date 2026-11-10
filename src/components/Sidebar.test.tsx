@@ -81,9 +81,9 @@ describe("sidebar folding", () => {
     expect(within(side()).queryByText(/day streak/)).not.toBeInTheDocument();
   });
 
-  it("On a roll counts Will's real week as 2 (Thu and Fri empty)", async () => {
-    // Will's real week to Sun Nov 8, 2026: Thu and Fri empty, Sat and Sun used -> 2, not 3.
-    const back = [21_207_932, 1_818_406, 0, 0, 9_112_596, 41_193_420, 56_095_560];
+  it("On a roll counts a week with a two-day gap as 2 (two empty days in the middle)", async () => {
+    // Made-up figures, newest first: today and yesterday used, then two empty days -> 2, not 3.
+    const back = [18_000_000, 2_000_000, 0, 0, 7_500_000, 30_000_000, 44_000_000];
     const b = new MockBackend();
     const real = b.usageTimeline.bind(b);
     b.usageTimeline = async (a) => {

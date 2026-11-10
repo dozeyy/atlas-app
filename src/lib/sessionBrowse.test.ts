@@ -82,9 +82,9 @@ describe("resume command", () => {
     );
   });
   it("is one POSIX line on macOS and Linux", () => {
-    const want = `cd '/Users/will/My Code' && claude --resume ${ID}`;
-    expect(resumeCommand(ID, "/Users/will/My Code", "macos")).toBe(want);
-    expect(resumeCommand(ID, "/Users/will/My Code", "linux")).toBe(want);
+    const want = `cd '/Users/you/My Code' && claude --resume ${ID}`;
+    expect(resumeCommand(ID, "/Users/you/My Code", "macos")).toBe(want);
+    expect(resumeCommand(ID, "/Users/you/My Code", "linux")).toBe(want);
   });
   it("is just the resume line without a folder", () => {
     for (const p of [undefined, null, "", "   "]) {
@@ -100,9 +100,9 @@ describe("resume command", () => {
     expect(resumeCommand(ID, "/a/$HOME/`id`", "linux")).toBe(`cd '/a/$HOME/\`id\`' && claude --resume ${ID}`);
   });
   it("doubles a single quote for PowerShell, curly ones too", () => {
-    expect(resumeCommand(ID, "C:\\Will's", "windows")).toBe(`Set-Location -LiteralPath 'C:\\Will''s'; claude --resume ${ID}`);
-    expect(resumeCommand(ID, "C:\\Will\u2019s", "windows")).toBe(
-      `Set-Location -LiteralPath 'C:\\Will\u2019\u2019s'; claude --resume ${ID}`,
+    expect(resumeCommand(ID, "C:\\Sam's", "windows")).toBe(`Set-Location -LiteralPath 'C:\\Sam''s'; claude --resume ${ID}`);
+    expect(resumeCommand(ID, "C:\\Sam\u2019s", "windows")).toBe(
+      `Set-Location -LiteralPath 'C:\\Sam\u2019\u2019s'; claude --resume ${ID}`,
     );
   });
   it("escapes a single quote for POSIX as '\\''", () => {

@@ -117,9 +117,9 @@ describe("paths", () => {
     expect(smoothPath([[1, 2]])).toBe("M1,2");
     expect(smoothPath([[0, 0], [10, 5]])).toMatch(/^M0,0C/);
   });
-  it("the ridge never dips below its baseline or above its peak (Will's week: a peak, a slide, empty days)", () => {
+  it("the ridge never dips below its baseline or above its peak (a week with a peak, a slide and empty days)", () => {
     const weeks = [
-      [56.1, 41.2, 9.11, 0, 0, 1.82, 21],
+      [44, 30, 7.5, 0, 0, 2, 18],
       [100, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 90, 0, 0, 0],
       [5, 80, 1, 0, 70, 0.5, 0],
@@ -155,21 +155,21 @@ describe("paths", () => {
 });
 
 describe("barTop", () => {
-  // Will's real 30-day Activity chart, 2026-11-08: a 144M peak on a 200M scale, a 162 px plot.
+  // A 30-day Activity chart (made-up figures): a 150M peak on a 200M scale, a 162 px plot.
   const base = 162;
   const top = 28;
   const max = 200e6;
   const h = (v: number) => base - barTop(v, max, base, top);
 
   it("a day with usage is never drawn lower than an empty day's stub", () => {
-    // Sat Nov 7 (1.8M) was 1.2 px tall, under the 3 px stub of Thu Nov 5 and Fri Nov 6 (0).
-    expect(h(1.82e6)).toBeGreaterThan(ZERO_STUB);
+    // A 2M day was 1.3 px tall, under the 3 px stub of the empty days beside it.
+    expect(h(2e6)).toBeGreaterThan(ZERO_STUB);
     expect(h(69e3)).toBe(MIN_BAR);
     expect(h(0)).toBe(0);
   });
   it("stays proportional above the floor", () => {
-    expect(h(144e6)).toBeCloseTo(0.72 * (base - top), 6);
-    expect(h(56.1e6) / h(21.2e6)).toBeCloseTo(56.1 / 21.2, 6);
+    expect(h(150e6)).toBeCloseTo(0.75 * (base - top), 6);
+    expect(h(44e6) / h(18e6)).toBeCloseTo(44 / 18, 6);
     expect(h(max * 3)).toBe(base - top);
   });
   it("an empty scale draws nothing", () => {

@@ -92,7 +92,7 @@ function data(over: Partial<WrappedData> = {}): WrappedData {
     skillUses: 53,
     projects: [
       { label: "atlas", value: 30 },
-      { label: "heavens-casino", value: 18 },
+      { label: "pixel-garden", value: 18 },
     ],
     models: [
       { label: "Opus 5.5", value: 40 },
@@ -127,7 +127,7 @@ function rich(over: Partial<WrappedData> = {}): WrappedData {
   const spanDays = 124;
   const dayTokens = Array.from({ length: spanDays }, (_, i) => (i % 5 === 4 ? 0 : 2_000_000 + ((i * 7) % 13) * 400_000));
   // The busiest day is Oct 19: day 102 of a history that starts on Jul 9.
-  dayTokens[102] = 144_000_000;
+  dayTokens[102] = 150_000_000;
   const hoursRich = new Array<number>(24).fill(1_000_000);
   hoursRich[17] = 9_000_000;
   return data({
@@ -135,29 +135,29 @@ function rich(over: Partial<WrappedData> = {}): WrappedData {
     to: "2026-11-09",
     spanDays,
     activeDays: 74,
-    tokens: 873_000_000,
+    tokens: 640_000_000,
     sessions: 410,
-    busiest: { day: "2026-10-19", tokens: 144_000_000, sessions: 18 },
+    busiest: { day: "2026-10-19", tokens: 150_000_000, sessions: 18 },
     longestStreak: 15,
     streak: 3,
     hours: hoursRich,
     hoursDays: 120,
     dayTokens,
-    skills: [item("away-mode", "skill", 31, 22), item("design:design-critique", "skill", 9, 5)],
-    agents: [item("general-purpose", "agent", 474, 25)],
-    tools: [item("Bash", "tool", 76_804, 263)],
+    skills: [item("release-notes", "skill", 31, 22), item("design:design-critique", "skill", 9, 5)],
+    agents: [item("general-purpose", "agent", 320, 25)],
+    tools: [item("Bash", "tool", 52_000, 263)],
     skillUses: 40,
     projects: [
-      { label: "Origin Client", value: 523_800_000 },
+      { label: "Trail Guide", value: 410_000_000 },
       { label: "atlas", value: 90_000_000 },
     ],
     models: [
-      { label: "Opus 5.5", value: 427_800_000 },
+      { label: "Opus 5.5", value: 330_000_000 },
       { label: "Sonnet 5.5", value: 100_000_000 },
     ],
-    longest: chat({ projectName: "medal michael", durationMs: (10 * 24 + 17) * 3_600_000, startedAt: new Date(2026, 6, 26, 9).getTime() }),
-    biggest: chat({ sessionId: "s2", projectName: "Origin Client", tokens: tok(110_000_000) }),
-    habits: habits({ chats: 100, chatTokens: 234_000_000, allTokens: 873_000_000, helperTokens: 300_000_000 }),
+    longest: chat({ projectName: "helper bot", durationMs: (10 * 24 + 17) * 3_600_000, startedAt: new Date(2026, 6, 26, 9).getTime() }),
+    biggest: chat({ sessionId: "s2", projectName: "Trail Guide", tokens: tok(110_000_000) }),
+    habits: habits({ chats: 100, chatTokens: 234_000_000, allTokens: 640_000_000, helperTokens: 300_000_000 }),
     ...over,
   });
 }
@@ -190,13 +190,13 @@ describe("buildSlides: the Summit story", () => {
 
   it("reads each slide from the real numbers", () => {
     const by = Object.fromEntries(buildSlides(rich()).map((s) => [s.id, s]));
-    expect(by.tokens.figure).toBe("873M");
-    expect(by.tokens.line).toBe("About 6,500 novels' worth of words.");
+    expect(by.tokens.figure).toBe("640M");
+    expect(by.tokens.line).toBe("About 4,800 novels' worth of words.");
     expect(by.days.figure).toBe("74");
     expect(by.days.unit).toBe("of 124");
     expect(by.days.line).toBe("Best run: 15 days in a row.");
     expect(by.busiest.figure).toBe("Mon, Oct 19");
-    expect(by.busiest.line).toBe("144M tokens over 18 sessions.");
+    expect(by.busiest.line).toBe("150M tokens over 18 sessions.");
     expect(by.rhythm.figure).toBe("5 PM");
     expect(by.rhythm.line).toBe("Your busiest hour over the last 120 days.");
     expect(by.long.figure).toBe("10 d 17 h");
@@ -204,15 +204,15 @@ describe("buildSlides: the Summit story", () => {
     expect(by.biggest.figure).toBe("110M");
     expect(by.biggest.unit).toBe("tokens");
     expect(by.biggest.line).toBe("That is 47 times a usual chat.");
-    expect(by.project.figure).toBe("Origin Client");
-    expect(by.project.line).toBe("60% of your tokens.");
-    expect(by.skill.figure).toBe("away-mode");
+    expect(by.project.figure).toBe("Trail Guide");
+    expect(by.project.line).toBe("64% of your tokens.");
+    expect(by.skill.figure).toBe("release-notes");
     expect(by.skill.line).toBe("Used 31 times in 22 sessions.");
-    expect(by.helper.line).toBe("Called 474 times in 25 sessions.");
+    expect(by.helper.line).toBe("Called 320 times in 25 sessions.");
     expect(by.tool.figure).toBe("Bash");
-    expect(by.tool.line).toBe("Run 76,804 times in 263 sessions.");
+    expect(by.tool.line).toBe("Run 52,000 times in 263 sessions.");
     expect(by.models.figure).toBe("Opus 5.5");
-    expect(by.models.line).toBe("49% of your tokens.");
+    expect(by.models.line).toBe("52% of your tokens.");
   });
 
   it("gives the opener no stats: a year, a title and where the numbers start", () => {
@@ -245,9 +245,9 @@ describe("buildSlides: the Summit story", () => {
   it("names a project on one slide only", () => {
     const slides = buildSlides(rich());
     const on = (name: string) => slides.filter((s) => !s.card && said(s).includes(name)).map((s) => s.id);
-    expect(on("Origin Client")).toEqual(["project"]);
+    expect(on("Trail Guide")).toEqual(["project"]);
     // The chats' own projects are not named on their slides.
-    expect(on("medal michael")).toEqual([]);
+    expect(on("helper bot")).toEqual([]);
   });
 
   it("tells one chat once when the longest and the biggest are the same chat", () => {
@@ -276,7 +276,7 @@ describe("buildSlides: the Summit story", () => {
   });
 
   it("says the same novel count in the line and in its hover", () => {
-    for (const tokens of [873_000_000, 23_300_000, 14_000_000, 1_400_000]) {
+    for (const tokens of [640_000_000, 23_300_000, 14_000_000, 1_400_000]) {
       const s = buildSlides(rich({ tokens })).find((x) => x.id === "tokens")!;
       const said = /About (.+) worth/.exec(s.line)![1].replace(/ novels?'s?$/, "").replace(/'$/, "");
       expect(s.strongHint, String(tokens)).toContain("about " + said + ".");
@@ -361,7 +361,7 @@ describe("buildSlides: the Summit story", () => {
       .map((s) => s.id);
     expect(hovered).toEqual(["tokens", "biggest"]);
     const by = Object.fromEntries(buildSlides(rich()).map((s) => [s.id, s]));
-    expect(by.tokens.hint).toBe("873,000,000 tokens.");
+    expect(by.tokens.hint).toBe("640,000,000 tokens.");
     expect(by.biggest.hint).toBe("110,000,000 tokens in one chat.");
     expect(by.tokens.strongHint).toContain("0.75 words per token");
     expect(by.biggest.strongHint).toBeUndefined();
@@ -413,7 +413,7 @@ describe("the end card", () => {
   it("recaps the headline facts and nothing from a chat", () => {
     const secret = "SECRET FIRST PROMPT";
     const d = rich({
-      longest: chat({ name: secret, projectName: "medal michael", durationMs: 90_000_000 }),
+      longest: chat({ name: secret, projectName: "helper bot", durationMs: 90_000_000 }),
       biggest: chat({ name: secret, tokens: tok(110_000_000) }),
       habits: habits({ chats: 100, chatTokens: 234_000_000, mostHelpers: chat({ name: secret, agentCount: 5 }) }),
     });
@@ -429,7 +429,7 @@ describe("the end card", () => {
     expect(card.facts).toEqual([
       { value: "74", label: "active days" },
       { value: "5 PM", label: "prime time" },
-      { value: "Origin Client", label: "top project" },
+      { value: "Trail Guide", label: "top project" },
       { value: slides.find((s) => s.id === "type")!.figure, label: "coder type" },
     ]);
     expect(card.day).toBe("2026-11-09");

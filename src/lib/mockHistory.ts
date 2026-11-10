@@ -39,7 +39,7 @@ const ITEMS = {
   fmt: item("f:fmt", "hook", "format-on-save", "C:/Users/you/.claude/hooks/format.sh"),
   mcp: item("mcp-view", "mcpServer", "MCP servers", ""),
   md: item("f:md", "instructions", "CLAUDE.md", "C:/Users/you/.claude/CLAUDE.md"),
-  gazette: item("f:gazette", "instructions", "CLAUDE.md", "C:/Dev/gazette/CLAUDE.md", "gazette"),
+  newsletter: item("f:newsletter", "instructions", "CLAUDE.md", "C:/Dev/newsletter/CLAUDE.md", "newsletter"),
   old: item("f:old", "skill", "old-notes", "C:/Users/you/.claude/skills/old-notes/SKILL.md", null, true),
   keys: item("f:keys", "keybindings", "keybindings.json", "C:/Users/you/.claude/keybindings.json"),
 };
@@ -99,7 +99,7 @@ const ROWS: Row[] = [
   { id: 7, daysAgo: 9, hour: 10, kind: "removed", source: "atlas_snapshot", summary: "Removed.", item: ITEMS.old, copy: true, from: 61 },
   { id: 8, daysAgo: 12, hour: 16, kind: "renamed", source: "atlas_snapshot", summary: "Renamed from lint-on-save.", item: ITEMS.fmt, copy: true, from: 71, to: 72 },
   { id: 9, daysAgo: 12, hour: 9, kind: "changed", source: "claude_backup", summary: "A hidden value changed.", item: ITEMS.mcp, copy: true, from: 50, to: 51 },
-  { id: 10, daysAgo: 17, hour: 13, kind: "changed", source: "atlas_snapshot", summary: "Edited the instructions.", item: ITEMS.gazette, copy: true, from: 81, to: 82 },
+  { id: 10, daysAgo: 17, hour: 13, kind: "changed", source: "atlas_snapshot", summary: "Edited the instructions.", item: ITEMS.newsletter, copy: true, from: 81, to: 82 },
   { id: 11, daysAgo: 23, hour: 18, kind: "added", source: "atlas_snapshot", summary: "New key bindings file.", item: ITEMS.keys, copy: true, to: 91 },
   { id: 12, daysAgo: 40, hour: 12, kind: "dated", source: "file_date", summary: "Last changed here.", item: ITEMS.settings, copy: false },
   { id: 13, daysAgo: 52, hour: 12, kind: "dated", source: "file_date", summary: "Last changed here.", item: ITEMS.md, copy: false },
@@ -197,7 +197,7 @@ export class MockHistory {
       watchingSince: this.empty ? 0 : today - 24 * DAY,
       bytes: this.empty ? 0 : 61_440,
       days,
-      projects: this.empty ? [] : ["gazette"],
+      projects: this.empty ? [] : ["newsletter"],
       keepVersions: 50,
     };
   }

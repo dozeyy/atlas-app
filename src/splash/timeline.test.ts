@@ -4,7 +4,7 @@ import { CLAY_AT, DESIGNED_TOTAL, EASE_WIPE, T, cubicBezier, summarizeFrames } f
 import { armIntro, installIntroReveal } from "../lib/intro";
 
 describe("launch intro timeline", () => {
-  it("fits Will's budget: about 2 s, never over 2.5 s", () => {
+  it("fits the budget: about 2 s, never over 2.5 s", () => {
     expect(DESIGNED_TOTAL).toBeLessThanOrEqual(2500);
     expect(DESIGNED_TOTAL).toBeGreaterThanOrEqual(1800);
   });

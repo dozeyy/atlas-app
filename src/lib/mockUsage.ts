@@ -461,13 +461,18 @@ export class MockUsage {
 
   private points(t: Tokens, model: string, messages: number, startedAt: number, durationMs: number, agentId: string | null): MessagePoint[] {
     const n = Math.max(1, Math.min(messages, 40));
+    // A real run is uneven: quiet stretches, a few heavy replies, one clear busiest moment. The
+    // weights are fixed (no random) and add up to n, so the points still sum to the thread.
+    const raw = Array.from({ length: n }, (_, i) => 0.35 + 0.65 * Math.abs(Math.sin(i * 1.7 + n)) + (i === Math.floor(n * 0.62) ? 1.6 : 0));
+    const scale = n / raw.reduce((s, w) => s + w, 0);
     return Array.from({ length: n }, (_, i) => {
+      const w = raw[i] * scale;
       const part: Tokens = {
         ...zero(),
-        input: Math.round(t.input / n),
-        output: Math.round(t.output / n),
-        cacheWrite5m: Math.round(t.cacheWrite5m / n),
-        cacheRead: Math.round(t.cacheRead / n),
+        input: Math.round((t.input * w) / n),
+        output: Math.round((t.output * w) / n),
+        cacheWrite5m: Math.round((t.cacheWrite5m * w) / n),
+        cacheRead: Math.round((t.cacheRead * w) / n),
       };
       part.total = part.input + part.output + part.cacheWrite5m;
       return { ts: startedAt + Math.round((durationMs * i) / n), model, agentId, tokens: part, cost: costOf(model, part), skill: null };
