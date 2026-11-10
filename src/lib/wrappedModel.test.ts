@@ -209,6 +209,9 @@ describe("buildSlides: the Summit story", () => {
     expect(by.skill.figure).toBe("release-notes");
     expect(by.skill.line).toBe("Used 31 times in 22 sessions.");
     expect(by.helper.line).toBe("Called 320 times in 25 sessions.");
+    // A helper reads as it does on Team and Sessions, not as its type id.
+    expect(by.helper.figure).toBe("General purpose");
+    expect(by.helper.hint).toBeUndefined();
     expect(by.tool.figure).toBe("Bash");
     expect(by.tool.line).toBe("Run 52,000 times in 263 sessions.");
     expect(by.models.figure).toBe("Opus 5.5");

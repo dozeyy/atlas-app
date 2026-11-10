@@ -4,6 +4,7 @@
 // slide, one hero figure or graphic, one short line, and no fact on two slides (the end card
 // recaps them on purpose: it is the picture you save).
 
+import { typeName } from "./helperProgress";
 import { addDays, compact, exact, formatDuration, headline, hourName, plural } from "./usage";
 import type { ItemUse, SessionRow, TimelinePoint, WrappedHabits } from "./usageTypes";
 
@@ -484,7 +485,7 @@ function timesText(ratio: number): string {
 }
 
 /** A slide with a hero item (skill, helper or tool): its name and how often it was used. */
-function itemSlide(id: string, kicker: string, verb: string, list: ItemUse[]): Slide | null {
+function itemSlide(id: string, kicker: string, verb: string, list: ItemUse[], show: (name: string) => string = (n) => n): Slide | null {
   if (list.length === 0) return null;
   const top = list[0];
   const times = plural(top.uses, "time");
@@ -492,7 +493,7 @@ function itemSlide(id: string, kicker: string, verb: string, list: ItemUse[]): S
   return {
     id,
     kicker,
-    figure: name,
+    figure: show(name),
     // A shortened name keeps its exact one a hover away.
     ...(name !== top.id ? { hint: top.id } : {}),
     line: `${verb} ${times} in ${plural(top.sessions, "session")}.`,
@@ -634,7 +635,8 @@ export function buildSlides(d: WrappedData): Slide[] {
   }
 
   const skill = itemSlide("skill", "Your top skill", "Used", d.skills);
-  const helper = itemSlide("helper", "Your go-to helper", "Called", d.agents);
+  // A helper reads the way it does on Team, Sessions and Now: "General purpose", not its type id.
+  const helper = itemSlide("helper", "Your go-to helper", "Called", d.agents, typeName);
   const tool = itemSlide("tool", "Your go-to tool", "Run", d.tools);
   if (short) {
     const first = skill ?? helper ?? tool;
