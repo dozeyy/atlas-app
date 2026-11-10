@@ -81,9 +81,14 @@ code {
   font-size: 12px;
 }
 
+/* In the base layer on purpose. Outside a layer this reset beat every colour, weight and size
+   written for a button in trail.css, screens.css or as a Tailwind class, so buttons showed their
+   parent's text style instead of their own. */
+@layer base {
 button {
   font: inherit;
   color: inherit;
+}
 }
 
 /* Focus: the one place it is decided. A mouse click, a window coming back to the front and code that
