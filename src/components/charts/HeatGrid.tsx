@@ -43,8 +43,12 @@ export function HeatGrid({
   id: string;
   /** Daily activity, oldest first, the last entry is today. Give it a year; the grid shows what fits. */
   values: number[];
-  /** One readout per day, same order. */
-  readouts: Readout[];
+  /**
+   * One readout per day, same order. `axis` is the day as the left end of the grid names it
+   * ("Jul 14"): the grid shows as many weeks as fit, so its first day is named by its date, never
+   * by a count of weeks that changes with the window.
+   */
+  readouts: (Readout & { axis?: string })[];
   /** Says what the grid shows; the week count is added. */
   label: string;
   /** Show the Less/More colour key. */
@@ -115,7 +119,7 @@ export function HeatGrid({
           ) : null,
         )}
         <text className="axis-label" x={0} y={layout.height + 15}>
-          {`${weeks} weeks ago`}
+          {readouts[0]?.axis ?? `${weeks} weeks ago`}
         </text>
         <text className="today-label" x={width} y={layout.height + 15} textAnchor="end">
           Today

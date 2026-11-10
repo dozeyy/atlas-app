@@ -996,6 +996,10 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
 }
 /* Clips the last rule (top and bottom) but lets the rows' hit slop reach over the card's 1 px side border. */
 .session-clip {
+  /* Its own formatting context: without it the grid's -1px margin collapsed through this box, the
+     box stayed one pixel too tall, and the last rule was drawn straight across the card's rounded
+     bottom edge instead of being clipped. */
+  display: flow-root;
   clip-path: inset(0 -6px);
 }
 .session-grid > li {

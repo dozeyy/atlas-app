@@ -9,6 +9,7 @@ import { pushToast } from "../state/toastStore";
 import { getBackend } from "../lib/ipc";
 import type { McpStatus } from "../lib/ipc";
 import { describeSource, formatBytes } from "../lib/labels";
+import { longDate } from "../lib/dashboardModel";
 import { agoText } from "../lib/historyModel";
 import { plural } from "../lib/usage";
 import { useFetched, useUsageStatus } from "../lib/useUsage";
@@ -334,8 +335,9 @@ export function Settings() {
           <div role="status" className="border-t border-line px-5 py-3 text-body text-ink-2">
             {sb.state === "preparing" && "Making the copy..."}
             {sb.state === "failed" && (
-              <span className="text-danger">
-                The copy could not be made{sb.error ? `: ${sb.error}` : "."} Atlas is showing nothing rather than your real folder.
+              // The reason is the system's own words (often a path): it waits in the hover.
+              <span className="text-danger" title={sb.error ?? undefined}>
+                The copy could not be made. Atlas is showing nothing rather than your real folder.
               </span>
             )}
             {sb.state === "ready" && sb.report && (
@@ -375,9 +377,14 @@ export function Settings() {
           hint={
             status ? (
               <>
-                {status.state === "error"
-                  ? status.error ?? "The usage cache could not be opened."
-                  : `${plural(status.filesTracked, "session log")} read${status.lastIndexedAt ? `, updated ${agoText(status.lastIndexedAt)}` : ""}.`}
+                {status.state === "error" ? (
+                  // A plain sentence; the engine's own words (paths, codes) wait in the hover.
+                  <span className="text-danger" title={status.error ?? undefined}>
+                    Atlas could not read your usage.
+                  </span>
+                ) : (
+                  `${plural(status.filesTracked, "session log")} read${status.lastIndexedAt ? `, updated ${agoText(status.lastIndexedAt)}` : ""}.`
+                )}
                 {/* The file is in the Atlas data folder two rows down; its full path waits in the hover. */}
                 <div className="mt-1 text-caption">
                   <span title={status.cachePath}>{formatBytes(status.cacheBytes)} on disk</span>
@@ -402,9 +409,12 @@ export function Settings() {
           hint={
             price.data ? (
               price.data.error ? (
-                <span className="text-danger">{price.data.error}</span>
+                // The last good list stays in force (pricing_file.rs); the reason waits in the hover.
+                <span className="text-danger" title={price.data.error}>
+                  The price file could not be read. Atlas is using its last good prices.
+                </span>
               ) : (
-                <span title={price.data.path}>Updated {price.data.table.updated}</span>
+                <span title={price.data.path}>Updated {longDate(price.data.table.updated)}</span>
               )
             ) : (
               "Loading"
@@ -433,7 +443,7 @@ export function Settings() {
         >
           <Button onClick={() => void backend.historyOpenFolder().catch(() => {})}>Open folder</Button>
         </Row>
-        <Row label="Keep up to" tip="Older copies of a file are let go once it passes this many. The newest are always kept.">
+        <Row label="Versions kept per file" tip="Older copies of a file are let go once it passes this many. The newest are always kept.">
           <Stepper value={keep} onChange={setHistoryKeep} />
         </Row>
       </>

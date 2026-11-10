@@ -70,6 +70,21 @@ export function barTop(v: number, max: number, base: number, top: number): numbe
   return Math.min(base - (Math.min(v, max) / max) * (base - top), base - MIN_BAR);
 }
 
+/**
+ * The top of a bar chart's value axis for a largest value `v`. The axis prints three labels (top,
+ * half and 0), so the top is picked from 1 (tens and up), 2, 4, 6, 8 and 10 times a power of ten:
+ * its half is then a round number too. That keeps "2.5M / 1.3M" (a half that had to be rounded)
+ * and "1 / 1 / 0" (a count axis whose half was 0.5) from ever being drawn. Never below 2.
+ */
+export function axisMax(v: number): number {
+  if (!(v > 2)) return 2;
+  const base = 10 ** Math.floor(Math.log10(v));
+  for (const step of base >= 10 ? [1, 2, 4, 6, 8, 10] : [2, 4, 6, 8, 10]) {
+    if (v <= step * base * (1 + 1e-12)) return step * base;
+  }
+  return 10 * base;
+}
+
 export interface RidgeGeometry {
   pts: Pt[];
   line: string;

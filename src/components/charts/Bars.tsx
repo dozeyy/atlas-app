@@ -1,8 +1,7 @@
 import { useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ZERO_STUB, barPath, barTop } from "../../lib/chartPaths";
+import { ZERO_STUB, axisMax, barPath, barTop } from "../../lib/chartPaths";
 import { useIntro } from "../../lib/motion";
-import { niceMax } from "../../lib/usage";
 import { ChartTooltip } from "./ChartTooltip";
 import type { TipAt } from "./ChartTooltip";
 import { clearPeak, stepIndex, useWidth } from "./shared";
@@ -52,7 +51,7 @@ export function Bars({
   const intro = introId && !calm;
   const [active, setActive] = useState<number | null>(null);
   const n = data.length;
-  const max = niceMax(Math.max(0, ...data.map((d) => d.value)));
+  const max = axisMax(Math.max(0, ...data.map((d) => d.value)));
   const plotW = Math.max(40, width - LEFT - RIGHT);
   const base = height - BOTTOM;
   const slot = plotW / Math.max(1, n);

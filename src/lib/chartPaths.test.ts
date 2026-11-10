@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MIN_BAR,
+  axisMax,
   ZERO_STUB,
   barPath,
   barTop,
@@ -151,6 +152,28 @@ describe("paths", () => {
   it("barPath keeps a flat bottom on the baseline", () => {
     expect(barPath(10, 8, 20, 100, 6)).toContain("V100Z");
     expect(barPath(10, 8, 99, 100, 6)).toBe("M10,100h8v-1h-8Z");
+  });
+});
+
+describe("axisMax", () => {
+  it("is never below the largest value, and never below 2", () => {
+    expect(axisMax(0)).toBe(2);
+    expect(axisMax(1)).toBe(2);
+    for (const v of [0.3, 1, 2.4, 3, 7, 9, 12, 49, 51, 999, 1234, 123456, 2_300_000, 8_000_000]) {
+      expect(axisMax(v)).toBeGreaterThanOrEqual(v);
+      expect(axisMax(v)).toBeLessThanOrEqual(Math.max(2, v * 2));
+    }
+  });
+
+  it("picks a top whose half is a round number too", () => {
+    expect(axisMax(3)).toBe(4);
+    expect(axisMax(7)).toBe(8);
+    expect(axisMax(9)).toBe(10);
+    expect(axisMax(12)).toBe(20);
+    expect(axisMax(850_000)).toBe(1_000_000);
+    // 2.3M used to sit on a 2.5M axis whose half printed as "1.3M".
+    expect(axisMax(2_300_000)).toBe(4_000_000);
+    for (const v of [1, 2, 3, 5, 7, 11, 36, 180, 950]) expect(Number.isInteger(axisMax(v) / 2)).toBe(true);
   });
 });
 

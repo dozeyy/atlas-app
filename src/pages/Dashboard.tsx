@@ -24,6 +24,8 @@ import {
   bin,
   lastAndPrevious,
   lastDays,
+  longDate,
+  monthDay,
   percentChange,
   shortDay,
   sumTail,
@@ -91,7 +93,7 @@ function AboutNumbers({ data, status }: { data: DashboardData; status: UsageStat
   const info = price.data;
   const notes = [
     ...(info?.error ? ["The price file could not be read, so the last good prices are in use."] : []),
-    `Dollar figures in hovers are estimates from a price list${info ? ` (updated ${info.table.updated})` : ""}, not a bill.`,
+    `Dollar figures in hovers are estimates from a price list${info ? ` (updated ${longDate(info.table.updated)})` : ""}, not a bill.`,
     ...(info?.newerSeedAvailable ? ["Atlas ships newer prices, but your edited price file was kept."] : []),
     ...Notes({ data, status }),
   ];
@@ -241,6 +243,7 @@ export function Dashboard() {
     const pts = daily.points.slice(-n);
     const readouts = pts.map((p, i) => ({
       title: shortDay(p.start),
+      axis: monthDay(p.start),
       valueText: values[i] > 0 ? `${compact(values[i])} tokens` : "No activity",
       detail: values[i] > 0 ? `${formatUsd(p.cost.usd ?? 0)} estimated, ${plural(p.sessions, "session")} started` : "",
     }));
