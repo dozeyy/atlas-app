@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { ComponentType, ReactNode } from "react";
 import {
   Buildings,
@@ -128,6 +129,29 @@ export function KindTile({ kind, size = 36, icon }: { kind: ItemKind | "more"; s
       </IconMotion>
     </span>
   );
+}
+
+/**
+ * A file path that wraps after a slash where it can, and inside one long name only when it has
+ * to, so no folder name is split in two for nothing. Selecting and copying give the plain path.
+ */
+export function PathText({ path, className = "" }: { path: string; className?: string }) {
+  const parts = path.match(/[^\\/]*[\\/]?/g)?.filter(Boolean) ?? [path];
+  return (
+    <span className={`mono [overflow-wrap:anywhere] ${className}`}>
+      {parts.map((p, i) => (
+        <Fragment key={i}>
+          {p}
+          <wbr />
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+/** First letter upper-case, the rest as written ("skill" to "Skill", "MCP server" stays). */
+export function sentenceCase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export function formatSize(n: number | null): string {

@@ -197,10 +197,10 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
         <h2 id="usage-title" className="text-lead font-semibold text-ink">
           Used and never used
         </h2>
-        <p className="ml-auto text-caption text-ink-2">last 30 days</p>
+        <p className="ml-auto text-caption text-ink-2">Last 30 days</p>
       </div>
 
-      <div className="mt-3 grid gap-x-8 gap-y-4 @min-[500px]:grid-cols-2">
+      <div className="mt-3 grid gap-x-8 gap-y-4 @min-[560px]:grid-cols-2">
         <div className="flex min-w-0 items-center gap-4">
           <Ring
             id="usage:ring"
@@ -211,7 +211,7 @@ export function UsagePanel({ rows, items, onOpen }: { rows: UsageRow[] | null | 
           >
             <div className="flex flex-col items-center leading-none">
               <span className="d d-figure text-ink">{used.length}</span>
-              <span className="mt-1 text-caption text-ink-2">of {total}</span>
+              <span className="mt-1 text-caption text-ink-2">of {total} used</span>
             </div>
           </Ring>
           <div className="min-w-0 flex-1">
