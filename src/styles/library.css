@@ -27,16 +27,18 @@ html[data-input="keyboard"] .lib-sel::before,
 }
 
 /*
- * A row's picture. On the shelf it is a quiet tile, so the names lead, its glyph in the topic's
- * family colour (--tile, one of the four chart colours, pulled over halfway to ink so it reads on
- * the raised fill in every theme: the same mix the helper avatars use); installed, it is the
- * Toolkit's clay tile ("this one is yours") and carries a mark on its corner. The tile relaxes
- * into a blob when its row is pointed at, like the Toolkit's tiles, and its glyph comes to ink.
+ * A row's picture. On the shelf it is a quiet tile, so the names lead, in the topic's family
+ * colour (--tile, one of the four chart colours): a wash of it over the raised fill, and its glyph
+ * in the colour pulled 30 % to ink. At 55 % to ink on plain raised the four families all read as
+ * brown-grey (design review, 2026-11-10); now the glyph keeps >= 3.2:1 on its wash in every theme
+ * (measured). Installed, it is the Toolkit's clay tile ("this one is yours") and carries a mark on
+ * its corner. The tile relaxes into a blob when its row is pointed at, like the Toolkit's tiles,
+ * and its glyph comes to ink.
  */
 .lib-tile {
   border-radius: var(--r-control);
-  background: var(--raised);
-  color: color-mix(in srgb, var(--tile, var(--ink-2)) 55%, var(--ink));
+  background: color-mix(in srgb, var(--tile, var(--raised)) 25%, var(--raised));
+  color: color-mix(in srgb, var(--tile, var(--ink-2)) 70%, var(--ink));
   transition:
     border-radius var(--dur-hover) var(--ease-spring),
     color var(--dur-fast) var(--ease-out);
