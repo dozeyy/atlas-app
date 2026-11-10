@@ -799,11 +799,10 @@ html.reduced .side-main {
   margin: 0 calc(-8px - var(--sb, 0px)) 0 -8px;
   scrollbar-gutter: stable;
 }
-/* A typed word found in a chat's title: heavier and underlined in clay, nothing boxed. */
+/* A typed word found in a chat's title: heavier and underlined in clay, nothing boxed.
+   A fill would show as a stray patch past the "..." when the word itself is cut off. */
 .sl-hit {
-  border-radius: 3px;
-  background: var(--accent-tint);
-  box-shadow: 0 0 0 2px var(--accent-tint);
+  background: none;
   color: inherit;
   font-weight: 800;
   text-decoration: underline;
