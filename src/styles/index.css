@@ -315,6 +315,13 @@ html[data-input="keyboard"] :focus-within {
 .fade-in[data-closing] {
   animation: fade-out var(--dur-close) var(--ease-out) forwards;
 }
+/* A sheet on its way out lets clicks through: the next card clicked during the exit opens
+   (the newest action wins), instead of landing on the fading scrim. */
+:has(> .fade-in[data-closing]),
+.fade-in[data-closing],
+.sheet-enter[data-closing] {
+  pointer-events: none;
+}
 
 /* Dialogs rise in place; the checklist's finish gives one small, warm pop. */
 @keyframes pop-in {
