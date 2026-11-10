@@ -327,8 +327,12 @@
   /* The page fills the window; only its gutters scale (no fixed content width). */
   --gutter: clamp(20px, calc(var(--app-w) * 0.032), 64px);
   --gutter-y: clamp(20px, calc(var(--app-w) * 0.024), 44px);
-  --sidebar-w-collapsed: 76px; /* the menu and sidebar buttons (6 + 32 + 32) fit above the icons */
-  --titlebar-h: 40px; /* the row across the top: menu, sidebar toggle, caption buttons */
+  --titlebar-h: 40px; /* the row across the top: menu, Settings, sidebar toggle, Wrapped, caption buttons */
+  /* The shell's corner buttons (32 px): the same distance from every edge of their column as the
+     title bar leaves above them ((40 - 32) / 2), and one gap between neighbours. */
+  --shell-inset: 4px;
+  --shell-gap: 4px;
+  --sidebar-w-collapsed: 76px; /* a 2 x 2 square of 32 px buttons: 4 + 32 + 4 + 32 + 4 */
   /* Same numbers as MIN_WIDTH / MIN_HEIGHT in crates/app/src/main.rs. */
   --window-min-w: 900px;
   --window-min-h: 600px;

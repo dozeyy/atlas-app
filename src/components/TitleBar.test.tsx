@@ -89,6 +89,27 @@ describe("title bar row", () => {
   });
 });
 
+describe("the Settings gear", () => {
+  it("is an icon-only button in the title bar row, after the menu and before the sidebar toggle, that opens Settings and shows it selected", async () => {
+    mount("windows", true);
+    const gear = screen.getByRole("button", { name: "Settings" });
+    expect(gear.closest("header.titlebar")).not.toBeNull();
+    expect(gear.closest("nav")).toBeNull();
+    expect(gear).toHaveTextContent("");
+    expect(gear).not.toHaveAttribute("data-tauri-drag-region");
+    expect(gear).toHaveClass("titlebar-settings");
+    // Reading order of the row: menu, Settings, sidebar toggle, Wrapped (the CSS places them).
+    const order = Array.from(document.querySelectorAll("header.titlebar button")).map((b) => b.getAttribute("aria-label"));
+    expect(order.slice(0, 4)).toEqual(["Menu", "Settings", "Sidebar", "Wrapped"]);
+    expect(gear.getAttribute("title")).toMatch(/^Settings \((Ctrl|Cmd)\+6\)$/);
+    expect(gear).not.toHaveAttribute("aria-current");
+    await userEvent.click(gear);
+    expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+    expect(gear).toHaveAttribute("aria-current", "page");
+    expect(gear.getAttribute("title") ?? "").toBe("");
+  });
+});
+
 describe("Wrapped's gift", () => {
   it("is an icon-only button in the title bar row, outside the main list, that opens Wrapped and shows it selected", async () => {
     mount("windows", true);

@@ -23,9 +23,9 @@ export const NAV: { view: View; label: string; icon: ComponentType<IconProps>; m
   { view: "sessions", label: "Sessions", icon: ChatsCircle, motion: "bob" },
   { view: "setup", label: "Toolkit", icon: Wrench, motion: "wiggle" },
   { view: "history", label: "History", icon: ClockCounterClockwise, motion: "spin" },
+  // The last two are not in the list: their buttons are the gear and the gift in the title bar
+  // row (TitleBar.tsx). Last, so the shortcuts run 1 to 7 with no gap.
   { view: "settings", label: "Settings", icon: GearSix, motion: "spin" },
-  // Not in the list: its button is the gift at the right end of the title bar (TitleBar.tsx).
-  // Last, so the shortcuts run 1 to 7 with no gap.
   { view: "wrapped", label: "Wrapped", icon: GiftIcon, motion: "gift" },
 ];
 
@@ -37,17 +37,16 @@ export function Sidebar() {
   const { show, tip, mod } = useKeyHints();
   const { collapsed } = useSidebar();
   const sb = info.sandbox;
-  // Settings sits at the foot of the sidebar and Wrapped in the title bar; the sliding pill lives with the others.
+  // Settings and Wrapped sit in the title bar; the sliding pill lives with the others.
   const top = NAV.filter((n) => n.view !== "settings" && n.view !== "wrapped");
   const at = top.findIndex((n) => n.view === view);
 
-  const item = (n: (typeof NAV)[number], solo = false) => {
+  const item = (n: (typeof NAV)[number]) => {
     const { view: v, label, icon: Icon, motion } = n;
     const index = NAV.indexOf(n);
-    // A hover only where it tells something new: the name where nothing on screen says it (the gear,
-    // and every item while the sidebar is folded to icons), and the keys when Settings > Show
-    // shortcuts is on. A labelled item with the keys off has none: its label already says what it is.
-    const named = !solo && !collapsed;
+    // A hover only where it tells something new: the name while the sidebar is folded to icons, and
+    // the keys when Settings > Show shortcuts is on. A labelled item with the keys off has none: its
+    // label already says what it is.
     return (
       <button
         key={v}
@@ -55,15 +54,15 @@ export function Sidebar() {
         onClick={() => setView(v)}
         aria-current={v === view ? "page" : undefined}
         // An empty title, not a missing one: the tip layer sees the change when the sidebar folds under the pointer.
-        title={named && !show ? "" : tip(label, `${mod}+${index + 1}`)}
+        title={!collapsed && !show ? "" : tip(label, `${mod}+${index + 1}`)}
         aria-label={label}
-        className={`nav-item hover-host${solo ? " nav-solo" : ""}`}
+        className="nav-item hover-host"
       >
         <span className="nav-face text-body">
           <IconMotion motion={motion} fill>
             <Icon />
           </IconMotion>
-          {!solo && <span className="nav-label">{label}</span>}
+          <span className="nav-label">{label}</span>
         </span>
       </button>
     );
@@ -72,7 +71,7 @@ export function Sidebar() {
   return (
     <aside
       id="app-sidebar"
-      className={`side flex shrink-0 flex-col px-3 pb-3${collapsed ? " side-collapsed" : ""}`}
+      className={`side flex shrink-0 flex-col${collapsed ? " side-collapsed" : ""}`}
       style={{ background: info.backdrop ? "var(--sidebar-glass)" : "var(--sidebar-solid)" }}
     >
       <nav aria-label="Main" className="side-main relative flex flex-col gap-0.5">
@@ -101,13 +100,11 @@ export function Sidebar() {
             </span>
           </div>
         )}
-        {/* Settings: icon only, in the sidebar's bottom-right corner (centred when folded). The
-            update button, when there is one, fills the rest of the row from the bottom-left (icon
-            and the word "Update"; the icon alone above Settings when folded). */}
-        <nav aria-label="Secondary" className="nav-settings-row">
+        {/* The update button, when there is one: icon and the word "Update" across the foot from the
+            bottom-left corner; the icon alone, centred under the nav icons, when folded. */}
+        <div className="side-foot">
           <UpdateButton />
-          {item(NAV.find((n) => n.view === "settings")!, true)}
-        </nav>
+        </div>
       </div>
     </aside>
   );
