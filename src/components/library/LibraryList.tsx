@@ -26,6 +26,7 @@ import {
 import { Button, IconButton, Toggle } from "../controls";
 import { IconMotion, type Motion } from "../IconMotion";
 import { Chip, KindTile } from "../setup/parts";
+import { badge } from "../../lib/tagWords";
 import { AgentAvatar } from "../usage/helperKit";
 import { KIND_BY_ID } from "../../lib/setup-model";
 import {
@@ -240,7 +241,9 @@ function Row({
   // A chip is words, not a control: a click on it goes through to the row underneath.
   const said = underInstalled ? null : (
     <span className="pointer-events-none! flex min-w-0">
-      <Chip tone="good">Installed</Chip>
+      <Chip tone="good" title={badge("installed").tip}>
+        {badge("installed").label}
+      </Chip>
     </span>
   );
 
@@ -262,7 +265,9 @@ function Row({
         <>
           {installed.changed && (
             <span className="pointer-events-none! flex min-w-0">
-              <Chip tone="warn">Changed since you checked it</Chip>
+              <Chip tone="warn" title={badge("changedSince").tip}>
+                {badge("changedSince").label}
+              </Chip>
             </span>
           )}
           {installed.changed ? <Button onClick={() => actions.open(row)}>Check again</Button> : said}

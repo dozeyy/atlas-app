@@ -21,7 +21,6 @@ import {
   ruleWords,
   scopeRuns,
   splitSummary,
-  stateWords,
   toolsWords,
   visibleItems,
 } from "./setup-model";
@@ -250,14 +249,15 @@ describe("the settings file's own words stay off the surface", () => {
   it("writes a tag the way the rest of the app does, with the file's own word on hover", () => {
     const agent = of("agent");
     // A bare family name gets no version: Atlas does not make one up.
-    expect(chipWords(agent, "opus")).toEqual({ label: "Opus", title: "Model, as its file writes it: opus" });
-    expect(chipWords(agent, "claude-opus-5-5")).toEqual({ label: "Opus 5.5", title: "Model, as its file writes it: claude-opus-5-5" });
+    expect(chipWords(agent, "opus")).toEqual({ label: "Opus", title: "The model this agent runs on; its file writes it as opus." });
+    expect(chipWords(agent, "claude-opus-5-5")).toEqual({ label: "Opus 5.5", title: "The model this agent runs on; its file writes it as claude-opus-5-5." });
     expect(chipWords(agent, "inherit").label).toBe("Session's model");
-    // Only an agent's tag is a model: a skill tagged "opus" keeps its tag.
+    // Only an agent's tag is a model: a skill tagged "opus" keeps its tag, and gets no hover.
     expect(chipWords(of("skill"), "opus")).toEqual({ label: "opus" });
     expect(chipWords(of("skill"), "local").label).toBe("This computer only");
-    expect(chipWords(of("skill"), "backup copy")).toEqual({ label: "Backup copy" });
-    expect(chipWords(of("rule"), "src/**/*.ts")).toEqual({ label: "src/**/*.ts" });
+    expect(chipWords(of("skill"), "backup copy").label).toBe("Backup copy");
+    // Every tag the app shows explains itself on hover (the full map is tested in tagWords.test.ts).
+    expect(chipWords(of("rule"), "src/**/*.ts")).toEqual({ label: "src/**/*.ts", title: "Applies only while Claude works on files matching src/**/*.ts." });
   });
 
   it("says what the status line runs, with no type tag", () => {
@@ -276,8 +276,4 @@ describe("the settings file's own words stay off the surface", () => {
     expect(toolsWords("Task(reviewer)")).toBe("Task(reviewer)");
   });
 
-  it("calls a copy that loses to another Not in use, and says why on hover", () => {
-    expect(stateWords({ state: "shadowed", label: "Shadowed", raw: null })).toEqual({ label: "Not in use", hint: "Another copy with the same name is used instead of this one." });
-    expect(stateWords({ state: "on", label: "On", raw: null })).toEqual({ label: "On" });
-  });
 });

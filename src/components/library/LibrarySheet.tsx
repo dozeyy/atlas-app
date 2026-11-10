@@ -5,6 +5,7 @@ import { ArrowSquareOut, CaretRight, Package, X } from "@phosphor-icons/react";
 import { Button } from "../controls";
 import { EmptyState } from "../EmptyState";
 import { Chip } from "../setup/parts";
+import { badge } from "../../lib/tagWords";
 import { AgentAvatar } from "../usage/helperKit";
 import { KIND_BY_ID } from "../../lib/setup-model";
 import { PluginTile, tileState } from "./LibraryList";
@@ -290,7 +291,11 @@ export function LibrarySheet({ target, onClose }: { target: SheetTarget; onClose
                   <ArrowSquareOut size={12} aria-hidden="true" className="shrink-0" />
                 </button>
               )}
-              {installed && <Chip tone={installed.changed ? "warn" : "good"}>{installed.changed ? "Installed, changed" : installed.enabled === false ? "Installed, switched off" : "Installed"}</Chip>}
+              {installed && (
+                <Chip tone={installed.changed ? "warn" : "good"} title={badge(installed.changed ? "installedChanged" : installed.enabled === false ? "installedOff" : "installed").tip} focusable>
+                  {badge(installed.changed ? "installedChanged" : installed.enabled === false ? "installedOff" : "installed").label}
+                </Chip>
+              )}
             </p>
           </div>
           <button

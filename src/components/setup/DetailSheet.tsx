@@ -17,7 +17,8 @@ import { chipWords, connectionWords, displayChips, displayDescription, displayNa
 import { isPerCall, rowFor, usdHover } from "../../lib/setup-cost";
 import { compact, exact } from "../../lib/usage";
 import type { CostReport, CostRow, MaskedRange, SetupItem, SourceView } from "../../lib/setup-types";
-import { Chip, ConflictChip, copyText, formatDate, formatSize, ItemIcon, PathText, ScopeChip, sentenceCase, StateChip, TagChip } from "./parts";
+import { Chip, ConflictChip, copyText, formatDate, formatSize, ItemIcon, PathText, ScopeChip, StateChip, TagChip } from "./parts";
+import { badge, kindWords } from "../../lib/tagWords";
 
 const REVEAL_MS = 10_000;
 
@@ -609,15 +610,26 @@ export function DetailSheet({
               {displayName(item)}
             </h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <Chip tone="muted">{sentenceCase(meta.singular)}</Chip>
-              <ScopeChip scope={item.scope} label={item.scopeLabel} />
-              <StateChip enabled={item.enabled} />
-              {item.backup && <Chip tone="muted">Backup copy</Chip>}
-              {item.worktree && <Chip tone="muted">Agent worktree</Chip>}
+              {/* The sheet's chips take keyboard focus (there are a few): the tooltip then reads on Tab as well as hover. */}
+              <Chip tone="muted" title={kindWords(meta.singular, meta.blurb).tip} focusable>
+                {kindWords(meta.singular, meta.blurb).label}
+              </Chip>
+              <ScopeChip scope={item.scope} label={item.scopeLabel} focusable />
+              <StateChip enabled={item.enabled} focusable />
+              {item.backup && (
+                <Chip tone="muted" title={badge("backupCopy").tip} focusable>
+                  {badge("backupCopy").label}
+                </Chip>
+              )}
+              {item.worktree && (
+                <Chip tone="muted" title={badge("worktree").tip} focusable>
+                  {badge("worktree").label}
+                </Chip>
+              )}
               {sheetChips(item).map((c) => {
                 const { label, title } = chipWords(item, c);
                 return (
-                  <TagChip key={c} title={title}>
+                  <TagChip key={c} title={title} focusable>
                     {label}
                   </TagChip>
                 );
@@ -704,7 +716,7 @@ export function DetailSheet({
         {conflict && (
           <Section title="Also defined elsewhere">
             <p className="mb-2.5 flex items-center gap-2 text-body text-ink-2">
-              <ConflictChip conflict={conflict} />
+              <ConflictChip conflict={conflict} focusable />
               The first one listed is the one Claude uses.
             </p>
             <ul className="overflow-hidden rounded-card border border-line">
@@ -719,8 +731,16 @@ export function DetailSheet({
                       className="press flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left text-body text-ink hover:bg-raised disabled:cursor-default disabled:hover:bg-transparent"
                     >
                       <span className="min-w-0 flex-1 truncate">{d.scopeLabel}</span>
-                      {d.winner && <Chip tone="good">Used</Chip>}
-                      {d.isSelf && <Chip tone="muted">This one</Chip>}
+                      {d.winner && (
+                        <Chip tone="good" title={badge("used").tip}>
+                          {badge("used").label}
+                        </Chip>
+                      )}
+                      {d.isSelf && (
+                        <Chip tone="muted" title={badge("thisOne").tip}>
+                          {badge("thisOne").label}
+                        </Chip>
+                      )}
                     </button>
                   </li>
                 );
@@ -752,7 +772,9 @@ export function DetailSheet({
                   {mcp.perProject.map((p) => (
                     <li key={p.projectId} className="flex items-center justify-between gap-2 rounded-control bg-raised px-2.5 py-1.5 text-body">
                       <span title={p.projectName} className="truncate text-ink">{p.projectName}</span>
-                      <Chip tone={p.on ? "good" : "muted"}>{p.on ? "On" : "Off"}</Chip>
+                      <Chip tone={p.on ? "good" : "muted"} title={badge(p.on ? "onHere" : "offHere").tip}>
+                        {badge(p.on ? "onHere" : "offHere").label}
+                      </Chip>
                     </li>
                   ))}
                 </ul>

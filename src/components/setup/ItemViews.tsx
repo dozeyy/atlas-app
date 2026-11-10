@@ -5,6 +5,7 @@ import { pushToast } from "../../state/toastStore";
 import type { KeyboardEvent } from "react";
 import { deleteItem, errorText, whatGetsRemoved } from "../../lib/setup-actions";
 import { chipWords, displayChips, displayDescription, displayName, KIND_BY_ID, relativeTime } from "../../lib/setup-model";
+import { moreWords } from "../../lib/tagWords";
 import type { SetupItem } from "../../lib/setup-types";
 import { removedPath } from "./ConfirmDelete";
 import { ConflictChip, copyText, formatDate, ItemIcon, ScopeChip, SecretsChip, StateChip, TagChip, WarningMark } from "./parts";
@@ -239,7 +240,7 @@ export const ItemCard = memo(function ItemCard({ item, onOpen, canDelete }: Item
                 </TagChip>
               );
             })}
-            {more > 0 && <TagChip>+{more}</TagChip>}
+            {more > 0 && <TagChip title={moreWords(more).tip}>{moreWords(more).label}</TagChip>}
             {item.conflict && <ConflictChip conflict={item.conflict} />}
             {item.hasSecrets && <SecretsChip />}
             <WarningMark warnings={item.warnings} />
