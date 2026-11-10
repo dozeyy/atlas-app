@@ -41,7 +41,7 @@ export function HelperTracker({ chats }: { chats: NowChat[] }) {
   const named = groups.length > 1;
   return (
     <section className="ht" aria-label="Helpers at work">
-      <h2 className="now-list-head">
+      <h2 className="h-section now-list-head">
         <span>Helpers at work</span>
         <span className="now-count">{count}</span>
       </h2>
@@ -142,7 +142,9 @@ function PhaseWord({ phase, status, done }: { phase: string; status: Status; don
 function Trail({ progress, done }: { progress: Progress; done: boolean }) {
   const { fill, animate } = useCalmFill(done ? 1 : progress.fill);
   return (
-    <div className="ht-trail" data-kind={progress.kind} data-done={done || undefined} aria-hidden="true">
+    // The words beside the track already say what it shows, so it stays out of the reading order;
+    // its hover says the same for the pointer.
+    <div className="ht-trail" data-kind={progress.kind} data-done={done || undefined} aria-hidden="true" title={done ? "Finished" : (progress.hint ?? progress.text)}>
       <span className="ht-path" />
       {fill !== null && <span className="ht-fill" data-anim={animate || undefined} style={{ ["--fill" as string]: Math.round(fill * 1000) / 10 }} />}
     </div>

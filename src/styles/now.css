@@ -430,11 +430,13 @@
 }
 
 .ht-row {
-  --ht-trail: 200px;
-  --ht-prog: 156px;
+  /* The trail and the status take what they need and no more, so the name and its model
+     ("Sonnet 5.5, medium effort") keep a whole line at every width the sidebar leaves. */
+  --ht-trail: 152px;
+  --ht-prog: 148px;
   flex: none;
   display: grid;
-  grid-template-columns: 32px minmax(96px, 1fr) var(--ht-trail) var(--ht-prog) minmax(112px, 148px) 56px 56px;
+  grid-template-columns: 32px minmax(96px, 1fr) var(--ht-trail) var(--ht-prog) minmax(100px, 136px) 56px 56px;
   align-items: center;
   gap: 12px;
   height: 56px;
@@ -577,25 +579,28 @@ html.reduced .nc-doing-text {
     --ht-trail: 120px;
   }
 }
-/* Then the token count goes and the words shrink. The model line and the progress words keep
-   their room, and the status has room for "No progress for 12 min". (Up to 900 px: between 781
-   and 808 px the wide row did not fit, and the name was squeezed to nothing.) */
+/* Then the words shrink. The token count stays (it is what the row is for) and the status has
+   room for "No progress for 12 min". (Between 781 and 808 px the wide row did not fit, and the
+   name was squeezed to nothing: the name column's floor is 120 px.) */
 @container ht (max-width: 900px) {
   .ht-row {
-    --ht-trail: 104px;
-    --ht-prog: 152px;
-    gap: 10px;
-    grid-template-columns: 32px minmax(120px, 1fr) var(--ht-trail) var(--ht-prog) minmax(88px, 136px) 56px;
-  }
-  .ht-tokens[data-opt] {
-    display: none;
+    /* A 900 px window with the rail: the trail and the status give up 40 px between them so the
+       model's name ("Sonnet 5.5") stays readable after the helper's name. */
+    --ht-trail: 80px;
+    --ht-prog: 148px;
+    gap: 8px;
+    grid-template-columns: 32px minmax(120px, 1fr) var(--ht-trail) var(--ht-prog) minmax(88px, 120px) 56px 56px;
   }
 }
-/* The smallest window with the sidebar open: the trail and the status give the name what they can. */
+/* The smallest window with the sidebar open: the token count goes, and the trail and the status
+   give the name what they can. */
 @container ht (max-width: 700px) {
   .ht-row {
     --ht-trail: 64px;
     grid-template-columns: 32px minmax(120px, 1fr) var(--ht-trail) var(--ht-prog) minmax(88px, 100px) 56px;
+  }
+  .ht-tokens[data-opt] {
+    display: none;
   }
 }
 

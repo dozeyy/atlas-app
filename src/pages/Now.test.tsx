@@ -178,7 +178,8 @@ describe("Now", () => {
     expect(within(waitRow).getByRole("heading", { level: 3, name: "Write the notes" })).toBeInTheDocument();
     expect(within(waitRow).getByText("Waiting for you")).toBeInTheDocument();
     expect(within(waitRow).getByText("48k")).toBeInTheDocument();
-    expect(within(waitRow).getByText("4 min")).toBeInTheDocument();
+    // A time, said as one ("4 min ago" under "Stopped"), never a bare length.
+    expect(within(waitRow).getByText("4 min ago")).toBeInTheDocument();
     // Same model chip as the running and finished cards.
     expect(within(waitRow).getByText("Opus 5.5, high effort")).toHaveClass("chip");
 
@@ -197,7 +198,7 @@ describe("Now", () => {
     expect(within(rows[1]!).queryByText("Tokens")).not.toBeInTheDocument();
     expect(within(rows[1]!).queryByText("-")).not.toBeInTheDocument();
     expect(rows[1]!.querySelectorAll(".now-stat")).toHaveLength(1);
-    expect(within(rows[1]!).getByText("2 h")).toBeInTheDocument();
+    expect(within(rows[1]!).getByText("2 h ago")).toBeInTheDocument();
   });
 
   it("names the files a chat has touched in the hover on what it is doing, not as chips on the row", async () => {

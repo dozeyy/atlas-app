@@ -176,9 +176,10 @@ function WaitRow({ chat, now }: { chat: NowChat; now: number }) {
           </span>
         </p>
       </div>
-      {chat.workedMs !== null && <Stat fig={formatDuration(chat.workedMs)} cap="Last turn" optional={1} />}
+      {chat.workedMs !== null && <Stat fig={formatDuration(chat.workedMs)} cap="Last turn took" optional={1} />}
       <Stat fig={compact(chat.tokens)} cap="Tokens" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))} optional={2} />
-      <Stat fig={ago(chat.lastWriteMs, now).replace(/ ago$/, "")} cap="Stopped" />
+      {/* "3 min ago" under "Stopped": a time, never mistaken for a length. */}
+      <Stat fig={ago(chat.lastWriteMs, now)} cap="Stopped" />
     </li>
   );
 }
@@ -207,7 +208,7 @@ function DoneRow({ last, now }: { last: NowLast; now: number }) {
           end of its file), so its row shows no token figure at all: a dash read as missing data, and
           right after a launch every row had one. */}
       {last.tokens !== null && <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false))} optional={2} />}
-      <Stat fig={ago(last.endedMs, now).replace(/ ago$/, "")} cap="Ended" />
+      <Stat fig={ago(last.endedMs, now)} cap="Ended" />
     </li>
   );
 }
