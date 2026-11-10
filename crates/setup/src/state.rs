@@ -142,6 +142,12 @@ struct Inner {
     waiting_atlas: bool,
     /// The install is over and the cache has been (or is being) handed back: no reader may start.
     handoff_started: bool,
+    /// Install: the "Put Atlas on the desktop" box is ticked (it starts ticked, as in setup.html).
+    want_desktop: bool,
+    /// Install: Atlas's files (and its Start menu entry) are in place, so a shortcut can be made.
+    files_written: bool,
+    /// Install: this Setup put the desktop shortcut there (so unticking may take it away again).
+    made_desktop: bool,
 }
 
 pub struct Setup {
@@ -177,6 +183,9 @@ impl Setup {
                 closed: false,
                 waiting_atlas: false,
                 handoff_started: false,
+                want_desktop: true,
+                files_written: false,
+                made_desktop: false,
             }),
             app: Mutex::new(None),
             last_sent: Mutex::new(None),
@@ -479,6 +488,8 @@ impl Setup {
             return self.fail(&e.message());
         }
         self.log("install: files written");
+        self.lock().files_written = true;
+        self.apply_desktop();
 
         // Straight on: the reading stops where it is (Atlas continues from there) and Atlas starts.
         self.update(|g| {
@@ -507,6 +518,48 @@ impl Setup {
             g.stage = "";
         });
         self.log("install: done");
+    }
+
+    /// The desktop box changed. Before the files are in place it is only remembered (the install
+    /// applies it); after, it applies at once.
+    pub fn set_desktop(&self, on: bool) {
+        let ready = {
+            let mut g = self.lock();
+            g.want_desktop = on;
+            g.files_written
+        };
+        if ready {
+            self.apply_desktop();
+        }
+    }
+
+    /// Make the desktop shortcut match the box. Held under the lock so a click and the install's own
+    /// call never cross. A failure is only logged: the Start menu entry is always there.
+    fn apply_desktop(&self) {
+        let mut g = self.lock();
+        let desktop = crate::winsys::known_folder(crate::winsys::Folder::Desktop);
+        let start = crate::winsys::known_folder(crate::winsys::Folder::StartMenuPrograms);
+        let (Some(desktop), Some(start)) = (desktop, start) else {
+            return self.log("desktop shortcut: folders not found");
+        };
+        if g.want_desktop && !g.made_desktop {
+            match install::add_desktop_shortcut(&start, &desktop) {
+                Ok(true) => {
+                    g.made_desktop = true;
+                    self.log("desktop shortcut: added");
+                }
+                Ok(false) => self.log("desktop shortcut: one is already there, left as it is"),
+                Err(e) => self.log(&format!("desktop shortcut: not added ({e})")),
+            }
+        } else if !g.want_desktop && g.made_desktop {
+            match install::remove_desktop_shortcut(&desktop) {
+                Ok(()) => {
+                    g.made_desktop = false;
+                    self.log("desktop shortcut: removed");
+                }
+                Err(e) => self.log(&format!("desktop shortcut: not removed ({e})")),
+            }
+        }
     }
 
     /// Close the door on any reader that has not started and take the one that has. A reader that
@@ -643,6 +696,12 @@ pub fn close_atlas_and_continue(s: Shared<'_>) {
 #[tauri::command]
 pub fn begin_uninstall(s: Shared<'_>, remove_data: bool) {
     s.begin(Job::Uninstall { remove_data });
+}
+
+/// The "Put Atlas on the desktop" box was ticked or unticked.
+#[tauri::command]
+pub fn set_desktop_shortcut(s: Shared<'_>, on: bool) {
+    s.set_desktop(on);
 }
 
 #[tauri::command]

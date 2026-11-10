@@ -174,6 +174,7 @@ fn window(mode: Mode, dir: PathBuf) {
             state::retry,
             state::close_atlas_and_continue,
             state::begin_uninstall,
+            state::set_desktop_shortcut,
             state::cancel,
             state::finish,
         ])

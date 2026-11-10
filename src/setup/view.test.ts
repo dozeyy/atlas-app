@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  desktopBoxShown,
   COPY_MAX,
   EDGE_CLEAR,
   KEY_WINDOW_MS,
@@ -88,6 +89,13 @@ describe("the install screens (it starts by itself, so there is no Install butto
     expect(d.line).toBe("All set.");
     expect(d.primary).toBeNull();
     expect(d.closable).toBe(false);
+  });
+
+  it("offers the desktop box the whole time it installs, never while removing", () => {
+    for (const phase of ["ready", "closeAtlas", "installing", "done", "error"] as const) {
+      expect(desktopBoxShown(snap({ phase }))).toBe(true);
+      expect(desktopBoxShown(snap({ phase, mode: "uninstall" }))).toBe(false);
+    }
   });
 
   it("never offers the saved-data box while installing", () => {

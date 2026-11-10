@@ -315,6 +315,10 @@ export class MockBackend {
   libraryCancel: Backend["libraryCancel"] = () => this.library.libraryCancel();
   libraryPerf: Backend["libraryPerf"] = (ms) => this.library.libraryPerf(ms);
   onLibraryProgress: Backend["onLibraryProgress"] = (cb) => this.library.onLibraryProgress(cb);
+  /** Windows only, like the real one; off until turned on. */
+  desktopShortcutOn = false;
+  desktopShortcut: Backend["desktopShortcut"] = async () => (this.info.platform === "windows" ? this.desktopShortcutOn : null);
+  setDesktopShortcut: Backend["setDesktopShortcut"] = async (on) => (this.desktopShortcutOn = on);
   // ---- updates: the stand-in lives in mockUpdate.ts ----
   readonly updates = new MockUpdates();
   updateCheck: Backend["updateCheck"] = () => this.updates.updateCheck();

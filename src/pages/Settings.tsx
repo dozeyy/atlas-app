@@ -84,6 +84,18 @@ export function Settings() {
   const keep = info.settings.historyKeepVersions;
   const overview = useFetched(() => backend.settingsOverview(), [backend, cfg?.dir, keep]);
   const price = useFetched(() => backend.pricingGet(), [backend]);
+  const desktop = useFetched(() => backend.desktopShortcut(), [backend]);
+  const [desktopOn, setDesktopOn] = useState<boolean | null>(null);
+  const shortcutOn = desktopOn ?? desktop.data ?? false;
+  const setShortcut = async (on: boolean) => {
+    setDesktopOn(on);
+    try {
+      setDesktopOn(await backend.setDesktopShortcut(on));
+    } catch (e) {
+      setDesktopOn(!on);
+      pushToast({ message: e instanceof Error ? e.message : String(e), tone: "error" });
+    }
+  };
   const reloadOverview = overview.reload;
 
   // History moved on: re-read the store size without blanking the numbers.
@@ -233,6 +245,11 @@ export function Settings() {
         >
           <Toggle label="Keep running when closed" checked={info.settings.closeToTray} onChange={setCloseToTray} />
         </Row>
+        {desktop.data != null && (
+          <Row label="Shortcut on the desktop" tip="Atlas is always in the Start menu. This adds it to the desktop too.">
+            <Toggle label="Shortcut on the desktop" checked={shortcutOn} onChange={(on) => void setShortcut(on)} />
+          </Row>
+        )}
         <Row label="Tell me when a chat finishes">
           <Toggle label="Tell me when a chat finishes" checked={info.settings.notifyOnFinish} onChange={setNotifyOnFinish} />
         </Row>

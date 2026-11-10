@@ -17,6 +17,7 @@ import {
   MARK_PX,
   RING_COUNT,
   SHEET,
+  desktopBoxShown,
   SUMMIT,
   ringPath,
   screenFor,
@@ -260,6 +261,7 @@ function leave(): Promise<void> {
 // ------------------------------------------------------------------ the words
 
 const optData = $<HTMLInputElement>("opt-data");
+const optDesktop = $<HTMLInputElement>("opt-desktop");
 let lastLine = "";
 let lastBad = false;
 
@@ -295,6 +297,7 @@ function render(s: Snapshot) {
   renderLine(screen.line, s.phase === "error");
   renderButton("primary", screen.primary);
   $<HTMLElement>("databox").hidden = !screen.dataBox;
+  $<HTMLElement>("deskbox").hidden = !desktopBoxShown(s);
   $<HTMLButtonElement>("x").disabled = !screen.closable;
   // The trail only ever climbs: a read that restarts must not walk it backward. (Once a
   // person retries, it starts over from the foot.)
@@ -361,6 +364,8 @@ function wire() {
   });
   // The box changes what the Done line says, so the line follows it.
   optData.addEventListener("change", () => render(current));
+  // Rust remembers the box until Atlas's files are in place, then makes (or takes back) the shortcut.
+  optDesktop.addEventListener("change", () => void call("set_desktop_shortcut", { on: optDesktop.checked }));
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$<HTMLButtonElement>("x").disabled) $<HTMLButtonElement>("x").click();
   });

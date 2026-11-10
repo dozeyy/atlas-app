@@ -72,7 +72,7 @@ pub fn atlas_exe(dir: &Path) -> PathBuf {
 }
 
 /// The switches for the silent run. `/NS` is the installer's "no shortcut" switch: without it a silent
-/// install puts Atlas on the desktop. It also skips the Start menu entry, which the installer hook
+/// install always puts Atlas on the desktop; Setup's own box decides that instead (`add_desktop_shortcut`). It also skips the Start menu entry, which the installer hook
 /// (`crates/app/windows/hooks.nsh`) puts back. The folder switch is separate (`folder_switch`) because the
 /// installer wants it last and unquoted.
 pub fn silent_args() -> [&'static str; 2] {
@@ -201,6 +201,29 @@ pub fn copy_bytes(from: &Path, to: &Path) -> std::io::Result<()> {
     dst.sync_all()
 }
 
+/// The shortcut's file name, the same one the installer uses, so its uninstaller removes it too.
+pub const SHORTCUT: &str = "Atlas.lnk";
+
+/// Put Atlas on the desktop: a copy of the Start menu entry the installer made (same target, same
+/// app id, so Windows treats them as one app). `Ok(false)` when an `Atlas.lnk` is already on the
+/// desktop: it is left as it is (it may be the person's own) and is not ours to take away later.
+pub fn add_desktop_shortcut(start_menu: &Path, desktop: &Path) -> std::io::Result<bool> {
+    let to = desktop.join(SHORTCUT);
+    if to.exists() {
+        return Ok(false);
+    }
+    copy_bytes(&start_menu.join(SHORTCUT), &to)?;
+    Ok(true)
+}
+
+/// Take away the desktop shortcut this Setup put there (only ever called for one it made).
+pub fn remove_desktop_shortcut(desktop: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(desktop.join(SHORTCUT)) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
 /// Put the remover beside Atlas and make Apps and features start it. The remover is this very
 /// program (it picks its role from its own file name), written under a temporary name and
 /// renamed into place so a half-written file is never what runs. Failure is not an install
@@ -268,6 +291,32 @@ mod tests {
     #[test]
     fn the_install_is_silent_and_makes_no_desktop_shortcut() {
         assert_eq!(silent_args(), ["/S", "/NS"]);
+    }
+
+    #[test]
+    fn the_desktop_shortcut_is_a_copy_of_the_start_menu_entry_and_never_replaces_one() {
+        let t = tempfile::tempdir().unwrap();
+        let (start, desk) = (t.path().join("Programs"), t.path().join("Desktop"));
+        std::fs::create_dir_all(&start).unwrap();
+        std::fs::create_dir_all(&desk).unwrap();
+        std::fs::write(start.join(SHORTCUT), b"lnk-bytes").unwrap();
+
+        assert!(add_desktop_shortcut(&start, &desk).unwrap());
+        assert_eq!(std::fs::read(desk.join(SHORTCUT)).unwrap(), b"lnk-bytes");
+        remove_desktop_shortcut(&desk).unwrap();
+        assert!(!desk.join(SHORTCUT).exists());
+        remove_desktop_shortcut(&desk).unwrap(); // already gone is fine
+
+        // One already there (the person's own) is left alone and not claimed.
+        std::fs::write(desk.join(SHORTCUT), b"theirs").unwrap();
+        assert!(!add_desktop_shortcut(&start, &desk).unwrap());
+        assert_eq!(std::fs::read(desk.join(SHORTCUT)).unwrap(), b"theirs");
+
+        // No Start menu entry to copy: an error, nothing written.
+        std::fs::remove_file(start.join(SHORTCUT)).unwrap();
+        std::fs::remove_file(desk.join(SHORTCUT)).unwrap();
+        assert!(add_desktop_shortcut(&start, &desk).is_err());
+        assert!(!desk.join(SHORTCUT).exists());
     }
 
     #[test]

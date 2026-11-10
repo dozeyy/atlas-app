@@ -244,3 +244,33 @@ pub fn ask_to_close(pids: &[u32]) -> usize {
     }
     ctx.asked
 }
+
+/// A shell folder of this user (Desktop, Start menu Programs), where Windows really keeps it: a Desktop
+/// moved into OneDrive is found there, not at `%USERPROFILE%\Desktop`.
+pub enum Folder {
+    Desktop,
+    StartMenuPrograms,
+}
+
+pub fn known_folder(which: Folder) -> Option<PathBuf> {
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::{FOLDERID_Desktop, FOLDERID_Programs, KF_FLAG_DEFAULT, SHGetKnownFolderPath};
+    let id = match which {
+        Folder::Desktop => &FOLDERID_Desktop,
+        Folder::StartMenuPrograms => &FOLDERID_Programs,
+    };
+    let mut raw: *mut u16 = std::ptr::null_mut();
+    // SAFETY: `raw` is an out pointer the call fills with a CoTaskMem string, freed below either way.
+    let hr = unsafe { SHGetKnownFolderPath(id, KF_FLAG_DEFAULT as _, std::ptr::null_mut(), &mut raw) };
+    let out = if hr >= 0 && !raw.is_null() {
+        // SAFETY: on success `raw` is a NUL-terminated wide string.
+        let len = (0..).take_while(|&i| unsafe { *raw.add(i) } != 0).count();
+        let slice = unsafe { std::slice::from_raw_parts(raw, len) };
+        Some(PathBuf::from(String::from_utf16_lossy(slice)))
+    } else {
+        None
+    };
+    // SAFETY: CoTaskMemFree accepts null and the pointer the call gave back.
+    unsafe { CoTaskMemFree(raw as *const _) };
+    out
+}

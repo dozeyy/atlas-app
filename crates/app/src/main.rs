@@ -12,6 +12,7 @@ mod mcp_service;
 mod now;
 mod search;
 mod setup_service;
+mod shortcut;
 mod team;
 mod state;
 mod tour;
@@ -155,6 +156,8 @@ fn main() {
             intro::splash_done,
             update::update_check,
             update::update_install,
+            shortcut::desktop_shortcut,
+            shortcut::set_desktop_shortcut,
             tour::tour_step,
             mcp_service::mcp_status,
             mcp_service::mcp_connect,

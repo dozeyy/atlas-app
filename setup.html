@@ -96,6 +96,11 @@
         <div class="actions">
           <button id="primary" class="btn primary" type="button" hidden></button>
         </div>
+        <!-- Installing only: on to start (the install takes seconds, so the default is the usual
+             installer one); unticking takes the shortcut away again. The Start menu entry is always made. -->
+        <div id="deskbox" class="databox" hidden>
+          <label class="check"><input id="opt-desktop" type="checkbox" checked /><span class="box"></span>Put Atlas on the desktop</label>
+        </div>
         <!-- Uninstalling only: the one choice, off unless the person ticks it. -->
         <div id="databox" class="databox" hidden>
           <label class="check"><input id="opt-data" type="checkbox" /><span class="box"></span>Also remove Atlas's saved data</label>

@@ -260,6 +260,10 @@ export interface Backend {
   onHistoryChanged(cb: () => void): Promise<Unlisten>;
   /** Sizes and Claude Code's own cleanup setting, for the Settings page. */
   settingsOverview(): Promise<SettingsOverview>;
+  /** Windows: whether Atlas is on the desktop; null when there is nothing to offer (other systems, a build without a Start menu entry). */
+  desktopShortcut(): Promise<boolean | null>;
+  /** Put Atlas on the desktop or take it away; resolves with the new state, rejects with one plain sentence. */
+  setDesktopShortcut(on: boolean): Promise<boolean>;
 
   // Updates: Atlas asks whether a newer version exists and installs it only when told to.
   /** The newer version, or null when this one is current. Rejects with one plain sentence. */
@@ -391,6 +395,8 @@ const tauriBackend: Backend = {
   },
   onHistoryChanged: (cb) => listen(HISTORY_EVENT, () => cb()),
   settingsOverview: () => invoke<SettingsOverview>("settings_overview"),
+  desktopShortcut: () => invoke<boolean | null>("desktop_shortcut"),
+  setDesktopShortcut: (on) => invoke<boolean>("set_desktop_shortcut", { on }),
   updateCheck: () => invoke<UpdateInfo | null>("update_check"),
   updateInstall: async () => {
     await invoke("update_install");

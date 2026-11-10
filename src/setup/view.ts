@@ -100,6 +100,12 @@ export interface Screen {
   closable: boolean;
 }
 
+/** The "Put Atlas on the desktop" box: offered the whole time Setup installs, so it can be ticked
+ * while the install runs (and even just after: it applies at once then). Never while removing. */
+export function desktopBoxShown(s: Snapshot): boolean {
+  return s.mode === "install";
+}
+
 /** Whether the remover's data box was ticked; only the uninstall screens use it. */
 export function screenFor(s: Snapshot, removeData = false): Screen {
   const none = { primary: null, dataBox: false };
