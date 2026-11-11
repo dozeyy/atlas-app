@@ -569,3 +569,6 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Keyboard shortcuts sheet: each key in "X or Y" / "X / Y" is its own nowrap chip in a wrapping dt, so long Mac keys no longer run into the text.
 - README screenshots in dozeyy/atlas are rendered with `ATLAS_PLATFORM=windows ATLAS_ENGINE=chromium node tools/webkit-shots.mjs` on the tour build: WebKit on Windows draws Recursive too thin. The mock tour's Now page is empty, so the README shows Toolkit instead.
 - Released and published 0.1.7 (publish-public.ps1, all checks passed).
+
+## 2026-11-10 - 0.1.8: flipped chart tips sit under the item
+- TipAt has yBelow: Bars use the baseline, HeatGrid the cell bottom, Ridge the point +10, so a tip that opens below never covers what is hovered. Checked headless (Chromium, 1280x520, highest item scrolled to the page top). Released and published 0.1.8.
