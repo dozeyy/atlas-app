@@ -32,6 +32,12 @@ const reduceMotion =
 const call = <R = void>(cmd: string, args?: Record<string, unknown>): Promise<R> =>
   inTauri ? invoke<R>(cmd, args) : Promise.resolve(undefined as R);
 
+// Diagnostics (ATLAS_INTRO_TRACE=1): the page's clock, logged by Rust next to its own timings.
+const traceOn = (window as { __ATLAS_INTRO_TRACE__?: boolean }).__ATLAS_INTRO_TRACE__ === true;
+const trace = (msg: string) => {
+  if (traceOn) void call("intro_trace", { msg: `splash page +${Math.round(performance.now())} ms: ${msg}` }).catch(() => {});
+};
+
 function div(cls: string, parent: HTMLElement): HTMLDivElement {
   const d = document.createElement("div");
   d.className = cls;
@@ -145,13 +151,16 @@ async function main() {
 
   // Rust fits and shows this window, then answers; the layout and timeline start after that.
   let radius = 0;
+  trace(`loaded, viewport ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}`);
   try {
     const cfg = await call<{ radius: number; width: number; height: number }>("splash_ready");
     radius = cfg?.radius ?? 0;
+    trace(`shown, asked for ${cfg?.width}x${cfg?.height}`);
     if (cfg) await viewportIs(cfg.width, cfg.height);
   } catch {
     return; // the intro was abandoned; Rust closes this window
   }
+  trace(`viewport ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}`);
   stage.style.setProperty("--stage-radius", `${radius}px`);
   const parts = build(stage);
   // Let the compositor raster every layer once (three frames at 1 % opacity, which no one can
@@ -162,6 +171,7 @@ async function main() {
   parts.wipe.style.visibility = "visible";
   parts.wipe.getContext("2d")?.fillRect(0, 0, 1, 1);
   for (let i = 0; i < 3; i++) await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  trace("warm frames done, timeline starts");
   stage.style.opacity = "";
   for (const el of warm) el.style.opacity = "";
   parts.wipe.style.visibility = "";
@@ -190,6 +200,17 @@ async function main() {
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+  if (traceOn) {
+    const probe = window.setInterval(() => {
+      const a = anims[0];
+      trace(
+        `rAF frames ${frameNo}, timeline ${Math.round(Number(document.timeline.currentTime ?? -1))}, ` +
+          `first anim ${a ? `${a.playState} ${Math.round(Number(a.currentTime ?? -1))}` : "none"}, ` +
+          `${document.visibilityState}, focus ${document.hasFocus()}`,
+      );
+      if (!sampling) window.clearInterval(probe);
+    }, 200);
+  }
 
   let finishing = false;
   const done = () => {
@@ -236,6 +257,7 @@ async function main() {
   window.addEventListener("keydown", skip, { capture: true });
 
   (window as unknown as Record<string, unknown>).__atlasSplashFinish = (mode: string) => {
+    trace(`finish: ${mode}`);
     if (mode === "wipe") {
       // The ripple played backwards: a hole opens from the middle and the clay is gone.
       const ease = cubicBezier(...EASE_WIPE);
@@ -332,6 +354,7 @@ async function main() {
   });
   void rippleDone!.finished.then(() => {
     // Flat clay screen: the canvas takes over (identical color), drop the rest.
+    trace("clay screen");
     drawClay(0);
     parts.wipe.style.visibility = "visible";
     parts.mark.style.display = "none";

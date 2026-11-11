@@ -154,6 +154,7 @@ fn main() {
             intro::intro_skip,
             intro::intro_main_painted,
             intro::splash_done,
+            intro::intro_trace,
             update::update_check,
             update::update_install,
             shortcut::desktop_shortcut,
@@ -283,6 +284,9 @@ fn main() {
             if intro_on {
                 intro::fit_splash(app.handle(), &window, info.backdrop);
                 intro::watch(app.handle());
+                if intro::tracing() {
+                    intro::probe_main_thread(app.handle());
+                }
             }
 
             // The window-state plugin may have restored a size from a session that

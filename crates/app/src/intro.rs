@@ -97,13 +97,16 @@ fn since_start(app: &AppHandle) -> String {
 /// Build the splash window, hidden. It is shown by `splash_ready`.
 pub fn build_splash(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     // Test hook: force the reduced-motion path without touching the OS setting.
-    let script = if std::env::var_os("ATLAS_REDUCE_MOTION").is_some() {
-        "window.__ATLAS_REDUCE__ = true;"
-    } else {
-        ""
-    };
+    let mut script = String::new();
+    if std::env::var_os("ATLAS_REDUCE_MOTION").is_some() {
+        script.push_str("window.__ATLAS_REDUCE__ = true;");
+    }
+    // Diagnostics: the page logs its clock and frames through `intro_trace`.
+    if tracing() {
+        script.push_str("window.__ATLAS_INTRO_TRACE__ = true;");
+    }
     WebviewWindowBuilder::new(app, SPLASH, WebviewUrl::App("splash.html".into()))
-        .initialization_script(script)
+        .initialization_script(&script)
         .title("Atlas")
         .inner_size(480.0, 320.0)
         .decorations(false)
@@ -208,6 +211,39 @@ pub fn watch(app: &AppHandle) {
     });
 }
 
+/// `ATLAS_INTRO_TRACE=1`: log the splash page's clock and the main thread's latency.
+pub fn tracing() -> bool {
+    std::env::var_os("ATLAS_INTRO_TRACE").is_some()
+}
+
+/// Diagnostics: how long the main (UI) thread takes to run a task, every 50 ms for 10 s.
+/// On macOS WebKit composites and drives requestAnimationFrame from this thread.
+pub fn probe_main_thread(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let end = std::time::Instant::now() + Duration::from_secs(10);
+        while std::time::Instant::now() < end {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let t = std::time::Instant::now();
+            if app.run_on_main_thread(move || { let _ = tx.send(()); }).is_err() {
+                return;
+            }
+            let _ = rx.recv();
+            let ms = t.elapsed().as_millis();
+            if ms >= 30 {
+                eprintln!("[atlas] intro trace: main thread busy {ms} ms, answered at {}", stamp(&app));
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+}
+
+/// Diagnostics: one line from the splash page (only sent when tracing).
+#[tauri::command(async)]
+pub fn intro_trace(app: AppHandle, msg: String) {
+    eprintln!("[atlas] intro trace: {msg} at {}", stamp(&app));
+}
+
 /// Stop the intro at once: close the splash and let the main window through.
 pub fn abort(app: &AppHandle) {
     let intro = app.state::<Intro>();
@@ -219,6 +255,7 @@ pub fn abort(app: &AppHandle) {
         f.active = false;
         (f.main_ready, f.armed)
     };
+    eprintln!("[atlas] intro: abort (main page ready: {main_ready}) at {}", stamp(app));
     close_splash(app);
     if armed {
         eval_main(app, "window.__atlasIntroReveal&&window.__atlasIntroReveal(true,false)");
@@ -441,5 +478,6 @@ fn finish(app: &AppHandle) {
         }
         f.active = false;
     }
+    eprintln!("[atlas] intro: splash closed at {}", stamp(app));
     close_splash(app);
 }

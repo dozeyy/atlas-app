@@ -11,6 +11,11 @@ name: mac-check
 
 on:
   workflow_dispatch:
+    inputs:
+      intro_only:
+        description: "Only the launch intro check: a native release app opened three times while the screen is recorded (tools/mac-intro.sh)"
+        type: boolean
+        default: false
   push:
     branches: [main, mac-check]
     paths-ignore:
@@ -59,6 +64,7 @@ jobs:
       # The Claude Code connector (atlas-mcp) rides inside the app: tauri.macos-bundle.conf.json
       # bundles this universal binary as a resource (Contents/Resources/atlas-mcp).
       - name: Build atlas-mcp (universal)
+        if: ${{ inputs.intro_only != true }}
         run: |
           cargo build -p atlas-mcp --release --target aarch64-apple-darwin --target x86_64-apple-darwin
           lipo -create -output target/atlas-mcp-universal target/aarch64-apple-darwin/release/atlas-mcp target/x86_64-apple-darwin/release/atlas-mcp
@@ -66,6 +72,7 @@ jobs:
       # The browser-preview copy of the frontend, with the screenshot tour built in
       # (VITE_ATLAS_TOUR=1; vite.config.ts). Its own folder: `tauri build` rebuilds dist/ itself.
       - name: Build the frontend with the tour (browser preview)
+        if: ${{ inputs.intro_only != true }}
         env:
           VITE_ATLAS_TOUR: "1"
         run: npx vite build --outDir dist-tour
@@ -74,6 +81,7 @@ jobs:
       # (tauri's beforeBuildCommand) is built with the tour in too.
       - name: Build the tour app (debug)
         id: debug
+        if: ${{ inputs.intro_only != true }}
         env:
           VITE_ATLAS_TOUR: "1"
         run: npx tauri build --debug --bundles app --config crates/app/tauri.macos-bundle.conf.json --config '{"bundle":{"createUpdaterArtifacts":false}}'
@@ -83,7 +91,7 @@ jobs:
       # bundle with a throwaway key made here, to show the .sig still gets made.
       - name: Build the universal app and dmg
         id: universal
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.intro_only != true }}
         env:
           # GitHub sets CI=true, and Tauri then skips the Finder step that lays the icons out on
           # the dmg background (no .DS_Store). The runner allows Finder scripting, so keep it.
@@ -100,41 +108,52 @@ jobs:
           npx tauri build --target universal-apple-darwin --bundles app,dmg --config crates/app/tauri.macos-bundle.conf.json
 
       - name: Build atlas-usage (universal)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.intro_only != true }}
         run: |
           cargo build -p atlas-cli --release --target aarch64-apple-darwin --target x86_64-apple-darwin
           lipo -create -output target/atlas-usage-universal target/aarch64-apple-darwin/release/atlas-usage target/x86_64-apple-darwin/release/atlas-usage
 
       - name: Install WebKit for Playwright
         id: playwright
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.intro_only != true }}
         run: |
           npm install --no-save --no-audit --no-fund playwright@1.64.1
           npx playwright install webkit
 
       - name: WebKit pictures of every page (browser preview, mock data)
-        if: ${{ !cancelled() && steps.playwright.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.playwright.outcome == 'success' && inputs.intro_only != true }}
         env:
           ATLAS_DIST: dist-tour
         run: node tools/webkit-shots.mjs mac-check-out/webkit
 
       - name: Real app checks and pictures
-        if: ${{ !cancelled() && steps.universal.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.universal.outcome == 'success' && inputs.intro_only != true }}
         run: bash tools/mac-check.sh mac-check-out
 
       # Lint and tests last, so a lint slip never costs the pictures.
       - name: cargo clippy (macOS)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.intro_only != true }}
         run: cargo clippy --workspace --exclude atlas-setup --all-targets -- -D warnings
 
       - name: cargo test (macOS)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.intro_only != true }}
         run: cargo test --workspace --exclude atlas-setup
+
+      # The launch intro, recorded (workflow_dispatch with intro_only). A native release build
+      # (no universal, no dmg) is enough: the intro is the same code on both architectures.
+      - name: Build the app for the intro check
+        id: intro_app
+        if: ${{ inputs.intro_only == true }}
+        run: npx tauri build --target aarch64-apple-darwin --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Launch intro recordings
+        if: ${{ !cancelled() && steps.intro_app.outcome == 'success' }}
+        run: bash tools/mac-intro.sh mac-check-out
 
       - name: Summary
         if: always()
         run: |
-          [ -f mac-check-out/summary.txt ] && { echo '```'; cat mac-check-out/summary.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+          for f in mac-check-out/summary.txt mac-check-out/intro/intro-summary.txt; do [ -f "$f" ] && { echo '```'; cat "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"; done; true
 
       - name: Upload pictures and logs
         if: always()
