@@ -289,6 +289,24 @@ export async function removeItem(row: InstalledRow): Promise<boolean> {
   }
 }
 
+/** The empty Library's action: add the official catalog. True when it was added (the list is then on screen). */
+export async function addOfficialCatalog(): Promise<boolean> {
+  if (state.refreshing) return false;
+  set({ refreshing: true });
+  try {
+    const done = await getBackend().libraryAddOfficialCatalog();
+    adoptCatalog(done.catalog);
+    pushToast({ message: "Added the official plugin catalog.", tone: "success" });
+    return true;
+  } catch (e) {
+    // The empty page stays; one toast says what went wrong.
+    pushToast({ message: errorText(e, "Atlas could not add the catalog. Nothing changed."), tone: "error", ms: 15_000 });
+    return false;
+  } finally {
+    set({ refreshing: false });
+  }
+}
+
 /** A marketplace was added from a link: show its plugins now. */
 export function adoptCatalog(view: CatalogView): void {
   cache.clear();

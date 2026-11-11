@@ -1,6 +1,7 @@
 // Stand-in for the Library commands, for tests and screenshots in a plain browser. A small seed
 // catalog, an in-memory "installed" list and a few switches a test or the address bar can flip:
 //   ?library=offline   the catalog cannot be reached
+//   ?library=empty     a fresh Claude Code: no plugin catalogs added yet
 //   ?cli=0             Claude Code's command is not on this computer
 //   ?flagged=1         every plugin check finds something
 // Nothing here touches a disk or the network.
@@ -91,9 +92,9 @@ const FLAGGED: SafetyReport = {
 const fromUrl = () => {
   try {
     const q = new URLSearchParams(window.location.search);
-    return { offline: q.get("library") === "offline", cli: q.get("cli") !== "0", flagged: q.get("flagged") === "1" };
+    return { offline: q.get("library") === "offline", empty: q.get("library") === "empty", cli: q.get("cli") !== "0", flagged: q.get("flagged") === "1" };
   } catch {
-    return { offline: false, cli: true, flagged: false };
+    return { offline: false, empty: false, cli: true, flagged: false };
   }
 };
 
@@ -101,6 +102,8 @@ export class MockLibrary {
   entries: MockEntry[] = SEED_CATALOG.slice();
   cli: boolean;
   offline: boolean;
+  /** A fresh Claude Code: no plugin catalogs added, so the listing is empty (not an error). */
+  empty: boolean;
   /** Every plugin check finds something. */
   flagged: boolean;
   fetchedMs: number | null = null;
@@ -123,6 +126,8 @@ export class MockLibrary {
     const u = fromUrl();
     this.cli = u.cli;
     this.offline = u.offline;
+    this.empty = u.empty;
+    if (u.empty) this.entries = [];
     this.flagged = u.flagged;
   }
 
@@ -174,6 +179,19 @@ export class MockLibrary {
     if (this.offline) throw new Error(OFFLINE_ERR);
     this.fetchedMs = Date.now();
     return this.view();
+  }
+
+  /** The empty Library's action: the official catalog is added and its plugins listed. */
+  async libraryAddOfficialCatalog(): Promise<MarketAdded> {
+    this.log("add-official-catalog");
+    await this.wait();
+    if (this.offline) throw new Error(GITHUB_ERR);
+    const name = "claude-plugins-official";
+    this.empty = false;
+    this.marketplaces.push({ name, source: "anthropics/claude-plugins-official", installLocation: null });
+    this.entries = SEED_CATALOG.map((e) => ({ ...e, marketplace: name, pluginId: `${e.name}@${name}` }));
+    this.fetchedMs = Date.now();
+    return { name, backupId: `b-${++this.n}`, catalog: this.view() };
   }
 
   async libraryInstalled(): Promise<InstalledRow[]> {

@@ -11,7 +11,7 @@ import { SourceRail } from "./SourceRail";
 import { NO_CLI, OFFLINE, buildList, changedCount, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
 import { openToolkitItemNext, openToolkitTabNext } from "../../lib/nav";
 import { exact } from "../../lib/usage";
-import { checkThenInstall, openLibrary, refreshLibrary, reportFirstRows, setQuery, setSource, useLibrary } from "../../state/libraryStore";
+import { addOfficialCatalog, checkThenInstall, openLibrary, refreshLibrary, reportFirstRows, setQuery, setSource, useLibrary } from "../../state/libraryStore";
 import { useSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
 
@@ -177,6 +177,23 @@ export function LibraryTab() {
           Getting the plugin list from Claude Code. The first time takes a few seconds.
         </p>
       </div>
+    ) : !lib.error && lib.view?.fetchedMs != null ? (
+      // Claude Code answered, and there is nothing in the answer: a fresh install with no plugin
+      // catalogs added yet. Not a failure; the one action adds the official catalog.
+      <EmptyState
+        fill
+        title={(lib.view?.marketplaces.length ?? 0) === 0 ? "No plugin catalogs yet" : "No plugins listed yet"}
+        body={
+          (lib.view?.marketplaces.length ?? 0) === 0
+            ? "Claude Code has no plugin catalogs added. Add the official one to browse plugins and skills."
+            : "Claude Code lists no plugins in its catalogs. Add the official one to browse plugins and skills."
+        }
+        seed={17}
+      >
+        <Button variant="primary" onClick={() => void addOfficialCatalog()} disabled={!cli}>
+          Add the official catalog
+        </Button>
+      </EmptyState>
     ) : looksOffline(lib.error) ? (
       // The connection line is only said when the failure is one: the list comes from Claude
       // Code's own command, and most of the ways that can fail have nothing to do with the network.
