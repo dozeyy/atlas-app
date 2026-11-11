@@ -81,7 +81,24 @@ pub struct Library {
     staged: Mutex<HashMap<u64, Staged>>,
 }
 
+/// Holds the "catalog is updating" flag; it is released when this drops, even if the work panics.
+struct Refreshing<'a>(&'a AtomicBool);
+
+impl Drop for Refreshing<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 impl Library {
+    /// Take the flag, or say the catalog is already updating.
+    fn begin_refresh(&self) -> Result<Refreshing<'_>, String> {
+        if self.refreshing.swap(true, Ordering::SeqCst) {
+            return Err("The catalog is already updating.".into());
+        }
+        Ok(Refreshing(&self.refreshing))
+    }
+
     fn keep(&self, s: Staged) -> String {
         let n = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let mut g = self.staged.lock().unwrap_or_else(|p| p.into_inner());
@@ -363,12 +380,8 @@ pub fn library_perf(ms: f64) {
 pub async fn library_refresh(state: Info<'_>, lib: Lib<'_>, marketplace: Option<String>) -> Result<CatalogView, String> {
     let (st, lib) = (state.inner().clone(), lib.inner().clone());
     blocking(move || {
-        if lib.refreshing.swap(true, Ordering::SeqCst) {
-            return Err("The catalog is already updating.".into());
-        }
-        let r = refresh_now(&st, marketplace.as_deref());
-        lib.refreshing.store(false, Ordering::SeqCst);
-        r
+        let _busy = lib.begin_refresh()?;
+        refresh_now(&st, marketplace.as_deref())
     })
     .await
 }
@@ -830,21 +843,28 @@ pub async fn library_add_marketplace(state: Info<'_>, lib: Lib<'_>, token: Strin
 pub async fn library_add_official_catalog(state: Info<'_>, lib: Lib<'_>) -> Result<Added, String> {
     let (st, lib) = (state.inner().clone(), lib.inner().clone());
     blocking(move || {
-        if lib.refreshing.swap(true, Ordering::SeqCst) {
-            return Err("The catalog is already updating.".into());
-        }
-        let r = add_official_now(&st);
-        lib.refreshing.store(false, Ordering::SeqCst);
-        r
+        let _busy = lib.begin_refresh()?;
+        add_official_now(&st)
     })
     .await
 }
 
+/// Claude Code already has the official marketplace (it answers "already added" to a second add).
+fn official_registered(config_dir: &Path) -> bool {
+    ledger::marketplaces(config_dir).iter().any(|m| m.name == catalog::OFFICIAL)
+}
+
 fn add_official_now(st: &AppState) -> Result<Added, String> {
     let env = Env::of(st)?;
-    let out = install::add_marketplace(&env.ctx(), &env.runner()?, catalog::OFFICIAL_REPO)?;
+    // Already there: nothing to add, so no backup and no second add; the list is asked for again.
+    let (name, backup_id) = if official_registered(&env.root.dir) {
+        (catalog::OFFICIAL.to_string(), String::new())
+    } else {
+        let out = install::add_marketplace(&env.ctx(), &env.runner()?, catalog::OFFICIAL_REPO)?;
+        (out.name, out.backup_id)
+    };
     let catalog = refresh_now(st, None).or_else(|_| Ok::<_, String>(view(st, &env, false)))?;
-    Ok(Added { name: out.name, backup_id: out.backup_id, catalog })
+    Ok(Added { name, backup_id, catalog })
 }
 
 #[derive(Deserialize)]
@@ -947,6 +967,29 @@ mod tests {
         // Asked again, still empty: still fine, and the time moves on.
         save_listing(t.path(), Vec::new(), 9).unwrap();
         assert_eq!(catalog::read_cache(t.path()).unwrap().fetched_ms, 9);
+    }
+
+    #[test]
+    fn the_flag_is_released_when_the_work_panics() {
+        let lib = Library::default();
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _busy = lib.begin_refresh().unwrap();
+            assert_eq!(lib.begin_refresh().err().as_deref(), Some("The catalog is already updating."));
+            panic!("boom");
+        }));
+        assert!(r.is_err());
+        assert!(lib.begin_refresh().is_ok(), "a panic left the catalog 'updating' for good");
+    }
+
+    #[test]
+    fn the_official_marketplace_is_known_by_its_record() {
+        let t = tempfile::tempdir().unwrap();
+        assert!(!official_registered(t.path()));
+        std::fs::create_dir_all(t.path().join("plugins")).unwrap();
+        std::fs::write(t.path().join("plugins/known_marketplaces.json"), r#"{"other":{"source":{"source":"github","repo":"a/b"}}}"#).unwrap();
+        assert!(!official_registered(t.path()));
+        std::fs::write(t.path().join("plugins/known_marketplaces.json"), r#"{"claude-plugins-official":{"source":{"source":"github","repo":"anthropics/claude-plugins-official"}}}"#).unwrap();
+        assert!(official_registered(t.path()));
     }
 
     #[test]
