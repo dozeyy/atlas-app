@@ -17,7 +17,7 @@ import { clearPendingProject, clearPendingSession, onNavRequest, peekPendingProj
 import { useChatSearch, useDebounced } from "../lib/useChatSearch";
 import { useScrollbarVar } from "../lib/useScrollbarVar";
 import type { ChatSearch } from "../lib/useChatSearch";
-import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
+import { cacheNotReady, useFetched, useLiveReload, useReadyRetry, useUsageStatus } from "../lib/useUsage";
 import { PAGE, useSessionPages } from "../lib/useSessionPages";
 import { groupByDay, groupByFolder, shareOfMax } from "../lib/sessionBrowse";
 import { readFolded, readGrouping, writeFolded, writeGrouping } from "../lib/sessionPrefs";
@@ -183,6 +183,7 @@ export function Sessions() {
   );
   const first = useSessionPages(query, JSON.stringify(query), shape, [info.config?.projectsDir ?? null]);
   useLiveReload(first.reload);
+  useReadyRetry(status, first);
   const { busy, moreError, loadMore } = first;
   const cursor = first.data?.cursor ?? null;
 

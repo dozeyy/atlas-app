@@ -129,6 +129,21 @@ fi
 
 # ---- 2. The release app, launched -------------------------------------------------------------
 if [ -d "$REL" ]; then
+  # Record this first launch (a fresh data folder, so the first read runs with the window up). A
+  # state that shows for a fraction of a second is caught here by a rule: in 0.1.5 "Could not load
+  # your usage" flashed for about 0.4 s as the first read ended. Frames at 10 a second, read by
+  # Apple's Vision text recognition (tools/mac-ocr.swift).
+  REC=""
+  command -v ffmpeg >/dev/null || brew install ffmpeg >"$OUT/app/brew.log" 2>&1
+  if command -v ffmpeg >/dev/null && swiftc -O -o "$T/ocr" tools/mac-ocr.swift >"$OUT/app/swiftc-ocr.log" 2>&1; then
+    screen=$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 | sed -n 's/.*\[\([0-9]*\)\] Capture screen 0.*/\1/p' | head -n 1)
+    ffmpeg -hide_banner -loglevel error -f avfoundation -framerate 30 -i "${screen:-1}:none" \
+      -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p "$T/first-launch.mov" </dev/null >"$OUT/app/ffmpeg.log" 2>&1 &
+    REC=$!
+    PIDS="$PIDS $REC"
+    sleep 3
+    kill -0 "$REC" 2>/dev/null || REC=""
+  fi
   pid=$(launch "$REL" "$T/data-release" "$OUT/app/release.log")
   PIDS="$PIDS $pid"
   if win=$(wait_window "$pid" 60); then
@@ -138,6 +153,33 @@ if [ -d "$REL" ]; then
     screencapture -x "$OUT/app/release-screen.png" # menu bar, menu-bar icon, Dock
     ls "$T/data-release" >"$OUT/app/release-data-dir.txt" 2>&1
     [ -s "$OUT/app/release-data-dir.txt" ] && ok "Atlas keeps its data in the chosen folder: $(tr '\n' ' ' <"$OUT/app/release-data-dir.txt")" || bad "nothing in the chosen data folder (ATLAS_DATA_DIR ignored?)"
+    if [ -n "$REC" ]; then
+      kill -INT "$REC" 2>/dev/null
+      wait "$REC" 2>/dev/null
+      mkdir -p "$T/frames"
+      ffmpeg -hide_banner -loglevel error -i "$T/first-launch.mov" -vf fps=10 "$T/frames/f%04d.png" 2>>"$OUT/app/ffmpeg.log"
+      ffmpeg -hide_banner -loglevel error -i "$T/first-launch.mov" -c:v libx264 -preset slow -crf 24 -pix_fmt yuv420p \
+        -movflags +faststart "$OUT/app/first-launch.mp4" 2>>"$OUT/app/ffmpeg.log"
+      "$T/ocr" "$T/frames" "Could not load your usage" "Atlas could not read your usage" "Reading your sessions" "Last 7 days" \
+        >"$OUT/app/first-launch-ocr.txt" 2>&1
+      count() { awk -F'\t' -v p="$1" '$1 == p { print $2 }' "$OUT/app/first-launch-ocr.txt"; }
+      frames=$(count frames)
+      e1=$(count "Could not load your usage")
+      e2=$(count "Atlas could not read your usage")
+      errs=$((${e1:-0} + ${e2:-0}))
+      reading=$(count "Reading your sessions")
+      numbers=$(count "Last 7 days")
+      for f in $(awk -F'\t' 'tolower($1) ~ /could not/ { print $3 }' "$OUT/app/first-launch-ocr.txt"); do cp "$T/frames/$f" "$OUT/app/first-launch-error-$f"; done
+      if [ "${numbers:-0}" -eq 0 ]; then
+        bad "first launch: the Dashboard's numbers never showed in ${frames:-0} frames (app/first-launch-ocr.txt, app/first-launch.mp4)"
+      elif [ "$errs" -gt 0 ]; then
+        bad "first launch: an error showed in $errs of $frames frames (app/first-launch-error-*.png)"
+      else
+        ok "first launch: no error in $frames frames at 10 a second (first read on screen in ${reading:-0}, numbers in $numbers)"
+      fi
+    else
+      skip "first launch not recorded (no ffmpeg or text recognition: app/ffmpeg.log, app/brew.log, app/swiftc-ocr.log)"
+    fi
     # The native menu bar: open the Atlas and Edit menus and take a picture of each.
     for m in Atlas Edit Window; do
       if osascript -e "tell application \"System Events\" to tell (first process whose unix id is $pid) to click menu bar item \"$m\" of menu bar 1" >>"$OUT/osascript.log" 2>&1; then

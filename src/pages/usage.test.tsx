@@ -124,6 +124,51 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Could not load your usage")).not.toBeInTheDocument();
   });
 
+  it("never flashes an error when the first read finishes after a not-ready answer", async () => {
+    const backend = new MockBackend();
+    backend.usage.scenario = "indexing";
+    backend.usage.failNext = true; // the first question fails: the cache file does not exist yet
+    localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "dashboard" }));
+    setBackend(backend);
+    render(
+      <AtlasProvider>
+        <App />
+      </AtlasProvider>,
+    );
+    expect(await screen.findByRole("status", { name: "Loading your usage" })).toBeInTheDocument();
+    // Watch every DOM change from here on, so an error that shows for one frame is caught.
+    let flashed = false;
+    const seen = new MutationObserver(() => {
+      if (document.body.textContent?.includes("Could not load your usage")) flashed = true;
+    });
+    seen.observe(document.body, { childList: true, subtree: true, characterData: true });
+    // The first read ends: the status turns ready a moment before the numbers are asked again.
+    act(() => backend.usage.setScenario("data"));
+    expect(screen.queryByText("Could not load your usage")).not.toBeInTheDocument();
+    await screen.findByText("Last 7 days");
+    seen.disconnect();
+    expect(flashed).toBe(false);
+  });
+
+  it("still shows a real error from a question asked after the first read", async () => {
+    const backend = new MockBackend();
+    backend.usage.scenario = "indexing";
+    backend.usage.failNext = true;
+    localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "dashboard" }));
+    setBackend(backend);
+    render(
+      <AtlasProvider>
+        <App />
+      </AtlasProvider>,
+    );
+    expect(await screen.findByRole("status", { name: "Loading your usage" })).toBeInTheDocument();
+    // The fresh question asked once the cache is ready fails too: that one is real.
+    backend.usage.scenario = "data";
+    backend.usage.failNext = true;
+    act(() => backend.usage.setScenario("data"));
+    expect(await screen.findByText("Could not load your usage")).toBeInTheDocument();
+  });
+
   it("explains an engine error and recovers on retry", async () => {
     const backend = mount("error");
     // One calm message takes the page: a plain sentence, with the engine's own words behind Details.
