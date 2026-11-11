@@ -181,6 +181,21 @@ describe("Library tab: opening", () => {
     expect((await lib().libraryCatalog()).marketplaces.map((m) => m.name)).toEqual(["claude-plugins-official"]);
   });
 
+  it("with the official catalog already added and nothing listed, the empty state offers Refresh, not Add", async () => {
+    mount((b) => {
+      b.library.empty = true;
+      b.library.entries = [];
+      b.library.marketplaces = [{ name: "claude-plugins-official", source: "anthropics/claude-plugins-official", installLocation: null }];
+    });
+    await openLibraryTab();
+    expect(await screen.findByText("No plugins listed yet")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add the official catalog" })).not.toBeInTheDocument();
+    const before = lib().calls.filter((c) => c === "refresh").length;
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(lib().calls.filter((c) => c === "refresh").length).toBe(before + 1));
+    expect(lib().calls).not.toContain("add-official-catalog");
+  });
+
   it("when adding the official catalog fails, the empty state stays and one toast says why", async () => {
     mount((b) => {
       b.library.empty = true;

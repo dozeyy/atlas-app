@@ -117,7 +117,7 @@ export class MockLibrary {
   perf: number[] = [];
   /** Plugin ids that fail to install, for the error sentence. */
   failInstall = new Set<string>();
-  private marketplaces: { name: string; source: string; installLocation: string | null }[] = [];
+  marketplaces: { name: string; source: string; installLocation: string | null }[] = [];
   private tokens = new Map<string, LibraryDetail>();
   private n = 0;
   private progress = new Set<(p: LibraryProgress) => void>();

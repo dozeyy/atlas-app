@@ -12,6 +12,8 @@ export const STALE_MS = 6 * 60 * 60 * 1000;
 
 export const NO_CLI = "Needs Claude Code's command to install plugins.";
 export const COMMAND_SOURCE = "This plugin installs by running a command. Atlas does not run those.";
+/** The name Claude Code gives Anthropic's official plugin marketplace. */
+export const OFFICIAL_CATALOG = "claude-plugins-official";
 export const OFFLINE = "Atlas could not reach the plugin catalog. Check your connection and press Refresh.";
 
 // ---- search ------------------------------------------------------------------------------------

@@ -8,7 +8,7 @@ import { AddFromGitHub } from "./AddFromGitHub";
 import { LibraryList, ListSkeleton, type RowActions } from "./LibraryList";
 import { LibrarySheet, type SheetTarget } from "./LibrarySheet";
 import { SourceRail } from "./SourceRail";
-import { NO_CLI, OFFLINE, buildList, changedCount, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
+import { NO_CLI, OFFICIAL_CATALOG, OFFLINE, buildList, changedCount, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
 import { openToolkitItemNext, openToolkitTabNext } from "../../lib/nav";
 import { exact } from "../../lib/usage";
 import { addOfficialCatalog, checkThenInstall, openLibrary, refreshLibrary, reportFirstRows, setQuery, setSource, useLibrary } from "../../state/libraryStore";
@@ -162,6 +162,8 @@ export function LibraryTab() {
 
   const loading = lib.status !== "ready";
   const noCatalog = !loading && (lib.view?.total ?? 0) === 0;
+  const catalogs = lib.view?.marketplaces ?? [];
+  const hasOfficial = catalogs.some((m) => m.name === OFFICIAL_CATALOG);
   // Only the first rows are here yet: a filter that finds nothing waits for the rest instead of saying so.
   const partial = !!lib.view?.partial;
   const updated = lib.refreshing ? "Updating..." : updatedWords(lib.view?.fetchedMs ?? null, now);
@@ -182,17 +184,26 @@ export function LibraryTab() {
       // catalogs added yet. Not a failure; the one action adds the official catalog.
       <EmptyState
         fill
-        title={(lib.view?.marketplaces.length ?? 0) === 0 ? "No plugin catalogs yet" : "No plugins listed yet"}
+        title={catalogs.length === 0 ? "No plugin catalogs yet" : "No plugins listed yet"}
         body={
-          (lib.view?.marketplaces.length ?? 0) === 0
+          catalogs.length === 0
             ? "Claude Code has no plugin catalogs added. Add the official one to browse plugins and skills."
-            : "Claude Code lists no plugins in its catalogs. Add the official one to browse plugins and skills."
+            : hasOfficial
+              ? "Claude Code lists no plugins from its catalogs right now. Press Refresh to ask again."
+              : "Claude Code lists no plugins in its catalogs. Add the official one to browse plugins and skills."
         }
         seed={17}
       >
-        <Button variant="primary" onClick={() => void addOfficialCatalog()} disabled={!cli}>
-          Add the official catalog
-        </Button>
+        {hasOfficial ? (
+          // Already added: adding it again is not the way out, asking for the list again is.
+          <Button variant="primary" onClick={() => void refreshLibrary()}>
+            Refresh
+          </Button>
+        ) : (
+          <Button variant="primary" onClick={() => void addOfficialCatalog()} disabled={!cli}>
+            Add the official catalog
+          </Button>
+        )}
       </EmptyState>
     ) : looksOffline(lib.error) ? (
       // The connection line is only said when the failure is one: the list comes from Claude
