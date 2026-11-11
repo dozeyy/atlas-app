@@ -1575,6 +1575,18 @@ html[data-platform="macos"] .side {
   border-radius: 2px;
   rotate: 45deg;
 }
+/* No room above (the top of the page area would cut it off): below the item, caret on top. */
+.tip.below {
+  transform: translate(-50%, 10px);
+  translate: 0 -4px;
+}
+.tip.below.show {
+  translate: 0 0;
+}
+.tip.below::after {
+  bottom: auto;
+  top: -5px;
+}
 .tip .t1,
 .tip .t3 {
   font-size: 12px;

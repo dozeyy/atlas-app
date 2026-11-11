@@ -113,8 +113,20 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
             <dl className="grid grid-cols-[9rem_minmax(0,1fr)] gap-x-6 gap-y-2">
               {g.rows.map((r) => (
                 <div key={r.keys} className="contents">
-                  <dt>
-                    <kbd className="code-text whitespace-nowrap rounded-[4px] border border-line bg-raised px-2 py-0.5 text-ink-2">{r.keys}</kbd>
+                  {/* "A or B" and "A / B" are separate chips that wrap inside the key column: Mac names
+                      (Option+Left) are longer than Windows ones and ran into the text beside them. */}
+                  <dt className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                    {r.keys.split(/( or | \/ )/).map((part, i) =>
+                      i % 2 ? (
+                        <span key={i} className="text-caption text-ink-2">
+                          {part.trim()}
+                        </span>
+                      ) : (
+                        <kbd key={i} className="code-text whitespace-nowrap rounded-[4px] border border-line bg-raised px-2 py-0.5 text-ink-2">
+                          {part}
+                        </kbd>
+                      ),
+                    )}
                   </dt>
                   <dd className="text-ink">{r.does}</dd>
                 </div>
