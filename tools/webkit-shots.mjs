@@ -3,6 +3,7 @@
 //   npm install --no-save playwright@1.64.1 && npx playwright install webkit
 //   VITE_ATLAS_TOUR=1 npx vite build --outDir dist-tour     (the tour is only in a tour build)
 //   ATLAS_DIST=dist-tour node tools/webkit-shots.mjs [OUT_DIR]   (default: shots-webkit)
+//   ATLAS_PLATFORM=windows ATLAS_ENGINE=chromium ...   the Windows look, drawn by Chromium (README pictures)
 //
 // Serves the built frontend (ATLAS_DIST, default dist/) itself, opens it with the mock backend as macOS (`?platform=macos&tour`), and lets
 // src/lib/shotTour.ts walk every page at 1280x800 and 900x600, light and dark. Fails (exit 1) on any
@@ -11,7 +12,9 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { webkit } from "playwright";
+import { chromium, webkit } from "playwright";
+// ATLAS_ENGINE=chromium draws with the engine Windows uses (WebView2); the default is WebKit (macOS).
+const engine = process.env.ATLAS_ENGINE === "chromium" ? chromium : webkit;
 
 const root = path.resolve(import.meta.dirname, "..");
 const dist = path.resolve(root, process.env.ATLAS_DIST || "dist");
@@ -47,7 +50,7 @@ const say = (line) => {
   console.log(line);
 };
 
-const browser = await webkit.launch();
+const browser = await engine.launch();
 say(`webkit ${browser.version()}`);
 for (const [w, h] of [
   [1280, 800],
@@ -69,7 +72,7 @@ for (const [w, h] of [
     });
     await page.exposeFunction("__atlasLog", (line) => say(line));
     await page.exposeFunction("__atlasTourDone", () => finish());
-    await page.goto(`${base}?platform=macos&tour=1&prefix=${prefix}`);
+    await page.goto(`${base}?platform=${process.env.ATLAS_PLATFORM || "macos"}&tour=1&prefix=${prefix}`);
     const timedOut = await Promise.race([done.then(() => false), new Promise((r) => setTimeout(() => r(true), 240_000))]);
     if (timedOut) problems.push(`${prefix}: the tour did not finish in 240 s`);
     await context.close();
