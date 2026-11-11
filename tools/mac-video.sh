@@ -80,6 +80,10 @@ say "made-up Claude folder in the runner's HOME"
 # the Claude Code card in Settings meet a real `claude`, as on a user's Mac.
 if curl -fsSL https://claude.ai/install.sh -o "$T/install-claude.sh" && bash "$T/install-claude.sh" >"$OUT/claude-install.log" 2>&1; then
   say "Claude Code installed: $("$HOME/.local/bin/claude" --version 2>/dev/null)"
+  # What the Library will get: the same command Atlas runs (crates/core/src/library/cli.rs).
+  perl -e 'alarm 60; exec @ARGV' "$HOME/.local/bin/claude" plugin list --available --json >"$OUT/claude-plugin-list.txt" 2>&1
+  say "claude plugin list --available: exit $?, $(head -c 300 "$OUT/claude-plugin-list.txt" | tr '
+' ' ')"
 else
   say "      Claude Code did not install (claude-install.log): the Library will say it cannot load"
 fi
