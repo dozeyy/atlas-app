@@ -1,0 +1,36 @@
+name: mac-video
+
+# A screen video of Atlas on a real Mac: the released dmg downloaded, dragged into Applications,
+# launched (intro animation), every page, Settings, Wrapped, then the uninstall. Nothing is built:
+# it records the public release named by the version input. tools/mac-video.sh does the work;
+# the video, a picture per step and the step log are uploaded as the "mac-video" artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release to record, e.g. 0.1.5"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  video:
+    name: Record Atlas on macOS
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Record
+        run: bash tools/mac-video.sh "${{ inputs.version }}" mac-video-out
+
+      - name: Upload the video
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mac-video
+          if-no-files-found: warn
+          retention-days: 14
+          path: mac-video-out/

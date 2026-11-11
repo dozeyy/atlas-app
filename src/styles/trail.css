@@ -1350,6 +1350,14 @@ html[data-platform="macos"] .app-shell .titlebar-corner {
 html[data-platform="macos"] .app-shell[data-side="collapsed"] .titlebar-corner {
   top: calc(var(--titlebar-h) + var(--shell-inset) + 32px + var(--shell-gap));
 }
+/* Settings lives inside .titlebar-left, which is the positioned box here, so its top counts from
+   the row, not from the window: no strip height in it. */
+html[data-platform="macos"] .app-shell .titlebar-corner.titlebar-settings {
+  top: var(--shell-inset);
+}
+html[data-platform="macos"] .app-shell[data-side="collapsed"] .titlebar-corner.titlebar-settings {
+  top: calc(var(--shell-inset) + 32px + var(--shell-gap));
+}
 /* Open: the row (inset + 32 + inset) plus the 8 the sidebar pads = 12 clear under the row.
    Folded: the square's second row (32 + gap) on top of that. */
 html[data-platform="macos"] .app-shell .side-main {
