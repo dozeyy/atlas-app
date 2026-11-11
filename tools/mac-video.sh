@@ -67,6 +67,14 @@ sed "s#$T/fx/home#$HOME#" "$T/fx/live.txt" >"$T/live.txt" 2>/dev/null
 TOUCH_PID=$!
 say "made-up Claude folder in the runner's HOME"
 
+# Claude Code itself, the way its site says to install it (into ~/.local/bin), so the Library and
+# the Claude Code card in Settings meet a real `claude`, as on a user's Mac.
+if curl -fsSL https://claude.ai/install.sh -o "$T/install-claude.sh" && bash "$T/install-claude.sh" >"$OUT/claude-install.log" 2>&1; then
+  say "Claude Code installed: $("$HOME/.local/bin/claude" --version 2>/dev/null)"
+else
+  say "      Claude Code did not install (claude-install.log): the Library will say it cannot load"
+fi
+
 mkdir -p "$HOME/Downloads"
 DMG=$HOME/Downloads/Atlas-macOS.dmg
 curl -fsSL -o "$DMG" "https://github.com/dozeyy/atlas/releases/download/v$VER/Atlas-macOS.dmg" || { say "FAIL could not download the $VER dmg"; exit 1; }
@@ -129,7 +137,6 @@ osa 'tell application "Finder" to set bounds of front window to {140, 120, 860, 
 osa 'tell application "Finder" to select file "Atlas.app" of folder "Applications" of startup disk'
 pause 2
 mark "launch"
-osa 'tell application "Finder" to close every window'
 open /Applications/Atlas.app
 PID=""
 for _ in $(seq 1 60); do PID=$(pgrep -f '/Applications/Atlas.app/Contents/MacOS/' | head -n 1); [ -n "$PID" ] && break; sleep 0.25; done
@@ -138,7 +145,8 @@ WIN=""
 for _ in $(seq 1 120); do WIN=$("$T/winlist" "$PID" | awk '{ split($2, r, ","); if (r[3] >= 600) { print $2; exit } }'); [ -n "$WIN" ] && break; sleep 0.25; done
 say "window: ${WIN:-none}"
 [ -n "$WIN" ] || { say "FAIL Atlas showed no window"; exit 1; }
-pause 9 # the intro plays, then the Dashboard counts up while the chats are read
+osa 'tell application "Finder" to close every window'
+pause 8 # the intro plays, then the Dashboard counts up while the chats are read
 IFS=, read -r WX WY WW WH <<<"${WIN:-0,31,1024,677}"
 cx=$((WX + WW / 2)); cy=$((WY + WH / 2))
 
@@ -166,7 +174,6 @@ sweep 230
 sweep 420
 "$D" scroll -8 $cx $cy
 pause 1.5
-sweep 380
 "$D" scroll 8 $cx $cy
 pause 1
 
@@ -227,7 +234,8 @@ fi
 mark "wrapped"
 press "Wrapped" || cmd 7
 pause 4
-for i in $(seq 1 16); do mark "wrapped-$i"; code 124; pause 3.4; done
+for i in $(seq 1 12); do mark "wrapped-$i"; code 124; pause 3.4; done
+pause 2
 code 53; pause 2
 mark "dashboard-again"
 cmd 1; pause 3

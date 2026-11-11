@@ -203,7 +203,7 @@ dependencies = [
 
 [[package]]
 name = "atlas"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "atlas-core",
  "reqwest",
@@ -226,7 +226,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-cli"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "atlas-core",
  "chrono",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -263,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-mcp"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "atlas-core",
  "rmcp",
@@ -275,7 +275,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-setup"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "atlas-core",
  "rusqlite",

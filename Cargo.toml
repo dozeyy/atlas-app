@@ -7,7 +7,7 @@ members = ["crates/core", "crates/app", "crates/mcp", "crates/cli", "crates/setu
 default-members = ["crates/core", "crates/mcp", "crates/cli"]
 
 [workspace.package]
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 rust-version = "1.90"
 license = "UNLICENSED"

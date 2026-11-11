@@ -108,6 +108,21 @@ pub fn find_claude_cli(path_var: Option<&OsStr>, home: &Path) -> Option<PathBuf>
     if let Some(app) = std::env::var_os("APPDATA") {
         dirs.push(PathBuf::from(app).join("npm"));
     }
+    // A Mac app opened from Finder or the Dock gets only /usr/bin:/bin:/usr/sbin:/sbin, so the
+    // places Homebrew and npm put `claude` are added by hand (Apple Silicon, Intel, a user npm
+    // prefix, Volta, then any nvm Node, the highest version first).
+    if !cfg!(windows) {
+        dirs.push(PathBuf::from("/opt/homebrew/bin"));
+        dirs.push(PathBuf::from("/usr/local/bin"));
+        dirs.push(home.join(".npm-global").join("bin"));
+        dirs.push(home.join(".volta").join("bin"));
+        if let Ok(rd) = fs::read_dir(home.join(".nvm").join("versions").join("node")) {
+            let mut nodes: Vec<PathBuf> = rd.filter_map(|e| e.ok()).map(|e| e.path().join("bin")).collect();
+            nodes.sort();
+            nodes.reverse();
+            dirs.extend(nodes);
+        }
+    }
     for d in dirs {
         for n in names {
             let p = d.join(n);
@@ -498,4 +513,23 @@ pub fn disconnect_waiting(ctx: &ConnectCtx, wait: Duration) -> Result<ConnectOut
         return Err("Atlas asked, but Claude's settings still list it. Please check .claude.json.".into());
     }
     Ok(ConnectOutcome { state: state(ctx.root, Some(ctx.server), cli.is_some()), via: via.into(), backup_id })
+}
+
+#[cfg(all(test, not(windows)))]
+mod find_cli_tests {
+    use super::*;
+
+    // A Finder-launched Mac app has no Homebrew or nvm folder on PATH: `claude` from nvm is found anyway.
+    #[test]
+    fn finds_claude_under_nvm_without_path() {
+        let home = std::env::temp_dir().join(format!("atlas-find-cli-{}", std::process::id()));
+        let bin = home.join(".nvm/versions/node/v22.1.0/bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("claude"), "").unwrap();
+        let found = find_claude_cli(Some(OsStr::new("/usr/bin:/bin")), &home);
+        let _ = fs::remove_dir_all(&home);
+        // /opt/homebrew/bin or /usr/local/bin may hold a real claude on a dev machine and win first.
+        let p = found.expect("claude found");
+        assert!(p.ends_with("claude"), "{}", p.display());
+    }
 }
