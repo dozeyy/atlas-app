@@ -61,6 +61,9 @@ pause() { sleep "$1"; }
 
 # ---- The machine: a clean desktop and a made-up Claude folder ------------------------------------
 defaults write com.apple.dock autohide -bool true && defaults write com.apple.dock autohide-delay -float 1000 && killall Dock
+# No spring-loaded folders: hovering the drag over the Applications alias opened that folder and
+# the drop never landed (the ghost icon then floated over the whole recording).
+defaults write NSGlobalDomain com.apple.springing.enabled -bool false
 pic=$(ls /System/Library/Desktop\ Pictures/*.heic /System/Library/Desktop\ Pictures/*.jpg 2>/dev/null | head -n 1)
 [ -n "$pic" ] && osa "tell application \"System Events\" to tell every desktop to set picture to \"$pic\""
 osa 'tell application "Finder" to close every window'
@@ -137,6 +140,7 @@ if [ -d /Applications/Atlas.app ]; then
   say "ok    dragged into Applications"
 else
   snap drag-missed
+  code 53 # Escape ends a drag that never dropped, so its ghost icon does not float over the video
   ditto "$VOL/Atlas.app" /Applications/Atlas.app && say "fallback: copied with ditto (the drag did not land; frames/drag-missed.png)"
 fi
 pause 2
@@ -205,6 +209,8 @@ sweep 300
 "$D" scroll -6 $cx $cy; pause 1.5; "$D" scroll 6 $cx $cy
 mark "toolkit-library"
 press "Library" && pause 3 && sweep 320
+# When the Library cannot load, open its Details so the frame shows what Claude Code said.
+if press "Details"; then pause 2; snap library-details; fi
 mark "toolkit-team"
 press "Team" && pause 3 && sweep 320
 press "Your setup" && pause 1.5
