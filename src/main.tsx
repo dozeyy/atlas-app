@@ -52,11 +52,17 @@ const fontReady = Promise.race([
   new Promise((done) => setTimeout(done, 150)),
 ]).catch(() => {});
 
-// Tell Rust we have painted: it shows the (hidden until now) window.
-void fontReady.then(() =>
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      backend.frontendReady().catch(() => {});
-    }),
-  ),
-);
+// Tell Rust we have painted: it shows the (hidden until now) window. Two frames, so the first
+// frame is drawn. A hidden window gets no frames on macOS (WebKit pauses requestAnimationFrame
+// until the window is on screen), and this one stays hidden until Rust hears from us: there the
+// page reports once it is laid out, and the intro's reveal waits for real frames after the show.
+void fontReady.then(() => {
+  let told = false;
+  const tell = () => {
+    if (told) return;
+    told = true;
+    backend.frontendReady().catch(() => {});
+  };
+  requestAnimationFrame(() => requestAnimationFrame(tell));
+  if (document.visibilityState === "hidden") window.setTimeout(tell, 50);
+});

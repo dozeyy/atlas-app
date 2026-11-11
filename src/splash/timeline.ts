@@ -95,6 +95,20 @@ export const CLAY_AT = T.ripple.at + (T.ripple.rings - 1) * T.ripple.stagger + T
 /** Designed total, first frame to the app settled, with ~70 ms for the handoff. */
 export const DESIGNED_TOTAL = CLAY_AT + 70 + Math.max(T.wipe.dur, T.appIn.dur);
 
+/** A gap between frames longer than this is a stall (the page got no frames: a cold or busy
+ *  WebKit), not motion. A first launch on a GitHub macOS runner stalled 1.4 s right after the
+ *  timeline started, and the burst and spin played unseen (2026-11-10). */
+export const STALL_MS = 100;
+/** At most this much stalled time is held back in all, so a page that keeps stalling still ends. */
+export const STALL_HOLD_MAX = 2500;
+
+/** How far to hold the intro back after a frame gap of `gap` ms, with `held` ms held already:
+ *  the intro waits out a stall instead of skipping what it could not show. */
+export function stallHold(gap: number, held: number): number {
+  if (!(gap > STALL_MS)) return 0;
+  return Math.max(0, Math.min(gap - 1000 / 60, STALL_HOLD_MAX - held));
+}
+
 /** The frame-timing numbers the intro reports to Rust. */
 export interface FrameReport {
   frames: number;

@@ -17,7 +17,9 @@
 //!
 //! Anything that goes wrong (splash page never loads, never finishes) is caught by
 //! watchdogs that close the splash and show the main window: the app never waits on
-//! the animation.
+//! the animation. Something of Atlas is on screen at every moment: the main window is
+//! shown before the splash closes, and a splash abandoned before the main page is ready
+//! stays up until it is (bounded by `ORPHAN_LIMIT`).
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -33,10 +35,17 @@ use std::sync::Arc;
 
 pub const SPLASH: &str = "splash";
 
-/// Splash must have painted by then or the intro is abandoned.
-const SPLASH_SHOW_DEADLINE: Duration = Duration::from_millis(1500);
-/// Whole intro must be over by then (it takes ~2.2 s), however it got stuck.
-const INTRO_DEADLINE: Duration = Duration::from_millis(5000);
+/// The splash page must have loaded by then (counted from setup) or the intro is abandoned.
+/// Windows shows it ~250 ms after launch; a first launch on macOS needs ~1.6 s just to start
+/// WebKit for it (GitHub macOS runner, 2026-11-10), so 1.5 s abandoned every first launch there.
+const SPLASH_SHOW_DEADLINE: Duration = Duration::from_millis(3000);
+/// The intro must be over this long after the splash showed (it takes ~2.2 s; a GitHub macOS
+/// runner needs 1.5-3 s more just to get the first frames of each newly shown window, and the
+/// splash waits out up to 2.5 s of stalls, `STALL_HOLD_MAX` in src/splash/timeline.ts), however
+/// it got stuck. Counted from the show, not from setup: a slow WebKit start must not eat into it.
+const INTRO_RUN_LIMIT: Duration = Duration::from_millis(10500);
+/// An abandoned splash waits at most this long for the main page before both give way.
+const ORPHAN_LIMIT: Duration = Duration::from_millis(3000);
 
 #[derive(Default)]
 struct Flow {
@@ -46,6 +55,10 @@ struct Flow {
     armed: bool,
     rect_set: bool,
     splash_shown: bool,
+    shown_at: Option<std::time::Instant>,
+    /// The intro was abandoned before the main page was ready: the splash stays up (covering
+    /// the desktop) until the main window can be shown, so nothing blinks out in between.
+    orphan: bool,
     main_ready: bool,
     covered: bool,
     reduced: bool,
@@ -77,6 +90,12 @@ impl Intro {
     pub fn is_active(&self) -> bool {
         self.lock().active
     }
+
+    /// The intro is running or holding the screen: it shows the main window itself.
+    pub fn owns_window(&self) -> bool {
+        let f = self.lock();
+        f.active || f.orphan
+    }
 }
 
 /// "<ms since AppState was created> ms, epoch <unix ms>": the epoch lets a screen
@@ -96,14 +115,20 @@ fn since_start(app: &AppHandle) -> String {
 
 /// Build the splash window, hidden. It is shown by `splash_ready`.
 pub fn build_splash(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    // Test hook: force the reduced-motion path without touching the OS setting.
-    let script = if std::env::var_os("ATLAS_REDUCE_MOTION").is_some() {
-        "window.__ATLAS_REDUCE__ = true;"
-    } else {
-        ""
-    };
+    // Test hook: force the reduced-motion path (or, with "0", the full one) without touching
+    // the OS setting.
+    let mut script = String::new();
+    match std::env::var("ATLAS_REDUCE_MOTION").as_deref() {
+        Ok("0") => script.push_str("window.__ATLAS_REDUCE__ = false;"),
+        Ok(_) => script.push_str("window.__ATLAS_REDUCE__ = true;"),
+        Err(_) => {}
+    }
+    // Diagnostics: the page logs its clock and frames through `intro_trace`.
+    if tracing() {
+        script.push_str("window.__ATLAS_INTRO_TRACE__ = true;");
+    }
     WebviewWindowBuilder::new(app, SPLASH, WebviewUrl::App("splash.html".into()))
-        .initialization_script(script)
+        .initialization_script(&script)
         .title("Atlas")
         .inner_size(480.0, 320.0)
         .decorations(false)
@@ -200,12 +225,57 @@ pub fn watch(app: &AppHandle) {
                 return;
             }
         }
-        std::thread::sleep(INTRO_DEADLINE - SPLASH_SHOW_DEADLINE);
-        if app.state::<Intro>().is_active() {
-            eprintln!("[atlas] intro: overran {} ms, abandoning", INTRO_DEADLINE.as_millis());
-            abort(&app);
+        loop {
+            let left = {
+                let intro = app.state::<Intro>();
+                let f = intro.lock();
+                if !f.active {
+                    return;
+                }
+                let shown = f.shown_at.unwrap_or_else(std::time::Instant::now);
+                INTRO_RUN_LIMIT.saturating_sub(shown.elapsed())
+            };
+            if left.is_zero() {
+                eprintln!("[atlas] intro: overran {} ms after the splash showed, abandoning", INTRO_RUN_LIMIT.as_millis());
+                abort(&app);
+                return;
+            }
+            std::thread::sleep(left.min(Duration::from_millis(250)));
         }
     });
+}
+
+/// `ATLAS_INTRO_TRACE=1`: log the splash page's clock and the main thread's latency.
+pub fn tracing() -> bool {
+    std::env::var_os("ATLAS_INTRO_TRACE").is_some()
+}
+
+/// Diagnostics: how long the main (UI) thread takes to run a task, every 50 ms for 10 s.
+/// On macOS WebKit composites and drives requestAnimationFrame from this thread.
+pub fn probe_main_thread(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let end = std::time::Instant::now() + Duration::from_secs(10);
+        while std::time::Instant::now() < end {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let t = std::time::Instant::now();
+            if app.run_on_main_thread(move || { let _ = tx.send(()); }).is_err() {
+                return;
+            }
+            let _ = rx.recv();
+            let ms = t.elapsed().as_millis();
+            if ms >= 30 {
+                eprintln!("[atlas] intro trace: main thread busy {ms} ms, answered at {}", stamp(&app));
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+}
+
+/// Diagnostics: one line from the splash page (only sent when tracing).
+#[tauri::command(async)]
+pub fn intro_trace(app: AppHandle, msg: String) {
+    eprintln!("[atlas] intro trace: {msg} at {}", stamp(&app));
 }
 
 /// Stop the intro at once: close the splash and let the main window through.
@@ -219,13 +289,28 @@ pub fn abort(app: &AppHandle) {
         f.active = false;
         (f.main_ready, f.armed)
     };
-    close_splash(app);
+    eprintln!("[atlas] intro: abort (main page ready: {main_ready}) at {}", stamp(app));
     if armed {
         eval_main(app, "window.__atlasIntroReveal&&window.__atlasIntroReveal(true,false)");
     }
     if main_ready {
+        // The window first, then the splash: never a moment with neither on screen.
         show_main(app);
+        close_splash(app);
+        return;
     }
+    // The main page is not ready: the splash stays until it is (`main_ready`), bounded.
+    intro.lock().orphan = true;
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(ORPHAN_LIMIT);
+        let held = std::mem::take(&mut app.state::<Intro>().lock().orphan);
+        if held {
+            eprintln!("[atlas] intro: main page still not ready, showing the window anyway");
+            show_main(&app);
+            close_splash(&app);
+        }
+    });
 }
 
 fn close_splash(app: &AppHandle) {
@@ -256,11 +341,21 @@ fn eval_splash(app: &AppHandle, js: &str) {
 /// The main page painted. Returns true when the intro will show the window itself.
 pub fn main_ready(app: &AppHandle) -> bool {
     let intro = app.state::<Intro>();
-    let (owns, armed) = {
+    let (owns, armed, orphan) = {
         let mut f = intro.lock();
         f.main_ready = true;
-        (f.active, f.armed)
+        (f.active, f.armed, std::mem::take(&mut f.orphan))
     };
+    if orphan {
+        // The intro was abandoned while this page loaded; the splash held the screen.
+        eprintln!("[atlas] intro: main page ready after the intro ended, at {}", since_start(app));
+        if armed {
+            eval_main(app, "window.__atlasIntroReveal&&window.__atlasIntroReveal(true,false)");
+        }
+        show_main(app);
+        close_splash(app);
+        return true;
+    }
     if owns {
         eprintln!("[atlas] intro: main page ready at {}", since_start(app));
         handoff_if_ready(app);
@@ -333,7 +428,11 @@ pub async fn splash_ready(app: AppHandle) -> Result<SplashConfig, String> {
         let _ = s.show();
         let _ = s.set_focus();
     }
-    intro.lock().splash_shown = true;
+    {
+        let mut f = intro.lock();
+        f.splash_shown = true;
+        f.shown_at = Some(std::time::Instant::now());
+    }
     eprintln!("[atlas] intro: splash shown at {}", since_start(&app));
     Ok(SplashConfig { radius, width, height })
 }
@@ -441,5 +540,6 @@ fn finish(app: &AppHandle) {
         }
         f.active = false;
     }
+    eprintln!("[atlas] intro: splash closed at {}", stamp(app));
     close_splash(app);
 }

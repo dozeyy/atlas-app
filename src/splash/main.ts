@@ -15,22 +15,30 @@ import {
   EASE_SPIN_IN,
   EASE_SPIN_OUT,
   EASE_WIPE,
+  STALL_MS,
   T,
   cubicBezier,
+  stallHold,
   summarizeFrames,
 } from "./timeline";
 
 const NS = "http://www.w3.org/2000/svg";
 const VB = MARK_VIEWBOX;
 const inTauri = typeof (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== "undefined";
-// ATLAS_REDUCE_MOTION=1 forces the reduced path for testing (the OS setting is a system
-// setting, so tests never flip it).
+// ATLAS_REDUCE_MOTION=1 forces the reduced path for testing, ATLAS_REDUCE_MOTION=0 the full one (the
+// OS setting is a system setting, so tests never flip it; GitHub's macOS runners have it on).
+const forcedReduce = (window as { __ATLAS_REDUCE__?: boolean }).__ATLAS_REDUCE__;
 const reduceMotion =
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
-  (window as { __ATLAS_REDUCE__?: boolean }).__ATLAS_REDUCE__ === true;
+  typeof forcedReduce === "boolean" ? forcedReduce : window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const call = <R = void>(cmd: string, args?: Record<string, unknown>): Promise<R> =>
   inTauri ? invoke<R>(cmd, args) : Promise.resolve(undefined as R);
+
+// Diagnostics (ATLAS_INTRO_TRACE=1): the page's clock, logged by Rust next to its own timings.
+const traceOn = (window as { __ATLAS_INTRO_TRACE__?: boolean }).__ATLAS_INTRO_TRACE__ === true;
+const trace = (msg: string) => {
+  if (traceOn) void call("intro_trace", { msg: `splash page +${Math.round(performance.now())} ms: ${msg}` }).catch(() => {});
+};
 
 function div(cls: string, parent: HTMLElement): HTMLDivElement {
   const d = document.createElement("div");
@@ -145,13 +153,16 @@ async function main() {
 
   // Rust fits and shows this window, then answers; the layout and timeline start after that.
   let radius = 0;
+  trace(`loaded, viewport ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}, reduced motion ${reduceMotion}`);
   try {
     const cfg = await call<{ radius: number; width: number; height: number }>("splash_ready");
     radius = cfg?.radius ?? 0;
+    trace(`shown, asked for ${cfg?.width}x${cfg?.height}`);
     if (cfg) await viewportIs(cfg.width, cfg.height);
   } catch {
     return; // the intro was abandoned; Rust closes this window
   }
+  trace(`viewport ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}`);
   stage.style.setProperty("--stage-radius", `${radius}px`);
   const parts = build(stage);
   // Let the compositor raster every layer once (three frames at 1 % opacity, which no one can
@@ -162,6 +173,7 @@ async function main() {
   parts.wipe.style.visibility = "visible";
   parts.wipe.getContext("2d")?.fillRect(0, 0, 1, 1);
   for (let i = 0; i < 3; i++) await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  trace("warm frames done, timeline starts");
   stage.style.opacity = "";
   for (const el of warm) el.style.opacity = "";
   parts.wipe.style.visibility = "";
@@ -171,6 +183,16 @@ async function main() {
     const a = el.animate(keyframes, { fill: "both", ...opts });
     anims.push(a);
     return a;
+  };
+
+  // The intro's own clock: every intro animation starts on the first frame the page gets, and
+  // after a stall (no frames for a while) all of them are held back by the stalled time, so the
+  // intro picks up where it was instead of skipping what no one saw. Filled at the end of main().
+  let timed: Animation[] = [];
+  let origin = 0;
+  let held = 0;
+  const restart = () => {
+    for (const a of timed) a.startTime = origin;
   };
 
   // Frame timing, from the first frame until the splash is done.
@@ -183,13 +205,36 @@ async function main() {
   const tick = (now: number) => {
     if (!sampling) return;
     frameNo++;
-    if (frameNo === 1) t0 = now;
-    else if (frameNo === 2) startMs = now - last; // the animations start here; reported apart
-    else deltas.push(now - last);
+    if (frameNo === 1) {
+      t0 = now;
+      origin = now;
+      restart();
+    } else {
+      const hold = stallHold(now - last, held);
+      if (hold > 0) {
+        held += hold;
+        origin += hold;
+        restart();
+        trace(`stall of ${Math.round(now - last)} ms, intro held back ${Math.round(hold)} ms`);
+      }
+      if (frameNo === 2) startMs = now - last; // the animations start here; reported apart
+      else deltas.push(now - last);
+    }
     last = now;
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+  if (traceOn) {
+    const probe = window.setInterval(() => {
+      const a = anims[0];
+      trace(
+        `rAF frames ${frameNo}, timeline ${Math.round(Number(document.timeline.currentTime ?? -1))}, ` +
+          `first anim ${a ? `${a.playState} ${Math.round(Number(a.currentTime ?? -1))}` : "none"}, ` +
+          `${document.visibilityState}, focus ${document.hasFocus()}`,
+      );
+      if (!sampling) window.clearInterval(probe);
+    }, 200);
+  }
 
   let finishing = false;
   const done = () => {
@@ -236,13 +281,18 @@ async function main() {
   window.addEventListener("keydown", skip, { capture: true });
 
   (window as unknown as Record<string, unknown>).__atlasSplashFinish = (mode: string) => {
+    trace(`finish: ${mode}`);
     if (mode === "wipe") {
       // The ripple played backwards: a hole opens from the middle and the clay is gone.
       const ease = cubicBezier(...EASE_WIPE);
       const rEnd = Math.hypot(parts.W, parts.H) / 2 + T.wipe.feather + 2;
-      const begin = performance.now();
+      // Its clock skips stalls too: a gap counts as one short frame at most.
+      let elapsed = 0;
+      let prev = performance.now();
       const frame = (now: number) => {
-        const t = Math.min(1, Math.max(0, (now - begin) / T.wipe.dur));
+        elapsed += Math.min(Math.max(0, now - prev), STALL_MS);
+        prev = now;
+        const t = Math.min(1, elapsed / T.wipe.dur);
         drawClay(rEnd * ease(t));
         if (t < 1) requestAnimationFrame(frame);
         else done();
@@ -330,8 +380,10 @@ async function main() {
     });
     if (i === top) rippleDone = a;
   });
+  timed = [...anims];
   void rippleDone!.finished.then(() => {
     // Flat clay screen: the canvas takes over (identical color), drop the rest.
+    trace("clay screen");
     drawClay(0);
     parts.wipe.style.visibility = "visible";
     parts.mark.style.display = "none";

@@ -1,9 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { ARM_WEDGES, DOT_PATH, SPARK_PATH } from "./markGeometry";
-import { CLAY_AT, DESIGNED_TOTAL, EASE_WIPE, T, cubicBezier, summarizeFrames } from "./timeline";
+import {
+  CLAY_AT,
+  DESIGNED_TOTAL,
+  EASE_WIPE,
+  STALL_HOLD_MAX,
+  STALL_MS,
+  T,
+  cubicBezier,
+  stallHold,
+  summarizeFrames,
+} from "./timeline";
 import { armIntro, installIntroReveal } from "../lib/intro";
 
 describe("launch intro timeline", () => {
+  it("waits out a stall instead of skipping what it could not show", () => {
+    expect(stallHold(16.7, 0)).toBe(0); // a normal frame
+    expect(stallHold(STALL_MS, 0)).toBe(0); // a hitch the eye forgives
+    expect(stallHold(1400, 0)).toBeCloseTo(1400 - 1000 / 60); // the runner's cold stall
+    expect(stallHold(1400, STALL_HOLD_MAX - 500)).toBe(500); // bounded in all
+    expect(stallHold(1400, STALL_HOLD_MAX)).toBe(0);
+    expect(stallHold(Number.NaN, 0)).toBe(0);
+  });
+
   it("fits the budget: about 2 s, never over 2.5 s", () => {
     expect(DESIGNED_TOTAL).toBeLessThanOrEqual(2500);
     expect(DESIGNED_TOTAL).toBeGreaterThanOrEqual(1800);

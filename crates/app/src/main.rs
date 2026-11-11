@@ -154,6 +154,7 @@ fn main() {
             intro::intro_skip,
             intro::intro_main_painted,
             intro::splash_done,
+            intro::intro_trace,
             update::update_check,
             update::update_install,
             shortcut::desktop_shortcut,
@@ -284,6 +285,9 @@ fn main() {
             if intro_on {
                 intro::fit_splash(app.handle(), &window, info.backdrop);
                 intro::watch(app.handle());
+                if intro::tracing() {
+                    intro::probe_main_thread(app.handle());
+                }
             }
 
             // The window-state plugin may have restored a size from a session that
@@ -316,11 +320,15 @@ fn main() {
                 }
             }
 
-            // Failsafe: never leave the window invisible if the page fails to load.
+            // Failsafe: never leave the window invisible if the page fails to load. While the
+            // launch intro runs it shows the window itself (and has its own watchdogs): showing
+            // it here would put the app behind the splash's see-through first half.
             let w = window.clone();
+            let handle = app.handle().clone();
             std::thread::spawn(move || {
                 std::thread::sleep(Duration::from_secs(6));
-                if !w.is_visible().unwrap_or(true) {
+                let intro_owns = handle.try_state::<intro::Intro>().is_some_and(|i| i.owns_window());
+                if !intro_owns && !w.is_visible().unwrap_or(true) {
                     let _ = w.show();
                 }
             });
