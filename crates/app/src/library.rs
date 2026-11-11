@@ -388,13 +388,20 @@ fn refresh_now(st: &AppState, marketplace: Option<&str>) -> Result<CatalogView, 
     }
     let text = runner.list_available().map_err(|e| e.message())?;
     let entries = catalog::parse_available(&text)?;
-    if entries.is_empty() {
-        // An empty answer would wipe the list the user can already see (and the saved copy).
-        return Err("Claude Code's plugin list came back empty, so Atlas kept the list it had.".into());
-    }
-    catalog::write_cache(&env.data, entries, now_ms()).map_err(|_| "Atlas could not save the catalog.".to_string())?;
+    save_listing(&env.data, entries, now_ms())?;
     eprintln!("[atlas] library: catalog refreshed in {} ms", t.elapsed().as_millis());
     Ok(view(st, &env, false))
+}
+
+/// Keep what Claude Code listed. A sudden empty answer never replaces a list that is already
+/// saved (it would wipe what the user can see). With no list to keep, empty is the true answer: a
+/// fresh Claude Code has added no plugin catalogs yet, so the empty list is saved (the page then
+/// says so and offers the official catalog) and it is not an error.
+fn save_listing(data: &Path, entries: Vec<catalog::Entry>, now: u64) -> Result<(), String> {
+    if entries.is_empty() && catalog::read_cache(data).is_some_and(|c| !c.entries.is_empty()) {
+        return Err("Claude Code's plugin list came back empty, so Atlas kept the list it had.".into());
+    }
+    catalog::write_cache(data, entries, now).map_err(|_| "Atlas could not save the catalog.".to_string())
 }
 
 /// What is installed: Claude Code's plugins and the items the Library copied.
@@ -817,6 +824,29 @@ pub async fn library_add_marketplace(state: Info<'_>, lib: Lib<'_>, token: Strin
     .await
 }
 
+/// The empty Library's one action: add Anthropic's official plugin catalog (the same guarded
+/// `plugin marketplace add` as a pasted link: backup first, the write guard, one lock), then list it.
+#[tauri::command]
+pub async fn library_add_official_catalog(state: Info<'_>, lib: Lib<'_>) -> Result<Added, String> {
+    let (st, lib) = (state.inner().clone(), lib.inner().clone());
+    blocking(move || {
+        if lib.refreshing.swap(true, Ordering::SeqCst) {
+            return Err("The catalog is already updating.".into());
+        }
+        let r = add_official_now(&st);
+        lib.refreshing.store(false, Ordering::SeqCst);
+        r
+    })
+    .await
+}
+
+fn add_official_now(st: &AppState) -> Result<Added, String> {
+    let env = Env::of(st)?;
+    let out = install::add_marketplace(&env.ctx(), &env.runner()?, catalog::OFFICIAL_REPO)?;
+    let catalog = refresh_now(st, None).or_else(|_| Ok::<_, String>(view(st, &env, false)))?;
+    Ok(Added { name: out.name, backup_id: out.backup_id, catalog })
+}
+
 #[derive(Deserialize)]
 pub struct Pick {
     kind: String,
@@ -894,6 +924,42 @@ mod tests {
     fn env_at(dir: &Path) -> Env {
         let root = ConfigRoot { dir: dir.to_path_buf(), claude_json: dir.join(".claude.json"), projects_dir: dir.join("projects"), projects_read_only: false, source: ConfigSource::Flag };
         Env { root, data: dir.join("data"), backups: dir.join("data").join("setup-backups") }
+    }
+
+    fn listed(n: &str) -> catalog::Entry {
+        let mut e = entry("m");
+        e.plugin_id = format!("{n}@m");
+        e.name = n.into();
+        e
+    }
+
+    #[test]
+    fn an_empty_listing_with_no_saved_list_is_a_valid_answer_not_an_error() {
+        // A fresh Claude Code has no plugin catalogs: `available` is [] and exit 0 (seen on a
+        // clean macOS runner with 0.1.5, which showed "The Library could not load").
+        let t = tempfile::tempdir().unwrap();
+        assert!(catalog::read_cache(t.path()).is_none());
+        let parsed = catalog::parse_available(r#"{"installed":[],"available":[]}"#).unwrap();
+        assert!(parsed.is_empty());
+        save_listing(t.path(), parsed, 5).unwrap();
+        let saved = catalog::read_cache(t.path()).unwrap();
+        assert_eq!((saved.fetched_ms, saved.entries.len()), (5, 0));
+        // Asked again, still empty: still fine, and the time moves on.
+        save_listing(t.path(), Vec::new(), 9).unwrap();
+        assert_eq!(catalog::read_cache(t.path()).unwrap().fetched_ms, 9);
+    }
+
+    #[test]
+    fn an_empty_listing_never_replaces_a_saved_list() {
+        let t = tempfile::tempdir().unwrap();
+        catalog::write_cache(t.path(), vec![listed("a"), listed("b")], 1).unwrap();
+        let err = save_listing(t.path(), Vec::new(), 2).unwrap_err();
+        assert!(err.contains("kept the list it had"), "{err}");
+        let kept = catalog::read_cache(t.path()).unwrap();
+        assert_eq!((kept.fetched_ms, kept.entries.len()), (1, 2));
+        // A real answer replaces it.
+        save_listing(t.path(), vec![listed("c")], 3).unwrap();
+        assert_eq!(catalog::read_cache(t.path()).unwrap().entries.len(), 1);
     }
 
     #[test]

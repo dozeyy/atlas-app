@@ -197,6 +197,7 @@ fn main() {
             library::library_undo,
             library::library_set_enabled,
             library::library_add_marketplace,
+            library::library_add_official_catalog,
             library::library_install_items,
             library::library_remove_item,
             library::library_open_repo,

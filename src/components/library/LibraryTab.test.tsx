@@ -135,7 +135,7 @@ describe("Library tab: opening", () => {
   });
 
   it("a failure that is not the network never tells anyone to check their connection (K3)", async () => {
-    const why = "Claude Code's plugin list came back empty, so Atlas kept the list it had.";
+    const why = "Claude Code's command took too long. Nothing was changed by Atlas; check the plugin list before trying again.";
     mount((b) => {
       b.library.offline = true; // nothing saved yet, so the page (not a toast) has to say it
       b.library.libraryRefresh = async () => {
@@ -151,6 +151,49 @@ describe("Library tab: opening", () => {
     expect(screen.queryByText(why)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(screen.getByText(why)).toBeInTheDocument();
+  });
+
+  it("a fresh Claude Code with no plugin catalogs gets a calm empty state, not an error", async () => {
+    mount((b) => {
+      b.library.empty = true;
+      b.library.entries = [];
+    });
+    await openLibraryTab();
+    expect(await screen.findByText("No plugin catalogs yet")).toBeInTheDocument();
+    expect(screen.getByText("Claude Code has no plugin catalogs added. Add the official one to browse plugins and skills.")).toBeInTheDocument();
+    expect(screen.queryByText("The Library could not load")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add the official catalog" })).toBeInTheDocument();
+    // Adding from a GitHub link stays available beside it.
+    expect(screen.getByRole("button", { name: "Add from GitHub" })).toBeInTheDocument();
+  });
+
+  it("Add the official catalog adds it, refreshes the list and shows the plugins", async () => {
+    mount((b) => {
+      b.library.empty = true;
+      b.library.entries = [];
+    });
+    await openLibraryTab();
+    await userEvent.click(await screen.findByRole("button", { name: "Add the official catalog" }));
+    expect(await row("pdf-tools")).toBeInTheDocument();
+    expect(lib().calls.filter((c) => c === "add-official-catalog")).toHaveLength(1);
+    expect(screen.queryByText("No plugin catalogs yet")).not.toBeInTheDocument();
+    expect((await lib().libraryCatalog()).marketplaces.map((m) => m.name)).toEqual(["claude-plugins-official"]);
+  });
+
+  it("when adding the official catalog fails, the empty state stays and one toast says why", async () => {
+    mount((b) => {
+      b.library.empty = true;
+      b.library.entries = [];
+      b.library.libraryAddOfficialCatalog = async () => {
+        throw new Error("Claude Code could not add that catalog.");
+      };
+    });
+    await openLibraryTab();
+    await userEvent.click(await screen.findByRole("button", { name: "Add the official catalog" }));
+    expect(await screen.findByText("Claude Code could not add that catalog.")).toBeInTheDocument();
+    expect(screen.getByText("No plugin catalogs yet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add the official catalog" })).toBeEnabled();
   });
 
   it("knows the network from the rest by the reason's own words", () => {

@@ -294,6 +294,8 @@ export interface Backend {
   libraryUndo(backupId: string): Promise<UndoDone>;
   librarySetEnabled(id: string, on: boolean): Promise<void>;
   libraryAddMarketplace(token: string): Promise<MarketAdded>;
+  /** Add Anthropic's official plugin catalog (the empty Library's one action), then list it. */
+  libraryAddOfficialCatalog(): Promise<MarketAdded>;
   libraryInstallItems(token: string, picks: Pick[]): Promise<ItemResult[]>;
   libraryRemoveItem(backupId: string): Promise<void>;
   libraryOpenRepo(repo: string): Promise<void>;
@@ -430,6 +432,7 @@ const tauriBackend: Backend = {
   libraryUndo: (backupId) => invoke<UndoDone>("library_undo", { backupId }),
   librarySetEnabled: (id, on) => invoke<void>("library_set_enabled", { id, on }),
   libraryAddMarketplace: (token) => invoke<MarketAdded>("library_add_marketplace", { token }),
+  libraryAddOfficialCatalog: () => invoke<MarketAdded>("library_add_official_catalog"),
   libraryInstallItems: (token, picks) => invoke<ItemResult[]>("library_install_items", { token, picks }),
   libraryRemoveItem: (backupId) => invoke<void>("library_remove_item", { backupId }),
   libraryOpenRepo: (repo) => invoke<void>("library_open_repo", { repo }),

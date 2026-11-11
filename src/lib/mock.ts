@@ -317,6 +317,7 @@ export class MockBackend {
   libraryUndo: Backend["libraryUndo"] = (b) => this.library.libraryUndo(b);
   librarySetEnabled: Backend["librarySetEnabled"] = (id, on) => this.library.librarySetEnabled(id, on);
   libraryAddMarketplace: Backend["libraryAddMarketplace"] = (t) => this.library.libraryAddMarketplace(t);
+  libraryAddOfficialCatalog: Backend["libraryAddOfficialCatalog"] = () => this.library.libraryAddOfficialCatalog();
   libraryInstallItems: Backend["libraryInstallItems"] = (t, p) => this.library.libraryInstallItems(t, p);
   libraryRemoveItem: Backend["libraryRemoveItem"] = (b) => this.library.libraryRemoveItem(b);
   libraryOpenRepo: Backend["libraryOpenRepo"] = (r) => this.library.libraryOpenRepo(r);
