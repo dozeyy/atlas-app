@@ -1,7 +1,9 @@
 #!/bin/bash
 # The launch intro on macOS, recorded: Atlas is opened the way a person opens it (LaunchServices,
 # `open`), with the intro on and its trace log (ATLAS_INTRO_TRACE=1), while ffmpeg records the
-# screen at 30 fps. Run 1 is a first launch (empty data folder), runs 2 and 3 are later launches.
+# screen at 30 fps. Run 1 is a first launch (empty data folder), runs 2 to 4 are later launches:
+# run 2 forces the Web Animations player (ATLAS_SPLASH_PLAYER=waapi, the pre-fix path on macOS) for
+# comparison, run 3 is the default again, run 4 has the intro off (time to first paint).
 # Each run leaves intro-N.mp4, intro-N.log (Atlas's stderr), intro-N-grid.png (10 fps contact sheet
 # from the launch) and a line in intro-summary.txt.
 #
@@ -54,7 +56,12 @@ screen=$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 | sed
 say "screen device: ${screen:-none}"
 system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Resolution|Chipset|Metal' | sed 's/^ */      /' | tee -a "$SUM"
 
-for run in 1 2 3; do
+for run in 1 2 3 4; do
+  case $run in
+    2) extra=(--env ATLAS_SPLASH_PLAYER=waapi) ;;
+    4) extra=(--env ATLAS_NO_INTRO=1) ;;
+    *) extra=() ;;
+  esac
   raw=$T/raw-$run.mkv
   ffmpeg -hide_banner -loglevel error -f avfoundation -capture_cursor 1 -framerate 30 \
     -i "${screen:-1}:none" -c:v libx264 -preset ultrafast -crf 18 "$raw" </dev/null >"$OUT/ffmpeg-$run.log" 2>&1 &
@@ -65,7 +72,7 @@ for run in 1 2 3; do
   launch_at=$(now)
   # LaunchServices, as a Dock or Finder launch: the app is activated like a person's launch.
   open -n -a "$APP" --stdout "$OUT/intro-$run.log" --stderr "$OUT/intro-$run.log" \
-    --env HOME="$FXHOME" --env ATLAS_DATA_DIR="$DATA" --env ATLAS_INTRO_TRACE=1 --env ATLAS_MULTI=1
+    --env HOME="$FXHOME" --env ATLAS_DATA_DIR="$DATA" --env ATLAS_INTRO_TRACE=1 --env ATLAS_MULTI=1 ${extra[@]+"${extra[@]}"}
   sleep 12
   screencapture -x "$OUT/intro-$run-end.png"
   kill -INT "$REC_PID" 2>/dev/null
@@ -76,11 +83,11 @@ for run in 1 2 3; do
   pkill -9 -f "$EXE" 2>/dev/null
   off=$(python3 -c "print('%.2f' % ($launch_at - $rec_at))")
   ffmpeg -hide_banner -loglevel error -i "$raw" -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -movflags +faststart "$OUT/intro-$run.mp4"
-  # 10 fps from 0.2 s before the launch, 6 s: 60 frames.
+  # 10 fps from 0.2 s before the launch, 9 s: 90 frames.
   start=$(python3 -c "print('%.2f' % max(0, $off - 0.2))")
-  ffmpeg -hide_banner -loglevel error -ss "$start" -i "$OUT/intro-$run.mp4" -t 6 \
-    -vf "fps=10,scale=320:-1,tile=10x6" -frames:v 1 "$OUT/intro-$run-grid.png"
-  say "run $run: launch epoch $launch_at, video offset ${off} s, grid starts at ${start} s"
+  ffmpeg -hide_banner -loglevel error -ss "$start" -i "$OUT/intro-$run.mp4" -t 9 \
+    -vf "fps=10,scale=320:-1,tile=10x9" -frames:v 1 "$OUT/intro-$run-grid.png"
+  say "run $run (${extra[*]+${extra[*]}}): launch epoch $launch_at, video offset ${off} s, grid starts at ${start} s"
   grep -E 'intro|startup' "$OUT/intro-$run.log" | grep -v 'main thread busy [3-4][0-9] ms' | head -n 80 | sed 's/^/      /' >>"$SUM"
 done
 say "done"
