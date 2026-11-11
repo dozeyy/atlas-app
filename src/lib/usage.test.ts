@@ -17,7 +17,6 @@ import {
   formatUsd,
   allTogether,
   countTotal,
-  countsCache,
   headline,
   kindsOf,
   localDay,
@@ -78,8 +77,6 @@ describe("numbers", () => {
     // Rust sends `total` already counted; the headline is that figure and the kinds say which way.
     const t = { input: 100, output: 50, cacheWrite5m: 10, cacheWrite1h: 20, cacheRead: 2000, total: 150 } as Tokens;
     expect(headline(t)).toBe(150);
-    expect(countsCache(t)).toBe(false);
-    expect(countsCache({ ...t, total: 2180 })).toBe(true);
     expect(kindsOf(t)).toEqual(k);
     expect(tokensTip(150, k)).toBe("150 tokens\nInput\t100\nOutput\t50\nCache writes\t30\nCache reads\t2,000\n=All together\t2,180");
     expect(tokenHint(150, null, k)).toBe(tokensTip(150, k));

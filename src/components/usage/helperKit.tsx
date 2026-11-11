@@ -6,7 +6,7 @@ import type { ComponentType } from "react";
 import { Broom, Bug, ChatCircleText, Compass, Eye, Flask, Gauge, Hammer, HeadCircuit, MapTrifold, Palette, PencilLine, RocketLaunch, Shapes } from "@phosphor-icons/react";
 import type { IconProps } from "@phosphor-icons/react";
 import { CountUp } from "../CountUp";
-import { compact, costView, formatUsd, modelLabel, modelWithEffort, tokenHint, type TokenKinds } from "../../lib/usage";
+import { compact, costView, formatUsd, modelLabel, modelWithEffort, kindsSpeech, tokenHint, type TokenKinds } from "../../lib/usage";
 import type { Cost, Outcome, SessionRow } from "../../lib/types";
 
 // ---- names -------------------------------------------------------------------
@@ -349,10 +349,12 @@ export function TokenFigure({ tokens, cost, kinds, id, note, className = "" }: {
   return (
     // The unit sits beside the figure in body type, never inside the display size (the Dashboard
     // hero's pattern): "203k" large, "tokens" small on the same baseline.
-    <span className="inline-flex flex-wrap items-baseline gap-x-2 tabular-nums" title={note ? `${tokenHint(tokens, cost, kinds)}\n${note}` : tokenHint(tokens, cost, kinds)}>
+    <span tabIndex={0} className="inline-flex flex-wrap items-baseline gap-x-2 tabular-nums" title={note ? `${tokenHint(tokens, cost, kinds)}\n${note}` : tokenHint(tokens, cost, kinds)}>
       <CountUp value={tokens} id={id} format={(n) => compact(Math.round(n))} className={className} />
       <span className="text-lead font-semibold text-ink-2">tokens</span>
-      {!v.none && <span className="sr-only">{`, about ${formatUsd(cost.usd ?? 0)} at API prices, estimated${v.partial ? ", incomplete" : ""}`}</span>}
+      {(kinds || !v.none) && (
+        <span className="sr-only">{`${kindsSpeech(kinds)}${v.none ? "" : `, about ${formatUsd(cost.usd ?? 0)} at API prices, estimated${v.partial ? ", incomplete" : ""}`}`}</span>
+      )}
     </span>
   );
 }

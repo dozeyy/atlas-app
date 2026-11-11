@@ -175,7 +175,8 @@ describe("Sessions", () => {
   it("filters by search text and says so when nothing matches", async () => {
     mount("data", "sessions");
     await screen.findAllByRole("button", { name: /tokens/ });
-    await userEvent.type(screen.getByRole("searchbox", { name: "Search sessions" }), "zzzz-nothing");
+    await userEvent.click(screen.getByRole("searchbox", { name: "Search sessions" }));
+    await userEvent.paste("zzzz-nothing");
     expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
     // Two ways to clear: the X in the field and the worded button in the empty state. Each brings the list back.
     const clears = screen.getAllByRole("button", { name: "Clear search" });
@@ -183,12 +184,15 @@ describe("Sessions", () => {
     await userEvent.click(screen.getByText("Clear search"));
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ }).length).toBeGreaterThan(0));
     expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
-    await userEvent.type(screen.getByRole("searchbox", { name: "Search sessions" }), "zzzz-nothing");
+    await userEvent.click(screen.getByRole("searchbox", { name: "Search sessions" }));
+    await userEvent.paste("zzzz-nothing");
     expect(await screen.findByText("Nothing matches")).toBeInTheDocument();
     await userEvent.click(screen.getAllByRole("button", { name: "Clear search" })[0]);
     await waitFor(() => expect(screen.getAllByRole("button", { name: /tokens/ }).length).toBeGreaterThan(0));
     expect(screen.getByRole("searchbox", { name: "Search sessions" })).toHaveValue("");
-  });
+    // One paste, not twelve keystrokes (each re-renders the list), and room for a loaded machine
+    // running the whole suite: it timed out at the 5 s default once in the full run.
+  }, 20_000);
 
   it("shows an empty state when there are no sessions at all", async () => {
     mount("empty", "sessions");

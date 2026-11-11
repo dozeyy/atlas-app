@@ -87,15 +87,6 @@ export function addKinds(a: TokenKinds, b: TokenKinds): TokenKinds {
   return { input: a.input + b.input, output: a.output + b.output, cacheWrite: a.cacheWrite + b.cacheWrite, cacheRead: a.cacheRead + b.cacheRead };
 }
 
-/**
- * Does this figure count the cache in its total? Rust sends `total` either plain (input + output)
- * or with every kind in, so the total itself says which; with no cache in it, either reading is
- * the same and "yes" is right.
- */
-export function countsCache(t: Tokens): boolean {
-  return t.total === allTogether(kindsOf(t));
-}
-
 /** Every kind added up: the "All together" row of a hover, whatever the Settings switch says. */
 export function allTogether(k: TokenKinds): number {
   return k.input + k.output + k.cacheWrite + k.cacheRead;
@@ -127,6 +118,14 @@ export function kindsRows(k: TokenKinds): string {
   return kindRows(k)
     .map((r) => `${r.sum ? "=" : ""}${r.label}\t${r.value}`)
     .join("\n");
+}
+
+/** The same four kinds and their sum as words for a screen reader (a hover is out of its reach). */
+export function kindsSpeech(k: TokenKinds | null | undefined): string {
+  if (!k) return "";
+  return `, ${kindRows(k)
+    .map((r) => `${r.label.toLowerCase()} ${r.value}`)
+    .join(", ")}`;
 }
 
 /** The hover for a token figure that has no dollar line: the exact count, then the four kinds and their sum. */

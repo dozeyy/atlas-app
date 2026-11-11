@@ -544,3 +544,11 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - Cannot follow the setting: the OS tray tooltip (127 chars, one number, no table); scorecard/team run and weekly tokens (`RunRow.tokens`, week points are u64 with no kinds, so no table); mock team data is not mode-aware; the Wrapped hour bars (averages) have no table.
 - Pitfall: tests share localStorage settings, so a test that needs the switch OFF must set it explicitly. The old per-test numbers (e.g. usage_agents 750/340/1721, now track 15/30/60) are the plain totals.
 - Verified: npx tsc --noEmit clean, npm test 74 files / 1056 tests, cargo test --workspace all ok, cargo clippy clean. NOT run in the real app (brief forbade launching).
+
+## 2026-11-10 - Count-cache review fixes (after afec01f)
+- Session receipt now refetches when the switch flips (fetch keyed on info.settings.countCacheInTotals; dollars do not move so the old cost-keyed reload never fired). Test in chatInsights.test.tsx fails when reverted.
+- MCP server re-reads settings.json per call (Usage.settings_dir, set_count_cache on the cached engine). App publishes the engine and the Now engine with the current setting set before they go live (no gap while restarting).
+- Token figures are focusable (tabIndex 0) and carry the four kinds as sr-only text (kindsSpeech in lib/usage.ts); TitleBar test regex allows it. The 'Reused' tile and AgentDetail note use the real setting (useCountCache), not a total comparison; countsCache() removed.
+- usage.test search test: userEvent.paste instead of per-key typing, 20 s timeout with a reason (it timed out only under full-suite load).
+- Setup.test 'closes it with Escape, returning focus' failed twice in full runs during this round, passed alone and in the last full run (75 files, 1062 tests); looks load-related, cause not proven.
+- Still cannot follow the setting: OS tray tooltip (no table), scorecard/team run and weekly tokens (u64, no kinds), mock team data, Wrapped hour bars.

@@ -188,7 +188,12 @@ impl UsageHost {
                 // Starting the engine wrote the pricing table's hash: an install from before the
                 // marker (a folder with Atlas's program and little else) is now clearly Atlas's.
                 atlas_core::fsutil::mark_data_dirs(&state.data_dir, &state.local_data_dir);
-                *cur = Some(Running { roots, engine });
+                *cur = Some(Running { roots, engine: Arc::clone(&engine) });
+                // The switch may have been flipped while this engine was being built (its config
+                // holds the older value, and `set_count_cache` found no engine to tell). The
+                // lock is still held, so the flip either already stored the new value, which is
+                // read here, or comes after this and finds the engine.
+                engine.set_count_cache(state.count_cache_in_totals());
             }
             old
         };

@@ -65,7 +65,7 @@ fn main() {
     // The chat index the app keeps (read-only here); a `--config-dir` folder has its own file.
     let index = atlas_core::search::db::search_file(&local_data, &root.projects_dir, root.source != ConfigSource::Flag);
     let habits = Habits::new(index, data_dir.clone());
-    let usage = usage::Usage::new(root.projects_dir.clone(), root.dir.clone(), local_data, atlas_core::settings::count_cache_in(&data_dir));
+    let usage = usage::Usage::new(root.projects_dir.clone(), root.dir.clone(), local_data, data_dir.clone());
     let inputs = DiscoveryInputs { root: root.clone(), home, managed_dir: default_managed_dir(), include_worktrees: false, sandboxed: false };
     // Direct mode ("mcp") may not plant anything that runs commands; propose mode records every
     // change as "assistant" and the user approves it in the app.

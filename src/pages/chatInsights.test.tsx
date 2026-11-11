@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../App";
-import { AtlasProvider } from "../state/AtlasProvider";
+import { AtlasProvider, useAtlas } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
 import { openSessionNext } from "../lib/nav";
 import { MockBackend } from "../lib/mock";
@@ -113,6 +113,31 @@ describe("Chat receipt and helper map", () => {
     expect(saved.closest("[title]")?.getAttribute("title")).toMatch(/^Cache writes: /);
     expect(within(used).getByText("Reused").closest("[title]")?.getAttribute("title")).toMatch(/^Cache reads: /);
     expect(within(used).queryByText(/^plus .+ reused$/)).toBeNull();
+  });
+
+  it("asks for the receipt again when the cache switch flips while the chat is open (dollars do not move)", async () => {
+    const backend = sessionsBackend();
+    const { row } = await chatWithHelpers(backend);
+    let flip: (on: boolean) => void = () => {};
+    function Probe() {
+      flip = useAtlas().setCountCacheInTotals;
+      return null;
+    }
+    openSessionNext(row.sessionId);
+    setBackend(backend);
+    render(
+      <AtlasProvider>
+        <Probe />
+        <App />
+      </AtlasProvider>,
+    );
+    const used = await screen.findByRole("region", { name: "What it used" });
+    expect(within(used).queryByText("Saved for reuse")).toBeNull();
+    await act(async () => {
+      flip(true);
+    });
+    // Cache writes are now a line of the receipt, so its lines sum to the new total.
+    expect(await within(await screen.findByRole("region", { name: "What it used" })).findByText("Saved for reuse")).toBeInTheDocument();
   });
 
   it("offers the Helpers tab only when helpers ran", async () => {

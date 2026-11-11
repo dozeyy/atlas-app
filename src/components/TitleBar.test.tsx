@@ -159,8 +159,8 @@ describe("session row", () => {
     const meta = btn.querySelector(".truncate.text-caption") as HTMLElement;
     expect(meta).not.toBeNull();
     // The order (2026-11-08): project, tokens, helpers, when. The dollar estimate lives in the tokens hover.
-    // (The dollar estimate also reaches screen readers as hidden text right after the tokens.)
-    expect(meta.textContent).toMatch(/^pixel-garden\u00b7117k tokens(, about \$0\.56 at API prices, estimated)?\u00b72 helpers\u00b7.+\d{1,2}:\d\d( [AP]M)?$/);
+    // (The four kinds and the dollar estimate also reach screen readers as hidden text right after the tokens.)
+    expect(meta.textContent).toMatch(/^pixel-garden\u00b7117k tokens(, input .+ all together [\d,]+)?(, about \$0\.56 at API prices, estimated)?\u00b72 helpers\u00b7.+\d{1,2}:\d\d( [AP]M)?$/);
     expect(meta.querySelector("[title]")?.getAttribute("title")).toMatch(/About \$0\.56 at API prices\. An estimate/);
     // The helper count is colored text and nothing else.
     expect(screen.getByText("2 helpers").className).toMatch(/text-accent-text/);

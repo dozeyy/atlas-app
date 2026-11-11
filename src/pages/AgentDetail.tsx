@@ -12,7 +12,8 @@ import { timelineBars } from "../components/usage/timelineBars";
 import { getBackend } from "../lib/ipc";
 import { useIntro } from "../lib/motion";
 import { useFetched, useLiveReload } from "../lib/useUsage";
-import { compact, countsCache, effortMix, exact, formatDuration, formatWhen, kindsOf, percent, share, topEffort } from "../lib/usage";
+import { useCountCache } from "../state/AtlasProvider";
+import { compact, effortMix, exact, formatDuration, formatWhen, kindsOf, percent, share, topEffort } from "../lib/usage";
 import type { Outcome } from "../lib/types";
 
 /** "general-purpose" -> "General purpose", "ui-builder" -> "UI builder". */
@@ -45,6 +46,7 @@ export function AgentDetailView({
   level?: AvatarLevel;
 }) {
   const backend = getBackend();
+  const counted = useCountCache();
   const d = useFetched(() => backend.agentDetail(sessionId, agentId), [sessionId, agentId]);
   useLiveReload(d.reload);
 
@@ -144,7 +146,7 @@ export function AgentDetailView({
             </div>
             <p
               className="mt-2 text-body text-ink-2"
-              title={`Counted once, inside the session's total.${agent.tokens.cacheRead > 0 && !countsCache(agent.tokens) ? ` Plus ${compact(agent.tokens.cacheRead)} reused (cache reads), counted apart.` : ""}`}
+              title={`Counted once, inside the session's total.${agent.tokens.cacheRead > 0 && !counted ? ` Plus ${compact(agent.tokens.cacheRead)} reused (cache reads), counted apart.` : ""}`}
             >
               <span className="font-medium text-ink">{percent(frac)}</span>
               {" of the session"}

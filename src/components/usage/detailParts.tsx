@@ -5,7 +5,8 @@ import { Card, IconButton } from "../controls";
 import { pushToast } from "../../state/toastStore";
 import { CostText } from "./CostText";
 import { KIND_WORDS } from "../../lib/receiptView";
-import { allTogether, compact, countsCache, effortMix, exact, headline, kindsOf, mergeModelRows, plural, tokensTip } from "../../lib/usage";
+import { useCountCache } from "../../state/AtlasProvider";
+import { allTogether, compact, effortMix, exact, headline, kindsOf, kindsSpeech, mergeModelRows, plural, tokensTip } from "../../lib/usage";
 import type { Cost, Tokens } from "../../lib/types";
 import type { EffortUse } from "../../lib/usageTypes";
 
@@ -104,8 +105,8 @@ export function ClampText({ text, lines = 3, className = "" }: { text: string; l
  */
 export function Breakdown({ t, main }: { t: Tokens; main?: Tokens }) {
   const W = KIND_WORDS;
-  // Both columns count the same way (one Settings switch), so the whole chat says which.
-  const counted = countsCache(t);
+  // Both columns count the same way: the Settings switch says how.
+  const counted = useCountCache();
   const rows: [name: string, pick: (x: Tokens) => number, hover: string, note?: string][] = [
     [W.input.label, (x) => x.input, `${W.input.term}\n${W.input.about}`],
     [W.output.label, (x) => x.output, `${W.output.term}\n${W.output.about}`],
@@ -186,7 +187,7 @@ export function ModelSplit({ rows }: { rows: { model: string; tokens: Tokens; co
                 {r.label}
                 {!r.known && <span className="ml-2 text-caption text-ink-2">not priced</span>}
               </th>
-              <td className="px-3 py-2 text-right" title={tokensTip(headline(r.tokens), kindsOf(r.tokens))}>{compact(headline(r.tokens))}</td>
+              <td className="px-3 py-2 text-right" title={tokensTip(headline(r.tokens), kindsOf(r.tokens))}>{compact(headline(r.tokens))}<span className="sr-only">{kindsSpeech(kindsOf(r.tokens))}</span></td>
               <td className="px-5 py-2 text-right"><CostText cost={r.cost} /></td>
             </tr>
           ))}

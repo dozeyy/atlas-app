@@ -114,6 +114,9 @@ impl NowHost {
                     }
                 }));
                 let engine = Arc::new(NowEngine::start(cfg, Arc::new(TauriNowSink::new(app.clone()))));
+                // Same as the usage engine: a switch flipped while this one was built is read
+                // again once it is published (the lock is still held).
+                engine.set_count_cache(app.state::<Arc<AppState>>().count_cache_in_totals());
                 *cur = Some(Running { roots: roots.clone(), engine });
             }
             old

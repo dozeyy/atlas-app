@@ -33,7 +33,7 @@ import {
   weekdayInitial,
 } from "../lib/dashboardModel";
 import { usualDay } from "../lib/chartPaths";
-import { addDays, addKinds, compact, formatUsd, headline, kindsOf, localDay, mergeModelRows, modelChoices, NO_KINDS, plural, tokenHint, tokensTip } from "../lib/usage";
+import { addDays, addKinds, compact, formatUsd, headline, kindsOf, kindsSpeech, localDay, mergeModelRows, modelChoices, NO_KINDS, plural, tokenHint, tokensTip } from "../lib/usage";
 import type { BarDatum } from "../components/charts/Bars";
 import type { Dashboard as DashboardData, Timeline, UsageStatus } from "../lib/types";
 
@@ -328,10 +328,12 @@ export function Dashboard() {
                   </div>
                   <div
                     className="my-2 flex flex-wrap items-baseline gap-x-2"
+                    tabIndex={0}
                     title={tokenHint(weekTokens, data.week.cost, kindsOf(data.week.tokens))}
                   >
                     <CountUp value={weekTokens} format={compact} id="dash:hero" className="d d-hero text-ink" />
                     <span className="text-lead font-semibold text-ink-2">tokens</span>
+                    <span className="sr-only">{kindsSpeech(kindsOf(data.week.tokens))}</span>
                   </div>
                   <div className="text-body text-ink-2">
                     {plural(data.week.sessions, "session")}
@@ -395,6 +397,7 @@ export function Dashboard() {
                         {spark ? <Sparkline id={`dash:spark:${p.projectKey}`} values={spark} /> : <span />}
                         <span className="d d-small text-right text-ink" title={tokensTip(headline(p.tokens), kindsOf(p.tokens))}>
                           {compact(headline(p.tokens))}
+                          <span className="sr-only">{kindsSpeech(kindsOf(p.tokens))}</span>
                         </span>
                       </li>
                     ))}
@@ -424,8 +427,9 @@ export function Dashboard() {
                     }
                   >
                     <div>
-                      <div className="d d-figure text-ink" title={tokenHint(headline(data.today.tokens), data.today.cost, kindsOf(data.today.tokens))}>
+                      <div tabIndex={0} className="d d-figure text-ink" title={tokenHint(headline(data.today.tokens), data.today.cost, kindsOf(data.today.tokens))}>
                         {compact(headline(data.today.tokens))}
+                        <span className="sr-only">{kindsSpeech(kindsOf(data.today.tokens))}</span>
                       </div>
                       <div className="text-caption text-ink-2">tokens</div>
                     </div>

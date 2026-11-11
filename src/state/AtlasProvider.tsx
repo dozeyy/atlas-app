@@ -34,6 +34,11 @@ export function useAtlas(): AtlasContext {
   return v;
 }
 
+/** The Settings switch "Count cache in token totals", as the page should show it right now. */
+export function useCountCache(): boolean {
+  return useAtlas().info.settings.countCacheInTotals;
+}
+
 export function AtlasProvider({ children }: { children: ReactNode }) {
   const backend = getBackend();
   const [info, setInfo] = useState<AppInfo>(() => backend.boot());

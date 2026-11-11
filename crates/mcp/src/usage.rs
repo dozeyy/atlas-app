@@ -26,19 +26,22 @@ pub struct Usage {
     config_dir: PathBuf,
     /// `<local app data>/atlas`, the same folder the app and `atlas-usage` use.
     local_data: PathBuf,
-    /// The app's "Count cache in token totals" setting, read once at start.
-    count_cache: bool,
+    /// Where the app's `settings.json` lives. "Count cache in token totals" is read from it on
+    /// every call, so a long-lived server follows a toggle in the app without a restart.
+    settings_dir: PathBuf,
     engine: Mutex<Option<Arc<UsageEngine>>>,
 }
 
 impl Usage {
-    pub fn new(projects_dir: PathBuf, config_dir: PathBuf, local_data: PathBuf, count_cache: bool) -> Usage {
-        Usage { projects_dir, config_dir, local_data, count_cache, engine: Mutex::new(None) }
+    pub fn new(projects_dir: PathBuf, config_dir: PathBuf, local_data: PathBuf, settings_dir: PathBuf) -> Usage {
+        Usage { projects_dir, config_dir, local_data, settings_dir, engine: Mutex::new(None) }
     }
 
     fn engine(&self) -> Result<Arc<UsageEngine>, String> {
         let mut slot = self.engine.lock().unwrap_or_else(|p| p.into_inner());
+        let count_cache = atlas_core::settings::count_cache_in(&self.settings_dir);
         if let Some(e) = &*slot {
+            e.set_count_cache(count_cache);
             return Ok(Arc::clone(e));
         }
         if !self.projects_dir.is_dir() {
@@ -53,7 +56,7 @@ impl Usage {
         let mut cfg = UsageConfig::new(self.projects_dir.clone(), self.config_dir.clone(), cache_dir.clone(), cache_dir.join("cache.sqlite"));
         cfg.watch = false;
         cfg.week_starts_sunday = time::week_starts_sunday();
-        cfg.count_cache = self.count_cache;
+        cfg.count_cache = count_cache;
         let e = UsageEngine::start(cfg, Arc::new(Quiet));
         *slot = Some(Arc::clone(&e));
         Ok(e)

@@ -35,14 +35,14 @@ import { receiptWords } from "../lib/sessionWords";
 import { clearPendingAgent, peekPendingAgent } from "../lib/nav";
 import { copyResume, openFolder } from "../lib/sessionActions";
 import { resumeCommand } from "../lib/sessionBrowse";
-import { useAtlas } from "../state/AtlasProvider";
+import { useAtlas, useCountCache } from "../state/AtlasProvider";
 import { KIND_WORDS } from "../lib/receiptView";
 import { useKeyHints } from "../lib/keyHints";
 import { helperTree, type HelperNode } from "../lib/helperTree";
 import { MAIN_ID } from "../lib/helperMap";
 import { useIntro } from "../lib/motion";
 import { useFetched, useLiveReload } from "../lib/useUsage";
-import { compact, effortMix, exact, formatDuration, formatUsd, formatWhen, headline, countsCache, kindsOf, modelWithEffort, percent, plural, share, tokensTip, topEffort } from "../lib/usage";
+import { compact, effortMix, exact, formatDuration, formatUsd, formatWhen, headline, kindsOf, modelWithEffort, percent, plural, share, tokensTip, topEffort } from "../lib/usage";
 import { AgentDetailView, typeLabel } from "./AgentDetail";
 import type { AgentSummary, Outcome, SessionDetail, TranscriptItem } from "../lib/types";
 
@@ -346,6 +346,7 @@ function DetailsTab({
   bins: BarDatum[];
 }) {
   const { row, byModel, agents, main, files } = d;
+  const counted = useCountCache();
   const total = row.tokens;
   const toolCalls = main.toolCalls + agents.reduce((s, a) => s + a.toolCalls, 0);
   const groups = useSessionItems(id);
@@ -404,7 +405,7 @@ function DetailsTab({
       <div className="details-grid">
         <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-4 @3xl:col-span-2">
           {/* The chat's tokens are the figure at the top of the page; this tile is what sits apart from it. */}
-          {total.cacheRead > 0 && !countsCache(total) ? (
+          {total.cacheRead > 0 && !counted ? (
             <Stat label="Reused" icon={<ArrowsClockwise size={14} aria-hidden="true" />} sub={`not part of the ${compact(headline(total))}`}>
               <span title={`${KIND_WORDS.cacheRead.term}: ${exact(total.cacheRead)} tokens\n${KIND_WORDS.cacheRead.about}`}>{compact(total.cacheRead)}</span>
             </Stat>
@@ -514,7 +515,10 @@ export function SessionDetailView({
   useLiveReload(d.reload);
   // The receipt reads the chat's files once and is then kept, so it is not reloaded with every
   // tick: only when the chat's cost itself moved.
-  const receipt = useFetched(() => backend.sessionReceipt(id).then(receiptWords), [id]);
+  // It is also asked again when the Settings switch "Count cache in token totals" changes: the
+  // dollars do not move with it, but every line of the receipt sums to a different total.
+  const countCache = info.settings.countCacheInTotals;
+  const receipt = useFetched(() => backend.sessionReceipt(id).then(receiptWords), [id, countCache]);
   // The Team tab can ask for a helper of this chat: it opens straight on that helper.
   const [agentId, setAgentId] = useState<string | null>(() => peekPendingAgent(id));
   const agentChat = useRef(id);
