@@ -83,7 +83,7 @@ export function Bars({
 
   const tip: TipAt | null =
     active !== null && data[active]
-      ? { x: cx(active), y: Math.max(8, yOf(data[active].value) - 6), ...data[active] }
+      ? { x: cx(active), y: Math.max(8, yOf(data[active].value) - 6), yBelow: base + 4, ...data[active] }
       : null;
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {

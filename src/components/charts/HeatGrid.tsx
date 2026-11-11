@@ -69,7 +69,7 @@ export function HeatGrid({
 
   const tip: TipAt | null =
     active !== null && layout.cells[active] && readouts[active]
-      ? { x: layout.cells[active].x + CELL / 2, y: layout.cells[active].y - 6, ...readouts[active] }
+      ? { x: layout.cells[active].x + CELL / 2, y: layout.cells[active].y - 6, yBelow: layout.cells[active].y + CELL + 4, ...readouts[active] }
       : null;
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {

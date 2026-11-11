@@ -40,7 +40,7 @@ export function Ridge({
 
   const tip: TipAt | null =
     active !== null && data[active]
-      ? { x: g.pts[active][0], y: Math.max(8, g.pts[active][1] - 12), ...data[active] }
+      ? { x: g.pts[active][0], y: Math.max(8, g.pts[active][1] - 12), yBelow: g.pts[active][1] + 10, ...data[active] }
       : null;
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {

@@ -6,6 +6,9 @@ export interface TipAt extends Readout {
   /** Anchor point in the chart's own pixels (the caret points here). */
   x: number;
   y: number;
+  /** Where the caret points when the tip has to open below: under the item, so the point or
+   *  the whole box stays in view. */
+  yBelow: number;
 }
 
 const GAP = 10; // between the point and the tip (matches the CSS offset)
@@ -55,7 +58,7 @@ export function ChartTooltip({ tip, width }: { tip: TipAt | null; width: number 
       ref={ref}
       aria-hidden="true"
       className={`tip${tip ? " show" : ""}${below ? " below" : ""}`}
-      style={{ left, top: shown.y, ["--caret" as string]: `${caret}px` }}
+      style={{ left, top: below ? shown.yBelow : shown.y, ["--caret" as string]: `${caret}px` }}
     >
       <div className="t1">{shown.title}</div>
       <div className="t2 tabular-nums">{shown.valueText}</div>
