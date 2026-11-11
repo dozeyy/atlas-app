@@ -1334,39 +1334,29 @@ html.reduced .nav-label,
 html.reduced .titlebar::after {
   transition: none !important;
 }
-/* macOS: the traffic lights sit at the left of the row, so the buttons start after them. The row
-   is its own strip across the window and the sidebar starts below it. */
+/* macOS: the top strip holds only the traffic lights (--titlebar-h is 28 there, tokens.css). The
+   four buttons keep the Windows layout (one row open, the 2 x 2 square folded, the same lefts and
+   the same slide), one step down: at the top of the sidebar, under the strip, right above
+   Dashboard. Only their tops move here; the nav waits under them the same 12 px as on Windows. */
 html[data-platform="macos"] .app-shell .titlebar-left {
-  padding-left: 84px;
-  /* Two columns: the first after the traffic lights, the second --shell-inset from the sidebar's
-     right edge (160 - 84 - 64 - 4 = 8 between them). */
-  gap: calc(var(--sidebar-w) - 84px - 64px - var(--shell-inset));
-}
-/* After the traffic lights only two buttons fit in the sidebar's width, so on macOS Settings and
-   Wrapped keep the square's second row (under the menu and the toggle) in both states; the row is
-   its own strip, so the fold does not move them (these rules outrank the [data-side] ones). */
-html[data-platform="macos"] .app-shell .titlebar-toggle {
-  margin-left: 0;
+  position: absolute;
+  top: var(--titlebar-h);
+  left: 0;
+  height: calc(32px + 2 * var(--shell-inset));
 }
 html[data-platform="macos"] .app-shell .titlebar-corner {
-  top: calc(var(--shell-inset) + 32px + var(--shell-gap));
+  top: calc(var(--titlebar-h) + var(--shell-inset));
 }
-html[data-platform="macos"] .app-shell .titlebar-settings {
-  left: 84px;
+html[data-platform="macos"] .app-shell[data-side="collapsed"] .titlebar-corner {
+  top: calc(var(--titlebar-h) + var(--shell-inset) + 32px + var(--shell-gap));
 }
-html[data-platform="macos"] .app-shell .titlebar-gift {
-  left: calc(var(--sidebar-w) - var(--shell-inset) - 32px);
-}
-/* Folded, that second row moves into the rail (inset + 32 + gap + 32 + inset is the rail's width),
-   so it never sits over the page; the menu and toggle stay after the traffic lights. */
-html[data-platform="macos"] .app-shell[data-side="collapsed"] .titlebar-settings {
-  left: var(--shell-inset);
-}
-html[data-platform="macos"] .app-shell[data-side="collapsed"] .titlebar-gift {
-  left: calc(var(--shell-inset) + 32px + var(--shell-gap));
-}
+/* Open: the row (inset + 32 + inset) plus the 8 the sidebar pads = 12 clear under the row.
+   Folded: the square's second row (32 + gap) on top of that. */
 html[data-platform="macos"] .app-shell .side-main {
-  margin-top: calc(32px + var(--shell-gap));
+  margin-top: calc(32px + 2 * var(--shell-inset));
+}
+html[data-platform="macos"] .app-shell .side-collapsed .side-main {
+  margin-top: calc(64px + 2 * var(--shell-inset) + var(--shell-gap));
 }
 html[data-platform="macos"] .titlebar {
   background: var(--bg);
