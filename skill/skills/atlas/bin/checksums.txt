@@ -19,3 +19,6 @@
 0.1.6 atlas-usage-windows-x64.exe ad73800cfb76bd22799e2b538725531f8d3701d8930089d228c6834ec6381549
 0.1.6 atlas-usage-macos-universal 5ef218bfed70fd3f2975fa35b77bd1c3f8ae13ab6928a42961edbfe5e47f87c6
 0.1.6 atlas-usage-linux-x64 2dacaeebebb1f9e2d2501e5b4207222e1cd16714534e0a6998c6f3f08007ecb0
+0.1.7 atlas-usage-windows-x64.exe 7f16db0df936a25029c1a9af9efc9386f48a19d1a24cf6e1b3fc4d45371df93d
+0.1.7 atlas-usage-macos-universal ac09212a5fb049a18165002890f46976f2dfef5afd473d6424603f6b6464b037
+0.1.7 atlas-usage-linux-x64 b42e0ea9de8da06bf4e2a9d1ba513ebbe4ed108c50fb127b9f7b3dbee8221979
