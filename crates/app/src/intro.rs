@@ -40,9 +40,10 @@ pub const SPLASH: &str = "splash";
 /// WebKit for it (GitHub macOS runner, 2026-11-10), so 1.5 s abandoned every first launch there.
 const SPLASH_SHOW_DEADLINE: Duration = Duration::from_millis(3000);
 /// The intro must be over this long after the splash showed (it takes ~2.2 s; a GitHub macOS
-/// runner needs 1.5-3 s more just to get the first frames of each newly shown window), however
+/// runner needs 1.5-3 s more just to get the first frames of each newly shown window, and the
+/// splash waits out up to 2.5 s of stalls, `STALL_HOLD_MAX` in src/splash/timeline.ts), however
 /// it got stuck. Counted from the show, not from setup: a slow WebKit start must not eat into it.
-const INTRO_RUN_LIMIT: Duration = Duration::from_millis(8000);
+const INTRO_RUN_LIMIT: Duration = Duration::from_millis(10500);
 /// An abandoned splash waits at most this long for the main page before both give way.
 const ORPHAN_LIMIT: Duration = Duration::from_millis(3000);
 

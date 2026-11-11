@@ -15,8 +15,10 @@ import {
   EASE_SPIN_IN,
   EASE_SPIN_OUT,
   EASE_WIPE,
+  STALL_MS,
   T,
   cubicBezier,
+  stallHold,
   summarizeFrames,
 } from "./timeline";
 
@@ -183,6 +185,16 @@ async function main() {
     return a;
   };
 
+  // The intro's own clock: every intro animation starts on the first frame the page gets, and
+  // after a stall (no frames for a while) all of them are held back by the stalled time, so the
+  // intro picks up where it was instead of skipping what no one saw. Filled at the end of main().
+  let timed: Animation[] = [];
+  let origin = 0;
+  let held = 0;
+  const restart = () => {
+    for (const a of timed) a.startTime = origin;
+  };
+
   // Frame timing, from the first frame until the splash is done.
   const deltas: number[] = [];
   let last = 0;
@@ -193,9 +205,21 @@ async function main() {
   const tick = (now: number) => {
     if (!sampling) return;
     frameNo++;
-    if (frameNo === 1) t0 = now;
-    else if (frameNo === 2) startMs = now - last; // the animations start here; reported apart
-    else deltas.push(now - last);
+    if (frameNo === 1) {
+      t0 = now;
+      origin = now;
+      restart();
+    } else {
+      const hold = stallHold(now - last, held);
+      if (hold > 0) {
+        held += hold;
+        origin += hold;
+        restart();
+        trace(`stall of ${Math.round(now - last)} ms, intro held back ${Math.round(hold)} ms`);
+      }
+      if (frameNo === 2) startMs = now - last; // the animations start here; reported apart
+      else deltas.push(now - last);
+    }
     last = now;
     requestAnimationFrame(tick);
   };
@@ -262,9 +286,13 @@ async function main() {
       // The ripple played backwards: a hole opens from the middle and the clay is gone.
       const ease = cubicBezier(...EASE_WIPE);
       const rEnd = Math.hypot(parts.W, parts.H) / 2 + T.wipe.feather + 2;
-      const begin = performance.now();
+      // Its clock skips stalls too: a gap counts as one short frame at most.
+      let elapsed = 0;
+      let prev = performance.now();
       const frame = (now: number) => {
-        const t = Math.min(1, Math.max(0, (now - begin) / T.wipe.dur));
+        elapsed += Math.min(Math.max(0, now - prev), STALL_MS);
+        prev = now;
+        const t = Math.min(1, elapsed / T.wipe.dur);
         drawClay(rEnd * ease(t));
         if (t < 1) requestAnimationFrame(frame);
         else done();
@@ -352,6 +380,7 @@ async function main() {
     });
     if (i === top) rippleDone = a;
   });
+  timed = [...anims];
   void rippleDone!.finished.then(() => {
     // Flat clay screen: the canvas takes over (identical color), drop the rest.
     trace("clay screen");
