@@ -563,3 +563,9 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 - 0.1.6 (count-cache switch + hover table, Library empty state, Mac intro hand-off, first-launch error flash) tagged and published to dozeyy/atlas via publish-public.ps1 (12 assets, all checks passed).
 - mac-video (run 42951682572, 417 s): drag-install, intro, every page, Library with the official catalog (3,980 plugins), count-cache hover table, themes, Wrapped, uninstall. Copy: docs/shots/fable-pass/for-will/atlas-mac-0.1.6.mp4.
 - Pitfalls (proven here): GitHub macOS runners have Reduce Motion ON, so the video sets `com.apple.universalaccess reduceMotion false` and opens Atlas with `open --env ATLAS_REDUCE_MOTION=0`. `claude plugin marketplace add` validates the whole known_marketplaces.json; the fixture's record lacked installLocation/lastUpdated, so the script fills them. A `gh workflow run --ref main` right after a push can still run the previous SHA; check the run's headSha.
+
+## 2026-11-10 - 0.1.7: chart tips flip below, Mac shortcut chips, README shots
+- Chart hover cards (ChartTooltip) measure the nearest scrolling/clipping ancestor and open below the point when the top would be cut off (`.tip.below` in trail.css). Title tooltips (TipLayer) already did this.
+- Keyboard shortcuts sheet: each key in "X or Y" / "X / Y" is its own nowrap chip in a wrapping dt, so long Mac keys no longer run into the text.
+- README screenshots in dozeyy/atlas are rendered with `ATLAS_PLATFORM=windows ATLAS_ENGINE=chromium node tools/webkit-shots.mjs` on the tour build: WebKit on Windows draws Recursive too thin. The mock tour's Now page is empty, so the README shows Toolkit instead.
+- Released and published 0.1.7 (publish-public.ps1, all checks passed).
