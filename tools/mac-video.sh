@@ -64,6 +64,10 @@ defaults write com.apple.dock autohide -bool true && defaults write com.apple.do
 # No spring-loaded folders: hovering the drag over the Applications alias opened that folder and
 # the drop never landed (the ghost icon then floated over the whole recording).
 defaults write NSGlobalDomain com.apple.springing.enabled -bool false
+# GitHub's macOS runners have Reduce Motion on, which swaps every animation for a fade. A user's
+# Mac has it off: turn it off (the app is also opened with ATLAS_REDUCE_MOTION=0 for the intro).
+defaults write com.apple.universalaccess reduceMotion -bool false 2>/dev/null || true
+launchctl setenv ATLAS_REDUCE_MOTION 0 2>/dev/null || true
 pic=$(ls /System/Library/Desktop\ Pictures/*.heic /System/Library/Desktop\ Pictures/*.jpg 2>/dev/null | head -n 1)
 [ -n "$pic" ] && osa "tell application \"System Events\" to tell every desktop to set picture to \"$pic\""
 osa 'tell application "Finder" to close every window'
@@ -84,7 +88,19 @@ say "made-up Claude folder in the runner's HOME"
 if curl -fsSL https://claude.ai/install.sh -o "$T/install-claude.sh" && bash "$T/install-claude.sh" >"$OUT/claude-install.log" 2>&1; then
   say "Claude Code installed: $("$HOME/.local/bin/claude" --version 2>/dev/null)"
   # A user's Claude Code has the official plugin catalog; a fresh install on the runner has none,
-  # and the Library would open empty.
+  # and the Library would open empty. Claude Code checks the whole marketplace record first, and the
+  # made-up folder's entry lacks the fields a real one has, so fill them in.
+  python3 - "$HOME/.claude/plugins/known_marketplaces.json" <<'PY' >>"$OUT/claude-install.log" 2>&1
+import json, os, sys, datetime
+p = sys.argv[1]
+if os.path.exists(p):
+    d = json.load(open(p))
+    for name, m in d.items():
+        if isinstance(m, dict):
+            m.setdefault("installLocation", os.path.join(os.path.dirname(p), "marketplaces", name))
+            m.setdefault("lastUpdated", datetime.datetime.utcnow().isoformat() + "Z")
+    json.dump(d, open(p, "w"), indent=2)
+PY
   perl -e 'alarm 120; exec @ARGV' "$HOME/.local/bin/claude" plugin marketplace add anthropics/claude-plugins-official >>"$OUT/claude-install.log" 2>&1
   say "official plugin catalog added: exit $?"
   # What the Library will get: the same command Atlas runs (crates/core/src/library/cli.rs).
@@ -159,7 +175,7 @@ osa 'tell application "Finder" to set bounds of front window to {140, 120, 860, 
 osa 'tell application "Finder" to select file "Atlas.app" of folder "Applications" of startup disk'
 pause 2
 mark "launch"
-open /Applications/Atlas.app
+open --env ATLAS_REDUCE_MOTION=0 /Applications/Atlas.app 2>/dev/null || open /Applications/Atlas.app
 PID=""
 for _ in $(seq 1 60); do PID=$(pgrep -f '/Applications/Atlas.app/Contents/MacOS/' | head -n 1); [ -n "$PID" ] && break; sleep 0.25; done
 [ -n "$PID" ] || { say "FAIL Atlas did not start"; exit 1; }
@@ -212,7 +228,10 @@ page Toolkit 4
 sweep 300
 "$D" scroll -6 $cx $cy; pause 1.5; "$D" scroll 6 $cx $cy
 mark "toolkit-library"
-press "Library" && pause 3 && sweep 320
+press "Library" && pause 3
+# An empty catalog offers the official one: press it, the way a user would.
+if press "Add the official catalog"; then pause 10; fi
+sweep 320
 # When the Library cannot load, open its Details so the frame shows what Claude Code said.
 if press "Details"; then pause 2; snap library-details; fi
 mark "toolkit-team"
@@ -242,12 +261,13 @@ pause 2.5
 for th in Dark Silver Light; do mark "theme-$th"; press "$th" && pause 3; done
 # Count cache in token totals: on, then the Dashboard's big number with its hover table, then off.
 mark "count-cache-on"
+press "General" && pause 2
 if press "Count cache in token totals"; then
   pause 2; cmd 1; pause 3
   "$D" move $((WX + 270)) $((WY + 128)) 700; pause 3.5; snap hover-total
   mark "count-cache-off"
   press "Settings" || cmd ,
-  pause 2; press "Count cache in token totals"; pause 2
+  pause 2; press "General"; pause 1.5; press "Count cache in token totals"; pause 2
 fi
 "$D" scroll -10 $cx $cy; pause 2; "$D" scroll -10 $cx $cy; pause 2
 mark "settings-claude-code"
