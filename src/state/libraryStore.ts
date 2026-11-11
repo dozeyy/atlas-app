@@ -296,7 +296,7 @@ export async function addOfficialCatalog(): Promise<boolean> {
   try {
     const done = await getBackend().libraryAddOfficialCatalog();
     adoptCatalog(done.catalog);
-    pushToast({ message: "Added the official plugin catalog.", tone: "success" });
+    pushToast({ message: "The official plugin catalog is ready.", tone: "success" });
     return true;
   } catch (e) {
     // The empty page stays; one toast says what went wrong.

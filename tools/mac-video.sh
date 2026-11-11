@@ -240,6 +240,15 @@ mark "settings"
 press "Settings" || cmd ,
 pause 2.5
 for th in Dark Silver Light; do mark "theme-$th"; press "$th" && pause 3; done
+# Count cache in token totals: on, then the Dashboard's big number with its hover table, then off.
+mark "count-cache-on"
+if press "Count cache in token totals"; then
+  pause 2; cmd 1; pause 3
+  "$D" move $((WX + 270)) $((WY + 128)) 700; pause 3.5; snap hover-total
+  mark "count-cache-off"
+  press "Settings" || cmd ,
+  pause 2; press "Count cache in token totals"; pause 2
+fi
 "$D" scroll -10 $cx $cy; pause 2; "$D" scroll -10 $cx $cy; pause 2
 mark "settings-claude-code"
 press "Claude Code" && pause 3

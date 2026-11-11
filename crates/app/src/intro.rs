@@ -87,10 +87,6 @@ impl Intro {
         self.lock().active = true;
     }
 
-    pub fn is_active(&self) -> bool {
-        self.lock().active
-    }
-
     /// The intro is running or holding the screen: it shows the main window itself.
     pub fn owns_window(&self) -> bool {
         let f = self.lock();
@@ -287,6 +283,8 @@ pub fn abort(app: &AppHandle) {
             return;
         }
         f.active = false;
+        // Set in the same lock: a `main_ready` landing right after must see the hold.
+        f.orphan = !f.main_ready;
         (f.main_ready, f.armed)
     };
     eprintln!("[atlas] intro: abort (main page ready: {main_ready}) at {}", stamp(app));
@@ -300,7 +298,6 @@ pub fn abort(app: &AppHandle) {
         return;
     }
     // The main page is not ready: the splash stays until it is (`main_ready`), bounded.
-    intro.lock().orphan = true;
     let app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(ORPHAN_LIMIT);

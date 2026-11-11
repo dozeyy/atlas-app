@@ -34,7 +34,7 @@ pub struct Tray;
 /// Bring the main window forward, the way a second launch does. Ignored while the launch
 /// intro still owns the start (the window is not shown yet).
 pub fn focus_main(app: &AppHandle) {
-    if app.try_state::<crate::intro::Intro>().is_some_and(|i| i.is_active()) {
+    if app.try_state::<crate::intro::Intro>().is_some_and(|i| i.owns_window()) {
         return;
     }
     if let Some(w) = app.get_webview_window("main") {

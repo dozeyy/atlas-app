@@ -64,5 +64,5 @@ void fontReady.then(() => {
     backend.frontendReady().catch(() => {});
   };
   requestAnimationFrame(() => requestAnimationFrame(tell));
-  if (document.visibilityState === "hidden") window.setTimeout(tell, 50);
+  if (/Mac/.test(navigator.userAgent) && document.visibilityState === "hidden") window.setTimeout(tell, 50);
 });
