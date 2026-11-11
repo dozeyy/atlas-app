@@ -52,6 +52,8 @@ pause() { sleep "$1"; }
 
 # ---- The machine: a clean desktop and a made-up Claude folder ------------------------------------
 defaults write com.apple.dock autohide -bool true && defaults write com.apple.dock autohide-delay -float 1000 && killall Dock
+pic=$(ls /System/Library/Desktop\ Pictures/*.heic /System/Library/Desktop\ Pictures/*.jpg 2>/dev/null | head -n 1)
+[ -n "$pic" ] && osa "tell application \"System Events\" to tell every desktop to set picture to \"$pic\""
 osa 'tell application "Finder" to close every window'
 osa 'tell application "System Events" to set visible of every process whose visible is true and name is not "Finder" to false'
 
@@ -90,10 +92,11 @@ pause 1.5
 osa 'tell application "Finder" to select file "Atlas-macOS.dmg" of folder "Downloads" of home'
 pause 1.5
 mark "open-dmg"
-osa 'tell application "Finder" to open file "Atlas-macOS.dmg" of folder "Downloads" of home'
-VOL=""
-for _ in $(seq 1 40); do VOL=$(ls -d /Volumes/Atlas* 2>/dev/null | head -n 1); [ -n "$VOL" ] && break; sleep 0.5; done
-pause 3
+# Finder's own "open" of a disk image is refused on the runner (no app may open it by an Apple
+# event), so mount it the way a double-click does and show its window.
+VOL=$(hdiutil attach "$DMG" 2>>"$OUT/hdiutil.log" | awk -F'	' '/\/Volumes\//{ print $NF; exit }')
+[ -n "$VOL" ] && open "$VOL"
+pause 4
 osa 'tell application "Finder" to close (every window whose name is "Downloads")'
 pause 1
 b=$(osascript -e 'tell application "Finder" to get bounds of front window' 2>>"$OUT/osascript.log" | tr -d ' ')
@@ -130,10 +133,11 @@ osa 'tell application "Finder" to close every window'
 open /Applications/Atlas.app
 PID=""
 for _ in $(seq 1 60); do PID=$(pgrep -f '/Applications/Atlas.app/Contents/MacOS/' | head -n 1); [ -n "$PID" ] && break; sleep 0.25; done
-[ -n "$PID" ] || { say "FAIL Atlas did not start"; }
+[ -n "$PID" ] || { say "FAIL Atlas did not start"; exit 1; }
 WIN=""
 for _ in $(seq 1 120); do WIN=$("$T/winlist" "$PID" | awk '{ split($2, r, ","); if (r[3] >= 600) { print $2; exit } }'); [ -n "$WIN" ] && break; sleep 0.25; done
 say "window: ${WIN:-none}"
+[ -n "$WIN" ] || { say "FAIL Atlas showed no window"; exit 1; }
 pause 9 # the intro plays, then the Dashboard counts up while the chats are read
 IFS=, read -r WX WY WW WH <<<"${WIN:-0,31,1024,677}"
 cx=$((WX + WW / 2)); cy=$((WY + WH / 2))
