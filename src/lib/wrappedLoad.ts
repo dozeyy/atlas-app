@@ -1,7 +1,7 @@
 import { getBackend } from "./ipc";
 import { hourTotals } from "./wrappedModel";
 import type { WrappedData } from "./wrappedModel";
-import { addDays, headline } from "./usage";
+import { addDays, headline, kindsOf, sumKinds } from "./usage";
 import type { Daily } from "./useDaily";
 import type { ItemUse, Timeline } from "./usageTypes";
 
@@ -134,13 +134,15 @@ export async function loadWrapped(daily: Daily, modelName: (id: string) => strin
     spanDays,
     activeDays,
     tokens,
+    kinds: sumKinds(points.map((p) => p.tokens)),
     sessions: longest?.total ?? points.reduce((n, p) => n + p.sessions, 0),
-    busiest: busy >= 0 ? { day: daily.days[firstIdx + busy], tokens: dayTokens[busy], sessions: points[busy].sessions } : null,
+    busiest: busy >= 0 ? { day: daily.days[firstIdx + busy], tokens: dayTokens[busy], sessions: points[busy].sessions, kinds: kindsOf(points[busy].tokens) } : null,
     streak: daily.streak,
     longestStreak: daily.longest,
     hours: hourly ? hourTotals(hourly.points) : new Array<number>(24).fill(0),
     hoursDays: Math.min(spanDays, HOUR_WINDOW_DAYS),
     dayTokens,
+    dayKinds: points.map((p) => kindsOf(p.tokens)),
     skills: usedSkills.slice(0, 5),
     agents: used(agents),
     tools: used(tools),

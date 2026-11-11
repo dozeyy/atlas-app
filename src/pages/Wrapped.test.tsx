@@ -108,7 +108,8 @@ describe("Wrapped", () => {
     await screen.findByText(OPENER);
     await userEvent.click(screen.getByRole("button", { name: /Slide \d+ of \d+: Tokens/ }));
     const fig = frame().querySelector(".sm-fig-hit") as HTMLElement;
-    expect(fig.getAttribute("title")).toMatch(/^[\d,]+ tokens\.$/);
+    // The count, then its four kinds and "All together".
+    expect(fig.getAttribute("title")).toMatch(/^[\d,]+ tokens\nInput\t[\d,]+\nOutput\t[\d,]+\nCache writes\t[\d,]+\nCache reads\t[\d,]+\n=All together\t[\d,]+$/);
     // Only the figure has the hover: the kicker above it has none.
     expect(frame().querySelector(".sm-kicker")!.closest("[title], [data-tip]")).toBeNull();
     const before = position();

@@ -3,7 +3,7 @@ import { Button } from "../controls";
 import { AgentAvatar, helperName } from "../usage/helperKit";
 import { TokenText } from "../usage/TokenText";
 import { SheetSection, SideSheet } from "./SideSheet";
-import { compact, exact, formatDuration, formatWhen, plural } from "../../lib/usage";
+import { compact, exact, formatDuration, formatWhen, kindsOf, plural } from "../../lib/usage";
 import { HEADLESS_HINT, REVIEWER_WORDS, endRows, finishLine, modelLine, rateSentence, reviewCountsLine, runOutcome, startedLine, usualLine, verdictRows, weeklyBars } from "../../lib/teamModel";
 import type { RunRow, TypeCard } from "../../lib/teamTypes";
 
@@ -78,7 +78,7 @@ export function AgentSheet({
           {card.reviewer ? `${REVIEWER_WORDS} \u00b7 ` : ""}
           {plural(card.runs, "run")}
           {" \u00b7 "}
-          <TokenText tokens={card.tokens.total} cost={card.cost} />
+          <TokenText tokens={card.tokens.total} cost={card.cost} kinds={kindsOf(card.tokens)} />
           {card.topModel ? ` \u00b7 ${modelLine(card.topModel.model, card.topModel.effort)}` : ""}
         </span>
       }

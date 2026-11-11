@@ -15,6 +15,7 @@ pub mod track;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -24,6 +25,7 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 pub use model::{Doing, NowChat, NowFile, NowHelper, NowLast, NowSnapshot, NowStep, OpenCall, PlanCount, Typical};
 
+use crate::usage::count::TokenCount;
 use crate::usage::pricing::PriceTable;
 use crate::usage::query::TypicalRun;
 use crate::usage::reader::ReadStats;
@@ -79,11 +81,19 @@ pub struct NowConfig {
     pub prices: PriceTable,
     pub window_ms: i64,
     pub typical: Option<TypicalSource>,
+    /// The Settings switch "Count cache in token totals", shared with the engine so a change
+    /// shows on the next snapshot (see `NowEngine::set_count_cache`).
+    pub count_cache: Arc<AtomicBool>,
 }
 
 impl NowConfig {
     pub fn new(projects_dir: PathBuf, prices: PriceTable) -> NowConfig {
-        NowConfig { projects_dir, prices, window_ms: WINDOW_MS, typical: None }
+        NowConfig { projects_dir, prices, window_ms: WINDOW_MS, typical: None, count_cache: Arc::new(AtomicBool::new(false)) }
+    }
+
+    pub fn with_count_cache(self, on: bool) -> NowConfig {
+        self.count_cache.store(on, Ordering::Relaxed);
+        self
     }
 
     pub fn with_typical(mut self, source: TypicalSource) -> NowConfig {
@@ -131,10 +141,13 @@ impl<F: Fn(&NowSnapshot) + Send + Sync + 'static> NowSink for F {
 enum Msg {
     Path(PathBuf),
     Rescan,
+    /// The way totals are counted changed: build and send the snapshot again.
+    Recount,
     Stop,
 }
 
 pub struct NowEngine {
+    count_cache: Arc<AtomicBool>,
     tx: Sender<Msg>,
     shared: Arc<Mutex<NowSnapshot>>,
     join: Mutex<Option<JoinHandle<()>>>,
@@ -144,6 +157,7 @@ pub struct NowEngine {
 
 impl NowEngine {
     pub fn start(cfg: NowConfig, sink: Arc<dyn NowSink>) -> NowEngine {
+        let count_cache = Arc::clone(&cfg.count_cache);
         let (tx, rx) = mpsc::channel::<Msg>();
         let shared = Arc::new(Mutex::new(NowSnapshot::default()));
 
@@ -181,7 +195,13 @@ impl NowEngine {
             .name("atlas-now".into())
             .spawn(move || run(cfg, rx, sink, shared2, polling))
             .ok();
-        NowEngine { tx, shared, join: Mutex::new(join), _watcher: watcher }
+        NowEngine { count_cache, tx, shared, join: Mutex::new(join), _watcher: watcher }
+    }
+
+    /// The "Count cache in token totals" switch changed: the next snapshot (sent now) counts the new way.
+    pub fn set_count_cache(&self, on: bool) {
+        self.count_cache.store(on, Ordering::Relaxed);
+        let _ = self.tx.send(Msg::Recount);
     }
 
     pub fn snapshot(&self) -> NowSnapshot {
@@ -237,6 +257,7 @@ fn run(cfg: NowConfig, rx: mpsc::Receiver<Msg>, sink: Arc<dyn NowSink>, shared: 
                         paths.insert(p);
                     }
                     Msg::Rescan => rescan = true,
+                    Msg::Recount => {}
                 }
                 true
             };
@@ -543,14 +564,17 @@ impl State {
     pub(crate) fn snapshot(&self, now: i64) -> NowSnapshot {
         let mut order: Vec<&Session> = self.sessions.iter().collect();
         order.sort_by_key(|s| s.seq);
-        let mut chats: Vec<NowChat> = order.iter().map(|s| s.chat(now)).collect();
+        let count = TokenCount::new(self.cfg.count_cache.load(Ordering::Relaxed));
+        let mut chats: Vec<NowChat> = order.iter().map(|s| s.chat(now, count)).collect();
         for h in chats.iter_mut().flat_map(|c| c.helpers.iter_mut()) {
             h.typical = h.agent_type.as_deref().and_then(|t| self.typical_for(t));
         }
+        // A chat that is over keeps its tokens by kind; the headline follows the setting as of now.
+        let counted = |l: &NowLast| NowLast { tokens: l.token_kinds.map(|k| k.total(count)), ..l.clone() };
         NowSnapshot {
             chats,
-            last: self.recent.first().cloned(),
-            recent: self.recent.clone(),
+            last: self.recent.first().map(counted),
+            recent: self.recent.iter().map(counted).collect(),
             watching: self.cfg.projects_dir.is_dir(),
         }
     }

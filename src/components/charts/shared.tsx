@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
+import type { TokenKinds } from "../../lib/usage";
 
 /** Width used before the first measure, and in jsdom where nothing has a size. */
 export const FALLBACK_WIDTH = 640;
@@ -29,6 +30,8 @@ export interface Readout {
   title: string;
   valueText: string;
   detail: string;
+  /** Tokens by kind: the tooltip lists them under the figure and adds them all together. */
+  kinds?: TokenKinds | null;
 }
 
 /** One chart item, in the shape every chart tooltip speaks (three lines). */

@@ -130,6 +130,8 @@ export interface SettingsPatch {
   mcpAutoConnect?: boolean;
   /** Copies kept per file in History (clamped to 10-200 by the backend). */
   historyKeepVersions?: number;
+  /** Count cache writes and reads in token totals. Off by default; the numbers refetch when it changes. */
+  countCacheInTotals?: boolean;
 }
 
 export interface Backend {

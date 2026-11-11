@@ -88,7 +88,8 @@ function itemsFor(k: number, name: string, spend: number, bigMain: boolean, writ
   });
 }
 
-export function buildMockReceipt(sessionId: string, totalUsd: number, main: MockThread, helpers: MockThread[], rates: MockRates): Receipt {
+/** `countsCache`: the Settings switch is on, so the tokens in `Tokens.total` already include the cache. */
+export function buildMockReceipt(sessionId: string, totalUsd: number, main: MockThread, helpers: MockThread[], rates: MockRates, countsCache = false): Receipt {
   const all = [main, ...helpers];
   const threads: ReceiptThread[] = all.map((t, k) => {
     const kinds = mockKinds(t.model, t.tokens, rates);
@@ -116,7 +117,7 @@ export function buildMockReceipt(sessionId: string, totalUsd: number, main: Mock
       toolCalls: t.toolCalls,
       kinds,
       tokenKinds: mockTokenKinds(t.tokens),
-      models: [{ model: t.model, usd, tokens: t.tokens.total }],
+      models: [{ model: t.model, usd, tokens: t.tokens.total, tokenKinds: mockTokenKinds(t.tokens) }],
       outcome: k === 0 ? null : OUTCOMES[(k - 1) % OUTCOMES.length],
       items,
       itemsOtherUsd: usd - items.reduce((s, i) => s + (i.usd ?? 0), 0),
@@ -128,8 +129,14 @@ export function buildMockReceipt(sessionId: string, totalUsd: number, main: Mock
   const byModel = new Map<string, ReceiptModel>();
   for (const t of threads) {
     for (const m of t.models) {
-      const cur = byModel.get(m.model) ?? { model: m.model, usd: 0, tokens: 0 };
-      byModel.set(m.model, { model: m.model, usd: cur.usd + m.usd, tokens: cur.tokens + m.tokens });
+      const cur = byModel.get(m.model) ?? { model: m.model, usd: 0, tokens: 0, tokenKinds: { output: 0, cacheWrite: 0, input: 0, cacheRead: 0 } };
+      const k = m.tokenKinds;
+      byModel.set(m.model, {
+        model: m.model,
+        usd: cur.usd + m.usd,
+        tokens: cur.tokens + m.tokens,
+        tokenKinds: { output: cur.tokenKinds.output + k.output, cacheWrite: cur.tokenKinds.cacheWrite + k.cacheWrite, input: cur.tokenKinds.input + k.input, cacheRead: cur.tokenKinds.cacheRead + k.cacheRead },
+      });
     }
   }
   const models = [...byModel.values()].sort((a, b) => b.usd - a.usd);
@@ -170,6 +177,7 @@ export function buildMockReceipt(sessionId: string, totalUsd: number, main: Mock
     modelsOtherUsd: totalUsd - models.reduce((s, m) => s + m.usd, 0),
     kinds,
     kindsOtherUsd: totalUsd - sumKinds(kinds),
+    countsCache,
     totalTokens: threads.reduce((s, t) => s + t.tokens, 0),
     tokenKinds: threads.reduce(
       (k, t) => ({ output: k.output + t.tokenKinds.output, cacheWrite: k.cacheWrite + t.tokenKinds.cacheWrite, input: k.input + t.tokenKinds.input, cacheRead: k.cacheRead + t.tokenKinds.cacheRead }),

@@ -2,7 +2,7 @@
 // cell, an hour or a weekday a bar, a chat a circle. Nothing here is decoration, nothing overlaps,
 // and every colour is a token (summit.css). They draw once when the slide arrives (CSS only).
 
-import { addDays, compact } from "../../lib/usage";
+import { addDays, compact, kindsRows } from "../../lib/usage";
 import { barTop, heatLayout, ZERO_STUB } from "../../lib/chartPaths";
 import { hourLabel, longDay, WEEKDAYS_SHORT, weekdayTied } from "../../lib/wrappedModel";
 import type { SlideGraphic } from "../../lib/wrappedModel";
@@ -124,7 +124,7 @@ function HeatArt({ g }: { g: Extract<SlideGraphic, { kind: "heat" }> }) {
               height={cell}
               rx={Math.max(3, Math.round(cell / 4))}
               style={{ animationDelay: `${c.col * 14}ms` }}
-              data-tip={`${longDay(date)}\n${v > 0 ? `${compact(v)} tokens` : "No usage"}`}
+              data-tip={`${longDay(date)}\n${v > 0 ? `${compact(v)} tokens` : "No usage"}${v > 0 && g.kinds?.[c.index] ? `\n${kindsRows(g.kinds[c.index])}` : ""}`}
             />
           );
         })}

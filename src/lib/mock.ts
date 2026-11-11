@@ -55,6 +55,7 @@ function loadSettings(): Settings {
     showShortcuts: false,
     mcpAutoConnect: true,
     historyKeepVersions: 50,
+    countCacheInTotals: false,
   };
   try {
     return { ...base, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
@@ -121,7 +122,10 @@ export class MockBackend {
   }
 
   async updateSettings(patch: SettingsPatch): Promise<AppInfo> {
-    return this.commit({ ...this.info, settings: { ...this.info.settings, ...patch } });
+    const next = this.commit({ ...this.info, settings: { ...this.info.settings, ...patch } });
+    // Like Rust: the totals are counted the new way and every page is told to ask again.
+    if (patch.countCacheInTotals !== undefined) this.usage.setCountCache(patch.countCacheInTotals);
+    return next;
   }
 
   async setSandbox(enabled: boolean): Promise<AppInfo> {
@@ -241,7 +245,11 @@ export class MockBackend {
   }
 
   // ---- usage: the stand-in lives in mockUsage.ts so this file stays small ----
-  readonly usage = new MockUsage();
+  readonly usage = (() => {
+    const u = new MockUsage();
+    u.setCountCache(this.info.settings.countCacheInTotals);
+    return u;
+  })();
   usageStatus = () => this.usage.usageStatus();
   usageDashboard = () => this.usage.usageDashboard();
   usageTimeline: Backend["usageTimeline"] = (a) => this.usage.usageTimeline(a);

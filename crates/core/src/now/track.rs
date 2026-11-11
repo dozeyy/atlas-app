@@ -10,6 +10,7 @@ use std::time::UNIX_EPOCH;
 use super::facts::{Desc, Facts, Parsed, PlanOp, Role, StepState, clean};
 use super::model::{Doing, NowChat, NowFile, NowHelper, NowLast, NowStep, OpenCall, PlanCount};
 use crate::search::mask::mask_secrets;
+use crate::usage::count::{Kinds, TokenCount};
 use crate::usage::naming::{AgentMeta, agent_id_of_stem, agent_name};
 use crate::usage::time::now_ms;
 use crate::usage::pricing::{Basis, Counts, PriceTable};
@@ -45,7 +46,8 @@ pub fn mtime_ms(meta: &std::fs::Metadata) -> i64 {
 }
 
 struct Row {
-    tokens: u64,
+    /// The reply's tokens by kind (what a total counts is decided when the snapshot is built).
+    kinds: Kinds,
     cost: Option<f64>,
     /// Output tokens: a later line of the same reply replaces this one only with as much or more.
     output: u64,
@@ -155,7 +157,7 @@ pub struct FileTrack {
     pub offset: u64,
     pub mtime_ms: i64,
     rows: HashMap<String, Row>,
-    tokens: u64,
+    kinds: Kinds,
     cost: f64,
     unpriced: u32,
     pending: Vec<Pend>,
@@ -195,7 +197,7 @@ struct RunMark {
     after_end: bool,
     /// The file's totals at that point: the run's own are what has come since.
     calls: u32,
-    tokens: u64,
+    kinds: Kinds,
     cost: f64,
     priced: usize,
 }
@@ -207,7 +209,7 @@ const MAX_MARKS: usize = 16;
 struct RunView {
     first_ts: Option<i64>,
     calls: u32,
-    tokens: u64,
+    kinds: Kinds,
     cost: Option<f64>,
 }
 
@@ -225,7 +227,7 @@ impl FileTrack {
             offset: 0,
             mtime_ms: 0,
             rows: HashMap::new(),
-            tokens: 0,
+            kinds: Kinds::default(),
             cost: 0.0,
             unpriced: 0,
             pending: Vec::new(),
@@ -269,7 +271,7 @@ impl FileTrack {
             prev_ts: self.prev_ts,
             after_end,
             calls: self.calls,
-            tokens: self.tokens,
+            kinds: self.kinds,
             cost: self.cost,
             priced: self.priced(),
         });
@@ -620,22 +622,24 @@ impl Session {
                 &Basis { model: &m.model, speed: &m.speed, geo: &m.geo, service_tier: &m.service_tier, price_tier: tier },
                 &counts,
             );
-            let row = Row { tokens: m.input + m.output + m.cw5m + m.cw1h, cost, output: m.output };
+            let mut kinds = Kinds::default();
+            kinds.add_counts(&counts);
+            let row = Row { kinds, cost, output: m.output };
             let f = &mut self.files[fi];
             let key = m.key.clone();
             // Same rule as the ledger: a replayed line with less output never replaces the reply.
             if replay {
                 repeated = true;
             } else {
-                if let Some(old) = f.rows.insert(key, Row { tokens: row.tokens, cost: row.cost, output: row.output }) {
+                if let Some(old) = f.rows.insert(key, Row { kinds: row.kinds, cost: row.cost, output: row.output }) {
                     repeated = true;
-                    f.tokens = f.tokens.saturating_sub(old.tokens);
+                    f.kinds.sub(&old.kinds);
                     match old.cost {
                         Some(c) => f.cost = (f.cost - c).max(0.0),
                         None => f.unpriced = f.unpriced.saturating_sub(1),
                     }
                 }
-                f.tokens += row.tokens;
+                f.kinds.add(&row.kinds);
                 match row.cost {
                     Some(c) => f.cost += c,
                     None => f.unpriced += 1,
@@ -722,7 +726,11 @@ impl Session {
             model: self.model.clone(),
             effort: self.effort.clone(),
             ended_ms: self.newest_write_ms(),
-            tokens: Some(self.files.iter().map(|f| f.tokens).sum()),
+            tokens: None,
+            token_kinds: Some(self.files.iter().fold(Kinds::default(), |mut k, f| {
+                k.add(&f.kinds);
+                k
+            })),
         }
     }
 
@@ -752,13 +760,17 @@ impl Session {
             Some(m) => RunView {
                 first_ts: Some(m.ts),
                 calls: f.calls.saturating_sub(m.calls),
-                tokens: f.tokens.saturating_sub(m.tokens),
+                kinds: {
+                    let mut k = f.kinds;
+                    k.sub(&m.kinds);
+                    k
+                },
                 cost: (f.priced() > m.priced).then(|| (f.cost - m.cost).max(0.0)),
             },
             None => RunView {
                 first_ts: f.first_ts,
                 calls: f.calls,
-                tokens: f.tokens,
+                kinds: f.kinds,
                 cost: (f.rows.len() > f.unpriced as usize).then_some(f.cost),
             },
         }
@@ -791,7 +803,7 @@ impl Session {
         }
     }
 
-    fn helper_view(&self, f: &FileTrack) -> NowHelper {
+    fn helper_view(&self, f: &FileTrack, count: TokenCount) -> NowHelper {
         let done = self.finished_at(f).is_some();
         let doing = if done {
             None
@@ -805,7 +817,8 @@ impl Session {
             model: f.model.clone(),
             effort: f.effort.clone(),
             doing,
-            tokens: run.tokens,
+            tokens: run.kinds.total(count),
+            token_kinds: run.kinds,
             cost_usd: run.cost,
             started_ms: run.first_ts,
             done,
@@ -820,7 +833,7 @@ impl Session {
         }
     }
 
-    pub fn chat(&self, now: i64) -> NowChat {
+    pub fn chat(&self, now: i64, count: TokenCount) -> NowChat {
         let main = self.main();
         // Running ones, and ones that finished within the last few seconds.
         let helpers: Vec<NowHelper> = self
@@ -833,7 +846,7 @@ impl Session {
                         Some(t) => now - t <= HELPER_LINGER_MS,
                     }
             })
-            .map(|f| self.helper_view(f))
+            .map(|f| self.helper_view(f, count))
             .collect();
         let out = helpers.iter().filter(|h| !h.done).count();
 
@@ -861,9 +874,9 @@ impl Session {
         };
         let waiting = matches!(doing.kind.as_str(), "wait" | "ask");
 
-        let (mut tokens, mut cost, mut unpriced, mut rows) = (0u64, 0f64, 0u32, 0usize);
+        let (mut kinds, mut cost, mut unpriced, mut rows) = (Kinds::default(), 0f64, 0u32, 0usize);
         for f in &self.files {
-            tokens += f.tokens;
+            kinds.add(&f.kinds);
             cost += f.cost;
             unpriced += f.unpriced;
             rows += f.rows.len();
@@ -905,7 +918,8 @@ impl Session {
             worked_ms: worked,
             last_write_ms: self.newest_write_ms(),
             doing,
-            tokens,
+            tokens: kinds.total(count),
+            token_kinds: kinds,
             cost_usd: (rows as u32 > unpriced).then_some(cost),
             unpriced: unpriced > 0,
             helpers,
@@ -977,7 +991,7 @@ pub fn tail_last(path: &Path, id: &str, folder_hint: &str, facts: &Facts, prices
     let last = s.last();
     let ended_ms = s.files[fi].last_ts.map_or(last.ended_ms, |t| t.min(last.ended_ms));
     // Only the end of the file was read: a token total would be a fraction of the real one.
-    Some(NowLast { tokens: None, ended_ms, ..last })
+    Some(NowLast { tokens: None, token_kinds: None, ended_ms, ..last })
 }
 
 /// How far back `last_entry_ms` looks for a stamped line.
@@ -1058,12 +1072,12 @@ mod tests {
             reply(40, r#","effort":"high","perTurnEffort":"xhigh""#),
             reply(0, r#","effort":"high""#), // the same reply written again with zeroed counts
         ]);
-        let c = s.chat(now_after());
+        let c = s.chat(now_after(), TokenCount::PLAIN);
         assert_eq!(c.tokens, 3 + 40);
         assert_eq!(c.model.as_deref(), Some("claude-sonnet-5-5"));
         assert_eq!(c.effort.as_deref(), Some("xhigh"));
         let (_d, s) = session(&[prompt("2026-11-08T10:00:00.000Z"), reply(5, "")]);
-        assert_eq!(s.chat(now_after()).effort, None);
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).effort, None);
     }
 
     #[test]
@@ -1074,12 +1088,12 @@ mod tests {
             result("t1"),
             tool("t2", "Edit", r#"{"file_path":"C:\\p\\app\\src\\a.ts","old_string":"A","new_string":"B"}"#, "2026-11-08T10:00:02.000Z"),
         ]);
-        let c = s.chat(now_after());
+        let c = s.chat(now_after(), TokenCount::PLAIN);
         assert_eq!(c.state, "working");
         assert_eq!((c.doing.verb.as_str(), c.doing.target.as_deref()), ("Editing", Some("src/a.ts")));
         assert_eq!(c.project, "app");
         assert_eq!(c.model.as_deref(), Some("claude-opus-5-5"));
-        assert_eq!(c.tokens, 2 * (10 + 5 + 100));
+        assert_eq!(c.tokens, 2 * (10 + 5));
         assert_eq!(c.steps.len(), 2);
         assert!(c.steps[0].done && !c.steps[1].done);
         assert_eq!(c.files, vec![NowFile { path: "src/a.ts".into(), edited: true }]);
@@ -1098,7 +1112,7 @@ mod tests {
             tool("b", "Read", r#"{"file_path":"x2"}"#, "2026-11-08T10:00:01.000Z"),
             tool("c", "Read", r#"{"file_path":"x3"}"#, "2026-11-08T10:00:01.000Z"),
         ]);
-        let c = s.chat(now_after());
+        let c = s.chat(now_after(), TokenCount::PLAIN);
         assert_eq!(c.doing.verb, "Reading 3 files");
         assert_eq!(c.doing.target, None);
 
@@ -1108,7 +1122,7 @@ mod tests {
             result("a"),
             end("2026-11-08T10:00:09.000Z"),
         ]);
-        let c = s.chat(now_after());
+        let c = s.chat(now_after(), TokenCount::PLAIN);
         assert_eq!((c.state.as_str(), c.doing.verb.as_str()), ("waiting", "Waiting for you"));
         assert_eq!(c.worked_ms, Some(9_000));
     }
@@ -1120,7 +1134,7 @@ mod tests {
             tool("a", "Bash", r#"{"command":"sleep 99"}"#, "2026-11-08T10:00:01.000Z"),
             r#"{"type":"user","message":{"content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#.to_string(),
         ]);
-        let c = s.chat(now_after());
+        let c = s.chat(now_after(), TokenCount::PLAIN);
         assert_eq!(c.state, "waiting");
         assert!(c.steps[0].done);
     }
@@ -1130,8 +1144,8 @@ mod tests {
         let a = tool("t1", "Read", r#"{"file_path":"x"}"#, "2026-11-08T10:00:01.000Z");
         let b = a.replace(r#""output_tokens":5"#, r#""output_tokens":50"#);
         let (_d, s) = session(&[prompt("2026-11-08T10:00:00.000Z"), a, b]);
-        let c = s.chat(now_after());
-        assert_eq!(c.tokens, 10 + 50 + 100);
+        let c = s.chat(now_after(), TokenCount::PLAIN);
+        assert_eq!(c.tokens, 10 + 50);
     }
 
     #[test]
@@ -1147,7 +1161,7 @@ mod tests {
             tool("r1", "Read", r#"{"file_path":"x"}"#, "2026-11-08T10:00:01.300Z"),
             tool("b4", "Bash", js, "2026-11-08T10:00:01.400Z"),
         ]);
-        let c = s.chat(now_after());
+        let c = s.chat(now_after(), TokenCount::PLAIN);
         let ids: Vec<(&str, u32)> = c.steps.iter().map(|s| (s.id.as_str(), s.count)).collect();
         assert_eq!(ids, vec![("b1", 3), ("r1", 1), ("b4", 1)]);
         // The folded step is open until its newest call's result comes back.
@@ -1182,12 +1196,12 @@ mod tests {
         let b = s.add_file(&sub, true);
         s.read_file(a, &facts, &prices, &stats).unwrap();
         s.read_file(b, &facts, &prices, &stats).unwrap();
-        let c = s.chat(now_after());
+        let c = s.chat(now_after(), TokenCount::PLAIN);
         assert_eq!(c.helpers.len(), 1);
         assert_eq!(c.helpers[0].name, "Find the callers");
-        assert_eq!(c.helpers[0].tokens, 115);
+        assert_eq!(c.helpers[0].tokens, 15);
         assert_eq!(c.doing.verb, "Waiting on a helper");
-        assert_eq!(c.tokens, 230);
+        assert_eq!(c.tokens, 30);
         assert!(c.steps.iter().any(|s| s.by.as_deref() == Some("Find the callers")));
         assert!(!format!("{c:?}").contains("SECRET PROMPT"));
     }
@@ -1209,7 +1223,7 @@ mod tests {
         let a = s.add_file(&p, false);
         s.read_file(a, &facts, &prices, &stats).unwrap();
         // Same rule as the ledger and the recount: a line missing either id is not a countable reply.
-        assert_eq!(s.chat(now_after()).tokens, 0);
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).tokens, 0);
     }
 
     #[test]
@@ -1288,7 +1302,7 @@ mod tests {
     }
 
     fn running(s: &Session, now: i64) -> usize {
-        s.chat(now).helpers.iter().filter(|h| !h.done).count()
+        s.chat(now, TokenCount::PLAIN).helpers.iter().filter(|h| !h.done).count()
     }
 
     #[test]
@@ -1306,10 +1320,10 @@ mod tests {
         assert_eq!(running(&s, t), 1);
         // 90 s with no write, the build still open: it is not done (the old 30 s rule said it was).
         assert_eq!(running(&s, t + 90_000), 1);
-        let h = &s.chat(t + 90_000).helpers[0];
+        let h = &s.chat(t + 90_000, TokenCount::PLAIN).helpers[0];
         assert_eq!(h.open_call.as_ref().map(|o| (o.kind.as_str(), o.word.as_str())), Some(("run", "cargo")));
         // Only a very long silence with no end signal writes it off.
-        assert!(s.chat(t + HELPER_QUIET_MAX_MS + 60_000).helpers.is_empty());
+        assert!(s.chat(t + HELPER_QUIET_MAX_MS + 60_000, TokenCount::PLAIN).helpers.is_empty());
     }
 
     #[test]
@@ -1321,7 +1335,7 @@ mod tests {
         );
         assert_eq!(running(&s, now_after()), 0);
         // Past the linger window it is gone from the list.
-        assert!(s.chat(now_after() + HELPER_LINGER_MS + 1_000).helpers.is_empty());
+        assert!(s.chat(now_after() + HELPER_LINGER_MS + 1_000, TokenCount::PLAIN).helpers.is_empty());
     }
 
     #[test]
@@ -1357,7 +1371,7 @@ mod tests {
         let parent_done = [result("task1"), end("2026-11-08T10:00:09.000Z")];
         let working = [tool("h1", "Bash", r#"{"command":"cargo build"}"#, "2026-11-08T10:00:03.000Z")];
         let (_d, s) = with_helper(&parent_done, &working, META);
-        let c = s.chat(now_after());
+        let c = s.chat(now_after(), TokenCount::PLAIN);
         assert_eq!((c.state.as_str(), c.doing.verb.as_str(), c.doing.kind.as_str()), ("working", "Waiting on a helper", "helper"));
         assert_eq!(c.helpers.len(), 1);
         // Once the helper is done the chat waits for you again.
@@ -1367,7 +1381,7 @@ mod tests {
             &working,
             META,
         );
-        let c = s.chat(now_after());
+        let c = s.chat(now_after(), TokenCount::PLAIN);
         assert_eq!((c.state.as_str(), c.doing.verb.as_str()), ("waiting", "Waiting for you"));
     }
 
@@ -1411,10 +1425,10 @@ mod tests {
             ],
             META,
         );
-        let h = &s.chat(now_after()).helpers[0];
+        let h = &s.chat(now_after(), TokenCount::PLAIN).helpers[0];
         assert_eq!(h.tool_calls, 1);
         assert_eq!(h.started_ms, crate::usage::time::parse_iso_ms("2026-11-09T10:00:00.000Z"));
-        assert_eq!(h.tokens, 115);
+        assert_eq!(h.tokens, 15);
         assert_eq!(h.phase, "Reading");
         assert!(!h.done);
     }
@@ -1436,10 +1450,10 @@ mod tests {
             ],
             META,
         );
-        let h = &s.chat(now_after()).helpers[0];
+        let h = &s.chat(now_after(), TokenCount::PLAIN).helpers[0];
         assert_eq!(h.tool_calls, 3);
         assert_eq!(h.started_ms, crate::usage::time::parse_iso_ms("2026-11-08T10:00:01.000Z"));
-        assert_eq!(h.tokens, 3 * 115);
+        assert_eq!(h.tokens, 3 * 15);
     }
 
     #[test]
@@ -1463,7 +1477,7 @@ mod tests {
             ],
             META,
         );
-        let h = &s.chat(now_after()).helpers[0];
+        let h = &s.chat(now_after(), TokenCount::PLAIN).helpers[0];
         assert_eq!(h.tool_calls, 1);
         assert_eq!(h.started_ms, crate::usage::time::parse_iso_ms("2026-11-08T10:30:05.000Z"));
         assert!(!h.done);
@@ -1481,13 +1495,13 @@ mod tests {
         ];
         // The parent's notice is read after the helper's own lines (the files are read in either order).
         let (d, mut s) = with_helper(&[], &sub, META);
-        assert_eq!(s.chat(now_after()).helpers[0].tool_calls, 3);
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].tool_calls, 3);
         let main = d.path().join("s1.jsonl");
         let mut f = std::fs::OpenOptions::new().append(true).open(&main).unwrap();
         writeln!(f, "{}", notice("killed", "2026-11-08T10:05:00.000Z")).unwrap();
         drop(f);
         s.read_file(0, &Facts::new(), &PriceTable::seed(), &ReadStats::default()).unwrap();
-        let h = &s.chat(now_after()).helpers[0];
+        let h = &s.chat(now_after(), TokenCount::PLAIN).helpers[0];
         assert_eq!(h.tool_calls, 1);
         assert_eq!(h.started_ms, crate::usage::time::parse_iso_ms("2026-11-09T10:00:00.000Z"));
         assert!(!h.done);
@@ -1508,7 +1522,7 @@ mod tests {
             ],
             META,
         );
-        assert_eq!(s.chat(now_after()).helpers[0].plan, None);
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].plan, None);
         let (_d, s) = with_helper(
             &[],
             &[
@@ -1519,7 +1533,7 @@ mod tests {
             ],
             META,
         );
-        assert_eq!(s.chat(now_after()).helpers[0].plan, None);
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].plan, None);
         // A whole new list (TodoWrite) after the odd ids starts clean: the count is back.
         let todos = |a: &str, b: &str| format!(r#"{{"todos":[{{"content":"A","status":"{a}"}},{{"content":"B","status":"{b}"}}]}}"#);
         let (_d, s) = with_helper(
@@ -1532,7 +1546,7 @@ mod tests {
             ],
             META,
         );
-        assert_eq!(s.chat(now_after()).helpers[0].plan, Some(PlanCount { done: 1, total: 2 }));
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].plan, Some(PlanCount { done: 1, total: 2 }));
     }
 
     #[test]
@@ -1551,7 +1565,7 @@ mod tests {
             ],
             META,
         );
-        let h = &s.chat(now_after()).helpers[0];
+        let h = &s.chat(now_after(), TokenCount::PLAIN).helpers[0];
         assert_eq!(h.tool_calls, 2);
         assert_eq!(h.started_ms, crate::usage::time::parse_iso_ms("2026-11-08T10:00:01.000Z"));
     }
@@ -1564,7 +1578,7 @@ mod tests {
         let plan = |input: String, ts: &str, id: &str| tool(id, "TodoWrite", &input, ts);
         // Written once and never touched: not a plan worth showing.
         let (_d, s) = with_helper(&[], &[plan(todos("in_progress", "pending", "pending"), "2026-11-08T10:00:02.000Z", "p1")], META);
-        assert_eq!(s.chat(now_after()).helpers[0].plan, None);
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].plan, None);
         // One step done: "1 of 3".
         let (_d, s) = with_helper(
             &[],
@@ -1574,11 +1588,11 @@ mod tests {
             ],
             META,
         );
-        assert_eq!(s.chat(now_after()).helpers[0].plan, Some(PlanCount { done: 1, total: 3 }));
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].plan, Some(PlanCount { done: 1, total: 3 }));
         // A single-step list is never a plan.
         let one = r#"{"todos":[{"content":"A","status":"completed"}]}"#.to_string();
         let (_d, s) = with_helper(&[], &[plan(one, "2026-11-08T10:00:02.000Z", "p1")], META);
-        assert_eq!(s.chat(now_after()).helpers[0].plan, None);
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].plan, None);
     }
 
     #[test]
@@ -1593,7 +1607,7 @@ mod tests {
             ],
             META,
         );
-        assert_eq!(s.chat(now_after()).helpers[0].plan, Some(PlanCount { done: 2, total: 3 }));
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].plan, Some(PlanCount { done: 2, total: 3 }));
 
         let (_d, s) = with_helper(
             &[],
@@ -1604,7 +1618,7 @@ mod tests {
             ],
             META,
         );
-        assert_eq!(s.chat(now_after()).helpers[0].plan, Some(PlanCount { done: 1, total: 2 }));
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].plan, Some(PlanCount { done: 1, total: 2 }));
     }
 
     #[test]
@@ -1612,18 +1626,18 @@ mod tests {
         let reads: Vec<String> =
             (0..4).map(|i| tool(&format!("r{i}"), "Read", r#"{"file_path":"x"}"#, "2026-11-08T10:00:02.000Z")).collect();
         let (_d, s) = with_helper(&[], &reads, META);
-        let h = &s.chat(now_after()).helpers[0];
+        let h = &s.chat(now_after(), TokenCount::PLAIN).helpers[0];
         assert_eq!((h.tool_calls, h.phase.as_str()), (4, "Reading"));
         assert_eq!(h.agent_type.as_deref(), Some("Explore"));
         assert_eq!(h.goal.as_deref(), Some("Find the callers"));
 
         let (_d, s) = with_helper(&[], &[tool("t1", "Bash", r#"{"command":"cargo test --workspace"}"#, "2026-11-08T10:00:02.000Z")], META);
-        assert_eq!(s.chat(now_after()).helpers[0].phase, "Testing");
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].phase, "Testing");
         let (_d, s) = with_helper(&[], &[tool("t1", "Bash", r#"{"command":"ls -la"}"#, "2026-11-08T10:00:02.000Z")], META);
-        assert_eq!(s.chat(now_after()).helpers[0].phase, "Running commands");
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].phase, "Running commands");
         // Nothing yet: a sentinel, never an empty word.
         let (_d, s) = with_helper(&[], &[prompt("2026-11-08T10:00:02.000Z")], META);
-        let h = &s.chat(now_after()).helpers[0];
+        let h = &s.chat(now_after(), TokenCount::PLAIN).helpers[0];
         assert_eq!((h.tool_calls, h.phase.as_str()), (0, "Getting started"));
     }
 
@@ -1633,15 +1647,15 @@ mod tests {
         let with_effort = |l: String, e: &str| l.replacen(r#"{"type":"assistant","#, &format!(r#"{{"type":"assistant","effort":"{e}","#), 1);
         // No effort on any line: model is known, effort stays empty (never a default).
         let (_d, s) = with_helper(&[], &[at("2026-11-08T10:00:02.000Z")], META);
-        let h = &s.chat(now_after()).helpers[0];
+        let h = &s.chat(now_after(), TokenCount::PLAIN).helpers[0];
         assert_eq!((h.model.as_deref(), h.effort.as_deref()), (Some("claude-opus-5-5"), None));
         // The newest line's effort wins.
         let lines = [with_effort(at("2026-11-08T10:00:02.000Z"), "medium"), with_effort(at("2026-11-08T10:00:03.000Z"), "high")];
         let (_d, s) = with_helper(&[], &lines, META);
-        assert_eq!(s.chat(now_after()).helpers[0].effort.as_deref(), Some("high"));
+        assert_eq!(s.chat(now_after(), TokenCount::PLAIN).helpers[0].effort.as_deref(), Some("high"));
         // The chat's own model never leaks onto a helper that has not said one.
         let (_d, s) = with_helper(&[], &[prompt("2026-11-08T10:00:02.000Z")], META);
-        let h = &s.chat(now_after()).helpers[0];
+        let h = &s.chat(now_after(), TokenCount::PLAIN).helpers[0];
         assert_eq!((h.model.as_deref(), h.effort.as_deref()), (None, None));
     }
 
@@ -1655,7 +1669,7 @@ mod tests {
             ],
             META,
         );
-        let h = &s.chat(now_after()).helpers[0];
+        let h = &s.chat(now_after(), TokenCount::PLAIN).helpers[0];
         assert!(!format!("{h:?}").contains("TOPSECRET"));
     }
 }

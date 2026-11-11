@@ -46,6 +46,49 @@ fn subagents_nest_under_their_session_and_are_never_rows() {
     assert_eq!(fx.one("SELECT COUNT(*) FROM agents"), 6);
 }
 
+/// The Settings switch: the same chat, counted both ways. The four kinds never change; only the
+/// headline does, and main plus helpers still equals the chat. Ranking by tokens follows it.
+#[test]
+fn the_cache_switch_changes_the_headline_and_the_ranking_but_not_the_kinds_or_the_dollars() {
+    let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
+    let plain = detail(&fx, SA);
+    let by = |sort: &str| -> Vec<String> {
+        fx.engine
+            .sessions_list(&SessionQuery { sort: sort.into(), dir: "desc".into(), limit: 10, ..Default::default() })
+            .unwrap()
+            .rows
+            .iter()
+            .map(|r| r.session_id.clone())
+            .collect()
+    };
+    let rank_plain = by("tokens");
+    fx.engine.set_count_cache(true);
+    let on = detail(&fx, SA);
+    // The breakdown and the money are the same in both modes.
+    assert_eq!((on.row.tokens.input, on.row.tokens.output, on.row.tokens.cache_read), (plain.row.tokens.input, plain.row.tokens.output, plain.row.tokens.cache_read));
+    near(on.row.cost.usd.unwrap(), plain.row.cost.usd.unwrap());
+    // The headline is every kind added up, here and in every part of the chat.
+    let all = |t: &atlas_core::usage::query::Tokens| t.input + t.output + t.cache_write5m + t.cache_write1h + t.cache_read;
+    assert_eq!(on.main.tokens.total, 24_750);
+    assert_eq!(on.row.tokens.total, all(&on.row.tokens));
+    assert!(on.row.tokens.total > plain.row.tokens.total * 10);
+    for a in &on.agents {
+        assert_eq!(a.tokens.total, all(&a.tokens));
+    }
+    assert_eq!(on.main.tokens.total + on.agents.iter().map(|a| a.tokens.total).sum::<u64>(), on.row.tokens.total);
+    // Sorting and the Wrapped total follow the switch (the order is the one the SQL decides).
+    let rank_on = by("tokens");
+    let sum_on: u64 = fx.engine.sessions_list(&SessionQuery { sort: "tokens".into(), dir: "desc".into(), limit: 10, ..Default::default() }).unwrap().rows.iter().map(|r| r.tokens.total).sum();
+    assert_eq!(fx.engine.wrapped_habits("2000-01-01", "2100-12-31").unwrap().all_tokens, sum_on);
+    let sorted_on: Vec<u64> = fx.engine.sessions_list(&SessionQuery { sort: "tokens".into(), dir: "desc".into(), limit: 10, ..Default::default() }).unwrap().rows.iter().map(|r| r.tokens.total).collect();
+    assert!(sorted_on.windows(2).all(|w| w[0] >= w[1]), "sorted by the headline that is shown: {sorted_on:?}");
+    fx.engine.set_count_cache(false);
+    let sorted_plain: Vec<u64> = fx.engine.sessions_list(&SessionQuery { sort: "tokens".into(), dir: "desc".into(), limit: 10, ..Default::default() }).unwrap().rows.iter().map(|r| r.tokens.total).collect();
+    assert!(sorted_plain.windows(2).all(|w| w[0] >= w[1]), "and in the plain mode too: {sorted_plain:?}");
+    assert_eq!(by("tokens"), rank_plain, "switching back restores the order");
+    assert_eq!(rank_on.len(), rank_plain.len());
+}
+
 #[test]
 fn main_thread_and_helpers_add_up_and_nothing_is_counted_twice() {
     let fx = start(&fixture("claude-agents"), Tz::Fixed(0));
@@ -54,13 +97,13 @@ fn main_thread_and_helpers_add_up_and_nothing_is_counted_twice() {
     // The main thread alone.
     assert_eq!(d.main.messages, 2);
     assert_eq!((d.main.tokens.input, d.main.tokens.output, d.main.tokens.cache_write5m, d.main.tokens.cache_read), (150, 600, 2000, 22000));
-    assert_eq!(d.main.tokens.total, 2750);
+    assert_eq!(d.main.tokens.total, 750, "input + output; the cache stays out of the headline");
     assert_eq!(d.main.tool_calls, 2);
 
     // Each helper.
     assert_eq!(agent(&d, "a1").tokens.total, 400);
     assert_eq!(agent(&d, "a1").messages, 3);
-    assert_eq!(agent(&d, "b2").tokens.total, 1340);
+    assert_eq!(agent(&d, "b2").tokens.total, 340);
     assert_eq!(agent(&d, "c3").tokens.total, 65);
     assert_eq!(agent(&d, "d4").tokens.total, 77);
     assert_eq!(agent(&d, "e5").tokens.total, 89);
@@ -69,7 +112,7 @@ fn main_thread_and_helpers_add_up_and_nothing_is_counted_twice() {
     let helpers_tokens: u64 = d.agents.iter().map(|a| a.tokens.total).sum();
     let helpers_messages: u64 = d.agents.iter().map(|a| a.messages).sum();
     assert_eq!(d.main.tokens.total + helpers_tokens, d.row.tokens.total);
-    assert_eq!(d.row.tokens.total, 4721);
+    assert_eq!(d.row.tokens.total, 1721);
     assert_eq!(d.main.messages + helpers_messages, d.row.messages);
     assert_eq!(d.row.messages, 9);
     let helpers_cost: f64 = d.agents.iter().map(|a| a.cost.usd.unwrap()).sum();
@@ -90,7 +133,7 @@ fn main_thread_and_helpers_add_up_and_nothing_is_counted_twice() {
         .sum();
     let by_model_total: u64 = d.by_model.iter().map(|m| m.tokens.total).sum();
     assert_eq!(by_model_total, d.row.tokens.total);
-    assert_eq!(fx.one("SELECT SUM(input+output+cw5m+cw1h) FROM messages") as u64, sessions_total);
+    assert_eq!(fx.one("SELECT SUM(input+output) FROM messages") as u64, sessions_total);
 }
 
 #[test]
@@ -185,7 +228,7 @@ fn one_helper_shows_what_it_spent_and_what_it_was_asked() {
     let model_cost: f64 = a.by_model.iter().map(|m| m.cost.usd.unwrap()).sum();
     near(model_cost, a.agent.cost.usd.unwrap());
     assert_eq!(a.prompt.as_deref(), Some("Search the repo for every use of Invoice and report the files"));
-    assert_eq!(a.session_tokens.total, 4721);
+    assert_eq!(a.session_tokens.total, 1721);
     assert_eq!(a.parent_name, None);
 
     let e = fx.engine.agent_detail(SA, "e5").unwrap().unwrap();
@@ -239,7 +282,7 @@ fn an_older_cache_is_migrated_and_re_read() {
     assert_eq!(c.query_row::<i64, _, _>("SELECT COUNT(*) FROM messages", [], |r| r.get(0)).unwrap(), 14);
     let d = engine.session_detail(SA).unwrap().unwrap();
     assert_eq!(d.agents.len(), 5);
-    assert_eq!(d.row.tokens.total, 4721, "re-reading must not double anything");
+    assert_eq!(d.row.tokens.total, 1721, "re-reading must not double anything");
 }
 
 #[test]
@@ -265,7 +308,7 @@ fn wrapped_habits_split_helper_work_from_the_chats_and_find_the_busiest_crowd() 
     let by_tokens = fx.engine.sessions_list(&SessionQuery { sort: "tokens".into(), dir: "desc".into(), limit: 1, ..Default::default() }).unwrap();
     let big = h.biggest.expect("a chat");
     assert_eq!(big.session_id, by_tokens.rows[0].session_id);
-    assert_eq!(big.tokens.total, 4721);
+    assert_eq!(big.tokens.total, 1721);
     assert_eq!(h.chat_tokens, rows.iter().map(|r| r.tokens.total).sum::<u64>(), "the average's numerator covers the same five chats");
 
     // A range with nothing in it says so instead of inventing a chat.
@@ -288,10 +331,10 @@ fn wrapped_habits_leave_out_chats_that_are_gone_from_disk() {
     assert_eq!(h.most_helpers.as_ref().map(|r| r.session_id.as_str()), Some(SB), "the next busiest crowd");
     assert_ne!(h.biggest.as_ref().map(|r| r.session_id.as_str()), Some(SA), "nor can it be the biggest");
     // Tokens are what was spent, whether or not the transcript survives.
-    assert_eq!(h.all_tokens, fx.one("SELECT SUM(input+output+cw5m+cw1h) FROM messages") as u64);
+    assert_eq!(h.all_tokens, fx.one("SELECT SUM(input+output) FROM messages") as u64);
     // But the per-chat average covers the four chats it counts: numerator and denominator are the
     // same set, so the chat that is gone does not inflate it.
-    let present = fx.one("SELECT SUM(input+output+cw5m+cw1h) FROM session_model m JOIN sessions s ON s.session_id = m.session_id WHERE s.missing = 0") as u64;
+    let present = fx.one("SELECT SUM(input+output) FROM session_model m JOIN sessions s ON s.session_id = m.session_id WHERE s.missing = 0") as u64;
     assert_eq!(h.chat_tokens, present);
     assert!(h.chat_tokens < h.all_tokens, "the gone chat's tokens are in the total, not in the average");
 }
@@ -324,7 +367,7 @@ fn a_side_chain_message_counts_as_helper_work_like_the_session_counter_says() {
     // A main-thread message with no agent id, marked as a side chain.
     let (key, tokens): (String, i64) = fx
         .db()
-        .query_row("SELECT msg_key, input+output+cw5m+cw1h FROM messages WHERE agent_id IS NULL AND is_sidechain = 0 LIMIT 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
+        .query_row("SELECT msg_key, input+output FROM messages WHERE agent_id IS NULL AND is_sidechain = 0 LIMIT 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
         .unwrap();
     assert!(tokens > 0);
     rw(&fx).execute("UPDATE messages SET is_sidechain = 1 WHERE msg_key = ?1", [&key]).unwrap();

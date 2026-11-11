@@ -233,45 +233,58 @@ fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
 #[test]
 fn every_view_of_the_receipt_adds_up_to_the_chats_cost() {
     let (_cfg, fx) = chat_fx();
-    let r = receipt(&fx);
-    let d: SessionDetail = fx.engine.session_detail(SID).unwrap().unwrap();
-    let total = d.row.cost.usd.unwrap();
-    assert!(total > 1.0, "a chat worth looking at: {total}");
-    near(r.total_usd.unwrap(), total);
-    assert!(r.complete && r.scanned);
+    // Both ways of counting: the lines must add up to the headline either way, and the headline
+    // is the same figure the sessions page shows.
+    for on in [false, true] {
+        fx.engine.set_count_cache(on);
+        let count = atlas_core::usage::count::TokenCount::new(on);
+        let r = receipt(&fx);
+        assert_eq!(r.counts_cache, on);
+        let d: SessionDetail = fx.engine.session_detail(SID).unwrap().unwrap();
+        let total = d.row.cost.usd.unwrap();
+        assert!(total > 1.0, "a chat worth looking at: {total}");
+        near(r.total_usd.unwrap(), total);
+        assert!(r.complete && r.scanned);
 
-    near(r.threads.iter().map(|t| t.usd).sum::<f64>() + r.threads_other_usd, total);
-    near(r.models.iter().map(|m| m.usd).sum::<f64>() + r.models_other_usd, total);
-    near(r.kinds.sum() + r.kinds_other_usd, total);
-    near(r.items.iter().filter_map(|i| i.usd).sum::<f64>() + r.items_other_usd, total);
-    assert!(r.threads_other_usd.abs() < 1e-9 && r.kinds_other_usd.abs() < 1e-9, "nothing unpriced here");
-    assert!(r.items_other_usd > 0.0, "the biggest items are not the whole bill");
+        near(r.threads.iter().map(|t| t.usd).sum::<f64>() + r.threads_other_usd, total);
+        near(r.models.iter().map(|m| m.usd).sum::<f64>() + r.models_other_usd, total);
+        near(r.kinds.sum() + r.kinds_other_usd, total);
+        near(r.items.iter().filter_map(|i| i.usd).sum::<f64>() + r.items_other_usd, total);
+        assert!(r.threads_other_usd.abs() < 1e-9 && r.kinds_other_usd.abs() < 1e-9, "nothing unpriced here");
+        assert!(r.items_other_usd > 0.0, "the biggest items are not the whole bill");
 
-    // Each thread is exactly what the sessions page says it is, and its own slice adds up too.
-    near(thread_main(&r).usd, d.main.cost.usd.unwrap());
-    for a in &d.agents {
-        near(thread(&r, &a.agent_id).usd, a.cost.usd.unwrap());
-        assert_eq!(thread(&r, &a.agent_id).tokens, a.tokens.total);
-    }
-    for t in &r.threads {
-        near(t.kinds.sum(), t.usd);
-        near(t.models.iter().map(|m| m.usd).sum::<f64>(), t.usd);
-        near(t.items.iter().filter_map(|i| i.usd).sum::<f64>() + t.items_other_usd, t.usd);
-    }
-    // Tokens add up the same way: by thread, and by kind (cache reads listed apart).
-    assert_eq!(r.total_tokens, d.row.tokens.total);
-    assert_eq!(r.threads.iter().map(|t| t.tokens).sum::<u64>(), r.total_tokens);
-    assert_eq!(r.token_kinds.headline(), r.total_tokens);
-    assert_eq!(r.token_kinds.cache_read, d.row.tokens.cache_read);
-    for t in &r.threads {
-        assert_eq!(t.token_kinds.headline(), t.tokens);
-        assert_eq!(t.token_kinds.cache_read, t.cache_read_tokens);
-    }
-    // By model: the same figures the detail page shows.
-    for m in &d.by_model {
-        let line = r.models.iter().find(|x| x.model == m.model).unwrap();
-        near(line.usd, m.cost.usd.unwrap());
-        assert_eq!(line.tokens, m.tokens.total);
+        // Each thread is exactly what the sessions page says it is, and its own slice adds up too.
+        near(thread_main(&r).usd, d.main.cost.usd.unwrap());
+        for a in &d.agents {
+            near(thread(&r, &a.agent_id).usd, a.cost.usd.unwrap());
+            assert_eq!(thread(&r, &a.agent_id).tokens, a.tokens.total);
+        }
+        for t in &r.threads {
+            near(t.kinds.sum(), t.usd);
+            near(t.models.iter().map(|m| m.usd).sum::<f64>(), t.usd);
+            near(t.items.iter().filter_map(|i| i.usd).sum::<f64>() + t.items_other_usd, t.usd);
+        }
+        // Tokens add up the same way: by thread, and by kind (cache reads listed apart).
+        assert_eq!(r.total_tokens, d.row.tokens.total);
+        assert_eq!(r.threads.iter().map(|t| t.tokens).sum::<u64>(), r.total_tokens);
+        assert_eq!(r.token_kinds.total(count), r.total_tokens);
+        assert_eq!(r.token_kinds.cache_read, d.row.tokens.cache_read);
+        assert_eq!(r.token_kinds.all(), r.token_kinds.input + r.token_kinds.output + r.token_kinds.cache_write + r.token_kinds.cache_read);
+        if on {
+            assert_eq!(r.total_tokens, r.token_kinds.all(), "cache is in the headline");
+        } else {
+            assert!(r.total_tokens < r.token_kinds.all(), "cache is left out of the headline");
+        }
+        for t in &r.threads {
+            assert_eq!(t.token_kinds.total(count), t.tokens);
+            assert_eq!(t.token_kinds.cache_read, t.cache_read_tokens);
+        }
+        // By model: the same figures the detail page shows.
+        for m in &d.by_model {
+            let line = r.models.iter().find(|x| x.model == m.model).unwrap();
+            near(line.usd, m.cost.usd.unwrap());
+            assert_eq!(line.tokens, m.tokens.total);
+        }
     }
 }
 

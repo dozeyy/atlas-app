@@ -240,7 +240,7 @@ export function ReceiptPane({
 
         <div className="min-w-0 space-y-6">
           <Lines label="What it used" lines={whatItUsed(r)} total={total}>
-            {reads.tokens > 0 && (
+            {reads.tokens > 0 && !r.countsCache && (
               <p className="mt-1 text-caption text-ink-2" title={kindTitle("cacheRead", reads.tokens, reads.usd)}>
                 {`plus ${compact(reads.tokens)} ${KIND_WORDS.cacheRead.label}`}
               </p>

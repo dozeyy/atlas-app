@@ -14,6 +14,7 @@ interface AtlasContext {
   goBack: () => void;
   setTheme: (t: Theme) => void;
   setLaunchAnimation: (on: boolean) => void;
+  setCountCacheInTotals: (on: boolean) => void;
   setCloseToTray: (on: boolean) => void;
   setNotifyOnFinish: (on: boolean) => void;
   setShowShortcuts: (on: boolean) => void;
@@ -110,6 +111,11 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     [backend, run],
   );
 
+  const setCountCacheInTotals = useCallback(
+    (on: boolean) => void run(backend.updateSettings({ countCacheInTotals: on })),
+    [backend, run],
+  );
+
   const setCloseToTray = useCallback(
     (on: boolean) => void run(backend.updateSettings({ closeToTray: on })),
     [backend, run],
@@ -155,6 +161,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       goBack,
       setTheme,
       setLaunchAnimation,
+      setCountCacheInTotals,
       setCloseToTray,
       setNotifyOnFinish,
       setShowShortcuts,
@@ -165,7 +172,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       openConfigDir: () => backend.openConfigDir().catch(() => {}),
       openDataDir: () => backend.openDataDir().catch(() => {}),
     }),
-    [info, view, setView, goBack, setTheme, setLaunchAnimation, setCloseToTray, setNotifyOnFinish, setShowShortcuts, setHistoryKeep, run, backend],
+    [info, view, setView, goBack, setTheme, setLaunchAnimation, setCountCacheInTotals, setCloseToTray, setNotifyOnFinish, setShowShortcuts, setHistoryKeep, run, backend],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

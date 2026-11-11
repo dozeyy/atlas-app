@@ -86,6 +86,7 @@ mod tests {
             last_write_ms: 0,
             doing: Doing { kind: kind.into(), verb: "x".into(), target: None },
             tokens: 0,
+            token_kinds: Default::default(),
             cost_usd: None,
             unpriced: false,
             helpers: vec![],

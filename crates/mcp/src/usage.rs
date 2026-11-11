@@ -26,12 +26,14 @@ pub struct Usage {
     config_dir: PathBuf,
     /// `<local app data>/atlas`, the same folder the app and `atlas-usage` use.
     local_data: PathBuf,
+    /// The app's "Count cache in token totals" setting, read once at start.
+    count_cache: bool,
     engine: Mutex<Option<Arc<UsageEngine>>>,
 }
 
 impl Usage {
-    pub fn new(projects_dir: PathBuf, config_dir: PathBuf, local_data: PathBuf) -> Usage {
-        Usage { projects_dir, config_dir, local_data, engine: Mutex::new(None) }
+    pub fn new(projects_dir: PathBuf, config_dir: PathBuf, local_data: PathBuf, count_cache: bool) -> Usage {
+        Usage { projects_dir, config_dir, local_data, count_cache, engine: Mutex::new(None) }
     }
 
     fn engine(&self) -> Result<Arc<UsageEngine>, String> {
@@ -51,6 +53,7 @@ impl Usage {
         let mut cfg = UsageConfig::new(self.projects_dir.clone(), self.config_dir.clone(), cache_dir.clone(), cache_dir.join("cache.sqlite"));
         cfg.watch = false;
         cfg.week_starts_sunday = time::week_starts_sunday();
+        cfg.count_cache = self.count_cache;
         let e = UsageEngine::start(cfg, Arc::new(Quiet));
         *slot = Some(Arc::clone(&e));
         Ok(e)

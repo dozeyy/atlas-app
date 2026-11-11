@@ -5,7 +5,7 @@ import { EndLine } from "./EndLine";
 import { AgentAvatar, ModelChip, OutcomeMark } from "./helperKit";
 import { MAP_BY } from "./HelperMap";
 import { layoutMap, MAIN_ID, type MapNode } from "../../lib/helperMap";
-import { KIND_WORDS, flagText, guess, itemDetail, itemTitle, itemTitleFull, kindLines, kindTitle, lineTitle, tokensText } from "../../lib/receiptView";
+import { KIND_WORDS, flagText, itemDetail, itemTitle, itemTitleFull, kindLines, kindTitle, lineTitle, tokensText } from "../../lib/receiptView";
 import { compact, formatDuration, percent, plural, share } from "../../lib/usage";
 import type { Receipt } from "../../lib/types";
 
@@ -59,7 +59,7 @@ export function HelperSlice({
   const t = node.thread;
   const type = types.get(t?.agentId ?? "") ?? null;
   const kind = node.kind === "helper" ? typeWords(type, node.name) : null;
-  const used = t ? kindLines(t.tokenKinds, t.kinds) : [];
+  const used = t ? kindLines(t.tokenKinds, t.kinds, receipt.countsCache) : [];
   const lines = t ? [...t.items].sort((a, b) => b.tokens - a.tokens).slice(0, 2) : [];
   const hasMore = !!t && (t.tokens > 0 || lines.length > 0);
   const ran = t && t.durationMs > 0 ? formatDuration(t.durationMs) : "";
@@ -100,7 +100,7 @@ export function HelperSlice({
 
       {/* In a narrow slice the share drops to its own line whole, never "81% of the" over "chat". */}
       <div className="mt-3 flex flex-wrap items-baseline gap-x-3">
-        <span className="d d-stat tabular-nums text-ink" title={node.usd > 0 ? `${node.name}: ${tokensText(node.tokens)}, ${guess(node.usd)}` : undefined}>
+        <span className="d d-stat tabular-nums text-ink" title={lineTitle({ label: node.name, tokens: node.tokens, usd: node.usd > 0 ? node.usd : null, kinds: t && t.tokens === node.tokens ? t.tokenKinds : undefined })}>
           {compact(node.tokens)}
         </span>
         <span className="text-body text-ink-2">tokens</span>
@@ -155,7 +155,7 @@ export function HelperSlice({
               <li key={h.agentId}>
                 <button type="button" className="rcpt-item rcpt-line-btn w-full text-left" onClick={() => h.agentId && onOpenHelper(h.agentId)}>
                   <span className="min-w-0 truncate text-body text-ink">{h.name}</span>
-                  <span className="shrink-0 text-body tabular-nums text-ink" title={`${h.name}: ${tokensText(h.tokens)}, ${guess(h.usd)}`}>
+                  <span className="shrink-0 text-body tabular-nums text-ink" title={lineTitle({ label: h.name, tokens: h.tokens, usd: h.usd, kinds: h.tokenKinds })}>
                     {compact(h.tokens)}
                   </span>
                 </button>
@@ -184,7 +184,7 @@ export function HelperSlice({
                       </li>
                     ))}
                   </ul>
-                  {t.tokenKinds.cacheRead > 0 && (
+                  {t.tokenKinds.cacheRead > 0 && !receipt.countsCache && (
                     <p className="mt-1 text-caption text-ink-2" title={kindTitle("cacheRead", t.tokenKinds.cacheRead, t.kinds.cacheRead)}>
                       {`plus ${compact(t.tokenKinds.cacheRead)} ${KIND_WORDS.cacheRead.label}`}
                     </p>

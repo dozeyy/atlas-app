@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { kindRows } from "../../lib/usage";
 import type { Readout } from "./shared";
 
 export interface TipAt extends Readout {
@@ -21,7 +22,7 @@ export function ChartTooltip({ tip, width }: { tip: TipAt | null; width: number 
 
   useLayoutEffect(() => {
     if (ref.current) setW(ref.current.offsetWidth);
-  }, [shown?.title, shown?.valueText, shown?.detail]);
+  }, [shown?.title, shown?.valueText, shown?.detail, shown?.kinds]);
 
   if (!shown) return null;
   const half = w / 2;
@@ -36,6 +37,16 @@ export function ChartTooltip({ tip, width }: { tip: TipAt | null; width: number 
     >
       <div className="t1">{shown.title}</div>
       <div className="t2 tabular-nums">{shown.valueText}</div>
+      {shown.kinds && (
+        <div className="t-rows">
+          {kindRows(shown.kinds).map((r) => (
+            <div key={r.label} className={r.sum ? "t-sum" : undefined}>
+              <span>{r.label}</span>
+              <span>{r.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {shown.detail && <div className="t3">{shown.detail}</div>}
     </div>
   );

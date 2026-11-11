@@ -39,6 +39,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
 use super::naming::humanize_type;
+use super::count::TokenCount;
 use super::query::{group_from, u, Acc, Cost, Group, QueryCtx, Tokens};
 use super::reviews::{self, ReviewTie, RunFacts, LinkFacts, Thresholds, Verdict, WorkerReviews};
 use crate::textgroup;
@@ -463,7 +464,7 @@ fn load_ledger(conn: &Connection) -> rusqlite::Result<Ledger> {
 }
 
 /// Tokens and priced groups per run (session id, agent id), for runs that started at or after `from_ms`.
-fn run_usage(conn: &Connection, from_ms: i64) -> rusqlite::Result<HashMap<(String, String), Vec<Group>>> {
+fn run_usage(conn: &Connection, from_ms: i64, count: TokenCount) -> rusqlite::Result<HashMap<(String, String), Vec<Group>>> {
     let sql = format!(
         "SELECT m.session_id, COALESCE(m.agent_id, ''), m.model, {SUMS_QUALIFIED}
          FROM messages m JOIN agent_runs r ON r.session_id = m.session_id AND r.agent_id = COALESCE(m.agent_id, '')
@@ -473,7 +474,7 @@ fn run_usage(conn: &Connection, from_ms: i64) -> rusqlite::Result<HashMap<(Strin
     );
     let mut st = conn.prepare_cached(&sql)?;
     let mut out: HashMap<(String, String), Vec<Group>> = HashMap::new();
-    for row in st.query_map([from_ms], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, group_from(r, 3)?)))? {
+    for row in st.query_map([from_ms], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, group_from(r, 3, count)?)))? {
         let (s, a, g) = row?;
         out.entry((s, a)).or_default().push(g);
     }
@@ -599,7 +600,7 @@ fn in_scope(r: &RunRec, from: Option<i64>, started: StartedFrom) -> bool {
 pub fn agent_scorecard(conn: &Connection, ctx: &QueryCtx, a: &ScorecardArgs) -> rusqlite::Result<Scorecard> {
     let ledger = load_ledger(conn)?;
     let from = range_from(ctx, a.days);
-    let usage = run_usage(conn, from.unwrap_or(0))?;
+    let usage = run_usage(conn, from.unwrap_or(0), ctx.count)?;
 
     let wanted: Vec<&RunRec> = ledger
         .runs
@@ -1056,7 +1057,7 @@ pub fn run_debrief(conn: &Connection, ctx: &QueryCtx, a: &DebriefArgs) -> rusqli
     let mut usage: HashMap<String, Vec<Group>> = HashMap::new();
     {
         let mut st = conn.prepare(&sql)?;
-        for row in st.query_map(params![sid, from], |r| Ok((r.get::<_, String>(0)?, group_from(r, 2)?)))? {
+        for row in st.query_map(params![sid, from], |r| Ok((r.get::<_, String>(0)?, group_from(r, 2, ctx.count)?)))? {
             let (agent, g) = row?;
             usage.entry(agent).or_default().push(g);
         }

@@ -12,6 +12,7 @@ use rusqlite::{params_from_iter, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use super::pricing::PriceTable;
+use super::count::TokenCount;
 use super::time::{add_days, Tz};
 
 pub struct QueryCtx {
@@ -19,12 +20,15 @@ pub struct QueryCtx {
     pub now_ms: i64,
     pub prices: Arc<PriceTable>,
     pub week_starts_sunday: bool,
+    /// How a headline total is counted (the "Count cache in token totals" switch).
+    pub count: TokenCount,
 }
 
 // ---------------------------------------------------------------- shapes
 
-/// `total` is what the pages headline: input + output + cache writes. Cache reads
-/// are shown only in the breakdown (Q2).
+/// `total` is what the pages headline, counted by [`TokenCount`] (input + output, plus cache
+/// writes and reads when the "Count cache in token totals" switch is on). The four kinds are
+/// always sent apart so a hover can list them and add them all together.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tokens {
@@ -449,7 +453,7 @@ pub(crate) fn u(v: i64) -> u64 {
     v.max(0) as u64
 }
 
-pub(crate) fn group_from(row: &rusqlite::Row, at: usize) -> rusqlite::Result<Group> {
+pub(crate) fn group_from(row: &rusqlite::Row, at: usize, count: TokenCount) -> rusqlite::Result<Group> {
     let g = |i: usize| row.get::<_, i64>(at + i).map(u);
     let (input, output, w5, w1, cr, ws, wf) = (g(0)?, g(1)?, g(2)?, g(3)?, g(4)?, g(5)?, g(6)?);
     Ok(Group {
@@ -459,7 +463,7 @@ pub(crate) fn group_from(row: &rusqlite::Row, at: usize) -> rusqlite::Result<Gro
             cache_write5m: w5,
             cache_write1h: w1,
             cache_read: cr,
-            total: input + output + w5 + w1,
+            total: count.total(input, output, w5 + w1, cr),
             web_search: ws,
             web_fetch: wf,
         },
@@ -481,6 +485,7 @@ struct GroupRow {
 /// expressions plus everything that changes the price.
 fn fetch_hours(
     conn: &Connection,
+    count: TokenCount,
     key: &str,
     series: &str,
     from_day: &str,
@@ -495,7 +500,7 @@ fn fetch_hours(
     let hi = format!("{}T00", add_days(to_day, 1));
     let mut st = conn.prepare_cached(&sql)?;
     let rows = st.query_map([lo, hi], |r| {
-        Ok(GroupRow { k: r.get(0)?, s: r.get(1)?, model: r.get(2)?, g: group_from(r, 3)? })
+        Ok(GroupRow { k: r.get(0)?, s: r.get(1)?, model: r.get(2)?, g: group_from(r, 3, count)? })
     })?;
     rows.collect()
 }
@@ -516,7 +521,7 @@ pub fn today_of(ctx: &QueryCtx) -> String {
 /// tray asks this every time the cache changes).
 pub fn today(conn: &Connection, ctx: &QueryCtx) -> rusqlite::Result<Period> {
     let day = today_of(ctx);
-    let rows = fetch_hours(conn, "substr(hour_local,1,10)", "''", &day, &day)?;
+    let rows = fetch_hours(conn, ctx.count, "substr(hour_local,1,10)", "''", &day, &day)?;
     Ok(period(&rows, &day, &day, sessions_started(conn, ctx.tz, &day, &day)?))
 }
 
@@ -569,7 +574,7 @@ pub fn dashboard(conn: &Connection, ctx: &QueryCtx) -> rusqlite::Result<Dashboar
     let today = today_of(ctx);
     let d7 = add_days(&today, -6);
     let d30 = add_days(&today, -29);
-    let by_day = fetch_hours(conn, "substr(hour_local,1,10)", "''", &d30, &today)?;
+    let by_day = fetch_hours(conn, ctx.count, "substr(hour_local,1,10)", "''", &d30, &today)?;
 
     let today_p = period(&by_day, &today, &today, sessions_started(conn, ctx.tz, &today, &today)?);
     let week_p = period(&by_day, &d7, &today, sessions_started(conn, ctx.tz, &d7, &today)?);
@@ -595,7 +600,7 @@ pub fn dashboard(conn: &Connection, ctx: &QueryCtx) -> rusqlite::Result<Dashboar
     }
 
     // Top projects over 30 days (+ "other").
-    let by_proj = fetch_hours(conn, "''", "project_key", &d30, &today)?;
+    let by_proj = fetch_hours(conn, ctx.count, "''", "project_key", &d30, &today)?;
     let names = project_index(conn)?;
     let mut projs: BTreeMap<&str, Acc> = BTreeMap::new();
     for r in &by_proj {
@@ -740,7 +745,7 @@ pub fn timeline(conn: &Connection, ctx: &QueryCtx, a: &TimelineArgs) -> rusqlite
         Some("project") => "project_key",
         _ => "''",
     };
-    let rows = fetch_hours(conn, key, series_expr, from, to)?;
+    let rows = fetch_hours(conn, ctx.count, key, series_expr, from, to)?;
     let starts = bucket_starts(from, to, bucket, ctx.week_starts_sunday);
     let to_bucket = |k: &str| -> String {
         if bucket == "hour" {
@@ -1018,7 +1023,7 @@ pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlit
     };
     let (from, to) = (a.from.as_str(), a.to.as_str());
     let project = a.project_key.as_deref();
-    let rows: Vec<GroupRow> = fetch_hours(conn, "substr(hour_local,1,10)", "project_key", from, to)?
+    let rows: Vec<GroupRow> = fetch_hours(conn, ctx.count, "substr(hour_local,1,10)", "project_key", from, to)?
         .into_iter()
         .filter(|r| project.is_none_or(|k| r.s == k))
         .collect();
@@ -1132,7 +1137,7 @@ fn chats_in_range(
     {
         let mut st = conn.prepare_cached(&sql)?;
         let rows = st.query_map(rusqlite::params![lo, hi, project], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, group_from(r, 2)?))
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, group_from(r, 2, ctx.count)?))
         })?;
         for r in rows {
             let (sid, model, g) = r?;
@@ -1188,7 +1193,7 @@ pub(crate) fn session_rows_for(conn: &Connection, ctx: &QueryCtx, ids: &[String]
         );
         let mut st = conn.prepare(&sql)?;
         let rows = st.query_map(params_from_iter(vals.iter()), |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, group_from(r, 2)?))
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, group_from(r, 2, ctx.count)?))
         })?;
         for r in rows {
             let (sid, model, g) = r?;
@@ -1202,8 +1207,9 @@ pub(crate) fn session_rows_for(conn: &Connection, ctx: &QueryCtx, ids: &[String]
     let mut efforts: HashMap<String, Vec<EffortUse>> = HashMap::new();
     {
         let sql = format!(
-            "SELECT session_id, model, effort, COUNT(*), SUM(input+output+cw5m+cw1h) FROM messages \
-             WHERE session_id IN ({ph}) AND agent_id IS NULL GROUP BY 1, 2, 3"
+            "SELECT session_id, model, effort, COUNT(*), SUM({tok}) FROM messages \
+             WHERE session_id IN ({ph}) AND agent_id IS NULL GROUP BY 1, 2, 3",
+            tok = ctx.count.sql("")
         );
         let mut st = conn.prepare(&sql)?;
         let mut by_model: HashMap<(String, String), u64> = HashMap::new();
@@ -1365,11 +1371,14 @@ pub fn sessions_list(conn: &Connection, ctx: &QueryCtx, q: &SessionQuery) -> rus
         vals.push(Value::Real(c));
     }
 
-    let totals_cte = "WITH t AS (SELECT session_id, SUM(input+output+cw5m+cw1h) AS tok, SUM(cost) AS cost FROM \
-         (SELECT session_id, input, output, cw5m, cw1h, \
+    let totals_cte = format!(
+        "WITH t AS (SELECT session_id, SUM({tok}) AS tok, SUM(cost) AS cost FROM \
+         (SELECT session_id, input, output, cw5m, cw1h, cr, \
            cost_usd(model, speed, geo, service_tier, price_tier, input, output, cw5m, cw1h, cr, web_search) AS cost \
-          FROM session_model) GROUP BY session_id) ";
-    let (cte, join) = if needs_totals { (totals_cte, " JOIN t ON t.session_id = s.session_id") } else { ("", "") };
+          FROM session_model) GROUP BY session_id) ",
+        tok = ctx.count.sql("")
+    );
+    let (cte, join) = if needs_totals { (totals_cte.as_str(), " JOIN t ON t.session_id = s.session_id") } else { ("", "") };
     let key_expr = match sort {
         "cost" => "COALESCE(t.cost,0)",
         "tokens" => "COALESCE(t.tok,0)",
@@ -1434,7 +1443,7 @@ pub fn sessions_list(conn: &Connection, ctx: &QueryCtx, q: &SessionQuery) -> rus
 /// Every subagent of a session with its spend, in start order. Agents with a registry row but
 /// no priced messages are listed with zeros; messages from an agent with no row (a transcript
 /// without a sidecar read through some other path) get a synthesized one.
-pub(crate) fn agent_summaries(conn: &Connection, id: &str) -> rusqlite::Result<Vec<AgentSummary>> {
+pub(crate) fn agent_summaries(conn: &Connection, id: &str, count: TokenCount) -> rusqlite::Result<Vec<AgentSummary>> {
     struct Reg {
         agent_type: Option<String>,
         description: Option<String>,
@@ -1493,7 +1502,7 @@ pub(crate) fn agent_summaries(conn: &Connection, id: &str) -> rusqlite::Result<V
                 u(r.get::<_, i64>(2)?),
                 r.get::<_, i64>(3)?,
                 r.get::<_, i64>(4)?,
-                group_from(r, 5)?,
+                group_from(r, 5, count)?,
             ))
         })? {
             let (a, model, n, lo, hi, g) = r?;
@@ -1563,7 +1572,7 @@ pub(crate) fn agent_summaries(conn: &Connection, id: &str) -> rusqlite::Result<V
 }
 
 /// The main conversation alone: messages with no agent id, and the main files' tool calls.
-fn main_thread(conn: &Connection, id: &str) -> rusqlite::Result<MainThread> {
+fn main_thread(conn: &Connection, id: &str, count: TokenCount) -> rusqlite::Result<MainThread> {
     let mut acc = Acc::default();
     let mut messages = 0u64;
     {
@@ -1571,7 +1580,7 @@ fn main_thread(conn: &Connection, id: &str) -> rusqlite::Result<MainThread> {
             "SELECT COUNT(*), {SUMS} FROM messages WHERE session_id=?1 AND agent_id IS NULL \
              GROUP BY model, speed, geo, service_tier, price_tier"
         ))?;
-        for r in st.query_map([id], |r| Ok((u(r.get::<_, i64>(0)?), group_from(r, 1)?)))? {
+        for r in st.query_map([id], |r| Ok((u(r.get::<_, i64>(0)?), group_from(r, 1, count)?)))? {
             let (n, g) = r?;
             messages += n;
             acc.add(&g);
@@ -1669,7 +1678,7 @@ pub fn usage_by_item(conn: &Connection, q: &ItemQuery) -> rusqlite::Result<Vec<I
 pub fn agent_detail(conn: &Connection, ctx: &QueryCtx, session_id: &str, agent_id: &str) -> rusqlite::Result<Option<AgentDetail>> {
     let ids = [session_id.to_string()];
     let Some(row) = session_rows_for(conn, ctx, &ids)?.pop() else { return Ok(None) };
-    let all = agent_summaries(conn, session_id)?;
+    let all = agent_summaries(conn, session_id, ctx.count)?;
     let Some(agent) = all.iter().find(|a| a.agent_id == agent_id).cloned() else { return Ok(None) };
     let parent_name = agent
         .parent_agent_id
@@ -1683,7 +1692,7 @@ pub fn agent_detail(conn: &Connection, ctx: &QueryCtx, session_id: &str, agent_i
             "SELECT model, {SUMS} FROM messages WHERE session_id=?1 AND agent_id=?2 \
              GROUP BY model, speed, geo, service_tier, price_tier"
         ))?;
-        for r in st.query_map([session_id, agent_id], |r| Ok((r.get::<_, String>(0)?, group_from(r, 1)?)))? {
+        for r in st.query_map([session_id, agent_id], |r| Ok((r.get::<_, String>(0)?, group_from(r, 1, ctx.count)?)))? {
             let (m, g) = r?;
             by_model.entry(m).or_default().add(&g);
         }
@@ -1713,7 +1722,7 @@ pub fn agent_detail(conn: &Connection, ctx: &QueryCtx, session_id: &str, agent_i
              cost_usd(model, speed, geo, service_tier, price_tier, input, output, cw5m, cw1h, cr, web_search), skill \
              FROM messages WHERE session_id=?1 AND agent_id=?2 ORDER BY ts_utc_ms, line_offset LIMIT 5000",
         )?;
-        for r in st.query_map([session_id, agent_id], message_point)? {
+        for r in st.query_map([session_id, agent_id], |r| message_point(r, ctx.count))? {
             timeline.push(r?);
         }
     }
@@ -1741,7 +1750,7 @@ pub fn agent_detail(conn: &Connection, ctx: &QueryCtx, session_id: &str, agent_i
     }))
 }
 
-fn message_point(r: &rusqlite::Row) -> rusqlite::Result<MessagePoint> {
+fn message_point(r: &rusqlite::Row, count: TokenCount) -> rusqlite::Result<MessagePoint> {
     let g = Group {
         t: {
             let (i, o, w5, w1, cr) = (u(r.get(3)?), u(r.get(4)?), u(r.get(5)?), u(r.get(6)?), u(r.get(7)?));
@@ -1751,7 +1760,7 @@ fn message_point(r: &rusqlite::Row) -> rusqlite::Result<MessagePoint> {
                 cache_write5m: w5,
                 cache_write1h: w1,
                 cache_read: cr,
-                total: i + o + w5 + w1,
+                total: count.total(i, o, w5 + w1, cr),
                 web_search: u(r.get(8)?),
                 web_fetch: u(r.get(9)?),
             }
@@ -1779,7 +1788,7 @@ pub fn session_detail(conn: &Connection, ctx: &QueryCtx, id: &str) -> rusqlite::
         let mut st = conn.prepare_cached(&format!(
             "SELECT model, {SUMS} FROM session_model WHERE session_id=?1 GROUP BY model, speed, geo, service_tier, price_tier"
         ))?;
-        for r in st.query_map([id], |r| Ok((r.get::<_, String>(0)?, group_from(r, 1)?)))? {
+        for r in st.query_map([id], |r| Ok((r.get::<_, String>(0)?, group_from(r, 1, ctx.count)?)))? {
             let (m, g) = r?;
             by_model.entry(m).or_default().add(&g);
         }
@@ -1808,7 +1817,7 @@ pub fn session_detail(conn: &Connection, ctx: &QueryCtx, id: &str) -> rusqlite::
              GROUP BY agent_id, model, speed, geo, service_tier, price_tier"
         ))?;
         for r in st.query_map([id], |r| {
-            Ok((r.get::<_, Option<String>>(0)?, u(r.get::<_, i64>(1)?), group_from(r, 2)?))
+            Ok((r.get::<_, Option<String>>(0)?, u(r.get::<_, i64>(1)?), group_from(r, 2, ctx.count)?))
         })? {
             let (a, n, g) = r?;
             let e = agents.entry(a).or_default();
@@ -1828,7 +1837,7 @@ pub fn session_detail(conn: &Connection, ctx: &QueryCtx, id: &str) -> rusqlite::
              cost_usd(model, speed, geo, service_tier, price_tier, input, output, cw5m, cw1h, cr, web_search), skill \
              FROM messages WHERE session_id=?1 ORDER BY ts_utc_ms, line_offset LIMIT 20000",
         )?;
-        let rows = st.query_map([id], message_point)?;
+        let rows = st.query_map([id], |r| message_point(r, ctx.count))?;
         for r in rows {
             timeline.push(r?);
         }
@@ -1847,8 +1856,8 @@ pub fn session_detail(conn: &Connection, ctx: &QueryCtx, id: &str) -> rusqlite::
         }
     }
     let cc: Option<f64> = conn.query_row("SELECT cc_cost_usd FROM sessions WHERE session_id=?1", [id], |r| r.get(0))?;
-    let agents = agent_summaries(conn, id)?;
-    let main = main_thread(conn, id)?;
+    let agents = agent_summaries(conn, id, ctx.count)?;
+    let main = main_thread(conn, id, ctx.count)?;
     Ok(Some(SessionDetail { row, by_model, by_agent, agents, main, timeline, files, claude_code_cost_usd: cc }))
 }
 

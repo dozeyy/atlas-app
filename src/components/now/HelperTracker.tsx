@@ -98,7 +98,7 @@ function HelperRow({ helper, now }: { helper: NowHelper; now: number }) {
       <PhaseWord phase={helper.phase} status={status} done={helper.done} />
       {/* Tokens, then the clock at the right edge: the same order as the chat cards above and the
           lists below, so the eye finds "how long" in one place down the whole page. */}
-      <p className="d d-small ht-tokens" data-opt="2" title={tokenHint(helper.tokens, nowCost(helper.costUsd, false))}>
+      <p className="d d-small ht-tokens" data-opt="2" title={tokenHint(helper.tokens, nowCost(helper.costUsd, false), helper.tokenKinds)}>
         {compact(Math.round(tokens))}
       </p>
       <p className="d d-small ht-elapsed">{helper.startedMs === null ? "" : clock(now - helper.startedMs)}</p>

@@ -97,9 +97,22 @@ describe("Chat receipt and helper map", () => {
     // Plain words on the surface; the exact term is the first words of the hover.
     const used = screen.getByRole("region", { name: "What it used" });
     expect(used.textContent).not.toMatch(/cache/i);
+    // With the switch off the lines are input and output, and the reused note sits under them.
+    const input = within(used).getByText("Input");
+    expect(input.closest("[title]")?.getAttribute("title")).toMatch(/^Input: /);
+    expect(within(used).getByText(/^plus .+ reused$/).getAttribute("title")).toMatch(/^Cache reads: /);
+  });
+
+  it("with the cache counted, cache writes and reads are lines of the total and the reused note goes", async () => {
+    const backend = sessionsBackend();
+    await backend.updateSettings({ countCacheInTotals: true });
+    const { row } = await chatWithHelpers(backend);
+    mountDetail(backend, row.sessionId);
+    const used = await screen.findByRole("region", { name: "What it used" });
     const saved = within(used).getByText("Saved for reuse");
     expect(saved.closest("[title]")?.getAttribute("title")).toMatch(/^Cache writes: /);
-    expect(within(used).getByText(/^plus .+ reused$/).getAttribute("title")).toMatch(/^Cache reads: /);
+    expect(within(used).getByText("Reused").closest("[title]")?.getAttribute("title")).toMatch(/^Cache reads: /);
+    expect(within(used).queryByText(/^plus .+ reused$/)).toBeNull();
   });
 
   it("offers the Helpers tab only when helpers ran", async () => {

@@ -54,8 +54,8 @@ const SPECS: Spec[] = [
 
 const cost = (usd: number): Cost => ({ usd, complete: true, unpricedTokens: 0 });
 const tokens = (total: number): Tokens => ({
-  input: Math.round(total * 0.2),
-  output: Math.round(total * 0.3),
+  input: Math.round(total * 0.4),
+  output: Math.round(total * 0.6),
   cacheWrite5m: Math.round(total * 0.5),
   cacheWrite1h: 0,
   cacheRead: total * 4,

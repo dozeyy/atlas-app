@@ -1,7 +1,8 @@
 //! The one-line "today" readout used by the tray tooltip and menu.
 //!
-//! Tokens are the headline number (input + output + cache writes; cache reads are not
-//! counted, same as everywhere else in Atlas) and the only figure the tray menu shows
+//! Tokens are the headline number (input + output; cache writes and reads join in only when
+//! the Settings switch "Count cache in token totals" is on, the same as everywhere else in
+//! Atlas: `TokenCount`) and the only figure the tray menu shows
 //! (Will, 2026-11-08: tokens everywhere, money only on hover). The tooltip is the hover,
 //! so it alone adds the money, and money is always an estimate: it carries "~" and "est.",
 //! and a "+" when some tokens could not be priced.

@@ -364,8 +364,9 @@ describe("buildSlides: the Summit story", () => {
       .map((s) => s.id);
     expect(hovered).toEqual(["tokens", "biggest"]);
     const by = Object.fromEntries(buildSlides(rich()).map((s) => [s.id, s]));
-    expect(by.tokens.hint).toBe("640,000,000 tokens.");
-    expect(by.biggest.hint).toBe("110,000,000 tokens in one session.");
+    expect(by.tokens.hint).toBe("640,000,000 tokens");
+    // The session's hover lists its four kinds and adds them all together, then says what it is.
+    expect(by.biggest.hint).toMatch(/^110,000,000 tokens\nInput\t[\d,]+\nOutput\t[\d,]+\nCache writes\t[\d,]+\nCache reads\t[\d,]+\n=All together\t[\d,]+\nIn one session\.$/);
     expect(by.tokens.strongHint).toContain("0.75 words per token");
     expect(by.biggest.strongHint).toBeUndefined();
   });

@@ -5,7 +5,7 @@ import type { TimelinePoint } from "./types";
 const pt = (start: string, tokens: number): TimelinePoint =>
   ({
     start,
-    tokens: { input: tokens, output: 0, cacheRead: 999, cacheWrite5m: 0, cacheWrite1h: 0 },
+    tokens: { input: tokens, output: 0, total: tokens, cacheRead: 999, cacheWrite5m: 0, cacheWrite1h: 0 },
     cost: {},
     sessions: 1,
   }) as unknown as TimelinePoint;

@@ -180,6 +180,7 @@ pub struct SettingsPatch {
     pub show_shortcuts: Option<bool>,
     pub mcp_auto_connect: Option<bool>,
     pub history_keep_versions: Option<u32>,
+    pub count_cache_in_totals: Option<bool>,
 }
 
 impl AppState {
@@ -454,6 +455,10 @@ impl AppState {
                 changed |= inner.settings.history_keep_versions != k;
                 inner.settings.history_keep_versions = k;
             }
+            if let Some(c) = patch.count_cache_in_totals {
+                changed |= inner.settings.count_cache_in_totals != c;
+                inner.settings.count_cache_in_totals = c;
+            }
             changed
         };
         if changed {
@@ -495,6 +500,11 @@ impl AppState {
     /// Atlas connects itself to Claude Code (default on; the user's off choice is kept).
     pub fn mcp_auto_connect(&self) -> bool {
         self.lock().settings.mcp_auto_connect
+    }
+
+    /// Token totals include cache writes and reads ("Count cache in token totals", default off).
+    pub fn count_cache_in_totals(&self) -> bool {
+        self.lock().settings.count_cache_in_totals
     }
 
     /// Tell the user when a running chat finishes or waits for them (opt-in, default off).

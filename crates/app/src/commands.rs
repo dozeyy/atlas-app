@@ -31,7 +31,14 @@ pub fn get_app_info(state: Shared) -> AppInfo {
 pub fn update_settings(app: AppHandle, state: Shared, patch: SettingsPatch) -> AppInfo {
     let theme = patch.theme;
     let shortcuts = patch.show_shortcuts;
+    let count = patch.count_cache_in_totals;
     let info = state.update_settings(patch);
+    // Every total, ranking and readout counts the new way from the next question on; the page
+    // is told to ask again (`usage://changed`), the tray and the Now tab re-send theirs.
+    if let Some(on) = count {
+        state.usage.set_count_cache(on, &app);
+        state.now.set_count_cache(on);
+    }
     // The macOS menu bar draws Cmd+, only while the hints are on.
     #[cfg(target_os = "macos")]
     if shortcuts.is_some() {

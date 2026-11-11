@@ -61,11 +61,88 @@ export function costView(c: Cost): CostView {
 }
 
 /**
- * The hover for a token figure (2026-11-08: tokens are what shows, the API-price dollar
- * estimate lives here). Two lines: the exact count, then the estimate, always called one.
+ * Tokens by what they were: the four kinds every token figure can be split into. The backend
+ * always sends them apart; which of them make a headline total is the Settings switch "Count
+ * cache in token totals" (decided in Rust, so a `total` is already counted the right way).
  */
-export function tokenHint(tokens: number, c: Cost): string {
+export interface TokenKinds {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+}
+
+export const NO_KINDS: TokenKinds = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
+
+export function kindsOf(t: Tokens): TokenKinds {
+  return { input: t.input, output: t.output, cacheWrite: t.cacheWrite5m + t.cacheWrite1h, cacheRead: t.cacheRead };
+}
+
+/** The kinds of a list of token figures, added up. */
+export function sumKinds(list: Tokens[]): TokenKinds {
+  return list.reduce((s, t) => addKinds(s, kindsOf(t)), NO_KINDS);
+}
+
+export function addKinds(a: TokenKinds, b: TokenKinds): TokenKinds {
+  return { input: a.input + b.input, output: a.output + b.output, cacheWrite: a.cacheWrite + b.cacheWrite, cacheRead: a.cacheRead + b.cacheRead };
+}
+
+/**
+ * Does this figure count the cache in its total? Rust sends `total` either plain (input + output)
+ * or with every kind in, so the total itself says which; with no cache in it, either reading is
+ * the same and "yes" is right.
+ */
+export function countsCache(t: Tokens): boolean {
+  return t.total === allTogether(kindsOf(t));
+}
+
+/** Every kind added up: the "All together" row of a hover, whatever the Settings switch says. */
+export function allTogether(k: TokenKinds): number {
+  return k.input + k.output + k.cacheWrite + k.cacheRead;
+}
+
+/**
+ * The one headline formula on this side, the mirror of `TokenCount::total` in
+ * `crates/core/src/usage/count.rs`: input + output, plus cache writes and reads when the switch
+ * is on. The pages never call it (Rust sends `total` already counted); the browser preview's
+ * made-up data and the tests do.
+ */
+export function countTotal(k: TokenKinds, countCache: boolean): number {
+  return k.input + k.output + (countCache ? k.cacheWrite + k.cacheRead : 0);
+}
+
+/** The rows of a token hover, in order: the four kinds, then their sum ("All together"). */
+export function kindRows(k: TokenKinds): { label: string; value: string; sum: boolean }[] {
+  return [
+    { label: "Input", value: exact(k.input), sum: false },
+    { label: "Output", value: exact(k.output), sum: false },
+    { label: "Cache writes", value: exact(k.cacheWrite), sum: false },
+    { label: "Cache reads", value: exact(k.cacheRead), sum: false },
+    { label: "All together", value: exact(allTogether(k)), sum: true },
+  ];
+}
+
+/** The same rows as text lines for a `title`: a line with a tab is a table row in the tip (TipLayer); "=" marks the sum. */
+export function kindsRows(k: TokenKinds): string {
+  return kindRows(k)
+    .map((r) => `${r.sum ? "=" : ""}${r.label}\t${r.value}`)
+    .join("\n");
+}
+
+/** The hover for a token figure that has no dollar line: the exact count, then the four kinds and their sum. */
+export function tokensTip(tokens: number, kinds?: TokenKinds | null): string {
   const lead = `${exact(tokens)} tokens`;
+  return kinds ? `${lead}\n${kindsRows(kinds)}` : lead;
+}
+
+/**
+ * The hover for a token figure (2026-11-08: tokens are what shows, the API-price dollar
+ * estimate lives here; 2026-11-10: and the four kinds with "All together"). The exact count,
+ * the table, then the estimate, always called one.
+ */
+export function tokenHint(tokens: number, c: Cost | null, kinds?: TokenKinds | null): string {
+  const lead = tokensTip(tokens, kinds);
+  if (c === null) return lead;
   if (c.usd === null) return tokens > 0 ? `${lead}\nNo API price for these models, so no estimate.` : lead;
   const v = costView(c);
   return c.complete
@@ -341,9 +418,12 @@ export function formatWhen(ms: number, now = Date.now(), locale?: string): strin
 
 // ---- charts ------------------------------------------------------------------
 
-/** Total of the four token kinds the headline counts (Q2), cache reads apart. */
+/**
+ * The headline total of a token figure. Rust counts it (input + output, plus the cache when the
+ * Settings switch is on), so every page agrees and sorting by tokens matches what shows.
+ */
 export function headline(t: Tokens): number {
-  return t.input + t.output + t.cacheWrite5m + t.cacheWrite1h;
+  return t.total;
 }
 
 export function share(part: number, whole: number): number {

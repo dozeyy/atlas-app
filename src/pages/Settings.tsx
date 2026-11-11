@@ -81,6 +81,7 @@ export function Settings() {
     info,
     setTheme,
     setLaunchAnimation,
+    setCountCacheInTotals,
     setCloseToTray,
     setNotifyOnFinish,
     setShowShortcuts,
@@ -284,6 +285,12 @@ export function Settings() {
         )}
         <Row label="Tell me when a session finishes">
           <Toggle label="Tell me when a session finishes" checked={info.settings.notifyOnFinish} onChange={setNotifyOnFinish} />
+        </Row>
+        <Row
+          label="Count cache in token totals"
+          tip="Claude saves your conversation and re-reads it on every reply. Turn this on to count those saves and reads in every token total. Totals get much bigger. Dollars do not change."
+        >
+          <Toggle label="Count cache in token totals" checked={info.settings.countCacheInTotals} onChange={setCountCacheInTotals} />
         </Row>
       </>
     ),

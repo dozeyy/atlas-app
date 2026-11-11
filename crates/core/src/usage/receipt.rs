@@ -74,43 +74,20 @@ impl Kinds {
     }
 }
 
-/// Tokens by what they were. The first three are the headline (input + output + cache writes);
-/// cache reads are listed apart, as everywhere else in the app.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TokenKinds {
-    pub output: u64,
-    pub cache_write: u64,
-    pub input: u64,
-    pub cache_read: u64,
-}
-
-impl TokenKinds {
-    fn add_counts(&mut self, c: &Counts) {
-        self.output += c.output;
-        self.cache_write += c.cw5m + c.cw1h;
-        self.input += c.input;
-        self.cache_read += c.cr;
-    }
-    fn add(&mut self, o: &TokenKinds) {
-        self.output += o.output;
-        self.cache_write += o.cache_write;
-        self.input += o.input;
-        self.cache_read += o.cache_read;
-    }
-    /// input + output + cache writes: the figure the app headlines.
-    pub fn headline(&self) -> u64 {
-        self.output + self.cache_write + self.input
-    }
-}
+/// Tokens by what they were. Which of them make the headline is the Settings switch (see
+/// `TokenCount`): input + output, plus cache writes and reads when it is on.
+pub use super::count::Kinds as TokenKinds;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelLine {
     pub model: String,
     pub usd: f64,
-    /// input + output + cache writes (the figure the pages headline).
+    /// The figure the pages headline (see `TokenCount`).
     pub tokens: u64,
+    /// The same tokens by kind, for the hover.
+    #[serde(default)]
+    pub token_kinds: TokenKinds,
 }
 
 /// One line of "biggest things that went into the conversation". `usd` is an estimate.
@@ -192,7 +169,11 @@ pub struct Receipt {
     pub models_other_usd: f64,
     pub kinds: Kinds,
     pub kinds_other_usd: f64,
-    /// The chat's headline tokens (input + output + cache writes) and its tokens by kind.
+    /// The setting "Count cache in token totals" was on when this was built: the headline
+    /// tokens of every line below include cache writes and reads, so a list of kinds must too.
+    #[serde(default)]
+    pub counts_cache: bool,
+    /// The chat's headline tokens (see `TokenCount`) and its tokens by kind.
     pub total_tokens: u64,
     pub token_kinds: TokenKinds,
     pub items: Vec<ItemLine>,
@@ -257,7 +238,7 @@ fn kinds_for(p: &PriceTable, b: &Basis, c: &Counts) -> Option<Kinds> {
 struct Acc {
     kinds: Kinds,
     token_kinds: TokenKinds,
-    models: BTreeMap<String, (f64, u64)>,
+    models: BTreeMap<String, (f64, u64, TokenKinds)>,
     tokens: u64,
     cache_read: u64,
     output: u64,
@@ -265,9 +246,11 @@ struct Acc {
     unpriced: u64,
 }
 
-fn model_lines(m: &BTreeMap<String, (f64, u64)>) -> Vec<ModelLine> {
-    let mut v: Vec<ModelLine> =
-        m.iter().map(|(model, (usd, tokens))| ModelLine { model: model.clone(), usd: *usd, tokens: *tokens }).collect();
+fn model_lines(m: &BTreeMap<String, (f64, u64, TokenKinds)>) -> Vec<ModelLine> {
+    let mut v: Vec<ModelLine> = m
+        .iter()
+        .map(|(model, (usd, tokens, kinds))| ModelLine { model: model.clone(), usd: *usd, tokens: *tokens, token_kinds: *kinds })
+        .collect();
     v.sort_by(|a, b| b.usd.total_cmp(&a.usd).then_with(|| b.tokens.cmp(&a.tokens)).then_with(|| a.model.cmp(&b.model)));
     v
 }
@@ -519,13 +502,13 @@ pub fn build(conn: &Connection, ctx: &QueryCtx, id: &str, scan: Option<&Scan>) -
     let ids = [id.to_string()];
     let Some(row) = session_rows_for(conn, ctx, &ids)?.pop() else { return Ok(None) };
     let prices: &PriceTable = &ctx.prices;
-    let agents = agent_summaries(conn, id)?;
+    let agents = agent_summaries(conn, id, ctx.count)?;
 
     // Spend, by thread and kind and model.
     let mut accs: BTreeMap<Option<String>, Acc> = BTreeMap::new();
     for b in buckets(conn, id)? {
         let a = accs.entry(b.agent.clone()).or_default();
-        let total = b.c.input + b.c.output + b.c.cw5m + b.c.cw1h;
+        let total = ctx.count.total(b.c.input, b.c.output, b.c.cw5m + b.c.cw1h, b.c.cr);
         a.tokens += total;
         a.cache_read += b.c.cr;
         a.token_kinds.add_counts(&b.c);
@@ -538,10 +521,13 @@ pub fn build(conn: &Connection, ctx: &QueryCtx, id: &str, scan: Option<&Scan>) -
                 let m = a.models.entry(b.model.clone()).or_default();
                 m.0 += k.sum();
                 m.1 += total;
+                m.2.add_counts(&b.c);
             }
             None => {
                 a.unpriced += total;
-                a.models.entry(b.model.clone()).or_default().1 += total;
+                let m = a.models.entry(b.model.clone()).or_default();
+                m.1 += total;
+                m.2.add_counts(&b.c);
             }
         }
     }
@@ -588,7 +574,7 @@ pub fn build(conn: &Connection, ctx: &QueryCtx, id: &str, scan: Option<&Scan>) -
     let mut huge_all: Vec<(Option<String>, ResultScan, Option<f64>)> = Vec::new();
     let mut kinds_total = Kinds::default();
     let mut token_kinds_total = TokenKinds::default();
-    let mut models_total: BTreeMap<String, (f64, u64)> = BTreeMap::new();
+    let mut models_total: BTreeMap<String, (f64, u64, TokenKinds)> = BTreeMap::new();
 
     for (agent, name, parent, depth, duration, tool_calls, summary_model) in roster {
         let acc = accs.remove(&agent).unwrap_or_default();
@@ -597,10 +583,11 @@ pub fn build(conn: &Connection, ctx: &QueryCtx, id: &str, scan: Option<&Scan>) -
         let usd = acc.kinds.sum();
         kinds_total.add(&acc.kinds);
         token_kinds_total.add(&acc.token_kinds);
-        for (m, (c, t)) in &acc.models {
+        for (m, (c, t, k)) in &acc.models {
             let e = models_total.entry(m.clone()).or_default();
             e.0 += c;
             e.1 += t;
+            e.2.add(k);
         }
 
         let ts = scan_threads.get(&agent.as_deref()).copied();
@@ -752,6 +739,7 @@ pub fn build(conn: &Connection, ctx: &QueryCtx, id: &str, scan: Option<&Scan>) -
         models_other_usd: remainder(models_sum),
         kinds: kinds_total,
         kinds_other_usd: remainder(kinds_total.sum()),
+        counts_cache: ctx.count.cache,
         total_tokens: row.tokens.total,
         token_kinds: token_kinds_total,
         items,

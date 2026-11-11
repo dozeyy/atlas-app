@@ -212,7 +212,7 @@ Phase 2 and Phase 3 specs and worktrees (`crates/core/src/{cache,usage,setup,lay
 - D-W3. Short records: fewer than 7 active days -> 4 slides (cover, totals, busiest day,
   closing); 0 messages -> the Phase 2 indexing state (IndexProgress) with a friendly line,
   never a made-up story.
-- D-W4. Totals: headline tokens = input + output + cache writes (Q2 default); cost is an
+- D-W4. Totals: headline tokens = input + output (Q2), plus cache writes and reads when Settings > "Count cache in token totals" is on; cost is an
   estimate labelled "estimated", and `complete: false` reads "at least $X". Sessions =
   parent sessions only; subagent work counts inside its parent (D-S6).
 - D-W5. Busiest day = most headline tokens; streak = longest run of consecutive local

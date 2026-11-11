@@ -1,6 +1,8 @@
 // What the Now tab receives. Mirrors crates/core/src/now/model.rs (camelCase). Nothing in
 // here is prompt or message text: tool names, paths, a command's first word, titles, numbers.
 
+import type { TokenKinds } from "./usage";
+
 export interface NowDoing {
   /** read, edit, write, run, search, web, helper, plan, ask, tool, think or wait: picks the icon. */
   kind: string;
@@ -50,7 +52,10 @@ export interface NowHelper {
   id: string;
   name: string;
   doing: NowDoing | null;
+  /** The headline total (counted like every total; the Settings switch decides about the cache). */
   tokens: number;
+  /** The same tokens by kind, for the hover. */
+  tokenKinds: TokenKinds;
   costUsd: number | null;
   startedMs: number | null;
   /** It said its last word; the list keeps it a few seconds, then the engine drops it. */
@@ -94,7 +99,10 @@ export interface NowChat {
   workedMs: number | null;
   lastWriteMs: number;
   doing: NowDoing;
+  /** The headline total (counted like every total; the Settings switch decides about the cache). */
   tokens: number;
+  /** The same tokens by kind, for the hover. */
+  tokenKinds: TokenKinds;
   costUsd: number | null;
   unpriced: boolean;
   helpers: NowHelper[];
@@ -113,6 +121,8 @@ export interface NowLast {
   endedMs: number;
   /** Tokens the chat used, when Atlas read the whole chat; null when only its tail was read. */
   tokens: number | null;
+  /** The same tokens by kind; null when only the tail was read. */
+  tokenKinds: TokenKinds | null;
 }
 
 export interface NowSnapshot {

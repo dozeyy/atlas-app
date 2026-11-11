@@ -49,9 +49,9 @@ describe("Dashboard", () => {
     // The note lives in the hover of one quiet "About these numbers" mark, not on the page.
     expect(screen.queryByText(/Dollar figures in hovers/)).toBeNull();
     expect(await screen.findByLabelText("About these numbers")).toHaveAttribute("title", expect.stringMatching(/Dollar figures in hovers are estimates from a price list/));
-    // No sentence on the page: cache reads are named in the hero's hover only.
+    // No sentence on the page: cache reads are named in the hero's hover only, as a row of its table.
     expect(screen.queryByText(/listed apart/)).toBeNull();
-    expect(document.querySelector('[title*="cache reads"]')).not.toBeNull();
+    expect(document.querySelector('[title*="Cache reads"]')).not.toBeNull();
   });
 
   it("charts tokens only, with a table behind the chart options", async () => {
@@ -70,7 +70,8 @@ describe("Dashboard", () => {
     mount();
     await screen.findByRole("group", { name: /Tokens, last 30 days/ });
     const readout = screen.getByTestId("chart-readout");
-    expect(readout.getAttribute("title")).toMatch(/saved for reuse \(cache writes\)\.\nWhat it reused \(cache reads\) is listed apart\./);
+    // The count, its four kinds added up, then where the setting lives.
+    expect(readout.getAttribute("title")).toMatch(/^[\d,]+ tokens\nInput\t[\d,]+\nOutput\t[\d,]+\nCache writes\t[\d,]+\nCache reads\t[\d,]+\n=All together\t[\d,]+\nSettings > Count cache in token totals/);
     const card = screen.getByRole("region", { name: "Activity" });
     expect(within(card).queryByText(/Tokens count what you sent/)).not.toBeInTheDocument();
   });

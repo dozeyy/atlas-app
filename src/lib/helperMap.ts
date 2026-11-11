@@ -29,7 +29,7 @@ export interface MapNode {
   name: string;
   /** What this thread spent on its own (a "+N" node: what the folded ones spent together). */
   usd: number;
-  /** Same, in tokens (the headline kind: cache reads are listed apart). */
+  /** Same, in tokens (counted the way Settings > Count cache in token totals says). */
   tokens: number;
   depth: number;
   parentId: string | null;

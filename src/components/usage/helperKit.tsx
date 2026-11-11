@@ -6,7 +6,7 @@ import type { ComponentType } from "react";
 import { Broom, Bug, ChatCircleText, Compass, Eye, Flask, Gauge, Hammer, HeadCircuit, MapTrifold, Palette, PencilLine, RocketLaunch, Shapes } from "@phosphor-icons/react";
 import type { IconProps } from "@phosphor-icons/react";
 import { CountUp } from "../CountUp";
-import { compact, costView, formatUsd, modelLabel, modelWithEffort, tokenHint } from "../../lib/usage";
+import { compact, costView, formatUsd, modelLabel, modelWithEffort, tokenHint, type TokenKinds } from "../../lib/usage";
 import type { Cost, Outcome, SessionRow } from "../../lib/types";
 
 // ---- names -------------------------------------------------------------------
@@ -344,12 +344,12 @@ export function OutcomeMark({ outcome }: { outcome: Outcome }) {
  * tokens everywhere, money on hover). The hover holds the exact count and the API-price
  * estimate; screen readers get the final figure and the estimate as words, never the ticks.
  */
-export function TokenFigure({ tokens, cost, id, note, className = "" }: { tokens: number; cost: Cost; id: string; note?: string; className?: string }) {
+export function TokenFigure({ tokens, cost, kinds, id, note, className = "" }: { tokens: number; cost: Cost; kinds?: TokenKinds | null; id: string; note?: string; className?: string }) {
   const v = costView(cost);
   return (
     // The unit sits beside the figure in body type, never inside the display size (the Dashboard
     // hero's pattern): "203k" large, "tokens" small on the same baseline.
-    <span className="inline-flex flex-wrap items-baseline gap-x-2 tabular-nums" title={note ? `${tokenHint(tokens, cost)}\n${note}` : tokenHint(tokens, cost)}>
+    <span className="inline-flex flex-wrap items-baseline gap-x-2 tabular-nums" title={note ? `${tokenHint(tokens, cost, kinds)}\n${note}` : tokenHint(tokens, cost, kinds)}>
       <CountUp value={tokens} id={id} format={(n) => compact(Math.round(n))} className={className} />
       <span className="text-lead font-semibold text-ink-2">tokens</span>
       {!v.none && <span className="sr-only">{`, about ${formatUsd(cost.usd ?? 0)} at API prices, estimated${v.partial ? ", incomplete" : ""}`}</span>}

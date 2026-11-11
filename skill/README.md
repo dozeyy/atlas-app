@@ -27,7 +27,7 @@ index lives in Atlas's own data folder (`%LOCALAPPDATA%\atlas\cli` on Windows,
 
 The look follows the app: the same names (Sessions, Models, Projects, Activity, Helpers,
 "Today"), models named as the app names them ("Sonnet 5.5"), and tokens as the figure. Tokens
-= input + output + cache writes; cache reads are shown apart. Numbers use 3 significant
+= input + output (the "Count cache in token totals" setting adds cache writes and reads). Numbers use 3 significant
 digits (7.3k, 56.1M). The one dollar figure is the closing line, an API-price estimate, not a
 bill.
 

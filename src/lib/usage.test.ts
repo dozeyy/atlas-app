@@ -15,8 +15,14 @@ import {
   exact,
   formatDuration,
   formatUsd,
+  allTogether,
+  countTotal,
+  countsCache,
   headline,
+  kindsOf,
   localDay,
+  sumKinds,
+  tokensTip,
   effortMix,
   mergeModelRows,
   modelChoices,
@@ -62,6 +68,22 @@ describe("numbers", () => {
     expect(tokenHint(900, cost(12.4, false))).toContain("$12.40+");
     expect(tokenHint(900, cost(null))).toContain("no estimate");
     expect(tokenHint(0, cost(null))).toBe("0 tokens");
+  });
+
+  it("counts the total one way per setting, and the hover lists every kind and adds them all together", () => {
+    const k = { input: 100, output: 50, cacheWrite: 30, cacheRead: 2000 };
+    expect(countTotal(k, false)).toBe(150);
+    expect(countTotal(k, true)).toBe(2180);
+    expect(allTogether(k)).toBe(2180);
+    // Rust sends `total` already counted; the headline is that figure and the kinds say which way.
+    const t = { input: 100, output: 50, cacheWrite5m: 10, cacheWrite1h: 20, cacheRead: 2000, total: 150 } as Tokens;
+    expect(headline(t)).toBe(150);
+    expect(countsCache(t)).toBe(false);
+    expect(countsCache({ ...t, total: 2180 })).toBe(true);
+    expect(kindsOf(t)).toEqual(k);
+    expect(tokensTip(150, k)).toBe("150 tokens\nInput\t100\nOutput\t50\nCache writes\t30\nCache reads\t2,000\n=All together\t2,180");
+    expect(tokenHint(150, null, k)).toBe(tokensTip(150, k));
+    expect(sumKinds([t, t])).toEqual({ input: 200, output: 100, cacheWrite: 60, cacheRead: 4000 });
   });
 
   it("keeps exact figures for tooltips", () => {

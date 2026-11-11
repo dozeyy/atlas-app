@@ -9,8 +9,12 @@ one is the reversible, least-surprising choice.
 ## Phase 2: usage engine (`phase2-usage-engine.md`)
 - Q1 Usage timeline: on the Dashboard (charts) and Sessions (per-session). History stays
   the change/backup timeline, per the recon and CLAUDE.md.
-- Q2 Headline "tokens": input + output + cache writes. Cache reads are shown in the
-  breakdown, never in the headline, because they dominate the total and inflate it.
+- Q2 Headline "tokens": input + output by default. Cache writes and cache reads dominate the
+  total and inflate it, so they stay out unless the person turns on Settings > "Count cache in
+  token totals" (Will, 2026-11-10); then the headline is input + output + cache writes + cache
+  reads everywhere (one formula: `TokenCount` in Rust, `t.total` in the page). Dollars never
+  change. Every token figure lists all four kinds, and "All together", on hover. (Before
+  2026-11-10 the default also counted cache writes.)
 - Q3 `usage.iterations[]`: verify against the fixtures and real lines before counting.
   The rule: never add iterations on top of a top-level usage that already includes them.
   Write the finding into the spec.

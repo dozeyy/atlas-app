@@ -22,7 +22,8 @@ pub struct WrappedHabits {
     pub short_chats: u64,
     /// Of those, chats whose messages inside the range span `LONG_CHAT_MS` or more.
     pub long_chats: u64,
-    /// Tokens (input + output + cache writes, the headline unit) in the range.
+    /// Tokens in the range, counted the way every total is (`TokenCount`: the Settings switch
+    /// decides whether cache writes and reads are in).
     pub all_tokens: u64,
     /// The part of `all_tokens` that helpers (subagents) spent.
     pub helper_tokens: u64,
@@ -100,7 +101,7 @@ pub fn wrapped_habits(conn: &Connection, ctx: &QueryCtx, from: &str, to: &str) -
     // The headline total comes from the hourly rollup the rest of the app sums, so it is the
     // story's total by construction and costs one index range, not a scan of every message.
     let all_tokens: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(input + output + cw5m + cw1h), 0) FROM usage_hour WHERE hour_local >= ?1 AND hour_local < ?2",
+        &format!("SELECT COALESCE(SUM({}), 0) FROM usage_hour WHERE hour_local >= ?1 AND hour_local < ?2", ctx.count.sql("")),
         rusqlite::params![format!("{from}T00"), format!("{}T00", add_days(to, 1))],
         |r| r.get(0),
     )?;
@@ -109,8 +110,11 @@ pub fn wrapped_habits(conn: &Connection, ctx: &QueryCtx, from: &str, to: &str) -
     // cache: ~70 ms, and a covering partial index only got it to ~50 ms because most rows are
     // helper rows, so no migration.
     let helper_tokens: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(input + output + cw5m + cw1h), 0) FROM messages \
-         WHERE hour_local >= ?1 AND hour_local < ?2 AND (agent_id IS NOT NULL OR is_sidechain = 1)",
+        &format!(
+            "SELECT COALESCE(SUM({}), 0) FROM messages \
+             WHERE hour_local >= ?1 AND hour_local < ?2 AND (agent_id IS NOT NULL OR is_sidechain = 1)",
+            ctx.count.sql("")
+        ),
         rusqlite::params![format!("{from}T00"), format!("{}T00", add_days(to, 1))],
         |r| r.get(0),
     )?;
@@ -132,10 +136,10 @@ pub fn wrapped_habits(conn: &Connection, ctx: &QueryCtx, from: &str, to: &str) -
     // every chat (the list does that to sort by dollars; this only needs tokens).
     let big = first_id(
         conn,
-        "SELECT s.session_id FROM sessions s \
+        &"SELECT s.session_id FROM sessions s \
          WHERE s.messages > 0 AND s.missing = 0 AND s.last_ts >= ?1 AND s.first_ts < ?2 \
-         ORDER BY (SELECT COALESCE(SUM(m.input + m.output + m.cw5m + m.cw1h), 0) FROM session_model m WHERE m.session_id = s.session_id) DESC, \
-                  s.first_ts ASC, s.session_id ASC LIMIT 1",
+         ORDER BY (SELECT COALESCE(SUM({tok}), 0) FROM session_model m WHERE m.session_id = s.session_id) DESC, \
+                  s.first_ts ASC, s.session_id ASC LIMIT 1".replace("{tok}", &ctx.count.sql("m.")),
         &[&lo, &hi],
     )?;
     let biggest = match big {
@@ -147,11 +151,12 @@ pub fn wrapped_habits(conn: &Connection, ctx: &QueryCtx, from: &str, to: &str) -
     // a straddler with at least one message inside, the `f IS NOT NULL` above), measured the way
     // `biggest` is: the numerator of an average over `chats`.
     let chat_tokens: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(m.input + m.output + m.cw5m + m.cw1h), 0) FROM session_model m \
+        &"SELECT COALESCE(SUM({tok}), 0) FROM session_model m \
          JOIN sessions s ON s.session_id = m.session_id \
          WHERE s.messages > 0 AND s.missing = 0 AND s.last_ts >= ?1 AND s.first_ts < ?2 \
            AND ((s.first_ts >= ?1 AND s.last_ts < ?2) \
-                OR EXISTS (SELECT 1 FROM messages x WHERE x.session_id = s.session_id AND x.ts_utc_ms >= ?1 AND x.ts_utc_ms < ?2))",
+                OR EXISTS (SELECT 1 FROM messages x WHERE x.session_id = s.session_id AND x.ts_utc_ms >= ?1 AND x.ts_utc_ms < ?2))"
+        .replace("{tok}", &ctx.count.sql("m.")),
         rusqlite::params![lo, hi],
         |r| r.get(0),
     )?;

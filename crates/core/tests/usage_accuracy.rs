@@ -69,7 +69,11 @@ fn effort_is_stored_per_reply_and_never_guessed() {
 fn sessions_helpers_and_models_carry_the_effort_mix() {
     let fx = start(&fixture("claude-accuracy"), Tz::Fixed(0));
     let d = fx.engine.session_detail(S).unwrap().expect("the session");
-    assert_eq!(d.row.main_model, "claude-fable-5-2", "the main thread's biggest model");
+    // "Biggest" is counted the way every total is, so the Settings switch can change the pick.
+    assert_eq!(d.row.main_model, "claude-opus-5-5", "the main thread's biggest model, input + output");
+    fx.engine.set_count_cache(true);
+    let d = fx.engine.session_detail(S).unwrap().expect("the session");
+    assert_eq!(d.row.main_model, "claude-opus-5-5", "and with cache counted (its replies re-read the most)");
     assert_eq!(d.row.efforts, mix(&[("high", 2), ("low", 1), ("medium", 1), ("xhigh", 1)]), "main thread only, ties by the ladder");
     let fable = d.by_model.iter().find(|m| m.model == "claude-fable-5-2").unwrap();
     assert_eq!(fable.efforts, mix(&[("high", 2)]));

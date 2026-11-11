@@ -22,7 +22,7 @@ import { PAGE, useSessionPages } from "../lib/useSessionPages";
 import { groupByDay, groupByFolder, shareOfMax } from "../lib/sessionBrowse";
 import { readFolded, readGrouping, writeFolded, writeGrouping } from "../lib/sessionPrefs";
 import type { Grouping } from "../lib/sessionPrefs";
-import { addDays, compact, exact, formatWhen, localDay, modelChoices, plural } from "../lib/usage";
+import { addDays, compact, exact, formatWhen, localDay, modelChoices, plural, sumKinds, tokensTip } from "../lib/usage";
 import type { SessionQuery, SessionRow } from "../lib/types";
 
 /** Empty, no-match and error take the room the list would: the state never floats over a blank page. */
@@ -415,7 +415,8 @@ export function Sessions() {
                         <span className="folder-latest" title="When this folder's latest session started">
                           {formatWhen(g.latest)}
                         </span>
-                        <span className="folder-total" title={`${exact(g.tokens)} tokens in the sessions listed here`}>
+                        <span className="folder-total" title={`${tokensTip(g.tokens, sumKinds(g.rows.map((r) => r.tokens)))}
+In the sessions listed here.`}>
                           {`${compact(g.tokens)} tokens`}
                         </span>
                         <span aria-hidden="true" className="folder-bar">
@@ -438,7 +439,7 @@ export function Sessions() {
                       {!open && (
                         <>
                           <span className="day-count">{plural(g.rows.length, "session")}</span>
-                          <span className="day-total" title={`${exact(g.tokens)} tokens`}>
+                          <span className="day-total" title={tokensTip(g.tokens, sumKinds(g.rows.map((r) => r.tokens)))}>
                             {`${compact(g.tokens)} tokens`}
                           </span>
                           <span aria-hidden="true" className="day-bar">

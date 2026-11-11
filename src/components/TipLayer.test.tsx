@@ -77,6 +77,18 @@ describe("TipLayer", () => {
     expect(btn).toHaveAttribute("aria-describedby", "atlas-tip");
   });
 
+  it("shows lines with a tab as an aligned table, the sum row heavier, then the quiet paragraph", () => {
+    mount(<button title={["12,000 tokens", "Input\t7,000", "Output\t5,000", "=All together\t12,000", "An estimate."].join("\n")}>Table</button>);
+    fireEvent.pointerOver(screen.getByRole("button", { name: "Table" }));
+    act(() => void vi.advanceTimersByTime(500));
+    const box = tipBox();
+    expect(box.querySelector(".tt-head")).toHaveTextContent("12,000 tokens");
+    expect(Array.from(box.querySelectorAll(".tt-k")).map((e) => e.textContent)).toEqual(["Input", "Output", "All together"]);
+    expect(Array.from(box.querySelectorAll(".tt-v")).map((e) => e.textContent)).toEqual(["7,000", "5,000", "12,000"]);
+    expect(box.querySelectorAll(".tt-sum")).toHaveLength(2);
+    expect(box.querySelector(".tt-rest")).toHaveTextContent("An estimate.");
+  });
+
   it("a tip that only repeats a name shown in full stays away and hands the hover to the row's tip", () => {
     mount(
       <button title="Opened on 3 Nov">

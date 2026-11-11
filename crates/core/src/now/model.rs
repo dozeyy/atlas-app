@@ -4,6 +4,8 @@
 
 use serde::Serialize;
 
+use crate::usage::count::Kinds;
+
 /// What a chat (or a helper) is doing right now, in words the page can show.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,7 +76,9 @@ pub struct NowHelper {
     /// The effort level its newest line says (`high`). None when no line says one.
     pub effort: Option<String>,
     pub doing: Option<Doing>,
+    /// Counted the way every total is (`TokenCount`); `token_kinds` is the same tokens by kind.
     pub tokens: u64,
+    pub token_kinds: Kinds,
     pub cost_usd: Option<f64>,
     pub started_ms: Option<i64>,
     /// It said its last word; the page lets it linger a few seconds, then it is dropped.
@@ -125,8 +129,10 @@ pub struct NowChat {
     /// Newest write to any of the chat's files, epoch ms.
     pub last_write_ms: i64,
     pub doing: Doing,
-    /// Input + output + cache writes, summed over the chat and its helpers.
+    /// Summed over the chat and its helpers, counted the way every total is (`TokenCount`).
     pub tokens: u64,
+    /// The same tokens by kind, for the hover.
+    pub token_kinds: Kinds,
     /// Estimated dollars (None when nothing could be priced).
     pub cost_usd: Option<f64>,
     pub unpriced: bool,
@@ -150,6 +156,9 @@ pub struct NowLast {
     /// Everything the chat used while Atlas followed it. None for a chat that was already
     /// over when Atlas started (only the end of its transcript is read, so a total would lie).
     pub tokens: Option<u64>,
+    /// The same tokens by kind (None exactly when `tokens` is). `tokens` is filled in when a
+    /// snapshot is built, from these, so the Settings switch applies to chats already over.
+    pub token_kinds: Option<Kinds>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]

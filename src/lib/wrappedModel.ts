@@ -5,7 +5,8 @@
 // recaps them on purpose: it is the picture you save).
 
 import { typeName } from "./helperProgress";
-import { addDays, compact, exact, formatDuration, headline, hourName, plural } from "./usage";
+import { addDays, compact, exact, formatDuration, headline, hourName, kindsOf, plural, tokensTip } from "./usage";
+import type { TokenKinds } from "./usage";
 import type { ItemUse, SessionRow, TimelinePoint, WrappedHabits } from "./usageTypes";
 
 /** Stated conversion for the novels line: an estimate, never a measurement. */
@@ -19,8 +20,10 @@ export interface WrappedData {
   spanDays: number;
   activeDays: number;
   tokens: number;
+  /** The tokens by kind over the range: the hover lists them and adds them all together. */
+  kinds?: TokenKinds;
   sessions: number;
-  busiest: { day: string; tokens: number; sessions: number } | null;
+  busiest: { day: string; tokens: number; sessions: number; kinds?: TokenKinds } | null;
   streak: number;
   longestStreak: number;
   /** Tokens per local hour of day (24 entries) over the recent window that was asked for. */
@@ -29,6 +32,8 @@ export interface WrappedData {
   hoursDays: number;
   /** Tokens per day from `from` to `to`. */
   dayTokens: number[];
+  /** The same days by kind (for the calendar hover). */
+  dayKinds?: TokenKinds[];
   /** The top five skills, helpers and tools by use. */
   skills: ItemUse[];
   agents: ItemUse[];
@@ -52,7 +57,7 @@ export interface WrappedData {
  */
 export type SlideGraphic =
   /** The calendar, today bottom-right; `run` (inclusive indexes into `values`) is the best streak, ringed. */
-  | { kind: "heat"; values: number[]; to: string; run: [number, number] | null }
+  | { kind: "heat"; values: number[]; to: string; run: [number, number] | null; kinds?: TokenKinds[] }
   /** The 24 hours as bars; `days` is how many days the totals cover. */
   | { kind: "hours"; values: number[]; days: number; peak: number }
   /** Seven bars, Monday first. */
@@ -426,13 +431,13 @@ export function bestRun(values: number[]): [number, number] | null {
  * The calendar of the last weeks. The best run over the whole history is ringed only when all of it is
  * on show: a ring on some other run would contradict the line that names the best run.
  */
-export function heatGraphic(d: Pick<WrappedData, "to" | "dayTokens">): Extract<SlideGraphic, { kind: "heat" }> | undefined {
+export function heatGraphic(d: Pick<WrappedData, "to" | "dayTokens" | "dayKinds">): Extract<SlideGraphic, { kind: "heat" }> | undefined {
   const values = d.dayTokens.slice(-HEAT_DAYS);
   if (values.length < 2) return undefined;
   const offset = d.dayTokens.length - values.length;
   const all = bestRun(d.dayTokens);
   const run: [number, number] | null = all && all[0] >= offset ? [all[0] - offset, all[1] - offset] : null;
-  return { kind: "heat", values, to: d.to, run };
+  return { kind: "heat", values, to: d.to, run, ...(d.dayKinds ? { kinds: d.dayKinds.slice(-HEAT_DAYS) } : {}) };
 }
 
 /** Up to SPIKE_DAYS days around the busiest day, which is the peak. */
@@ -533,7 +538,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       line: strong ? `About ${strong} worth of words.` : "",
       strong,
       strongHint: strong ? novelsHint(d.tokens) : undefined,
-      hint: `${exact(d.tokens)} tokens.`,
+      hint: tokensTip(d.tokens, d.kinds),
     });
   }
 
@@ -558,6 +563,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       figure: longDay(d.busiest.day),
       line: `${tokens} over ${plural(d.busiest.sessions, "session")}.`,
       strong: tokens,
+      strongHint: d.busiest.kinds ? tokensTip(d.busiest.tokens, d.busiest.kinds) : undefined,
       graphic: spikeGraphic(d, d.busiest.day),
     });
   }
@@ -618,7 +624,7 @@ export function buildSlides(d: WrappedData): Slide[] {
       unit: "tokens",
       line: times ? `That is ${times} a usual session.` : "More than any other single session.",
       strong: times ?? undefined,
-      hint: `${exact(big)} tokens in one session.`,
+      hint: `${tokensTip(big, kindsOf(d.biggest.tokens))}\nIn one session.`,
       graphic: times ? { kind: "circles", ratio } : undefined,
     });
   }

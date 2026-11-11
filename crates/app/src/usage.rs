@@ -38,6 +38,9 @@ pub enum Signal {
     Focus,
     /// The engine was replaced (another Claude folder, or none).
     Restarted,
+    /// Totals are counted another way now (the "Count cache in token totals" switch): the
+    /// numbers changed, the data did not.
+    Recounted,
 }
 
 type Listener = Arc<dyn Fn(Signal) + Send + Sync>;
@@ -180,6 +183,7 @@ impl UsageHost {
                     cache_db,
                 );
                 cfg.week_starts_sunday = week_starts_sunday();
+                cfg.count_cache = state.count_cache_in_totals();
                 let engine = UsageEngine::start(cfg, Arc::new(TauriSink { app: app.clone(), signals: Arc::clone(&self.signals) }));
                 // Starting the engine wrote the pricing table's hash: an install from before the
                 // marker (a folder with Atlas's program and little else) is now clearly Atlas's.
@@ -193,6 +197,20 @@ impl UsageHost {
         }
         // A new (or no) engine: the tray should not keep showing the old folder's numbers.
         self.signals.fire(Signal::Restarted);
+    }
+
+    /// The "Count cache in token totals" switch changed. The running engine counts the new way
+    /// from its next question, the page is told to ask again (a `usage://changed` for everything,
+    /// reason `count-cache`) and the tray rebuilds its line. Nothing is re-read from disk.
+    pub fn set_count_cache(&self, on: bool, app: &AppHandle) {
+        if let Ok(e) = self.engine() {
+            e.set_count_cache(on);
+        }
+        let _ = app.emit(
+            CHANGED_EVENT,
+            atlas_core::usage::ChangedEvent { session_ids: Vec::new(), from_day: None, to_day: None, reason: "count-cache" },
+        );
+        self.signals.fire(Signal::Recounted);
     }
 
     pub fn engine(&self) -> Result<Arc<UsageEngine>, String> {

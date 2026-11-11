@@ -5,7 +5,7 @@ import { Card, IconButton } from "../controls";
 import { pushToast } from "../../state/toastStore";
 import { CostText } from "./CostText";
 import { KIND_WORDS } from "../../lib/receiptView";
-import { compact, effortMix, exact, headline, mergeModelRows, plural } from "../../lib/usage";
+import { allTogether, compact, countsCache, effortMix, exact, headline, kindsOf, mergeModelRows, plural, tokensTip } from "../../lib/usage";
 import type { Cost, Tokens } from "../../lib/types";
 import type { EffortUse } from "../../lib/usageTypes";
 
@@ -104,12 +104,14 @@ export function ClampText({ text, lines = 3, className = "" }: { text: string; l
  */
 export function Breakdown({ t, main }: { t: Tokens; main?: Tokens }) {
   const W = KIND_WORDS;
+  // Both columns count the same way (one Settings switch), so the whole chat says which.
+  const counted = countsCache(t);
   const rows: [name: string, pick: (x: Tokens) => number, hover: string, note?: string][] = [
     [W.input.label, (x) => x.input, `${W.input.term}\n${W.input.about}`],
     [W.output.label, (x) => x.output, `${W.output.term}\n${W.output.about}`],
     ["Saved for 5 minutes", (x) => x.cacheWrite5m, `${W.cacheWrite.term}, 5-minute\n${W.cacheWrite.about}`],
     ["Saved for 1 hour", (x) => x.cacheWrite1h, `${W.cacheWrite.term}, 1-hour\n${W.cacheWrite.about}`],
-    ["Reused", (x) => x.cacheRead, `${W.cacheRead.term}\n${W.cacheRead.about}`, "Counted apart, not in the total"],
+    ["Reused", (x) => x.cacheRead, `${W.cacheRead.term}\n${W.cacheRead.about}`, counted ? undefined : "Not in the total"],
   ];
   const cols: [string, Tokens][] = main ? [["Main session", main], ["With helpers", t]] : [["Tokens", t]];
   return (
@@ -140,6 +142,15 @@ export function Breakdown({ t, main }: { t: Tokens; main?: Tokens }) {
               ))}
             </tr>
           ))}
+          {/* Everything added up, whatever the Settings switch counts in the headline. */}
+          <tr className="border-t border-line">
+            <th scope="row" className="px-5 py-2 text-left font-semibold text-ink">All together</th>
+            {cols.map(([col, x]) => (
+              <td key={col} className="px-5 py-2 text-right font-semibold tabular-nums text-ink">
+                {exact(allTogether(kindsOf(x)))}
+              </td>
+            ))}
+          </tr>
         </tbody>
       </table>
     </Card>
@@ -175,7 +186,7 @@ export function ModelSplit({ rows }: { rows: { model: string; tokens: Tokens; co
                 {r.label}
                 {!r.known && <span className="ml-2 text-caption text-ink-2">not priced</span>}
               </th>
-              <td className="px-3 py-2 text-right" title={exact(headline(r.tokens))}>{compact(headline(r.tokens))}</td>
+              <td className="px-3 py-2 text-right" title={tokensTip(headline(r.tokens), kindsOf(r.tokens))}>{compact(headline(r.tokens))}</td>
               <td className="px-5 py-2 text-right"><CostText cost={r.cost} /></td>
             </tr>
           ))}

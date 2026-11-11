@@ -71,6 +71,10 @@ pub struct Settings {
     pub mcp_auto_connect: bool,
     /// How many versions of each file History keeps (10 to 200, default 50).
     pub history_keep_versions: u32,
+    /// "Count cache in token totals": a token total is input + output + cache writes + cache reads
+    /// instead of input + output (default off). Only the headline total changes; dollars always
+    /// price every kind. See `usage::count`.
+    pub count_cache_in_totals: bool,
     /// Keys this version does not know, kept as they were.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -90,6 +94,7 @@ impl Default for Settings {
             show_shortcuts: false,
             mcp_auto_connect: true,
             history_keep_versions: DEFAULT_KEEP_VERSIONS,
+            count_cache_in_totals: false,
             extra: Map::new(),
         }
     }
@@ -102,7 +107,7 @@ pub fn clamp_keep_versions(n: u32) -> u32 {
     n.clamp(10, 200)
 }
 
-const KNOWN: [&str; 11] = [
+const KNOWN: [&str; 12] = [
     "schemaVersion",
     "theme",
     "lastView",
@@ -114,6 +119,7 @@ const KNOWN: [&str; 11] = [
     "showShortcuts",
     "mcpAutoConnect",
     "historyKeepVersions",
+    "countCacheInTotals",
 ];
 
 impl Settings {
@@ -146,6 +152,8 @@ impl Settings {
             .and_then(|v| v.as_u64())
             .map(|n| clamp_keep_versions(n.min(u32::MAX as u64) as u32))
             .unwrap_or(d.history_keep_versions);
+        let count_cache_in_totals =
+            take("countCacheInTotals").and_then(|v| v.as_bool()).unwrap_or(d.count_cache_in_totals);
         for k in KNOWN {
             map.remove(k);
         }
@@ -161,6 +169,7 @@ impl Settings {
             show_shortcuts,
             mcp_auto_connect,
             history_keep_versions,
+            count_cache_in_totals,
             extra: map,
         })
     }
@@ -181,6 +190,15 @@ pub struct Loaded {
 
 pub fn path_in(data_dir: &Path) -> PathBuf {
     data_dir.join(FILE_NAME)
+}
+
+/// Whether the saved settings count cache in token totals. Read-only (a damaged file is left
+/// where it is), for the processes that are not the app: the MCP server and the CLI.
+pub fn count_cache_in(data_dir: &Path) -> bool {
+    fs::read(path_in(data_dir))
+        .ok()
+        .and_then(|b| Settings::from_json(&String::from_utf8_lossy(&b)))
+        .is_some_and(|s| s.count_cache_in_totals)
 }
 
 /// Load `<data_dir>/settings.json`. Never fails.
@@ -322,6 +340,18 @@ mod tests {
         assert!(fs::read_to_string(path_in(d.path())).unwrap().contains("\"mcpAutoConnect\": false"));
         assert!(!load(d.path()).settings.mcp_auto_connect, "the off choice survives a relaunch");
         assert!(!load(d.path()).settings.extra.contains_key("mcpAutoConnect"));
+    }
+
+    #[test]
+    fn counting_cache_in_totals_defaults_off_and_persists() {
+        assert!(!Settings::default().count_cache_in_totals);
+        assert!(!Settings::from_json(r#"{"schemaVersion":1}"#).unwrap().count_cache_in_totals);
+        assert!(!Settings::from_json(r#"{"countCacheInTotals":"yes"}"#).unwrap().count_cache_in_totals);
+        assert!(Settings::from_json(r#"{"countCacheInTotals":true}"#).unwrap().count_cache_in_totals);
+        let d = tempdir().unwrap();
+        save(d.path(), &Settings { count_cache_in_totals: true, ..Settings::default() }).unwrap();
+        assert!(load(d.path()).settings.count_cache_in_totals, "the choice survives a relaunch");
+        assert!(Settings::default().to_json().contains("\"countCacheInTotals\": false"));
     }
 
     #[test]

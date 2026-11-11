@@ -104,7 +104,8 @@ impl NowHost {
                 // The typical run of each kind of helper comes from the usage cache, asked for lazily
                 // (the usage engine starts just after this one) and never per update.
                 let handle = app.clone();
-                let cfg = NowConfig::new(roots.projects_dir.clone(), prices).with_typical(Arc::new(move || {
+                let count_cache = app.state::<Arc<AppState>>().count_cache_in_totals();
+                let cfg = NowConfig::new(roots.projects_dir.clone(), prices).with_count_cache(count_cache).with_typical(Arc::new(move || {
                     // No usage engine yet (it starts just after this one) is "not ready", not a failure.
                     match handle.state::<Arc<AppState>>().usage.engine().map(|e| e.typical_runs(TYPICAL_DAYS)) {
                         Ok(Ok(Some(runs))) => TypicalAnswer::Ready(runs),
@@ -129,6 +130,13 @@ impl NowHost {
             .as_ref()
             .map(|r| r.engine.snapshot())
             .unwrap_or_default()
+    }
+
+    /// The "Count cache in token totals" switch changed: the engine sends its snapshot again.
+    pub fn set_count_cache(&self, on: bool) {
+        if let Some(r) = self.current.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
+            r.engine.set_count_cache(on);
+        }
     }
 
     pub fn shutdown(&self) {
@@ -162,6 +170,7 @@ mod tests {
             last_write_ms: 0,
             doing: Doing { kind: "wait".into(), verb: "x".into(), target: None },
             tokens: 0,
+            token_kinds: Default::default(),
             cost_usd: None,
             unpriced: false,
             helpers: vec![],

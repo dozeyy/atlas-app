@@ -24,6 +24,7 @@ function chat(over: Partial<NowChat> = {}): NowChat {
     lastWriteMs: Date.now(),
     doing: { kind: "edit", verb: "Editing", target: "src/App.tsx" },
     tokens: 1234,
+    tokenKinds: { input: 1000, output: 234, cacheWrite: 5000, cacheRead: 90000 },
     costUsd: 0.42,
     unpriced: false,
     helpers: [],
@@ -53,6 +54,7 @@ function helper(over: Partial<NowHelper> = {}): NowHelper {
     name: "Find the callers",
     doing: { kind: "search", verb: "Searching", target: "run_loop" },
     tokens: 115,
+    tokenKinds: { input: 100, output: 15, cacheWrite: 0, cacheRead: 0 },
     costUsd: 0.03,
     startedMs: Date.now() - 5_000,
     done: false,
@@ -71,7 +73,7 @@ function helper(over: Partial<NowHelper> = {}): NowHelper {
 }
 
 function done(over: Partial<NowLast> = {}): NowLast {
-  return { sessionId: "d1", title: "Old chat", project: "site", model: null, endedMs: Date.now() - 3 * 60_000, tokens: null, ...over };
+  return { sessionId: "d1", title: "Old chat", project: "site", model: null, endedMs: Date.now() - 3 * 60_000, tokens: null, tokenKinds: null, ...over };
 }
 
 function snap(over: Partial<NowSnapshot> = {}): NowSnapshot {

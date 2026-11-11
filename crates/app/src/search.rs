@@ -107,7 +107,7 @@ pub fn wire(state: &Arc<AppState>) {
                 st.search.poke();
             }
         }
-        Signal::Restarted => {}
+        Signal::Restarted | Signal::Recounted => {}
     });
 }
 

@@ -6,16 +6,19 @@ import type { BarDatum } from "../charts/Bars";
 import { getBackend } from "../../lib/ipc";
 import { useFetched, useLiveReload } from "../../lib/useUsage";
 import {
-  RANGES,
   axisLabel,
   bucketTitle,
   compact,
   exact,
   formatUsd,
   headline,
+  kindsOf,
   plural,
   rangeFor,
+  RANGES,
+  sumKinds,
   tokenHint,
+  tokensTip,
 } from "../../lib/usage";
 import type { RangeKind } from "../../lib/usage";
 import type { Timeline } from "../../lib/types";
@@ -24,7 +27,7 @@ import { EmptyState } from "../EmptyState";
 
 const RANGE_NAME: Record<RangeKind, string> = { today: "Today", "30d": "Last 30 days", "12w": "Last 12 weeks" };
 /** What the total counts: it lives in the total's hover, not in a sentence on the card. */
-const TOKEN_MEANING = "Tokens count what you sent, what Claude wrote and what it saved for reuse (cache writes).\nWhat it reused (cache reads) is listed apart.";
+const TOKEN_MEANING = "Settings > Count cache in token totals decides whether cache writes and reads are in the total.";
 
 /**
  * Tokens over time as activity bars, with a table twin for anyone who prefers numbers. Tokens only
@@ -57,6 +60,7 @@ export function ActivityCard({ today }: { today: string }) {
           axis,
           title: bucketTitle(p.start, span.bucket),
           valueText: `${compact(tokens)} tokens`,
+          kinds: kindsOf(p.tokens),
           detail: `${p.cost.usd === null ? "No price" : `${formatUsd(p.cost.usd)} estimated`}, ${plural(p.sessions, "session")} started`,
         };
       }),
@@ -69,13 +73,14 @@ export function ActivityCard({ today }: { today: string }) {
     span.bucket === "hour" ? points.findIndex((p) => p.start.slice(0, 10) === today && Number(p.start.slice(11, 13)) === hourNow) : points.length - 1;
 
   const total = useMemo(() => points.reduce((s, p) => s + headline(p.tokens), 0), [points]);
+  const totalKinds = useMemo(() => sumKinds(points.map((p) => p.tokens)), [points]);
 
   return (
     <Card className="h-full px-5 py-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="h-section">Activity</h2>
-          <p className="mt-0.5 text-caption text-ink-2" data-testid="chart-readout" title={TOKEN_MEANING}>
+          <p className="mt-0.5 text-caption text-ink-2" data-testid="chart-readout" title={`${tokensTip(total, totalKinds)}\n${TOKEN_MEANING}`}>
             {RANGE_NAME[range]}: {compact(total)} tokens
           </p>
         </div>
@@ -125,7 +130,7 @@ export function ActivityCard({ today }: { today: string }) {
                   <th scope="row" className="px-3 py-2 text-left font-normal text-ink">
                     {bucketTitle(p.start, span.bucket)}
                   </th>
-                  <td className="px-3 py-2 text-right" title={tokenHint(headline(p.tokens), p.cost)}>{compact(headline(p.tokens))}</td>
+                  <td className="px-3 py-2 text-right" title={tokenHint(headline(p.tokens), p.cost, kindsOf(p.tokens))}>{compact(headline(p.tokens))}</td>
                   <td className="px-3 py-2 text-right">{exact(p.sessions)}</td>
                 </tr>
               ))}

@@ -33,7 +33,7 @@ import {
   weekdayInitial,
 } from "../lib/dashboardModel";
 import { usualDay } from "../lib/chartPaths";
-import { addDays, compact, exact, formatUsd, headline, localDay, mergeModelRows, modelChoices, plural, tokenHint } from "../lib/usage";
+import { addDays, addKinds, compact, formatUsd, headline, kindsOf, localDay, mergeModelRows, modelChoices, NO_KINDS, plural, tokenHint, tokensTip } from "../lib/usage";
 import type { BarDatum } from "../components/charts/Bars";
 import type { Dashboard as DashboardData, Timeline, UsageStatus } from "../lib/types";
 
@@ -162,6 +162,7 @@ function modelItems(data: DashboardData): StackItem[] {
     key: m.model,
     label: m.known ? m.label : `${m.label} (not priced)`,
     value: headline(m.tokens),
+    kinds: kindsOf(m.tokens),
     title: m.models.join(", "),
   }));
   // Biggest first by the number shown (the engine lists them by cost).
@@ -171,7 +172,8 @@ function modelItems(data: DashboardData): StackItem[] {
   const restValue = rest.reduce((s, m) => s + m.value, 0);
   // "Other" only earns a row when it is at least 1% of the whole: a row reading 0% only costs height.
   const topValue = top.reduce((s, m) => s + m.value, 0);
-  const all = restValue > 0.01 * (topValue + restValue) ? [...top, { key: "other", label: "Other", value: restValue, title: rest.map((r) => r.label).join(", ") }] : top;
+  const restKinds = rest.reduce((k, r) => addKinds(k, r.kinds), NO_KINDS);
+  const all = restValue > 0.01 * (topValue + restValue) ? [...top, { key: "other", label: "Other", value: restValue, kinds: restKinds, title: rest.map((r) => r.label).join(", ") }] : top;
   const total = all.reduce((s, m) => s + m.value, 0) || 1;
   return all.map((m, i) => ({
     key: m.key,
@@ -181,6 +183,7 @@ function modelItems(data: DashboardData): StackItem[] {
     right: compact(m.value),
     share: `${Math.round((m.value / total) * 100)}%`,
     title: m.title,
+    kinds: m.kinds,
   }));
 }
 
@@ -228,6 +231,7 @@ export function Dashboard() {
       axis: weekdayInitial(d),
       title: shortDay(d),
       valueText: last[i] ? `${compact(last[i])} tokens` : "No activity",
+      kinds: last[i] ? kindsOf(points[i].tokens) : null,
       detail: last[i] ? (points[i].cost.usd === null ? "No price" : `${formatUsd(points[i].cost.usd)} estimated`) : "",
     }));
     const usual = usualDay(daily.tokens.slice(-31, -1));
@@ -248,6 +252,7 @@ export function Dashboard() {
       title: shortDay(p.start),
       axis: monthDay(p.start),
       valueText: values[i] > 0 ? `${compact(values[i])} tokens` : "No activity",
+      kinds: values[i] > 0 ? kindsOf(p.tokens) : null,
       detail: values[i] > 0 ? `${formatUsd(p.cost.usd ?? 0)} estimated, ${plural(p.sessions, "session")} started` : "",
     }));
     return { values, readouts };
@@ -323,11 +328,7 @@ export function Dashboard() {
                   </div>
                   <div
                     className="my-2 flex flex-wrap items-baseline gap-x-2"
-                    title={
-                      data.week.tokens.cacheRead > 0
-                        ? `${tokenHint(weekTokens, data.week.cost)}\nPlus ${exact(data.week.tokens.cacheRead)} reused (cache reads), counted apart.`
-                        : tokenHint(weekTokens, data.week.cost)
-                    }
+                    title={tokenHint(weekTokens, data.week.cost, kindsOf(data.week.tokens))}
                   >
                     <CountUp value={weekTokens} format={compact} id="dash:hero" className="d d-hero text-ink" />
                     <span className="text-lead font-semibold text-ink-2">tokens</span>
@@ -392,7 +393,7 @@ export function Dashboard() {
                           <span className="sr-only">{`, ${plural(p.sessions, "session")}`}</span>
                         </span>
                         {spark ? <Sparkline id={`dash:spark:${p.projectKey}`} values={spark} /> : <span />}
-                        <span className="d d-small text-right text-ink" title={`${exact(headline(p.tokens))} tokens`}>
+                        <span className="d d-small text-right text-ink" title={tokensTip(headline(p.tokens), kindsOf(p.tokens))}>
                           {compact(headline(p.tokens))}
                         </span>
                       </li>
@@ -423,7 +424,7 @@ export function Dashboard() {
                     }
                   >
                     <div>
-                      <div className="d d-figure text-ink" title={tokenHint(headline(data.today.tokens), data.today.cost)}>
+                      <div className="d d-figure text-ink" title={tokenHint(headline(data.today.tokens), data.today.cost, kindsOf(data.today.tokens))}>
                         {compact(headline(data.today.tokens))}
                       </div>
                       <div className="text-caption text-ink-2">tokens</div>

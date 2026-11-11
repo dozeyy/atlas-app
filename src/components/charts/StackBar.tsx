@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { stackFlex } from "../../lib/chartPaths";
 import { useIntro } from "../../lib/motion";
+import type { TokenKinds } from "../../lib/usage";
+import { tokensTip } from "../../lib/usage";
 import { stepIndex } from "./shared";
 
 export interface StackItem {
@@ -15,6 +17,15 @@ export interface StackItem {
   /** Small share text ("62%"). */
   share: string;
   title?: string;
+  /** Tokens by kind: the hover lists them and adds them all together. */
+  kinds?: TokenKinds | null;
+}
+
+/** The hover of one row: the count with its kinds when known, then the row's own line. */
+function rowTitle(it: StackItem): string | undefined {
+  if (!it.kinds) return it.title;
+  return it.title ? `${tokensTip(it.value, it.kinds)}
+${it.title}` : tokensTip(it.value, it.kinds);
 }
 
 /**
@@ -49,7 +60,7 @@ export function StackBar({ id, items, label }: { id: string; items: StackItem[];
           <div
             key={it.key}
             className={`seg-bar${on === i ? " on" : ""}`}
-            title={it.title}
+            title={rowTitle(it)}
             style={{ flex: `${Math.max(flex[i], 0.01)} 1 0`, background: `var(--chart-${it.tone})`, ["--i" as string]: i }}
             onPointerEnter={() => setOn(i)}
           />
@@ -61,7 +72,7 @@ export function StackBar({ id, items, label }: { id: string; items: StackItem[];
             key={it.key}
             className={`legend-row${on === i ? " on" : ""}`}
             onPointerEnter={() => setOn(i)}
-            title={it.title}
+            title={rowTitle(it)}
           >
             <span className="dot" style={{ background: `var(--chart-${it.tone})` }} aria-hidden="true" />
             <span className="min-w-0 truncate text-body text-ink">{it.label}</span>

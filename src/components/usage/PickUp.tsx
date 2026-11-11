@@ -11,7 +11,7 @@ import { projectTone, resumeCommand } from "../../lib/sessionBrowse";
 import { sparkShape } from "../../lib/todayStat";
 import { useAtlas } from "../../state/AtlasProvider";
 import { useFetched } from "../../lib/useUsage";
-import { formatWhen, plural } from "../../lib/usage";
+import { formatWhen, kindsOf, plural } from "../../lib/usage";
 import type { SessionRow } from "../../lib/types";
 
 const W = 144;
@@ -58,7 +58,7 @@ export function PickUp({ row, onOpen }: { row: SessionRow; onOpen: (id: string) 
             {row.projectName}
           </span>
           <i aria-hidden="true">&middot;</i>
-          <TokenText tokens={row.tokens.total} cost={row.cost} className="font-semibold text-ink" />
+          <TokenText tokens={row.tokens.total} cost={row.cost} kinds={kindsOf(row.tokens)} className="font-semibold text-ink" />
           {row.agentCount > 0 && (
             <>
               <i aria-hidden="true">&middot;</i>

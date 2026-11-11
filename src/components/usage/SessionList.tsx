@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { projectTone } from "../../lib/sessionBrowse";
-import { clockTime, effortMix, formatWhen, modelWithEffort, percent, plural, topEffort } from "../../lib/usage";
+import { clockTime, effortMix, formatWhen, kindsOf, modelWithEffort, percent, plural, topEffort } from "../../lib/usage";
 import type { SessionRow } from "../../lib/types";
 import type { SnippetPart } from "../../lib/searchTypes";
 import { sessionName } from "./helperKit";
@@ -161,7 +161,7 @@ export function SessionLine({
               </>
             )}
             <span className="flex-none">
-              <TokenText tokens={row.tokens.total} cost={row.cost} className="font-semibold text-ink" />
+              <TokenText tokens={row.tokens.total} cost={row.cost} kinds={kindsOf(row.tokens)} className="font-semibold text-ink" />
               {barShare !== undefined && (
                 <span aria-hidden="true" className="tok-bar" data-tip={barShare >= 1 ? "The biggest session in this list" : `${percent(barShare)} of the biggest session in this list`}>
                   <i style={{ width: `${Math.round(barShare * 100)}%` }} />

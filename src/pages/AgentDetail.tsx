@@ -12,7 +12,7 @@ import { timelineBars } from "../components/usage/timelineBars";
 import { getBackend } from "../lib/ipc";
 import { useIntro } from "../lib/motion";
 import { useFetched, useLiveReload } from "../lib/useUsage";
-import { compact, effortMix, exact, formatDuration, formatWhen, percent, share, topEffort } from "../lib/usage";
+import { compact, countsCache, effortMix, exact, formatDuration, formatWhen, kindsOf, percent, share, topEffort } from "../lib/usage";
 import type { Outcome } from "../lib/types";
 
 /** "general-purpose" -> "General purpose", "ui-builder" -> "UI builder". */
@@ -136,7 +136,7 @@ export function AgentDetailView({
         <div className="min-w-0">
           <div className="text-caption font-medium text-ink-2">This helper used</div>
           <div className="mt-2">
-            <TokenFigure tokens={agent.tokens.total} cost={agent.cost} id={`agent:${sessionId}:${agentId}:tokens`} className="d d-hero text-ink" />
+            <TokenFigure tokens={agent.tokens.total} cost={agent.cost} kinds={kindsOf(agent.tokens)} id={`agent:${sessionId}:${agentId}:tokens`} className="d d-hero text-ink" />
           </div>
           <div className="mt-4 max-w-[28rem]">
             <div className={`share-bar${intro ? " intro" : ""}`} role="img" aria-label={`${percent(frac)} of the session's tokens`}>
@@ -144,7 +144,7 @@ export function AgentDetailView({
             </div>
             <p
               className="mt-2 text-body text-ink-2"
-              title={`Counted once, inside the session's total.${agent.tokens.cacheRead > 0 ? ` Plus ${compact(agent.tokens.cacheRead)} reused (cache reads), counted apart.` : ""}`}
+              title={`Counted once, inside the session's total.${agent.tokens.cacheRead > 0 && !countsCache(agent.tokens) ? ` Plus ${compact(agent.tokens.cacheRead)} reused (cache reads), counted apart.` : ""}`}
             >
               <span className="font-medium text-ink">{percent(frac)}</span>
               {" of the session"}

@@ -115,8 +115,19 @@ fn an_appended_tool_call_reaches_the_page_within_a_second() {
     assert!(took < Duration::from_secs(1), "took {took:?}");
     let c = &snap.chats[0];
     assert_eq!((c.doing.verb.as_str(), c.doing.target.as_deref()), ("Editing", Some("src/App.tsx")));
-    assert_eq!(c.tokens, 2 * 115);
+    assert_eq!(c.tokens, 2 * 15, "input + output only, by default");
+    // The four kinds are always there for the hover, and "all together" is their sum.
+    assert_eq!((c.token_kinds.cache_write, c.token_kinds.cache_read), (200, 2000));
+    assert_eq!(c.token_kinds.all(), 2 * 1115);
     assert!(c.cost_usd.is_some_and(|x| x > 0.0));
+    let cost = c.cost_usd;
+    // Turning the setting on re-counts the live chat without a restart; dollars do not move.
+    rig.engine.set_count_cache(true);
+    let (snap2, _) = wait_for(&rig, Duration::from_secs(5), |s| s.chats.first().is_some_and(|c| c.tokens == 2 * 1115))
+        .expect("the snapshot is counted the new way");
+    assert_eq!(snap2.chats[0].cost_usd, cost);
+    rig.engine.set_count_cache(false);
+    wait_for(&rig, Duration::from_secs(5), |s| s.chats.first().is_some_and(|c| c.tokens == 2 * 15)).expect("and back");
     assert_eq!(c.files.first().map(|f| (f.path.as_str(), f.edited)), Some(("src/App.tsx", true)));
 
     // The results come back and the turn ends: the chat is now waiting for the user.
@@ -154,7 +165,8 @@ fn a_helper_appears_with_its_own_name_and_spend() {
     assert!(t0.elapsed() < Duration::from_secs(1), "took {:?}", t0.elapsed());
     let c = &snap.chats[0];
     assert_eq!(c.helpers[0].name, "Find the callers");
-    assert_eq!(c.helpers[0].tokens, 115);
+    assert_eq!(c.helpers[0].tokens, 15);
+    assert_eq!(c.helpers[0].token_kinds.all(), 1115);
     assert!(c.doing.verb.starts_with("Waiting on"), "{}", c.doing.verb);
     assert!(!serde_json::to_string(&snap).unwrap().contains("TOPSECRET"));
     rig.engine.stop();

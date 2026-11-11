@@ -1,4 +1,4 @@
-import { binEvenly, clockTime, compact, formatUsd, formatWhen, headline, plural, shortDate } from "../../lib/usage";
+import { binEvenly, clockTime, compact, formatUsd, formatWhen, headline, plural, shortDate, sumKinds } from "../../lib/usage";
 import type { MessagePoint } from "../../lib/types";
 import type { BarDatum } from "../charts/shared";
 
@@ -22,6 +22,7 @@ export function timelineBars(timeline: MessagePoint[], durationMs: number): BarD
       axis: axisFor(first, durationMs),
       title: `${formatWhen(first)}, ${plural(group.length, "message")}`,
       valueText: compact(tokens),
+      kinds: sumKinds(group.map((m) => m.tokens)),
       detail: `tokens, ${formatUsd(usd)} estimated`,
     };
   });

@@ -49,8 +49,8 @@ OPTIONS
   --cache-dir DIR     where the index lives (default: $ATLAS_USAGE_CACHE, else
                       <local app data>/atlas/cli)
 
-Tokens = input + output + cache writes; cache reads are shown apart. The one dollar figure
-is an estimate at API prices. Transcripts are only read, never written.";
+Tokens = input + output; the Settings option Count cache in token totals adds cache writes and reads.
+The one dollar figure is an estimate at API prices. Transcripts are only read, never written.";
 
 struct Quiet;
 impl EventSink for Quiet {
@@ -286,6 +286,8 @@ fn open(c: &Common) -> Result<Ctx, String> {
     let mut cfg = UsageConfig::new(root.projects_dir.clone(), root.dir.clone(), cache_dir.clone(), cache_db);
     cfg.watch = false;
     cfg.week_starts_sunday = sunday;
+    cfg.count_cache = atlas_core::paths::data_dir(None, atlas_env.as_deref(), &home, &here)
+        .is_some_and(|d| atlas_core::settings::count_cache_in(&d));
     let started = Instant::now();
     let engine = UsageEngine::start(cfg, Arc::new(Quiet));
     if !engine.wait_pass(0, Duration::from_secs(1800)) {

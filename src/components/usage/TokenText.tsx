@@ -1,4 +1,4 @@
-import { compact, costView, tokenHint } from "../../lib/usage";
+import { compact, costView, tokenHint, type TokenKinds } from "../../lib/usage";
 import type { Cost } from "../../lib/types";
 
 /**
@@ -9,18 +9,21 @@ import type { Cost } from "../../lib/types";
 export function TokenText({
   tokens,
   cost,
+  kinds,
   unit = "tokens",
   className = "",
 }: {
   tokens: number;
   cost: Cost;
+  /** The tokens by kind: the hover lists them and adds them all together. */
+  kinds?: TokenKinds | null;
   /** The word after the number; "" for a bare figure. */
   unit?: string;
   className?: string;
 }) {
   const v = costView(cost);
   return (
-    <span title={tokenHint(tokens, cost)} className={`tabular-nums ${className}`}>
+    <span title={tokenHint(tokens, cost, kinds)} className={`tabular-nums ${className}`}>
       {unit ? `${compact(tokens)} ${unit}` : compact(tokens)}
       {!v.none && <span className="sr-only">{`, about ${v.text} at API prices, estimated${v.partial ? ", incomplete" : ""}`}</span>}
     </span>

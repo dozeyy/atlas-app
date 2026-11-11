@@ -1,7 +1,7 @@
 import { Card } from "../controls";
 import { AgentAvatar, helperName } from "../usage/helperKit";
 import { TokenText } from "../usage/TokenText";
-import { exact, plural } from "../../lib/usage";
+import { exact, kindsOf, plural } from "../../lib/usage";
 import { REVIEWER_WORDS, finishLine, modelLine, rateSentence, reviewCountsLine, reviewerLine, usualLine, weeklyBars, weeklyTitle } from "../../lib/teamModel";
 import type { ReviewCounts, TypeCard } from "../../lib/teamTypes";
 
@@ -101,7 +101,7 @@ export function ScoreCard({ card, toTs, onOpen }: { card: TypeCard; toTs: number
 
       <div className="mt-auto space-y-0.5 text-caption text-ink-2">
         <p className="truncate" title={model}>
-          <TokenText tokens={card.tokens.total} cost={card.cost} />
+          <TokenText tokens={card.tokens.total} cost={card.cost} kinds={kindsOf(card.tokens)} />
           {` \u00b7 ${model}`}
         </p>
         <p className="break-words">{usual}</p>

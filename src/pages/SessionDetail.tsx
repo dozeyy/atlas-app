@@ -42,7 +42,7 @@ import { helperTree, type HelperNode } from "../lib/helperTree";
 import { MAIN_ID } from "../lib/helperMap";
 import { useIntro } from "../lib/motion";
 import { useFetched, useLiveReload } from "../lib/useUsage";
-import { compact, effortMix, exact, formatDuration, formatUsd, formatWhen, headline, modelWithEffort, percent, plural, share, topEffort } from "../lib/usage";
+import { compact, effortMix, exact, formatDuration, formatUsd, formatWhen, headline, countsCache, kindsOf, modelWithEffort, percent, plural, share, tokensTip, topEffort } from "../lib/usage";
 import { AgentDetailView, typeLabel } from "./AgentDetail";
 import type { AgentSummary, Outcome, SessionDetail, TranscriptItem } from "../lib/types";
 
@@ -404,13 +404,13 @@ function DetailsTab({
       <div className="details-grid">
         <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-4 @3xl:col-span-2">
           {/* The chat's tokens are the figure at the top of the page; this tile is what sits apart from it. */}
-          {total.cacheRead > 0 ? (
+          {total.cacheRead > 0 && !countsCache(total) ? (
             <Stat label="Reused" icon={<ArrowsClockwise size={14} aria-hidden="true" />} sub={`not part of the ${compact(headline(total))}`}>
               <span title={`${KIND_WORDS.cacheRead.term}: ${exact(total.cacheRead)} tokens\n${KIND_WORDS.cacheRead.about}`}>{compact(total.cacheRead)}</span>
             </Stat>
           ) : (
             <Stat label="Tokens">
-              <span title={exact(headline(total))}>{compact(headline(total))}</span>
+              <span title={tokensTip(headline(total), kindsOf(total))}>{compact(headline(total))}</span>
             </Stat>
           )}
           <Stat
@@ -666,6 +666,7 @@ export function SessionDetailView({
         <TokenFigure
           tokens={row.tokens.total}
           cost={row.cost}
+          kinds={kindsOf(row.tokens)}
           id={`session:${id}:tokens`}
           note={claudeCodeCostUsd !== null ? `Claude Code showed ${formatUsd(claudeCodeCostUsd)}.` : undefined}
           className="d d-hero text-ink"

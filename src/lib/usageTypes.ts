@@ -6,7 +6,7 @@ export interface Tokens {
   cacheWrite5m: number;
   cacheWrite1h: number;
   cacheRead: number;
-  /** input + output + cache writes. Cache reads are shown apart (Q2). */
+  /** The headline total, counted by Rust: input + output, plus cache writes and reads when Settings > "Count cache in token totals" is on. */
   total: number;
   webSearch: number;
   webFetch: number;
@@ -290,7 +290,7 @@ export interface ReceiptKinds {
   web: number;
 }
 
-/** Tokens by what they were. The first three add up to the headline; cache reads sit apart. */
+/** Tokens by what they were. Which of them add up to the headline is the Settings switch (`Receipt.countsCache`). */
 export interface ReceiptTokenKinds {
   output: number;
   cacheWrite: number;
@@ -301,8 +301,10 @@ export interface ReceiptTokenKinds {
 export interface ReceiptModel {
   model: string;
   usd: number;
-  /** Input, output and cache writes (the figure the pages headline). */
+  /** The figure the pages headline for this model (counted like every total). */
   tokens: number;
+  /** The same tokens by kind, for the hover. */
+  tokenKinds: ReceiptTokenKinds;
 }
 
 /** A big thing that went into the conversation. `usd` is an estimate. */
@@ -375,7 +377,9 @@ export interface Receipt {
   modelsOtherUsd: number;
   kinds: ReceiptKinds;
   kindsOtherUsd: number;
-  /** The chat's headline tokens (input + output + cache writes), and its tokens by kind. */
+  /** The setting "Count cache in token totals" was on: every headline below includes cache writes and reads, so the by-kind lines must too. */
+  countsCache: boolean;
+  /** The chat's headline tokens (counted like every total), and its tokens by kind. */
   totalTokens: number;
   tokenKinds: ReceiptTokenKinds;
   items: ReceiptItem[];

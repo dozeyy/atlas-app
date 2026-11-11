@@ -8,8 +8,11 @@ const sum = (lines: { tokens: number }[]) => lines.reduce((s, l) => s + l.tokens
 const sumUsd = (lines: { usd: number }[]) => lines.reduce((s, l) => s + l.usd, 0);
 
 /** Every chat the stand-in backend has, as the receipt the screen would get. */
-async function receipts(): Promise<Receipt[]> {
+async function receipts(cache = false): Promise<Receipt[]> {
   const b = new MockBackend();
+  // The Settings switch "Count cache in token totals".
+  // (the stand-in keeps settings between tests, so say it both ways)
+  await b.updateSettings({ countCacheInTotals: cache });
   const page = await b.sessionsList({ limit: 200 });
   const out: Receipt[] = [];
   for (const row of page.rows) {
@@ -20,10 +23,11 @@ async function receipts(): Promise<Receipt[]> {
 }
 
 describe("receipt: every list adds up to the chat", () => {
-  it("who used it, what it used and the models each sum to the chat's tokens, in every chat", async () => {
-    const all = await receipts();
+  it.each([false, true])("who used it, what it used and the models each sum to the chat's tokens, in every chat (cache counted: %s)", async (cache) => {
+    const all = await receipts(cache);
     expect(all.length).toBeGreaterThan(5);
     for (const r of all) {
+      expect(r.countsCache).toBe(cache);
       expect(r.totalTokens).toBeGreaterThan(0);
       expect(sum(whoUsed(r))).toBe(r.totalTokens);
       expect(sum(whatItUsed(r))).toBe(r.totalTokens);
@@ -39,12 +43,23 @@ describe("receipt: every list adds up to the chat", () => {
     expect(byModel(r)[0].label).not.toContain("·");
   });
 
-  it("lists cache reads apart: the kinds add up to the headline without them", async () => {
-    for (const r of await receipts()) {
+  it("off: the total is input + output and the cache has no line; on: all four kinds are lines of it", async () => {
+    for (const r of await receipts(false)) {
       const k = r.tokenKinds;
-      expect(k.output + k.cacheWrite + k.input).toBe(r.totalTokens);
-      expect(whatItUsed(r).some((l) => l.key === "cacheRead")).toBe(false);
+      expect(k.output + k.input).toBe(r.totalTokens);
+      expect(whatItUsed(r).some((l) => l.key === "cacheRead" || l.key === "cacheWrite")).toBe(false);
     }
+    for (const r of await receipts(true)) {
+      const k = r.tokenKinds;
+      expect(k.output + k.input + k.cacheWrite + k.cacheRead).toBe(r.totalTokens);
+      expect(whatItUsed(r).some((l) => l.key === "cacheRead")).toBe(k.cacheRead > 0);
+    }
+  });
+
+  it("a line's hover lists the kinds and adds them all together", async () => {
+    const [r] = await receipts(false);
+    const t = lineTitle(whoUsed(r)[0]);
+    expect(t.split("\n").slice(1, 6).map((l) => l.split("\t")[0])).toEqual(["Input", "Output", "Cache writes", "Cache reads", "=All together"]);
   });
 
   it("keeps the dollars in the hover text, not the figure", async () => {

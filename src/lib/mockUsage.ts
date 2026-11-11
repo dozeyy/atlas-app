@@ -31,7 +31,7 @@ import type {
   UsageStatus,
   WrappedHabits,
 } from "./types";
-import { addDays, localDay } from "./usage";
+import { addDays, countTotal, kindsOf, localDay } from "./usage";
 import { buildMockReceipt, type MockThread } from "./mockReceipt";
 
 export type Scenario = "data" | "empty" | "indexing" | "error";
@@ -137,7 +137,7 @@ function helpersFor(rand: () => number, start: number, endCap: number, mainModel
     t.output = per(60 + rand() * 260);
     t.cacheWrite5m = per(300 + rand() * 1200);
     t.cacheRead = per(4000 + rand() * 20000);
-    t.total = t.input + t.output + t.cacheWrite5m + t.cacheWrite1h;
+    t.total = countTotal(kindsOf(t), false);
     const startedAt = start + Math.round(((endCap - start) * i) / (n + 1)) + 30_000;
     const durationMs = (1 + Math.floor(rand() * 12)) * 60_000;
     const nested = i > 0 && i % 3 === 2;
@@ -198,7 +198,7 @@ function build(now: Date): MockSession[] {
       t.output = per(150 + rand() * 500);
       t.cacheWrite5m = per(800 + rand() * 2200);
       t.cacheRead = per(9000 + rand() * 40000);
-      t.total = t.input + t.output + t.cacheWrite5m + t.cacheWrite1h;
+      t.total = countTotal(kindsOf(t), false);
       const [y, m, d] = day.split("-").map(Number);
       const start = new Date(y, m - 1, d, 8 + Math.floor(rand() * 11), Math.floor(rand() * 60)).getTime();
       const dur = (10 + Math.floor(rand() * 170)) * 60_000;
@@ -297,6 +297,8 @@ export class MockUsage {
   /** Rows the engine answers with; replaceable in tests. */
   now = new Date();
   private sessions = build(this.now);
+  /** The Settings switch "Count cache in token totals" (the real one lives in Rust). */
+  private countCache = false;
   private statusL = new Set<(s: UsageStatus) => void>();
   private progressL = new Set<(p: IndexProgress) => void>();
   private changedL = new Set<(c: UsageChanged) => void>();
@@ -309,6 +311,26 @@ export class MockUsage {
 
   emitProgress(p: IndexProgress): void {
     this.progressL.forEach((l) => l(p));
+  }
+
+  /**
+   * The switch changed: every `total` is counted the new way (Rust does this per query), and the
+   * pages are told to ask again, the same event the real app sends.
+   */
+  setCountCache(on: boolean): void {
+    if (on === this.countCache) return;
+    this.countCache = on;
+    const walk = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === "object") {
+        const o = v as Record<string, unknown>;
+        if (typeof o.cacheRead === "number" && typeof o.input === "number" && typeof o.total === "number") {
+          o.total = countTotal(kindsOf(o as unknown as Tokens), on);
+        } else Object.values(o).forEach(walk);
+      }
+    };
+    walk(this.sessions);
+    this.changedL.forEach((l) => l({ sessionIds: [], fromDay: null, toDay: null, reason: "count-cache" }));
   }
 
   emitChanged(): void {
@@ -478,7 +500,7 @@ export class MockUsage {
         cacheWrite5m: Math.round((t.cacheWrite5m * w) / n),
         cacheRead: Math.round((t.cacheRead * w) / n),
       };
-      part.total = part.input + part.output + part.cacheWrite5m;
+      part.total = countTotal(kindsOf(part), this.countCache);
       return { ts: startedAt + Math.round((durationMs * i) / n), model, agentId, tokens: part, cost: costOf(model, part), skill: null };
     });
   }
@@ -558,7 +580,7 @@ export class MockUsage {
       toolCalls: a.toolCalls,
       durationMs: a.durationMs,
     }));
-    return buildMockReceipt(id, s.cost.usd ?? 0, main, helpers, RATES);
+    return buildMockReceipt(id, s.cost.usd ?? 0, main, helpers, RATES, this.countCache);
   }
 
   async agentDetail(sessionId: string, agentId: string): Promise<AgentDetail | null> {

@@ -23,6 +23,8 @@ export interface Settings {
   mcpAutoConnect: boolean;
   /** How many copies of each file History keeps (10 to 200). */
   historyKeepVersions: number;
+  /** Token totals also count what Claude saves and re-reads every reply (cache writes and reads). Default off. */
+  countCacheInTotals: boolean;
 }
 
 export interface ConfigView {

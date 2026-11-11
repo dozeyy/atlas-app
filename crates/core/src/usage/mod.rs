@@ -7,6 +7,7 @@
 //! file code lives in `crate::cache` (acceptance criterion 20).
 
 pub mod costmix;
+pub mod count;
 pub mod debrief_text;
 pub mod ingest;
 pub mod line;
@@ -61,6 +62,9 @@ pub struct UsageConfig {
     pub cache_db: PathBuf,
     pub tz: Tz,
     pub week_starts_sunday: bool,
+    /// Count cache writes and reads in token totals (the Settings switch). The engine can be
+    /// told again later with `set_count_cache`.
+    pub count_cache: bool,
     /// Test hook: pretend it is this instant (epoch ms).
     pub now_override_ms: Option<i64>,
     pub ingest: IngestOptions,
@@ -79,6 +83,7 @@ impl UsageConfig {
             cache_db,
             tz: Tz::Local,
             week_starts_sunday: false,
+            count_cache: false,
             now_override_ms: None,
             ingest: IngestOptions::default(),
             watch: true,
@@ -243,6 +248,8 @@ pub struct UsageEngine {
     pool: ReadPool,
     prices: PriceHandle,
     stats: Arc<ReadStats>,
+    /// The "Count cache in token totals" switch, read by every query (see `count`).
+    count_cache: AtomicBool,
     join: Mutex<Option<JoinHandle<()>>>,
 }
 
@@ -285,6 +292,7 @@ impl UsageEngine {
             pool,
             prices: Arc::clone(&prices),
             stats: Arc::clone(&stats),
+            count_cache: AtomicBool::new(cfg.count_cache),
             join: Mutex::new(None),
         });
         if refuse {
@@ -381,7 +389,19 @@ impl UsageEngine {
             now_ms: self.cfg.now_override_ms.unwrap_or_else(now_ms),
             prices: self.prices.read().unwrap_or_else(|p| p.into_inner()).clone(),
             week_starts_sunday: self.cfg.week_starts_sunday,
+            count: self.count(),
         }
+    }
+
+    /// How totals are counted right now.
+    pub fn count(&self) -> count::TokenCount {
+        count::TokenCount::new(self.count_cache.load(Ordering::Relaxed))
+    }
+
+    /// The switch changed: every query from now on counts the new way. The caller tells the
+    /// front end to ask again (a `usage://changed` event).
+    pub fn set_count_cache(&self, on: bool) {
+        self.count_cache.store(on, Ordering::Relaxed);
     }
 
     fn read<T>(&self, f: impl FnOnce(&Connection, &query::QueryCtx) -> rusqlite::Result<T>) -> Result<T, String> {
@@ -408,13 +428,12 @@ impl UsageEngine {
     }
 
     /// Every token counted in the ledger so far, all models and days, as the Dashboard counts
-    /// tokens (input, output and cache writes; cache reads are shown apart). It is the setup
-    /// program's live line while it reads. One scan of the small hourly table; 0 while the
-    /// cache is not ready.
+    /// tokens (the "Count cache in token totals" rule). It is the setup program's live line
+    /// while it reads. One scan of the small hourly table; 0 while the cache is not ready.
     pub fn tokens_so_far(&self) -> u64 {
-        self.read(|c, _| {
+        self.read(|c, x| {
             c.query_row(
-                "SELECT COALESCE(SUM(input + output + cw5m + cw1h), 0) FROM usage_hour",
+                &format!("SELECT COALESCE(SUM({}), 0) FROM usage_hour", x.count.sql("")),
                 [],
                 |r| r.get::<_, i64>(0),
             )

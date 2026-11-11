@@ -177,7 +177,7 @@ function WaitRow({ chat, now }: { chat: NowChat; now: number }) {
         </p>
       </div>
       {chat.workedMs !== null && <Stat fig={formatDuration(chat.workedMs)} cap="Last turn took" optional={1} />}
-      <Stat fig={compact(chat.tokens)} cap="Tokens" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))} optional={2} />
+      <Stat fig={compact(chat.tokens)} cap="Tokens" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced), chat.tokenKinds)} optional={2} />
       {/* "3 min ago" under "Stopped": a time, never mistaken for a length. */}
       <Stat fig={ago(chat.lastWriteMs, now)} cap="Stopped" />
     </li>
@@ -207,7 +207,7 @@ function DoneRow({ last, now }: { last: NowLast; now: number }) {
       {/* A session that was already over when Atlas started has no total (the engine reads only the
           end of its file), so its row shows no token figure at all: a dash read as missing data, and
           right after a launch every row had one. */}
-      {last.tokens !== null && <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false))} optional={2} />}
+      {last.tokens !== null && <Stat fig={compact(last.tokens)} cap="Tokens" title={tokenHint(last.tokens, nowCost(null, false), last.tokenKinds)} optional={2} />}
       <Stat fig={ago(last.endedMs, now)} cap="Ended" />
     </li>
   );
@@ -285,7 +285,7 @@ function ChatRow({ chat, now }: { chat: NowChat; now: number }) {
         </div>
       </section>
 
-      <div className="nc-num" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced))}>
+      <div className="nc-num" title={tokenHint(chat.tokens, nowCost(chat.costUsd, chat.unpriced), chat.tokenKinds)}>
         <p className="d d-figure nc-spend-fig">{compact(Math.round(tokens))}</p>
         <p className="nc-cap">Tokens</p>
       </div>

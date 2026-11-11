@@ -118,7 +118,7 @@ pub fn install(app: &AppHandle, state: &Arc<AppState>) -> tauri::Result<()> {
     let (tx, rx) = channel::<()>();
     let tx = Mutex::new(tx);
     state.usage.signals.subscribe(move |sig| {
-        if matches!(sig, Signal::Changed | Signal::Idle | Signal::Restarted) {
+        if matches!(sig, Signal::Changed | Signal::Idle | Signal::Restarted | Signal::Recounted) {
             let _ = tx.lock().unwrap_or_else(|p| p.into_inner()).send(());
         }
     });

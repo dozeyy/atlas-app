@@ -8,7 +8,10 @@ import { place } from "../lib/tipPlace";
  * titles added later or on other screens: the layer listens once on the document, so no element
  * opts in. While a tip is wanted the native `title` is moved to `data-tip` (so the browser stays
  * quiet) and put back when the pointer or focus leaves. `data-tip="text"` on its own also works.
- * A line break in the text starts the quieter second paragraph.
+ * A line break in the text starts the quieter second paragraph. A line with a tab in it
+ * ("Input\t1,234") is a row of a small aligned table under the first line: label left, figure
+ * right in tabular figures; a label that starts with "=" is the sum row (heavier, with a rule).
+ * Prose lines after the table keep their place in the quiet paragraph.
  *
  * Cost: a handful of document listeners and one fixed element. Nothing runs on pointer-move;
  * position is computed once per show, from the target's box.
@@ -105,6 +108,7 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
     if (!found) return;
     const tip: HTMLDivElement = found;
     const head = tip.firstElementChild as HTMLElement;
+    const rows = tip.children[1] as HTMLElement;
     const rest = tip.lastElementChild as HTMLElement;
 
     let target: Element | null = null;
@@ -194,8 +198,27 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
       }
       const [first, ...others] = text.split("\n");
       head.textContent = first;
-      rest.textContent = others.join("\n");
-      rest.hidden = others.length === 0;
+      const table: [string, string][] = [];
+      const prose: string[] = [];
+      for (const line of others) {
+        const at = line.indexOf("\t");
+        if (at > 0) table.push([line.slice(0, at), line.slice(at + 1)]);
+        else prose.push(line);
+      }
+      rows.replaceChildren();
+      for (const [label, value] of table) {
+        const sum = label.startsWith("=");
+        const k = document.createElement("span");
+        k.className = sum ? "tt-k tt-sum" : "tt-k";
+        k.textContent = sum ? label.slice(1) : label;
+        const v = document.createElement("span");
+        v.className = sum ? "tt-v tt-sum" : "tt-v";
+        v.textContent = value;
+        rows.append(k, v);
+      }
+      rows.hidden = table.length === 0;
+      rest.textContent = prose.join("\n");
+      rest.hidden = prose.length === 0;
 
       // Measure while it is invisible, then place it; the fade starts from the attribute below.
       const r = el.getBoundingClientRect();
@@ -328,6 +351,7 @@ export function TipLayer({ resetKey }: { resetKey?: unknown }) {
   return (
     <div ref={box} id="atlas-tip" role="tooltip" className="tt">
       <span className="tt-head" />
+      <span className="tt-rows" hidden />
       <span className="tt-rest" hidden />
     </div>
   );

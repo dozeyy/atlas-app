@@ -106,6 +106,27 @@ describe("Settings", () => {
     expect(sw).toHaveAttribute("aria-checked", "true");
   });
 
+  it("Count cache in token totals starts off, saves when switched on, and every token total is counted again at once", async () => {
+    const backend = mount();
+    await userEvent.click(await screen.findByRole("button", { name: "General" }));
+    const sw = await screen.findByRole("switch", { name: "Count cache in token totals" });
+    expect(sw).toHaveAttribute("aria-checked", "false");
+    // The one-line tip lives in the hover, not on the page.
+    expect(screen.queryByText(/re-reads it on every reply/)).not.toBeInTheDocument();
+    const day = { from: "2026-01-01", to: "2026-12-31" };
+    const sumDays = async () => (await backend.usageTimeline({ ...day, bucket: "day" })).points.reduce((n, p) => n + p.tokens.total, 0);
+    const off = await sumDays();
+    const told: string[] = [];
+    await backend.onUsageChanged((c) => told.push(c.reason ?? ""));
+    await userEvent.click(sw);
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").countCacheInTotals).toBe(true));
+    expect(sw).toHaveAttribute("aria-checked", "true");
+    // The pages are told to ask again, and the same days now total more (cache writes and reads are in).
+    expect(told).toContain("count-cache");
+    const on = await sumDays();
+    expect(on).toBeGreaterThan(off);
+  });
+
   it("Show shortcuts starts off, switches on, and the hints follow it", async () => {
     mount();
     const sw = await screen.findByRole("switch", { name: "Show shortcuts" });

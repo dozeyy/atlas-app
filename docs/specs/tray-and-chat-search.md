@@ -13,7 +13,7 @@ this branch is backend, IPC, types and the mock only.
   `assets/brand/atlas-mark-1024.png`); macOS gets `tray-template.png` (black + alpha,
   template image so the menu bar tints it).
 - Text: `Today: <tokens> tokens · ~$<cost> est.` Tokens = the headline definition
-  (input + output + cache writes, Q2); cost = `Cost.usd` from the same query, always
+  (input + output, or with cache writes and reads when Settings > Count cache in token totals is on; Q2); cost = `Cost.usd` from the same query, always
   "est."; `+` after the amount when some tokens are unpriced. First index still running:
   `Reading your Claude history...`. No Claude folder: `Atlas`.
 - Menu: the readout line (disabled), separator, **Open Atlas**, **Quit Atlas**. The same
