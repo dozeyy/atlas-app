@@ -19,7 +19,7 @@ import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
 import { openSessionNext } from "../lib/nav";
 import { useDaily } from "../lib/useDaily";
-import { cacheNotReady, useFetched, useLiveReload, useUsageStatus } from "../lib/useUsage";
+import { cacheNotReady, useFetched, useLiveReload, useReadyRetry, useUsageStatus } from "../lib/useUsage";
 import {
   bin,
   lastAndPrevious,
@@ -198,6 +198,7 @@ export function Dashboard() {
   const { status, progress } = useUsageStatus();
   const dash = useFetched(() => backend.usageDashboard(), [cfg?.projectsDir ?? null]);
   useLiveReload(dash.reload);
+  useReadyRetry(status, dash);
   const daily = useDaily(cfg?.projectsDir ?? null);
   const now = useNow();
 

@@ -1,7 +1,7 @@
 // React glue for the usage engine: live status, a fetch hook that never shows a
 // stale answer, and a reload trigger for "the numbers changed".
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getBackend } from "./ipc";
 import type { IndexProgress, UsageStatus } from "./types";
 
@@ -41,6 +41,30 @@ function useEvent<T>(subscribe: (cb: (v: T) => void) => Promise<() => void>, cb:
 export function cacheNotReady(status: UsageStatus | null): boolean {
   if (status === null) return true;
   return status.state === "recovering" || (status.state === "indexing" && !status.firstIndexDone);
+}
+
+/**
+ * Ask again, before the browser paints, the moment the cache turns ready (the first read or a
+ * recovery finished). A question asked earlier may have failed with "not ready yet", and the
+ * status turns ready about 250 ms before the live reload lands: that stale failure showed as
+ * "Could not load your usage" for half a second on a first launch. A non-silent reload clears
+ * it in the same pass (a layout effect runs before paint), so that frame shows the loading
+ * state instead. A question asked once the cache is ready that still fails stays on screen.
+ * From an unknown status (null, the first render) only a failure is asked again, so a normal
+ * launch does not drop and repeat its first question.
+ */
+export function useReadyRetry(
+  status: UsageStatus | null,
+  f: { error: string | null; loading: boolean; reload: (silent?: boolean) => void },
+): void {
+  const notReady = cacheNotReady(status);
+  const was = useRef<"unknown" | "waiting" | "ready">(status === null ? "unknown" : notReady ? "waiting" : "ready");
+  useLayoutEffect(() => {
+    const before = was.current;
+    was.current = status === null ? "unknown" : notReady ? "waiting" : "ready";
+    if (notReady || before === "ready") return;
+    if (f.error !== null || (before === "waiting" && f.loading)) f.reload(false);
+  });
 }
 
 export function useUsageStatus(): { status: UsageStatus | null; progress: IndexProgress | null } {
