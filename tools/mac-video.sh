@@ -44,7 +44,16 @@ say "pointer driver may read controls: $("$D" trusted)"
 command -v ffmpeg >/dev/null || brew install ffmpeg >"$OUT/brew.log" 2>&1
 command -v ffmpeg >/dev/null || { say "FAIL no ffmpeg"; exit 1; }
 
-osa() { osascript -e "$@" >>"$OUT/osascript.log" 2>&1; }
+# Each Apple event gets 12 s: a Finder that stops answering must not stall the recording.
+osa() {
+  osascript -e "$@" >>"$OUT/osascript.log" 2>&1 &
+  local p=$! k
+  ( sleep 12; kill "$p" 2>/dev/null ) &
+  k=$!
+  wait "$p" 2>/dev/null
+  kill "$k" 2>/dev/null
+}
+snap() { screencapture -x "$OUT/frames/$1.png" 2>/dev/null; }
 cmd() { osa "tell application \"System Events\" to keystroke \"$1\" using command down"; }
 code() { osa "tell application \"System Events\" to key code $1"; } # 124 right, 53 esc, 36 return, 48 tab
 typeit() { osa "tell application \"System Events\" to keystroke \"$1\""; }
@@ -123,7 +132,8 @@ if [ -d /Applications/Atlas.app ]; then
   last=""; for _ in $(seq 1 40); do s=$(du -sk /Applications/Atlas.app | cut -f1); [ "$s" = "$last" ] && break; last=$s; sleep 0.75; done
   say "ok    dragged into Applications"
 else
-  ditto "$VOL/Atlas.app" /Applications/Atlas.app && say "fallback: copied with ditto (the drag did not land)"
+  snap drag-missed
+  ditto "$VOL/Atlas.app" /Applications/Atlas.app && say "fallback: copied with ditto (the drag did not land; frames/drag-missed.png)"
 fi
 pause 2
 osa 'tell application "Finder" to close every window'
@@ -253,7 +263,12 @@ osa 'tell application "Finder" to select file "Atlas.app" of folder "Application
 pause 2
 osa 'tell application "Finder" to delete file "Atlas.app" of folder "Applications" of startup disk'
 pause 2.5
-[ -d /Applications/Atlas.app ] && say "FAIL Atlas.app is still in Applications" || say "ok    Atlas.app moved to the Trash"
+if [ -d /Applications/Atlas.app ]; then
+  snap trash-app-missed
+  mv /Applications/Atlas.app "$HOME/.Trash/" && say "fallback: moved Atlas.app to the Trash by hand (frames/trash-app-missed.png)"
+else
+  say "ok    Atlas.app moved to the Trash"
+fi
 mark "uninstall-data"
 osa 'tell application "Finder" to close every window'
 osa "tell application \"Finder\" to open (POSIX file \"$HOME/Library/Application Support\" as alias)"
@@ -263,7 +278,12 @@ osa "tell application \"Finder\" to select (POSIX file \"$HOME/Library/Applicati
 pause 2
 osa "tell application \"Finder\" to delete (POSIX file \"$HOME/Library/Application Support/atlas\" as alias)"
 pause 2
-[ -d "$HOME/Library/Application Support/atlas" ] && say "FAIL the atlas data folder is still there" || say "ok    atlas data folder moved to the Trash"
+if [ -d "$HOME/Library/Application Support/atlas" ]; then
+  snap trash-data-missed
+  mv "$HOME/Library/Application Support/atlas" "$HOME/.Trash/" && say "fallback: moved the atlas data folder to the Trash by hand"
+else
+  say "ok    atlas data folder moved to the Trash"
+fi
 mark "trash"
 osa 'tell application "Finder" to close every window'
 osa 'tell application "Finder" to open trash'
