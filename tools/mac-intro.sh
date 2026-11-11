@@ -1,9 +1,10 @@
 #!/bin/bash
 # The launch intro on macOS, recorded: Atlas is opened the way a person opens it (LaunchServices,
 # `open`), with the intro on and its trace log (ATLAS_INTRO_TRACE=1), while ffmpeg records the
-# screen at 30 fps. Run 1 is a first launch (empty data folder), runs 2 to 4 are later launches:
-# run 2 forces the Web Animations player (ATLAS_SPLASH_PLAYER=waapi, the pre-fix path on macOS) for
-# comparison, run 3 is the default again, run 4 has the intro off (time to first paint).
+# screen at 30 fps. GitHub's macOS runners have Reduce Motion on, so runs 1 to 3 force the full
+# intro (ATLAS_REDUCE_MOTION=0): run 1 is a first launch (empty data folder), runs 2 and 3 later
+# launches. Run 4 is the runner's own setting (the reduced intro), run 5 has the intro off (time to
+# first paint).
 # Each run leaves intro-N.mp4, intro-N.log (Atlas's stderr), intro-N-grid.png (10 fps contact sheet
 # from the launch) and a line in intro-summary.txt.
 #
@@ -56,11 +57,12 @@ screen=$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 | sed
 say "screen device: ${screen:-none}"
 system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Resolution|Chipset|Metal' | sed 's/^ */      /' | tee -a "$SUM"
 
-for run in 1 2 3 4; do
+say "Reduce Motion on this machine: $(defaults read com.apple.universalaccess reduceMotion 2>&1)"
+for run in 1 2 3 4 5; do
   case $run in
-    2) extra=(--env ATLAS_SPLASH_PLAYER=waapi) ;;
-    4) extra=(--env ATLAS_NO_INTRO=1) ;;
-    *) extra=() ;;
+    4) extra=() ;;
+    5) extra=(--env ATLAS_NO_INTRO=1) ;;
+    *) extra=(--env ATLAS_REDUCE_MOTION=0) ;;
   esac
   raw=$T/raw-$run.mkv
   ffmpeg -hide_banner -loglevel error -f avfoundation -capture_cursor 1 -framerate 30 \

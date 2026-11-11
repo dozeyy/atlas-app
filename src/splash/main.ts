@@ -7,7 +7,6 @@ import { invoke } from "@tauri-apps/api/core";
 import "../styles/tokens.css";
 import "./splash.css";
 import { ARM_WEDGES, DOT_PATH, MARK_CENTER, MARK_VIEWBOX, SPARK_PATH } from "./markGeometry";
-import { SplashPlayer, type PlayerAnimation } from "./player";
 import {
   DISC_R,
   EASE_BURST,
@@ -24,16 +23,11 @@ import {
 const NS = "http://www.w3.org/2000/svg";
 const VB = MARK_VIEWBOX;
 const inTauri = typeof (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== "undefined";
-// ATLAS_REDUCE_MOTION=1 forces the reduced path for testing (the OS setting is a system
-// setting, so tests never flip it).
+// ATLAS_REDUCE_MOTION=1 forces the reduced path for testing, ATLAS_REDUCE_MOTION=0 the full one (the
+// OS setting is a system setting, so tests never flip it; GitHub's macOS runners have it on).
+const forcedReduce = (window as { __ATLAS_REDUCE__?: boolean }).__ATLAS_REDUCE__;
 const reduceMotion =
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
-  (window as { __ATLAS_REDUCE__?: boolean }).__ATLAS_REDUCE__ === true;
-
-// macOS plays the keyframes frame by frame (player.ts says why); elsewhere the Web Animations API.
-// ATLAS_SPLASH_PLAYER=js|waapi picks one for tests.
-const forcedPlayer = (window as { __ATLAS_SPLASH_PLAYER__?: string }).__ATLAS_SPLASH_PLAYER__;
-const framePlayer = forcedPlayer ? forcedPlayer === "js" : /Mac/i.test(navigator.platform || navigator.userAgent);
+  typeof forcedReduce === "boolean" ? forcedReduce : window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const call = <R = void>(cmd: string, args?: Record<string, unknown>): Promise<R> =>
   inTauri ? invoke<R>(cmd, args) : Promise.resolve(undefined as R);
@@ -157,7 +151,7 @@ async function main() {
 
   // Rust fits and shows this window, then answers; the layout and timeline start after that.
   let radius = 0;
-  trace(`loaded, viewport ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}, ${framePlayer ? "frame player" : "web animations"}`);
+  trace(`loaded, viewport ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}, reduced motion ${reduceMotion}`);
   try {
     const cfg = await call<{ radius: number; width: number; height: number }>("splash_ready");
     radius = cfg?.radius ?? 0;
@@ -182,10 +176,9 @@ async function main() {
   for (const el of warm) el.style.opacity = "";
   parts.wipe.style.visibility = "";
 
-  const anims: PlayerAnimation[] = [];
-  const player = framePlayer ? new SplashPlayer() : null;
-  const run = (el: Element, keyframes: Keyframe[], opts: KeyframeAnimationOptions): PlayerAnimation => {
-    const a = player ? player.run(el, keyframes, opts) : el.animate(keyframes, { fill: "both", ...opts });
+  const anims: Animation[] = [];
+  const run = (el: Element, keyframes: Keyframe[], opts: KeyframeAnimationOptions) => {
+    const a = el.animate(keyframes, { fill: "both", ...opts });
     anims.push(a);
     return a;
   };
@@ -289,7 +282,6 @@ async function main() {
     for (const el of [...parts.arms, parts.dotInk]) (el as HTMLElement).style.display = "none";
     const a = run(parts.fill, [{ opacity: 0 }, { opacity: 1 }], { duration: T.reduced.fade, easing: "linear" });
     void a.finished.then(() => call("splash_covered", { reduced: true }));
-    player?.start();
     return;
   }
 
@@ -344,7 +336,7 @@ async function main() {
   // the last (flat clay) fills the window.
   const rim = (DISC_R * parts.k) / (parts.D / 2);
   const top = parts.rings.length - 1;
-  let rippleDone: PlayerAnimation | undefined;
+  let rippleDone: Animation | undefined;
   parts.rings.forEach((el, i) => {
     const start = T.ripple.at + i * T.ripple.stagger;
     const from = i === top ? rim : rim * 0.92; // the inner rings wait under the top disc
@@ -369,7 +361,6 @@ async function main() {
     for (const el of parts.rings) el.style.display = "none";
     void call("splash_covered", { reduced: false });
   });
-  player?.start();
 }
 
 void main();

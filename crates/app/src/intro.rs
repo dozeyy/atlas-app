@@ -39,9 +39,10 @@ pub const SPLASH: &str = "splash";
 /// Windows shows it ~250 ms after launch; a first launch on macOS needs ~1.6 s just to start
 /// WebKit for it (GitHub macOS runner, 2026-11-10), so 1.5 s abandoned every first launch there.
 const SPLASH_SHOW_DEADLINE: Duration = Duration::from_millis(3000);
-/// The intro must be over this long after the splash showed (it takes ~2.2 s), however it got
-/// stuck. Counted from the show, not from setup: a slow WebKit start must not eat into it.
-const INTRO_RUN_LIMIT: Duration = Duration::from_millis(6000);
+/// The intro must be over this long after the splash showed (it takes ~2.2 s; a GitHub macOS
+/// runner needs 1.5-3 s more just to get the first frames of each newly shown window), however
+/// it got stuck. Counted from the show, not from setup: a slow WebKit start must not eat into it.
+const INTRO_RUN_LIMIT: Duration = Duration::from_millis(8000);
 /// An abandoned splash waits at most this long for the main page before both give way.
 const ORPHAN_LIMIT: Duration = Duration::from_millis(3000);
 
@@ -113,20 +114,17 @@ fn since_start(app: &AppHandle) -> String {
 
 /// Build the splash window, hidden. It is shown by `splash_ready`.
 pub fn build_splash(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    // Test hook: force the reduced-motion path without touching the OS setting.
+    // Test hook: force the reduced-motion path (or, with "0", the full one) without touching
+    // the OS setting.
     let mut script = String::new();
-    if std::env::var_os("ATLAS_REDUCE_MOTION").is_some() {
-        script.push_str("window.__ATLAS_REDUCE__ = true;");
+    match std::env::var("ATLAS_REDUCE_MOTION").as_deref() {
+        Ok("0") => script.push_str("window.__ATLAS_REDUCE__ = false;"),
+        Ok(_) => script.push_str("window.__ATLAS_REDUCE__ = true;"),
+        Err(_) => {}
     }
     // Diagnostics: the page logs its clock and frames through `intro_trace`.
     if tracing() {
         script.push_str("window.__ATLAS_INTRO_TRACE__ = true;");
-    }
-    // Test hook: which player runs the keyframes (src/splash/player.ts).
-    match std::env::var("ATLAS_SPLASH_PLAYER").as_deref() {
-        Ok("js") => script.push_str("window.__ATLAS_SPLASH_PLAYER__ = \"js\";"),
-        Ok("waapi") => script.push_str("window.__ATLAS_SPLASH_PLAYER__ = \"waapi\";"),
-        _ => {}
     }
     WebviewWindowBuilder::new(app, SPLASH, WebviewUrl::App("splash.html".into()))
         .initialization_script(&script)
