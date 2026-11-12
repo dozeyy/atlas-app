@@ -160,22 +160,24 @@ export function Sessions() {
   const options = useFetched(() => backend.usageFilterOptions(), [info.config?.projectsDir ?? null]);
   useLiveReload(options.reload);
 
+  // Only a "last N days" filter depends on the date; "All" does not reload at midnight.
+  const spanDays = SPANS.find((s) => s.value === span)?.days ?? 0;
+  const spanFrom = spanDays > 0 ? addDays(today, -spanDays) : null;
   const query = useMemo<SessionQuery>(() => {
-    const days = SPANS.find((s) => s.value === span)?.days ?? 0;
     return {
       text: titleQ || null,
       // Chats whose messages match are listed too, whatever their title says.
       alsoIds: chat.ids,
       projects: project ? [project] : [],
       models: model ? model.split(MODEL_SEP) : [],
-      from: days > 0 ? addDays(today, -days) : null,
+      from: spanFrom,
       to: null,
       includeMissing: true,
       sort: SORTS[sortKey].sort,
       dir: SORTS[sortKey].dir,
       limit: PAGE,
     };
-  }, [titleQ, chat.ids, project, model, span, sortKey, today]);
+  }, [titleQ, chat.ids, project, model, spanFrom, sortKey]);
 
   // Every page on screen comes from one loader: a refresh (a chat changed on disk, an indexing
   // pass ended) reads the same number of pages again, so "Show more" is never undone by it.

@@ -285,7 +285,7 @@ export function Dashboard() {
   const updated = updatedText(dash.at, now);
 
   return (
-    <div className="@container">
+    <div className="@container/dash">
       <PageTitle title="Dashboard" />
       {/* With nothing to show under it, a failed engine is the page's one calm message, not a band over a blank page. */}
       {!(engineDown && !data) && <IndexProgress status={status} progress={progress} onRetry={reindex} />}
@@ -509,7 +509,7 @@ export function Dashboard() {
           </section>
           </div>
           <div className="order-7 min-w-0 @[600px]:col-span-2">
-            <LifetimeStrip streak={daily ? daily.streak : null} />
+            <LifetimeStrip daily={daily} />
           </div>
         </div>
       )}

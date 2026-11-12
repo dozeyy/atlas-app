@@ -57,4 +57,24 @@ describe("Dashboard at midnight", () => {
     // The heat grid's last cell is the new day (its label names the span it covers).
     expect(screen.getByRole("region", { name: "On a roll" })).toBeInTheDocument();
   });
+
+  it("does not reload the Sessions list at midnight when it shows all time", async () => {
+    vi.setSystemTime(new Date("2026-11-10T23:59:40"));
+    localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "sessions" }));
+    const backend = new MockBackend();
+    const list = vi.spyOn(backend, "sessionsList");
+    setBackend(backend);
+    render(
+      <AtlasProvider>
+        <App />
+      </AtlasProvider>,
+    );
+    await settle(1500);
+    const before = list.mock.calls.length;
+    expect(before).toBeGreaterThan(0);
+    await settle(30_000); // midnight passes
+    expect(localDay(new Date())).toBe("2026-11-11");
+    expect(list.mock.calls.length).toBe(before);
+  });
 });
+

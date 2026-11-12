@@ -890,8 +890,8 @@ pub fn first_day(conn: &Connection) -> rusqlite::Result<Option<String>> {
 
 /// Everything since the first recorded day, for the Dashboard's "All time" row.
 ///
-/// It is `scope_report` over `first_day()..today` (the very call the `atlas-usage` CLI makes for
-/// its `all` scope), so the app and the /atlas skill always print the same totals; the extras
+/// It is `scope_report`'s own totals (`scope_totals`, minus the parts it only prints) over
+/// `first_day()..today`, the range the `atlas-usage` CLI uses for its `all` scope, so the app and the /atlas skill always print the same totals; the extras
 /// (busiest day, active days) come from that report's own daily points. Chats whose transcripts
 /// Claude Code has deleted are still in the index (files are marked missing, never removed), so
 /// they count too. Chats deleted before Atlas first ran were never seen and cannot.
@@ -925,7 +925,7 @@ pub fn lifetime(conn: &Connection, ctx: &QueryCtx) -> rusqlite::Result<Lifetime>
     let Some(first) = first_day(conn)?.filter(|f| f.as_str() <= today.as_str()) else {
         return Ok(Lifetime { first_day: None, today, total: Period::default(), busiest: None, by_model: Vec::new(), active_days: Vec::new() });
     };
-    let r = scope_report(conn, ctx, &ScopeArgs { from: first.clone(), to: today.clone(), project_key: None, bucket: "day".into(), top: 0 })?;
+    let r = scope_totals(conn, ctx, &ScopeArgs { from: first.clone(), to: today.clone(), project_key: None, bucket: "day".into(), top: 0 }, false)?;
     let mut busiest: Option<&TimelinePoint> = None;
     let mut active_days = Vec::new();
     for p in &r.points {
@@ -1070,6 +1070,15 @@ fn sessions_by_project(conn: &Connection, tz: Tz, from_day: &str, to_day: &str) 
 }
 
 pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlite::Result<ScopeReport> {
+    scope_totals(conn, ctx, a, true)
+}
+
+/// The one body behind `scope_report` (`full`) and `lifetime` (not full). The tokens, cost, session
+/// total, per-model rows and per-bucket tokens are the same either way, from the same queries;
+/// `full` adds what only the CLI report prints: effort per model, chats started per bucket, the
+/// project list and the biggest chats. `lifetime` runs over all history on every refresh, so it
+/// leaves those out.
+fn scope_totals(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs, full: bool) -> rusqlite::Result<ScopeReport> {
     let bucket = match a.bucket.as_str() {
         "week" | "month" => a.bucket.as_str(),
         _ => "day",
@@ -1081,7 +1090,7 @@ pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlit
         .filter(|r| project.is_none_or(|k| r.s == k))
         .collect();
 
-    let by_project_sessions = sessions_by_project(conn, ctx.tz, from, to)?;
+    let by_project_sessions = if full || project.is_some() { sessions_by_project(conn, ctx.tz, from, to)? } else { HashMap::new() };
     let sessions = match project {
         Some(k) => by_project_sessions.get(k).copied().unwrap_or(0),
         None => sessions_started(conn, ctx.tz, from, to)?,
@@ -1094,7 +1103,9 @@ pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlit
     let mut per_bucket: BTreeMap<String, Acc> = starts.iter().map(|s| (s.clone(), Acc::default())).collect();
     for r in &rows {
         models.entry(r.model.as_str()).or_default().add(&r.g);
-        projs.entry(r.s.as_str()).or_default().add(&r.g);
+        if full {
+            projs.entry(r.s.as_str()).or_default().add(&r.g);
+        }
         if let Some(acc) = per_bucket.get_mut(&bucket_of(&r.k, bucket, ctx.week_starts_sunday)) {
             acc.add(&r.g);
         }
@@ -1104,7 +1115,7 @@ pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlit
         .map(|(m, a)| ModelUse { model: m.to_string(), known: ctx.prices.is_known(m), tokens: a.t, cost: a.cost(), efforts: Vec::new() })
         .collect();
     by_model.sort_by(|a, b| b.tokens.total.cmp(&a.tokens.total).then_with(|| a.model.cmp(&b.model)));
-    {
+    if full {
         // Effort per model over the same hours (and project) the token rows cover.
         let (lo, hi) = (format!("{from}T00"), format!("{}T00", add_days(to, 1)));
         let mut efforts = effort_mix(
@@ -1123,7 +1134,7 @@ pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlit
     let lo = day_start_ms(ctx.tz, from);
     let hi = day_start_ms(ctx.tz, &add_days(to, 1));
     let mut started: HashMap<String, u64> = HashMap::new();
-    {
+    if full {
         let sql = "SELECT substr(hour_of(first_ts),1,10), COALESCE(project_key,''), COUNT(*) FROM sessions \
                    WHERE messages > 0 AND first_ts >= ?1 AND first_ts < ?2 GROUP BY 1, 2";
         let mut st = conn.prepare_cached(sql)?;
@@ -1143,7 +1154,7 @@ pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlit
         })
         .collect();
 
-    let names = project_index(conn)?;
+    let names = if full { project_index(conn)? } else { HashMap::new() };
     let mut list: Vec<(&str, Acc)> = projs.into_iter().collect();
     list.sort_by(|a, b| b.1.t.total.cmp(&a.1.t.total).then_with(|| a.0.cmp(b.0)));
     let projects = list
@@ -1161,7 +1172,7 @@ pub fn scope_report(conn: &Connection, ctx: &QueryCtx, a: &ScopeArgs) -> rusqlit
         })
         .collect();
 
-    let chats = chats_in_range(conn, ctx, from, to, project, a.top)?;
+    let chats = if full { chats_in_range(conn, ctx, from, to, project, a.top)? } else { Vec::new() };
     Ok(ScopeReport { from: a.from.clone(), to: a.to.clone(), bucket: bucket.to_string(), total, by_model, points, projects, chats })
 }
 

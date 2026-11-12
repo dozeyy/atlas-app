@@ -23,6 +23,8 @@ export interface Daily {
 
 const DAYS = 365;
 const cache = new Map<string, Promise<Daily>>();
+/** The day every entry in `cache` was asked for; a new day starts the cache over. */
+let cacheDay = "";
 const listeners = new Set<() => void>();
 
 export function dailyKey(today: string, scope: string | null): string {
@@ -53,10 +55,13 @@ function build(today: string, points: TimelinePoint[]): Daily {
 
 export function fetchDaily(today: string, scope: string | null): Promise<Daily> {
   const k = dailyKey(today, scope);
+  if (today !== cacheDay) {
+    // A new day: yesterday's answers will not be asked for again.
+    cache.clear();
+    cacheDay = today;
+  }
   let p = cache.get(k);
   if (!p) {
-    // A new day: yesterday's answers will not be asked for again.
-    for (const old of cache.keys()) if (!old.endsWith(`|${today}`)) cache.delete(old);
     p = getBackend()
       .usageTimeline({ from: addDays(today, -(DAYS - 1)), to: today, bucket: "day" })
       .then((t) => build(today, t.points));

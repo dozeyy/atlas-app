@@ -146,16 +146,26 @@ export function useFetched<T>(fn: () => Promise<T>, deps: unknown[]): Fetched<T>
 /**
  * Call `reload(true)` when the engine says the numbers moved: a session changed on
  * disk, or an indexing pass finished. Bursts collapse into one reload.
+ * `every` is for a heavy question over all history: instead of waiting for a quiet moment
+ * (a chat that is being written never has one) it reloads at most once per `every` ms.
  */
-export function useLiveReload(reload: (silent: boolean) => void): void {
+export function useLiveReload(reload: (silent: boolean) => void, every?: number): void {
   const backend = getBackend();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastIndexed = useRef<number | null | undefined>(undefined);
 
   const soon = useCallback(() => {
+    if (every !== undefined) {
+      if (timer.current) return; // one is already on its way
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        reload(true);
+      }, every);
+      return;
+    }
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => reload(true), 250);
-  }, [reload]);
+  }, [reload, every]);
 
   useEffect(
     () => () => {

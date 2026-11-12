@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { msToMidnight, useDayChange, useToday } from "./today";
-import { useDaily } from "./useDaily";
+import { fetchDaily, useDaily } from "./useDaily";
 import { setBackend } from "./ipc";
 import { addDays, localDay } from "./usage";
 import type { Timeline } from "./types";
@@ -79,6 +79,32 @@ describe("useToday", () => {
     vi.setSystemTime(at("2026-11-11T07:30:00"));
     act(() => void document.dispatchEvent(new Event("visibilitychange")));
     expect(result.current).toBe("2026-11-10");
+  });
+
+  it("the midnight timer stays quiet while the window is hidden, and showing it catches up", () => {
+    vi.setSystemTime(at("2026-11-10T23:30:00"));
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders++;
+      return useToday();
+    });
+    act(() => setVisibility("hidden"));
+    const before = renders;
+
+    // The timer really fires at midnight (the clock and the timer agree), with the window in the tray.
+    act(() => void vi.advanceTimersByTime(31 * 60_000));
+    expect(localDay(new Date())).toBe("2026-11-11");
+    expect(result.current).toBe("2026-11-10");
+    expect(renders).toBe(before);
+    // It set itself for the following midnight rather than going idle.
+    expect(vi.getTimerCount()).toBe(1);
+
+    act(() => setVisibility("visible"));
+    expect(result.current).toBe("2026-11-11");
+    // Still exactly one timer, now for the next midnight.
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => void vi.advanceTimersByTime(24 * 3600_000));
+    expect(result.current).toBe("2026-11-12");
   });
 
   it("re-checks on focus", () => {
@@ -191,3 +217,21 @@ describe("useDaily across midnight", () => {
     expect(last.from).toBe(addDays(last.to, -364));
   });
 });
+
+describe("fetchDaily cache", () => {
+  it("is asked once per day and scope, and starts over on a new day", async () => {
+    vi.setSystemTime(at("2026-11-10T12:00:00"));
+    const { usageTimeline } = fakeBackend(new Set(["2026-11-10"]));
+    await fetchDaily("2026-11-10", "/a");
+    await fetchDaily("2026-11-10", "/a");
+    expect(usageTimeline).toHaveBeenCalledTimes(1);
+    await fetchDaily("2026-11-10", "/b");
+    expect(usageTimeline).toHaveBeenCalledTimes(2);
+    await fetchDaily("2026-11-11", "/a");
+    expect(usageTimeline).toHaveBeenCalledTimes(3);
+    // Yesterday's answers are gone: asking for them again goes to the engine.
+    await fetchDaily("2026-11-10", "/a");
+    expect(usageTimeline).toHaveBeenCalledTimes(4);
+  });
+});
+

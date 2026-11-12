@@ -5,6 +5,7 @@ import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
 import { openSessionNext } from "../lib/nav";
+import { invalidateDaily } from "../lib/useDaily";
 import { MockBackend } from "../lib/mock";
 import { addDays, compact, headline, localDay } from "../lib/usage";
 import type { Scenario } from "../lib/mockUsage";
@@ -95,7 +96,8 @@ describe("Dashboard", () => {
       const backend = mount();
       const life = await backend.usageLifetime();
       const row = await screen.findByRole("region", { name: "All time" });
-      expect(within(row).getByText(compact(life.total.tokens.total))).toBeInTheDocument();
+      // The section is there while its numbers load.
+      expect(await within(row).findByText(compact(life.total.tokens.total))).toBeInTheDocument();
       expect(within(row).getByText(life.total.sessions === 1 ? "session" : "sessions")).toBeInTheDocument();
       expect(within(row).getByText(/^Since [A-Z][a-z]{2} \d{1,2}, \d{4}$/)).toBeInTheDocument();
       expect(within(row).getByText(/busiest day, /)).toBeInTheDocument();
@@ -112,12 +114,37 @@ describe("Dashboard", () => {
     it("shows the very streak the roll card shows, and a record that is never lower", async () => {
       mount();
       const row = await screen.findByRole("region", { name: "All time" });
+      await waitFor(() => expect(row.querySelector('[title^="Days in a row"]')).not.toBeNull());
       const roll = screen.getByRole("region", { name: "On a roll" });
       const rollNumber = Number(within(roll).getByText(/^\d+$/).textContent);
       const streak = row.querySelector('[title^="Days in a row"]') as HTMLElement;
       expect(Number(streak.textContent)).toBe(rollNumber);
       const longest = row.querySelector('[title^="Your longest streak"]') as HTMLElement;
       expect(Number(longest.textContent)).toBeGreaterThanOrEqual(rollNumber);
+    });
+
+    it("shows the totals even when the daily picture fails, and leaves the streak figures out", async () => {
+      invalidateDaily(); // an earlier test's answer would otherwise be served from the shared cache
+      const backend = new MockBackend();
+      const real = backend.usage.usageTimeline.bind(backend.usage);
+      // The 365-day question (the streak) fails; the Dashboard's other questions work.
+      backend.usage.usageTimeline = async (a) => {
+        if (a.bucket === "day" && !a.groupBy && a.from === addDays(a.to, -364)) throw new Error("no daily");
+        return real(a);
+      };
+      localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "dashboard" }));
+      setBackend(backend);
+      render(
+        <AtlasProvider>
+          <App />
+        </AtlasProvider>,
+      );
+      const row = await screen.findByRole("region", { name: "All time" });
+      await waitFor(() => expect(within(row).getByText("sessions")).toBeInTheDocument());
+      expect(within(row).queryByRole("status")).toBeNull();
+      expect(row.querySelector('[title^="Days in a row"]')).toBeNull();
+      expect(row.querySelector('[title^="Your longest streak"]')).toBeNull();
+      expect(within(row).getByText(/^Since /)).toBeInTheDocument();
     });
 
     it("asks the engine once for the totals, not once per render", async () => {

@@ -5,8 +5,9 @@
 //
 // One timer, set for the next local midnight, runs only while something is listening. It is
 // re-armed every time it fires and every time the window comes back (a timer can be late or lost
-// across sleep), and the same re-check runs when the window becomes visible or gets focus. No
-// polling. The tray does the same for its own readout (`crates/app/src/tray.rs`).
+// across sleep), and the same re-check runs when the window becomes visible or gets focus (the timer
+// itself says nothing while the window is hidden; showing it catches up). No polling. The tray
+// does the same for its own readout (`crates/app/src/tray.rs`).
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { localDay } from "./usage";
@@ -25,7 +26,17 @@ export function msToMidnight(from: Date = new Date()): number {
 
 function arm(): void {
   if (timer) clearTimeout(timer);
-  timer = listeners.size ? setTimeout(recheck, msToMidnight() + MARGIN_MS) : null;
+  timer = listeners.size ? setTimeout(onTimer, msToMidnight() + MARGIN_MS) : null;
+}
+
+/**
+ * The midnight timer. A hidden window (closed to the tray, minimized) has nobody looking and
+ * nothing worth refetching, so it only sets the timer again; showing the window catches up
+ * (`onVisible`).
+ */
+function onTimer(): void {
+  if (document.visibilityState === "hidden") arm();
+  else recheck();
 }
 
 /** Look at the clock now: tell everyone if the day changed, and set the timer again from the real time. */
