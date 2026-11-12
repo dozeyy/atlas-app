@@ -10,6 +10,7 @@ import type {
   FilterOptions,
   IndexProgress,
   ItemQuery,
+  Lifetime,
   ItemUse,
   MainThread,
   MessagePoint,
@@ -398,6 +399,27 @@ export class MockUsage {
       warnings: { unknownModels: [], unpricedTokens: 0 },
       todayDate: today,
     };
+  }
+
+  async usageLifetime(): Promise<Lifetime> {
+    this.guard();
+    const all = this.data();
+    const today = localDay(this.now);
+    if (all.length === 0) return { firstDay: null, today, total: periodOf([]), busiest: null, byModel: [], activeDays: [] };
+    const byDay = new Map<string, MockSession[]>();
+    for (const s of all) byDay.set(s.day, [...(byDay.get(s.day) ?? []), s]);
+    const days = [...byDay.keys()].sort();
+    let busiest: Lifetime["busiest"] = null;
+    for (const d of days) {
+      const per = periodOf(byDay.get(d)!);
+      if (!busiest || per.tokens.total > busiest.tokens.total) busiest = { day: d, tokens: per.tokens, cost: per.cost };
+    }
+    const by = new Map<string, MockSession[]>();
+    all.forEach((s) => by.set(s.model, [...(by.get(s.model) ?? []), s]));
+    const byModel: ModelUse[] = [...by.entries()]
+      .map(([model, list]) => ({ model, known: true, tokens: periodOf(list).tokens, cost: periodOf(list).cost }))
+      .sort((a, b) => b.tokens.total - a.tokens.total);
+    return { firstDay: days[0], today, total: periodOf(all), busiest, byModel, activeDays: days.filter((d) => byDay.get(d)!.some((s) => s.tokens.total > 0)) };
   }
 
   async usageTimeline(a: { from: string; to: string; bucket: Bucket; groupBy?: "model" | "project" }): Promise<Timeline> {

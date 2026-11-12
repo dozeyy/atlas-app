@@ -1175,6 +1175,23 @@ html[data-input="keyboard"] .folder-head:focus-visible {
   }
 }
 
+/* The Dashboard's right column is a full 1280x800 screen with the "All time" row under it, so a
+   short window lists two recent chats there instead of three (the third row is back from 880 px
+   of window height, and in the stacked layouts, which scroll). */
+.dash-recent {
+  --recent-3: block;
+}
+@media (max-height: 879px) {
+  @container (min-width: 900px) {
+    .dash-recent {
+      --recent-3: none;
+    }
+  }
+}
+.dash-recent .session-grid > li:nth-child(n + 3) {
+  display: var(--recent-3);
+}
+
 /* ---- Session rows in columns (container = the page, so the sidebar's width counts) ---------- */
 .session-grid {
   display: grid;

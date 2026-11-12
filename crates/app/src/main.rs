@@ -125,6 +125,7 @@ fn main() {
             usage::usage_status,
             usage::usage_dashboard,
             usage::usage_timeline,
+            usage::usage_lifetime,
             usage::sessions_list,
             usage::session_detail,
             usage::usage_agent_detail,

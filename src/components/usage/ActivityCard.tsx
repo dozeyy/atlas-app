@@ -105,7 +105,7 @@ export function ActivityCard({ today }: { today: string }) {
 
       {tl.loading && !tl.data ? (
         <div role="status" aria-label="Loading activity">
-          <Skeleton className="h-[158px] w-full" />
+          <Skeleton className="h-[134px] w-full" />
         </div>
       ) : tl.error ? (
         <EmptyState compact variant="error" title="Could not load activity" reason={tl.error} action={{ onClick: () => tl.reload(false) }} />
@@ -144,7 +144,7 @@ export function ActivityCard({ today }: { today: string }) {
           data={data}
           label={`Tokens, ${RANGE_NAME[range].toLowerCase()}`}
           formatTick={compact}
-          height={158}
+          height={134}
           highlight={nowBar}
           anchor={span.bucket === "hour" ? "start" : "end"}
         />

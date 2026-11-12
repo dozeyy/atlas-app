@@ -90,6 +90,62 @@ describe("Dashboard", () => {
     expect(live).toBeEmptyDOMElement();
   });
 
+  describe("All time", () => {
+    it("is one row on the Dashboard with the lifetime numbers from the engine", async () => {
+      const backend = mount();
+      const life = await backend.usageLifetime();
+      const row = await screen.findByRole("region", { name: "All time" });
+      expect(within(row).getByText(compact(life.total.tokens.total))).toBeInTheDocument();
+      expect(within(row).getByText(life.total.sessions === 1 ? "session" : "sessions")).toBeInTheDocument();
+      expect(within(row).getByText(/^Since [A-Z][a-z]{2} \d{1,2}, \d{4}$/)).toBeInTheDocument();
+      expect(within(row).getByText(/busiest day, /)).toBeInTheDocument();
+      expect(within(row).getByText("favorite model")).toBeInTheDocument();
+      // The note on the section.
+      expect(within(row).getByLabelText(/Counted since Atlas first read your chats\./)).toHaveAttribute("title", "Counted since Atlas first read your chats.");
+      // Tokens first: the full breakdown is the figure's hover, the dollar figure only an estimate in it.
+      const tokens = within(row).getByText(compact(life.total.tokens.total));
+      expect(tokens.getAttribute("title")).toMatch(/^All time\n[\d,]+ tokens\nInput\t/);
+      expect(tokens.getAttribute("title")).toMatch(/estimate, not a bill/);
+      expect(row.textContent).not.toMatch(/\$|!/);
+    });
+
+    it("shows the very streak the roll card shows, and a record that is never lower", async () => {
+      mount();
+      const row = await screen.findByRole("region", { name: "All time" });
+      const roll = screen.getByRole("region", { name: "On a roll" });
+      const rollNumber = Number(within(roll).getByText(/^\d+$/).textContent);
+      const streak = row.querySelector('[title^="Days in a row"]') as HTMLElement;
+      expect(Number(streak.textContent)).toBe(rollNumber);
+      const longest = row.querySelector('[title^="Your longest streak"]') as HTMLElement;
+      expect(Number(longest.textContent)).toBeGreaterThanOrEqual(rollNumber);
+    });
+
+    it("asks the engine once for the totals, not once per render", async () => {
+      const backend = new MockBackend();
+      let calls = 0;
+      const real = backend.usage.usageLifetime.bind(backend.usage);
+      backend.usage.usageLifetime = async () => {
+        calls += 1;
+        return real();
+      };
+      localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "dashboard" }));
+      setBackend(backend);
+      render(
+        <AtlasProvider>
+          <App />
+        </AtlasProvider>,
+      );
+      await screen.findByRole("region", { name: "All time" });
+      expect(calls).toBe(1);
+    });
+
+    it("is not on the page when there is no usage", async () => {
+      mount("empty");
+      await screen.findByText("No Claude Code usage found yet");
+      expect(screen.queryByRole("region", { name: "All time" })).toBeNull();
+    });
+  });
+
   it("shows a designed empty state when there is no usage, without implying a failure", async () => {
     mount("empty");
     expect(await screen.findByText("No Claude Code usage found yet")).toBeInTheDocument();

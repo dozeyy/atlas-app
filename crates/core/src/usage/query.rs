@@ -888,6 +888,59 @@ pub fn first_day(conn: &Connection) -> rusqlite::Result<Option<String>> {
     conn.query_row("SELECT MIN(substr(hour_local,1,10)) FROM usage_hour", [], |r| r.get::<_, Option<String>>(0))
 }
 
+/// Everything since the first recorded day, for the Dashboard's "All time" row.
+///
+/// It is `scope_report` over `first_day()..today` (the very call the `atlas-usage` CLI makes for
+/// its `all` scope), so the app and the /atlas skill always print the same totals; the extras
+/// (busiest day, active days) come from that report's own daily points. Chats whose transcripts
+/// Claude Code has deleted are still in the index (files are marked missing, never removed), so
+/// they count too. Chats deleted before Atlas first ran were never seen and cannot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Lifetime {
+    /// First local day with any usage; `None` on an empty cache.
+    pub first_day: Option<String>,
+    pub today: String,
+    /// Tokens and cost over the whole range; `sessions` = chats with a message in it.
+    pub total: Period,
+    /// The day with the most tokens (the earliest of equals); `None` when no day has any.
+    pub busiest: Option<BusiestDay>,
+    /// Every model used, most tokens first.
+    pub by_model: Vec<ModelUse>,
+    /// Local days with tokens, oldest first. The front end turns them into the daily series the
+    /// streak code already reads, so there is one streak rule.
+    pub active_days: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BusiestDay {
+    pub day: String,
+    pub tokens: Tokens,
+    pub cost: Cost,
+}
+
+pub fn lifetime(conn: &Connection, ctx: &QueryCtx) -> rusqlite::Result<Lifetime> {
+    let today = today_of(ctx);
+    let Some(first) = first_day(conn)?.filter(|f| f.as_str() <= today.as_str()) else {
+        return Ok(Lifetime { first_day: None, today, total: Period::default(), busiest: None, by_model: Vec::new(), active_days: Vec::new() });
+    };
+    let r = scope_report(conn, ctx, &ScopeArgs { from: first.clone(), to: today.clone(), project_key: None, bucket: "day".into(), top: 0 })?;
+    let mut busiest: Option<&TimelinePoint> = None;
+    let mut active_days = Vec::new();
+    for p in &r.points {
+        if p.tokens.total == 0 {
+            continue;
+        }
+        active_days.push(p.start.clone());
+        if busiest.is_none_or(|b| p.tokens.total > b.tokens.total) {
+            busiest = Some(p);
+        }
+    }
+    let busiest = busiest.map(|p| BusiestDay { day: p.start.clone(), tokens: p.tokens, cost: p.cost });
+    Ok(Lifetime { first_day: Some(first), today, total: r.total, busiest, by_model: r.by_model, active_days })
+}
+
 /// What a typical run of one kind of helper looks like: medians over its finished runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypicalRun {

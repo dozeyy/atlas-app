@@ -131,6 +131,20 @@ export interface Dashboard {
   todayDate: string;
 }
 
+/** Everything since the first recorded day: the same totals the `atlas-usage` CLI prints for `all`. */
+export interface Lifetime {
+  /** First local day with any usage; null on an empty cache. */
+  firstDay: string | null;
+  today: string;
+  total: Period;
+  /** The day with the most tokens; null when no day has any. */
+  busiest: { day: string; tokens: Tokens; cost: Cost } | null;
+  /** Most tokens first. */
+  byModel: ModelUse[];
+  /** Local days with tokens, oldest first. */
+  activeDays: string[];
+}
+
 export type Bucket = "hour" | "day" | "week" | "month";
 
 export interface TimelinePoint {

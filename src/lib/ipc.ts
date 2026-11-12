@@ -10,6 +10,7 @@ import type {
   Dashboard,
   FilterOptions,
   IndexProgress,
+  Lifetime,
   PricingInfo,
   SessionDetail,
   AgentDetail,
@@ -170,6 +171,8 @@ export interface Backend {
   usageStatus(): Promise<UsageStatus>;
   usageDashboard(): Promise<Dashboard>;
   usageTimeline(args: { from: string; to: string; bucket: Bucket; groupBy?: "model" | "project" }): Promise<Timeline>;
+  /** Totals since the first recorded day, the busiest day and every active day (one query). */
+  usageLifetime(): Promise<Lifetime>;
   sessionsList(query: SessionQuery): Promise<SessionPage>;
   sessionDetail(sessionId: string): Promise<SessionDetail | null>;
   agentDetail(sessionId: string, agentId: string): Promise<AgentDetail | null>;
@@ -349,6 +352,7 @@ const tauriBackend: Backend = {
   usageStatus: () => invoke<UsageStatus>("usage_status").then(indexedAtMs),
   usageDashboard: () => invoke<Dashboard>("usage_dashboard"),
   usageTimeline: (a) => invoke<Timeline>("usage_timeline", a),
+  usageLifetime: () => invoke<Lifetime>("usage_lifetime"),
   sessionsList: (query) => invoke<SessionPage>("sessions_list", { query }),
   sessionDetail: (sessionId) => invoke<SessionDetail | null>("session_detail", { sessionId }),
   agentDetail: (sessionId, agentId) => invoke<AgentDetail | null>("usage_agent_detail", { sessionId, agentId }),
