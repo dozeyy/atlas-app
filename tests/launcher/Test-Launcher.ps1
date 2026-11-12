@@ -586,7 +586,7 @@ Add-Pin '1.0.0' $asset (Join-Path $REL $asset)
 $lk = Join-Path $T 'data27/cache/.lock-1.0.0'
 New-Item -ItemType Directory -Force -Path $lk | Out-Null
 [IO.File]::WriteAllText((Join-Path $lk 'owner'), "someone-else`n")
-(Get-Item -LiteralPath $lk).LastWriteTime = (Get-Date).AddDays(-1)
+(Get-Item -LiteralPath $lk -Force).LastWriteTime = (Get-Date).AddDays(-1)
 $rc = Invoke-Run @{ Data = (Join-Path $T 'data27') } @('week')
 Test-Check 'stale lock: taken over, runs' { Test-Out 'fake v1 week' }
 Test-Check 'stale lock: no lock or work folder left' { @(Get-ChildItem -LiteralPath (Join-Path $T 'data27/cache') -Force | Where-Object { $_.Name.StartsWith('.') }).Count -eq 0 }
