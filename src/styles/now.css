@@ -40,7 +40,7 @@
   padding: 0 6px;
   border-radius: var(--r-pill);
   background: var(--raised);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: var(--ink-2);
@@ -71,7 +71,7 @@
   flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
-  line-height: 24px;
+  line-height: calc(24px * var(--ts));
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -135,8 +135,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
-  line-height: 20px;
+  font-size: calc(15px * var(--ts));
+  line-height: calc(20px * var(--ts));
   font-weight: 650;
   color: var(--ink);
 }
@@ -169,9 +169,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts));
   /* As tall as a chip, so a chip that wrapped to the hidden second line shows no sliver. */
-  line-height: 24px;
+  line-height: calc(24px * var(--ts));
   color: var(--ink-2);
 }
 
@@ -241,8 +241,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
-  line-height: 20px;
+  font-size: calc(15px * var(--ts));
+  line-height: calc(20px * var(--ts));
   font-weight: 650;
   color: var(--ink);
 }
@@ -281,8 +281,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 16px;
-  line-height: 20px;
+  font-size: calc(16px * var(--ts));
+  line-height: calc(20px * var(--ts));
   font-weight: 700;
   color: var(--ink);
 }
@@ -291,9 +291,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 400;
-  line-height: 18px;
+  line-height: calc(18px * var(--ts));
   color: var(--ink-2);
 }
 
@@ -333,11 +333,11 @@
 }
 .nc-cap {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   color: var(--ink-2);
 }
 .nc-num .nc-cap {
-  line-height: 16px;
+  line-height: calc(16px * var(--ts));
 }
 
 /* The smallest window with the sidebar open: tighter columns and smaller figures, the same row. */
@@ -356,7 +356,7 @@
   }
   .now-card .nc-spend-fig,
   .now-card .nc-clock-fig {
-    font-size: 16px;
+    font-size: calc(16px * var(--ts));
   }
 }
 
@@ -414,7 +414,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 650;
   letter-spacing: 0.02em;
   color: var(--ink-2);
@@ -469,7 +469,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   font-weight: 600;
   color: var(--ink);
 }
@@ -482,14 +482,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   color: var(--ink-2);
 }
 .ht-goal {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts));
   color: var(--ink-2);
 }
 
@@ -529,20 +529,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 600;
   color: var(--ink);
 }
 .ht-prog .nc-cap {
   margin: 0;
-  font-size: 11px;
+  font-size: calc(11px * var(--ts));
 }
 
 .ht-status {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts));
   color: var(--ink);
   animation: nc-in 240ms var(--ease-out);
 }
@@ -555,7 +555,7 @@
 
 .ht-elapsed,
 .ht-tokens {
-  font-size: 15px;
+  font-size: calc(15px * var(--ts));
   text-align: right;
   white-space: nowrap;
   color: var(--ink);

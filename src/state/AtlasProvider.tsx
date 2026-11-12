@@ -4,7 +4,8 @@ import { getBackend } from "../lib/ipc";
 import { applyTheme } from "../lib/theme";
 import { pushToast } from "./toastStore";
 import { guardLeave } from "./unsavedStore";
-import type { AppInfo, Theme, View } from "../lib/types";
+import { DEFAULT_ZOOM, applyTextSize, applyZoomVar, snapZoom, stepZoom, zoomKeyAction } from "../lib/zoom";
+import type { AppInfo, TextSize, Theme, View } from "../lib/types";
 
 interface AtlasContext {
   info: AppInfo;
@@ -18,6 +19,9 @@ interface AtlasContext {
   setCloseToTray: (on: boolean) => void;
   setNotifyOnFinish: (on: boolean) => void;
   setShowShortcuts: (on: boolean) => void;
+  setTextSize: (size: TextSize) => void;
+  /** Webview zoom in percent (snapped to a step by the caller). */
+  setZoom: (percent: number) => void;
   setHistoryKeep: (n: number) => void;
   setSandbox: (enabled: boolean) => Promise<void>;
   chooseConfigDir: () => Promise<void>;
@@ -136,6 +140,43 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     [backend, run],
   );
 
+  const setTextSize = useCallback(
+    (size: TextSize) => {
+      applyTextSize(size); // instant; the save follows
+      void run(backend.updateSettings({ textSize: size }));
+    },
+    [backend, run],
+  );
+
+  const setZoom = useCallback(
+    (percent: number) => {
+      const p = snapZoom(percent);
+      applyZoomVar(p); // the window's minimum size follows at once; Rust zooms the webview and saves
+      void run(backend.updateSettings({ zoomPercent: p }));
+    },
+    [backend, run],
+  );
+
+  // Ctrl/Cmd + plus, minus and 0: zoom in, out and back to 100 %. The webview's own zoom keys are
+  // off, so these are the only ones; the level is saved and comes back on the next start.
+  const zoomNow = useRef(info.settings.zoomPercent);
+  zoomNow.current = info.settings.zoomPercent;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const act = zoomKeyAction(e, info.platform);
+      if (!act) return;
+      e.preventDefault();
+      const cur = zoomNow.current ?? DEFAULT_ZOOM;
+      const next = act === "reset" ? DEFAULT_ZOOM : stepZoom(cur, act);
+      if (next !== cur) {
+        zoomNow.current = next; // held keys step from here, not from the last saved value
+        setZoom(next);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [info.platform, setZoom]);
+
   // A chat Atlas watched working has stopped. Rust only sends this while the setting is on;
   // the toast is the in-window half (a desktop notice covers the window being behind).
   useEffect(() => {
@@ -170,6 +211,8 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       setCloseToTray,
       setNotifyOnFinish,
       setShowShortcuts,
+      setTextSize,
+      setZoom,
       setHistoryKeep,
       setSandbox: (enabled) => run(backend.setSandbox(enabled)),
       chooseConfigDir: () => run(backend.chooseConfigDir()),
@@ -177,7 +220,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       openConfigDir: () => backend.openConfigDir().catch(() => {}),
       openDataDir: () => backend.openDataDir().catch(() => {}),
     }),
-    [info, view, setView, goBack, setTheme, setLaunchAnimation, setCountCacheInTotals, setCloseToTray, setNotifyOnFinish, setShowShortcuts, setHistoryKeep, run, backend],
+    [info, view, setView, goBack, setTheme, setLaunchAnimation, setCountCacheInTotals, setCloseToTray, setNotifyOnFinish, setShowShortcuts, setTextSize, setZoom, setHistoryKeep, run, backend],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

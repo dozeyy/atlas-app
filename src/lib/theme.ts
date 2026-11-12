@@ -1,4 +1,5 @@
 import type { AppInfo, Theme } from "./types";
+import { applyDisplay } from "./zoom";
 
 /**
  * Pin the theme on <html>. "system" removes the attribute so the OS decides
@@ -35,6 +36,7 @@ export function syncReducedMotion(root: HTMLElement = document.documentElement):
 /** Everything that must be on <html> before React paints. */
 export function applyBoot(info: AppInfo, root: HTMLElement = document.documentElement): void {
   applyTheme(info.settings.theme, root);
+  applyDisplay(info.settings, root);
   root.dataset.platform = info.platform;
   root.classList.toggle("backdrop", info.backdrop);
   syncReducedMotion(root);

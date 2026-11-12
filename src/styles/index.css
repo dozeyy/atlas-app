@@ -23,7 +23,7 @@ body,
 
 html {
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: 14px; /* the rem base: spacing never follows the text size */
   line-height: 20px;
   color: var(--ink);
   background: var(--bg);
@@ -34,6 +34,8 @@ html {
 
 body {
   margin: 0;
+  font-size: calc(14px * var(--ts));
+  line-height: calc(20px * var(--ts));
   background: var(--bg);
   overflow: hidden; /* the main panel scrolls, never the window */
   user-select: none; /* it is an app, not a page; code and paths opt back in below */
@@ -87,7 +89,7 @@ code,
 code,
 pre {
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 400;
   font-variation-settings: normal;
   /* Code shows the characters that are in the file: "=>" stays two characters in any face. */
@@ -95,7 +97,7 @@ pre {
   letter-spacing: 0;
 }
 .code-text {
-  line-height: 16px;
+  line-height: calc(16px * var(--ts));
 }
 
 /* ---- Headings: the rule ---------------------------------------------------------------------
@@ -122,8 +124,8 @@ pre {
 .h-page {
   font-family: var(--font-display);
   font-variation-settings: var(--display-axes);
-  font-size: 24px;
-  line-height: 28px;
+  font-size: calc(24px * var(--ts));
+  line-height: calc(28px * var(--ts));
   font-weight: 720;
   letter-spacing: -0.01em;
   color: var(--ink);
@@ -131,16 +133,16 @@ pre {
 .h-section {
   font-family: var(--font-display);
   font-variation-settings: var(--display-axes);
-  font-size: 20px;
-  line-height: 24px;
+  font-size: calc(20px * var(--ts));
+  line-height: calc(24px * var(--ts));
   font-weight: 720;
   letter-spacing: -0.01em;
   color: var(--ink);
 }
 .h-sub {
   font-family: var(--font-ui);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: calc(12px * var(--ts));
+  line-height: calc(16px * var(--ts));
   font-weight: 600;
   color: var(--ink-2);
 }

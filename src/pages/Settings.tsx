@@ -1,10 +1,12 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ClockCounterClockwise, Database, FolderSimple, Minus, Mountains, Palette, PlugsConnected, Plus, SlidersHorizontal } from "@phosphor-icons/react";
-import { Button, Card, IconButton, PageTitle, Row, Toggle } from "../components/controls";
+import { Button, Card, IconButton, PageTitle, Row, SegmentedControl, Toggle } from "../components/controls";
 import { Dialog } from "../components/Dialog";
 import { ThemePicker } from "../components/ThemePicker";
 import { useAtlas } from "../state/AtlasProvider";
+import { DEFAULT_ZOOM, ZOOM_LEVELS, stepZoom } from "../lib/zoom";
+import { modName } from "../lib/appMenu";
 import { pushToast } from "../state/toastStore";
 import { getBackend } from "../lib/ipc";
 import type { McpStatus } from "../lib/ipc";
@@ -12,6 +14,7 @@ import { describeSource, formatBytes } from "../lib/labels";
 import { longDate } from "../lib/dashboardModel";
 import { agoText } from "../lib/historyModel";
 import { plural } from "../lib/usage";
+import { keepChoice, keepToast } from "../lib/retention";
 import { rememberSettingsSection, savedSettingsSection } from "../lib/settingsSection";
 import { useFetched, useUsageStatus } from "../lib/useUsage";
 import { useWidth } from "../lib/useWidth";
@@ -54,6 +57,28 @@ function savedSection(): SectionId {
   return SECTIONS.find((s) => s.id === saved)?.id ?? "appearance";
 }
 
+/** Zoom out / in with the percent between and a way back to 100. */
+function ZoomStepper({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const lo = ZOOM_LEVELS[0];
+  const hi = ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
+  return (
+    <div className="st-step" role="group" aria-label="Zoom">
+      <IconButton aria-label="Zoom out" disabled={value <= lo} onClick={() => onChange(stepZoom(value, "out"))}>
+        <Minus size={14} aria-hidden="true" />
+      </IconButton>
+      <span className="st-step-value st-zoom-value text-body font-medium text-ink" aria-live="polite">
+        {value}%
+      </span>
+      <IconButton aria-label="Zoom in" disabled={value >= hi} onClick={() => onChange(stepZoom(value, "in"))}>
+        <Plus size={14} aria-hidden="true" />
+      </IconButton>
+      <Button disabled={value === DEFAULT_ZOOM} onClick={() => onChange(DEFAULT_ZOOM)}>
+        Reset
+      </Button>
+    </div>
+  );
+}
+
 /** Fewer / more with the number between. Steps of ten, never outside the range. */
 function Stepper({ value, onChange }: { value: number; onChange: (n: number) => void }) {
   return (
@@ -85,6 +110,8 @@ export function Settings() {
     setCloseToTray,
     setNotifyOnFinish,
     setShowShortcuts,
+    setTextSize,
+    setZoom,
     setHistoryKeep,
     setSandbox,
     chooseConfigDir,
@@ -252,15 +279,60 @@ export function Settings() {
 
   const lockedTip = info.configLockedByFlag ? "Set when Atlas was launched" : sb.enabled ? "Turn off Sandbox mode first" : undefined;
   const indexing = status?.state === "indexing";
-  const cleanup =
-    ov?.cleanupDays != null
-      ? `Claude Code keeps sessions for ${plural(ov.cleanupDays, "day")}.`
-      : "Claude Code keeps sessions for its default of 30 days.";
+  // Keep saved sessions: Claude Code's own `cleanupPeriodDays`, changed through the one write path.
+  const [keepBusy, setKeepBusy] = useState(false);
+  const keepNow = keepChoice(ov?.cleanupDays ?? null, ov?.cleanupInvalid ?? false);
+  const setKeep = async (value: string) => {
+    const days = Number(value);
+    if (keepBusy || value === keepNow.value || !Number.isInteger(days)) return;
+    setKeepBusy(true);
+    try {
+      const out = await backend.retentionSet(days);
+      overview.reload(true);
+      pushToast({
+        message: keepToast(days),
+        tone: "success",
+        action: out.backupId
+          ? {
+              label: "Undo",
+              onClick: async () => {
+                try {
+                  await backend.setupUndo(out.backupId as string);
+                  pushToast({ message: "Put your settings file back exactly as it was.", tone: "success" });
+                } catch (e) {
+                  pushToast({ message: e instanceof Error ? e.message : typeof e === "string" ? e : "Atlas could not undo that.", tone: "error" });
+                } finally {
+                  overview.reload(true);
+                }
+              },
+            }
+          : undefined,
+      });
+    } catch (e) {
+      pushToast({ message: typeof e === "string" ? e : e instanceof Error ? e.message : "Atlas could not change that. Nothing was changed.", tone: "error" });
+    } finally {
+      setKeepBusy(false);
+    }
+  };
 
   const bodies: Record<SectionId, ReactNode> = {
     appearance: (
       <>
         <ThemePicker theme={info.settings.theme} platform={info.platform} onChange={setTheme} />
+        <Row label="Text size" tip="Larger adds a little to every size of text. Pages stay the same shape.">
+          <SegmentedControl
+            label="Text size"
+            value={info.settings.textSize}
+            options={[
+              { value: "default", label: "Default" },
+              { value: "larger", label: "Larger" },
+            ]}
+            onChange={setTextSize}
+          />
+        </Row>
+        <Row label="Zoom" tip={`Makes everything bigger or smaller. ${modName(info.platform)}+Plus, ${modName(info.platform)}+Minus and ${modName(info.platform)}+0 do the same anywhere in Atlas.`}>
+          <ZoomStepper value={info.settings.zoomPercent} onChange={setZoom} />
+        </Row>
         <Row label="Launch animation">
           <Toggle label="Launch animation" checked={info.settings.launchAnimation} onChange={setLaunchAnimation} />
         </Row>
@@ -326,7 +398,21 @@ export function Settings() {
         )}
         {cfg && <Row label="Claude Code settings" hint={ov?.claudeSettingsFile ? <Path>{ov.claudeSettingsFile}</Path> : "No settings file yet"} />}
         {cfg && <Row label="Account and projects file" hint={<Path>{cfg.claudeJson}</Path>} />}
-        <Row label="Saved sessions" hint={cleanup} />
+        {ov && (
+          <Row
+            label="Keep saved sessions"
+            tip="Forever sets 3,650 days, about ten years. Claude Code has no setting for no limit."
+            hint={ov.cleanupLocked ?? (ov.cleanupInvalid ? "Your settings file holds a value Claude Code won't accept. Pick one to fix it." : "Claude Code deletes older sessions, so they drop out of search, resume and Wrapped.")}
+          >
+            {ov.cleanupLocked ? (
+              <span className="text-body text-ink-2" aria-label={`Keep saved sessions: ${keepNow.label}`}>
+                {keepNow.label}
+              </span>
+            ) : (
+              <SegmentedControl label="Keep saved sessions" value={keepNow.value} options={keepNow.options} onChange={(v) => void setKeep(v)} />
+            )}
+          </Row>
+        )}
         <Row label="Work on a copy" hint="Sandbox mode" tip="Atlas copies your Claude folder to a temporary place and only touches the copy. Your real files are never changed.">
           <Toggle label="Sandbox mode" checked={sb.enabled} onChange={(v) => void setSandbox(v)} />
         </Row>

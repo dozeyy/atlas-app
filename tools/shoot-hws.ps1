@@ -4,7 +4,7 @@
 #
 #   powershell -NoProfile -File tools\shoot-hws.ps1 -Config <fixture .claude> -Data <scratch> -Out <dir>
 #       [-Theme light|silver|dark] [-Width 1280 -Height 800] [-Views history,wrapped,settings]
-#       [-Click "x,y;k:text;x,y"] [-EditFixture] [-Tag name]   (k:text types into the focused field)
+#       [-ExtraJson '{"textSize":"larger","zoomPercent":125}'] [-Click "x,y;k:text;x,y"] [-EditFixture] [-Tag name]   (k:text types into the focused field)
 #
 # One fresh launch per view (the view is pinned through the scratch settings.json, so no key
 # presses are needed). The window is moved to the primary screen, made topmost and captured from
@@ -24,6 +24,7 @@ param(
   [string]$Click = "",
   [string]$Tag = "",
   [string]$Park = "",
+  [string]$ExtraJson = "",   # extra scratch settings, e.g. '{"textSize":"larger","zoomPercent":125}'
   [switch]$EditFixture
 )
 $ErrorActionPreference = "Stop"
@@ -69,7 +70,9 @@ foreach ($v in $Views) {
   Stop-Atlas
   # Pin theme and view in the scratch settings (the app keeps keys it does not know).
   $settings = Join-Path $Data "settings.json"
-  @{ schemaVersion = 1; theme = $Theme; lastView = $v } | ConvertTo-Json | Set-Content $settings -Encoding utf8
+  $pin = @{ schemaVersion = 1; theme = $Theme; lastView = $v }
+  if ($ExtraJson) { ($ExtraJson | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $pin[$_.Name] = $_.Value } }
+  $pin | ConvertTo-Json | Set-Content $settings -Encoding utf8
 
   $env:ATLAS_NO_INTRO = "1"
   $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $Data "webview2"

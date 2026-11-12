@@ -21,6 +21,14 @@ pub fn apply_window_theme(window: &WebviewWindow, theme: Theme) {
     let _ = window.set_theme(t);
 }
 
+/// Webview zoom for a saved percent. The window is hidden until the page has painted, so this runs
+/// before the first frame is seen.
+pub fn apply_zoom(window: &WebviewWindow, percent: u32) {
+    if let Err(e) = window.set_zoom(f64::from(percent) / 100.0) {
+        eprintln!("[atlas] zoom {percent}% not applied: {e}");
+    }
+}
+
 #[tauri::command]
 pub fn get_app_info(state: Shared) -> AppInfo {
     state.info()
@@ -32,6 +40,7 @@ pub fn update_settings(app: AppHandle, state: Shared, patch: SettingsPatch) -> A
     let theme = patch.theme;
     let shortcuts = patch.show_shortcuts;
     let count = patch.count_cache_in_totals;
+    let zoom = patch.zoom_percent;
     let info = state.update_settings(patch);
     // Every total, ranking and readout counts the new way from the next question on; the page
     // is told to ask again (`usage://changed`), the tray and the Now tab re-send theirs.
@@ -48,6 +57,12 @@ pub fn update_settings(app: AppHandle, state: Shared, patch: SettingsPatch) -> A
     let _ = shortcuts;
     if let (Some(t), Some(w)) = (theme, app.get_webview_window("main")) {
         apply_window_theme(&w, t);
+    }
+    // The snapped value is what is saved, so it is also what the window shows.
+    if zoom.is_some()
+        && let Some(w) = app.get_webview_window("main")
+    {
+        apply_zoom(&w, info.settings.zoom_percent);
     }
     info
 }

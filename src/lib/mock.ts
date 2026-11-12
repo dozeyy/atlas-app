@@ -56,6 +56,8 @@ function loadSettings(): Settings {
     mcpAutoConnect: true,
     historyKeepVersions: 50,
     countCacheInTotals: false,
+    textSize: "default",
+    zoomPercent: 100,
   };
   try {
     return { ...base, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
@@ -298,10 +300,25 @@ export class MockBackend {
   historySaveCopy: Backend["historySaveCopy"] = (v) => this.history.historySaveCopy(v);
   historyOpenFolder: Backend["historyOpenFolder"] = () => this.history.historyOpenFolder();
   onHistoryChanged: Backend["onHistoryChanged"] = (cb) => this.history.onHistoryChanged(cb);
+  /** How long Claude Code keeps sessions, as the stand-in's settings file holds it. Tests set these. */
+  retention: { days: number | null; invalid: boolean; locked: string | null } = { days: null, invalid: false, locked: null };
+  private retentionBackups = new Map<string, { days: number | null; invalid: boolean }>();
   settingsOverview: Backend["settingsOverview"] = async () => ({
     ...(await this.history.settingsOverview()),
+    cleanupDays: this.retention.days,
+    cleanupInvalid: this.retention.invalid,
+    cleanupLocked: this.retention.locked,
     keepVersions: this.info.settings.historyKeepVersions,
   });
+  retentionSet: Backend["retentionSet"] = async (days) => {
+    if (![30, 365, 3650].includes(days)) throw new Error("Atlas only sets 30 days, a year or forever for saved sessions.");
+    if (this.retention.locked) throw new Error(this.retention.locked);
+    if (this.retention.days === days) return { days, backupId: null };
+    const backupId = `ret-${this.retentionBackups.size + 1}`;
+    this.retentionBackups.set(backupId, { days: this.retention.days, invalid: this.retention.invalid });
+    this.retention = { ...this.retention, days, invalid: false };
+    return { days, backupId };
+  };
   // ---- Library: the stand-in lives in mockLibrary.ts ----
   readonly library = new MockLibrary();
   libraryCatalog: Backend["libraryCatalog"] = () => this.library.libraryCatalog();
@@ -402,6 +419,11 @@ export class MockBackend {
   async setupUndo(backupId: string): Promise<UndoOutcome> {
     // A rule made from the Team tab: taking it out again.
     if (this.team.owns(backupId)) return { name: "CLAUDE.md", kind: "instructions", backupId: null };
+    const was = this.retentionBackups.get(backupId);
+    if (was) {
+      this.retention = { ...this.retention, ...was };
+      return { name: "settings.json", kind: "settings", backupId: null };
+    }
     return this.world.undo(backupId);
   }
 

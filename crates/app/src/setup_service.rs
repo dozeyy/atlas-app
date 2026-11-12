@@ -297,6 +297,24 @@ pub async fn setup_save(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: Strin
     .await
 }
 
+/// How long Claude Code keeps sessions: one of 30 days, a year or "forever" (3650 days), written to
+/// `cleanupPeriodDays` in the Claude Code settings file through the same backup-first write path as
+/// every other change. Any other number, 0 included, is refused in `atlas_core::retention`.
+#[tauri::command]
+pub async fn retention_set(app: AppHandle, state: Info<'_>, hub: Hub<'_>, days: u32) -> Result<atlas_core::retention::Changed, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
+    blocking(move || {
+        let _lock = write_lock(&st)?;
+        let i = st.setup_inputs(false).ok_or_else(|| "Your Claude folder is not ready yet.".to_string())?;
+        let out = atlas_core::retention::set_days(&i.root.dir, i.managed_dir.as_deref(), &backups_dir(&st), days).map_err(|e| e.message())?;
+        if out.backup_id.is_some() {
+            hub.refresh(&app, &st);
+        }
+        Ok(out)
+    })
+    .await
+}
+
 /// Delete one item after backing it up whole. Returns the backup id for Undo.
 #[tauri::command]
 pub async fn setup_delete(app: AppHandle, state: Info<'_>, hub: Hub<'_>, id: String) -> Result<sw::DeleteOutcome, String> {

@@ -598,11 +598,11 @@ fn read_unit_text(u: &Unit) -> Result<RawText, String> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-struct Style {
-    bom: bool,
-    crlf: bool,
-    indent: Vec<u8>,
-    trailing_newline: bool,
+pub struct Style {
+    pub bom: bool,
+    pub crlf: bool,
+    pub indent: Vec<u8>,
+    pub trailing_newline: bool,
 }
 
 impl Default for Style {
@@ -2269,6 +2269,24 @@ pub fn restore_any_with(backups: &Path, backup_id: &str, confine: &Confine, to_t
 /// other top-level key is the same value as before. `touched` names the top-level keys `edit`
 /// may change. Returns the backup id. A missing file counts as `{}`.
 pub fn edit_json_keys(file: &Path, backups: &Path, label: &str, kind: &str, name: &str, touched: &[&str], edit: impl FnOnce(&mut Value) -> Res<()>) -> Res<String> {
+    edit_json_text(file, backups, label, kind, name, touched, edit, |_, root, style| Ok(render_json(root, style)))
+}
+
+/// `edit_json_keys` with the written bytes chosen by the caller: `edit` changes a parsed copy (the
+/// value the file must mean afterwards), and `make` turns the original bytes plus that edited copy
+/// into the bytes to write. This lets one value change without re-flowing the rest of the file.
+/// Whatever `make` returns is parsed again and must be exactly the edited copy, or nothing is written.
+#[allow(clippy::too_many_arguments)]
+pub fn edit_json_text(
+    file: &Path,
+    backups: &Path,
+    label: &str,
+    kind: &str,
+    name: &str,
+    touched: &[&str],
+    edit: impl FnOnce(&mut Value) -> Res<()>,
+    make: impl FnOnce(Option<&[u8]>, &Value, &Style) -> Res<Vec<u8>>,
+) -> Res<String> {
     check_write_allowed(file)?;
     let sig = file_sig(file);
     let before = fs::read(file).ok();
@@ -2294,7 +2312,11 @@ pub fn edit_json_keys(file: &Path, backups: &Path, label: &str, kind: &str, name
             return refuse("Atlas stopped: the edit would have added something it should not touch, so nothing was written.");
         }
     }
-    let after = render_json(&root, &style);
+    let after = make(before.as_deref(), &root, &style)?;
+    // What will be written must mean exactly the edited copy, whatever way the bytes were made.
+    if parse_json_bytes(&after).ok().as_ref() != Some(&root) {
+        return refuse("Atlas stopped: the new file would not mean what was asked, so nothing was written.");
+    }
     let (id, dir) = new_backup(backups, label)?;
     let staged = (|| -> Res<()> {
         if let Some(b) = &before {

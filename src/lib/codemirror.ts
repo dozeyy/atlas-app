@@ -29,7 +29,7 @@ const highlight = HighlightStyle.define([
 ]);
 
 const theme = EditorView.theme({
-  "&": { color: "var(--ink)", backgroundColor: "transparent", fontSize: "12px", height: "100%" },
+  "&": { color: "var(--ink)", backgroundColor: "transparent", fontSize: "calc(12px * var(--ts))", height: "100%" },
   // No accent box: the caret shows where you type. A keyboard walk (Tab) gets the app's neutral ring.
   "&.cm-focused": { outline: "none" },
   'html[data-input="keyboard"] &.cm-focused': { outline: "2px solid var(--focus-ring)", outlineOffset: "-2px" },

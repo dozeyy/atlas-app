@@ -119,7 +119,7 @@ describe("theme", () => {
   it("offers Light, Silver and Dark, and Silver pins its own look", async () => {
     mount();
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
-    const names = screen.getAllByRole("radio").map((r) => r.getAttribute("aria-label"));
+    const names = within(screen.getByRole("radiogroup", { name: "Theme" })).getAllByRole("radio").map((r) => r.getAttribute("aria-label"));
     expect(names).toEqual(["Light", "Silver", "Dark"]);
     await userEvent.click(screen.getByRole("radio", { name: "Silver" }));
     expect(document.documentElement.dataset.theme).toBe("silver");
