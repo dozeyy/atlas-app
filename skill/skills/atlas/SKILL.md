@@ -1,8 +1,8 @@
 ---
 name: atlas
 description: Shows the user's Claude Code token usage right in the chat, with the same numbers as the Atlas app - this chat, today, this week, last week, the last 7 or 30 days, a month, a date range, this project or all time, and comparisons like last week vs this week. Charts are drawn in text, with bars for a week or less and a terrain grid for a month.
-when_to_use: Use whenever the user asks about their own Claude Code usage, tokens or spend, with or without typing /atlas. Examples - "what's my usage this week", "how many tokens has this chat used", "what's my usage for this chat looking like", "usage for this project", "last week vs this week", "how much did I use today", "which models did I use most this month", "what did yesterday cost". Not for questions about API pricing in general or another person's account.
-argument-hint: "[this chat | today | yesterday | this week | last week | 7d | 30d | this month | last month | all | project | YYYY-MM-DD..YYYY-MM-DD] [vs <scope>]"
+when_to_use: Use whenever the user asks about their own Claude Code usage, tokens or spend, with or without typing /atlas. Examples - "what's my usage this week", "how many tokens has this chat used", "what's my usage for this chat looking like", "usage for this project", "last week vs this week", "how much did I use today", "which models did I use most this month", "what did yesterday cost", "what are my all-time stats", "how many tokens have I used in total", "my lifetime usage". Not for questions about API pricing in general or another person's account.
+argument-hint: "[this chat | today | yesterday | this week | last week | 7d | 30d | this month | last month | all time | project | YYYY-MM-DD..YYYY-MM-DD] [vs <scope>]"
 allowed-tools: Bash(sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" *), PowerShell(powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/bin/atlas-usage.ps1" *)
 ---
 
@@ -28,7 +28,8 @@ then use the user's latest message instead.)
 | last week, previous week | `last-week` |
 | past 7 days, past 30 days, past N days | `7d` / `30d` / `<N>d` |
 | this month / last month | `month` / `last-month` |
-| all time, ever, total | `all` |
+| all time, all-time stats, lifetime, ever, in total, overall, since I started | `all` |
+| all time for this project / for a named project | `all project` / `all --project=<name>` |
 | a day or a range | `2026-11-02` or `2026-11-02..2026-11-07` (resolve "Monday", "Nov 3" etc. against today's date) |
 | this project, this repo, this folder | add `project` (alone = all time; with a range = that range, e.g. `project week`) |
 | a named project ("usage for atlas") | add `--project=<name>` |
@@ -95,6 +96,9 @@ sh "${CLAUDE_SKILL_DIR}/bin/atlas-usage.sh" <words> --session ${CLAUDE_SESSION_I
 - A line starting `atlas-usage:` with exit code 3 comes from the launcher (no internet, no
   access to the download, checksum mismatch, no build for this computer). Show that line
   as-is; it says what to do. Do not try to work the numbers out another way.
+- When the user asks which copy of the program the skill uses, or why it cannot find one, run
+  the launcher with `launcher-doctor` as the only word (no `--session`) and show its lines as-is.
+  It runs nothing and downloads nothing.
 - Any other error: show the error line as-is and suggest the closest valid scope from the
   table above.
 
