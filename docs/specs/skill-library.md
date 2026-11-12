@@ -42,7 +42,7 @@ real `~/.claude/plugins/*.json` were unchanged afterwards (mtime listing diff).
   not installed).
 - Project or local install scope (user scope only), plugin `update`, `prune`, `configure`,
   `userConfig` entry, plugin `eval`/`validate` UI, renaming a copied item on a name clash.
-- Category filters (the directory catalog has no category field), sorting by popularity.
+- Category filters (the directory catalog has no category field). (Popularity sorting was out of v1 and is built since: section 9.)
 - Any AI model inside Atlas for grouping requests (no `claude -p`, no embeddings, no network);
   the drafting is done by the Claude the user is already chatting with.
 - MCP `suggest_install` (section 6: not cheap, no Pending Changes UI exists yet).
@@ -625,3 +625,23 @@ Open:
 - Whether models fire `atlas-repeats` reliably from its description, and whether a plugin
   skill's `allowed-tools` pre-allows `mcp__atlas__*` tools (criterion 31 tests it).
 - The thresholds (D33, D34) are first guesses; only Will's real chats tune them (32).
+
+## 9. Most installed first (added 2026-11-11)
+- Where the counts live: Claude Code's `<config>/plugins/plugin-catalog-cache.json`, field
+  `catalog.plugins["<name>@<marketplace>"].unique_installs` (an integer; `installs_generated_at`
+  dates it). Only `claude-plugins-official` carries it (313 of 315 plugins on Will's machine);
+  the built-in directory (`anthropic-plugin-directory`) and added marketplaces have none, so those
+  plugins have no count. Matching is by exact plugin id; nothing is matched by name. No network.
+- `atlas_core::library::popularity` reads the file (lenient: a count in a wrong shape drops only
+  that plugin; a missing, oversized or foreign file means no counts) and orders the catalog once
+  per answer: catalog order (directory first), then, when any count exists, a stable sort, most
+  installs first, no count after every count, ties in catalog order. `library_catalog` (first 60)
+  and `library_catalog_all` use the same function, so the first rows are the rows the page keeps.
+  Each slim entry carries `installs` (when known) and `pos` (its catalog position).
+- The page sorts nothing per render: the store orders `idx` when data lands or when the choice
+  changes (`orderIndexed`, stable, `pos` restores the catalog's order). The Sort control is the
+  shared `OptionsMenu` (Most installed / Catalog order) and exists only when counts exist. The
+  choice lasts the session, not the launch, so the first page always matches the default.
+- Under All with nothing typed in popular order: Installed first, then one run under "More
+  plugins" across marketplaces, each row outside the directory naming its source. A row shows
+  "12k installs" in its quiet right-hand side when it has a count.

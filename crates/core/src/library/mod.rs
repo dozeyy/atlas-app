@@ -10,6 +10,7 @@ pub mod cli;
 pub mod install;
 pub mod ledger;
 pub mod link;
+pub mod popularity;
 pub mod shape;
 
 /// Atlas's own working folder for the Library, inside the data dir.

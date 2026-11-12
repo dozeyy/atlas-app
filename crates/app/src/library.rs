@@ -20,7 +20,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use atlas_core::connect::{self, CliChoice};
 use atlas_core::library::cli::Runner;
-use atlas_core::library::{archive, catalog, install, ledger, link, shape};
+use atlas_core::library::{archive, catalog, install, ledger, link, popularity, shape};
 use atlas_core::paths::ConfigRoot;
 use atlas_core::setup_write as sw;
 use serde::{Deserialize, Serialize};
@@ -159,11 +159,17 @@ pub struct SlimEntry {
     version: String,
     /// Installing it runs a command: the row says Atlas does not offer it.
     by_command: bool,
+    /// Unique installs, from Claude Code's own plugin cache (none for most marketplaces).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    installs: Option<u64>,
+    /// Where the catalog itself lists it: "Catalog order" sorts on this.
+    pos: u32,
 }
 
-impl From<catalog::Entry> for SlimEntry {
-    fn from(e: catalog::Entry) -> Self {
-        SlimEntry { by_command: matches!(e.source, catalog::Source::Command), plugin_id: e.plugin_id, name: e.name, description: e.description, marketplace: e.marketplace, version: e.version }
+impl From<popularity::Listed> for SlimEntry {
+    fn from(l: popularity::Listed) -> Self {
+        let e = l.entry;
+        SlimEntry { by_command: matches!(e.source, catalog::Source::Command), plugin_id: e.plugin_id, name: e.name, description: e.description, marketplace: e.marketplace, version: e.version, installs: l.installs, pos: l.pos }
     }
 }
 
@@ -174,7 +180,8 @@ const FIRST_PAGE: usize = 60;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogView {
-    /// Every entry, or (when `partial`) the first page in the list's order.
+    /// Every entry, or (when `partial`) the first page, in the order the list opens in (most
+    /// installs first when Claude Code's cache has counts, else the catalog's own order).
     entries: Vec<SlimEntry>,
     /// How many entries the whole catalog holds, and how many per marketplace (the source rail).
     total: usize,
@@ -319,10 +326,17 @@ fn load_entries(env: &Env) -> (Vec<catalog::Entry>, Option<u64>, Vec<ledger::Mar
     }
 }
 
-/// `first_page_only`: the first `FIRST_PAGE` rows in the list's order (name, then marketplace),
-/// with the counts of the whole catalog; else every entry.
+/// The entries in the order the list opens in, once: counts read from Claude Code's cache, then
+/// `popularity::listing`. The first page and the whole list come from this one place, so the
+/// first rows are the rows the page keeps.
+fn in_list_order(env: &Env, entries: Vec<catalog::Entry>) -> Vec<popularity::Listed> {
+    popularity::listing(entries, &popularity::read(&env.root.dir))
+}
+
+/// `first_page_only`: the first `FIRST_PAGE` rows in the list's order, with the counts of the
+/// whole catalog; else every entry.
 fn view(st: &AppState, env: &Env, first_page_only: bool) -> CatalogView {
-    let (mut entries, fetched_ms, marketplaces) = load_entries(env);
+    let (entries, fetched_ms, marketplaces) = load_entries(env);
     let now = now_ms();
     let stale = fetched_ms.is_none_or(|f| now.saturating_sub(f) > STALE_SECS * 1000);
     let total = entries.len();
@@ -331,8 +345,8 @@ fn view(st: &AppState, env: &Env, first_page_only: bool) -> CatalogView {
         *counts.entry(e.marketplace.clone()).or_insert(0) += 1;
     }
     let partial = first_page_only && total > FIRST_PAGE;
+    let mut entries = in_list_order(env, entries);
     if partial {
-        entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.marketplace.cmp(&b.marketplace)));
         entries.truncate(FIRST_PAGE);
     }
     let sandbox = st.history_root().is_none();
@@ -362,7 +376,7 @@ pub async fn library_catalog_all(state: Info<'_>) -> Result<CatalogAll, String> 
     blocking(move || {
         let env = Env::of(&st)?;
         let (entries, fetched_ms, _) = load_entries(&env);
-        Ok(CatalogAll { fetched_ms, entries: entries.into_iter().map(SlimEntry::from).collect() })
+        Ok(CatalogAll { fetched_ms, entries: in_list_order(&env, entries).into_iter().map(SlimEntry::from).collect() })
     })
     .await
 }
@@ -951,6 +965,31 @@ mod tests {
         e.plugin_id = format!("{n}@m");
         e.name = n.into();
         e
+    }
+
+    #[test]
+    fn the_first_page_is_the_first_rows_of_the_whole_list_in_one_order() {
+        // 100 plugins; every third one has a count in Claude Code's cache. The first answer's 60 rows
+        // must be the first 60 of the full answer, so nothing reshuffles when the rest lands.
+        let t = tempfile::tempdir().unwrap();
+        let env = env_at(t.path());
+        std::fs::create_dir_all(t.path().join("plugins")).unwrap();
+        let plugins: String = (0..100).filter(|i| i % 3 == 0).map(|i| format!(r#""p{i}@official":{{"unique_installs":{}}}"#, (i * 37) % 11)).collect::<Vec<_>>().join(",");
+        std::fs::write(t.path().join("plugins/plugin-catalog-cache.json"), format!(r#"{{"catalog":{{"plugins":{{{plugins}}}}}}}"#)).unwrap();
+        let entries: Vec<catalog::Entry> = (0..100).map(|i| { let mut e = entry("official"); e.plugin_id = format!("p{i}@official"); e.name = format!("p{i}"); e }).collect();
+        let all = in_list_order(&env, entries.clone());
+        let first: Vec<_> = all.iter().take(FIRST_PAGE).map(|l| (l.entry.plugin_id.clone(), l.installs, l.pos)).collect();
+        let again: Vec<_> = in_list_order(&env, entries).into_iter().take(FIRST_PAGE).map(|l| (l.entry.plugin_id, l.installs, l.pos)).collect();
+        assert_eq!(first, again);
+        // Counted rows lead, the highest count first, ties in catalog order; the rest follow in catalog order.
+        let counted = all.iter().take_while(|l| l.installs.is_some()).count();
+        assert_eq!(counted, 34);
+        assert!(all[..counted].windows(2).all(|w| w[0].installs > w[1].installs || (w[0].installs == w[1].installs && w[0].pos < w[1].pos)));
+        assert!(all[counted..].windows(2).all(|w| w[0].pos < w[1].pos));
+        // With no cache file there are no counts and the catalog's own order holds.
+        let bare = env_at(&t.path().join("none"));
+        let none = in_list_order(&bare, vec![listed("a"), listed("b")]);
+        assert_eq!(none.iter().map(|l| (l.pos, l.installs)).collect::<Vec<_>>(), [(0, None), (1, None)]);
     }
 
     #[test]

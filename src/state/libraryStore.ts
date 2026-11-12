@@ -8,8 +8,8 @@
 import { useSyncExternalStore } from "react";
 import { getBackend } from "../lib/ipc";
 import { errorText } from "../lib/setup-actions";
-import { ALL, indexEntries, isClean, type Indexed } from "../lib/library";
-import type { CatalogView, InstalledRow, LibraryDetail, PluginOutcome } from "../lib/libraryTypes";
+import { ALL, hasInstalls, indexEntries, isClean, orderIndexed, type Indexed, type LibraryOrder } from "../lib/library";
+import type { CatalogEntry, CatalogView, InstalledRow, LibraryDetail, PluginOutcome } from "../lib/libraryTypes";
 import { pushToast } from "./toastStore";
 
 export interface LibraryState {
@@ -22,6 +22,10 @@ export interface LibraryState {
   error: string | null;
   source: string;
   query: string;
+  /** The order the user picked (popular unless they chose otherwise this session). */
+  order: LibraryOrder;
+  /** Some plugin has an install count, so "popular" means something and the Sort control is offered. */
+  counted: boolean;
   /** Plugin ids (or installed ids) being installed or removed right now. */
   busy: Record<string, "checking" | "installing" | "removing">;
   /** Bumps when a check is stored, so a row re-reads whether it can install at once. */
@@ -37,6 +41,8 @@ const INITIAL: LibraryState = {
   error: null,
   source: ALL,
   query: "",
+  order: "popular",
+  counted: false,
   busy: {},
   checks: 0,
 };
@@ -54,8 +60,18 @@ function set(next: Partial<LibraryState>) {
   for (const s of subs) s();
 }
 
+/**
+ * Index the entries and put them in the chosen order, once per load (and once per choice, in
+ * `setOrder`): the rows are drawn from this array as it is. With no install counts anywhere the
+ * order is the catalog's own whatever was chosen.
+ */
+function arrange(entries: CatalogEntry[], order: LibraryOrder): { idx: Indexed[]; counted: boolean } {
+  const counted = hasInstalls(entries);
+  return { idx: orderIndexed(indexEntries(entries), counted ? order : "catalog"), counted };
+}
+
 function setView(view: CatalogView) {
-  set({ view, idx: indexEntries(view.entries), error: null });
+  set({ view, ...arrange(view.entries, state.order), error: null });
   if (view.partial) void loadRest(view);
 }
 
@@ -71,7 +87,7 @@ function loadRest(first: CatalogView): void {
       .then((all) => {
         if (state.view !== first) return;
         const view = { ...first, entries: all.entries, partial: false };
-        set({ view, idx: indexEntries(all.entries) });
+        set({ view, ...arrange(all.entries, state.order) });
       })
       .catch(() => {
         // Keep the first rows; a refresh will bring the full list.
@@ -149,6 +165,12 @@ export async function reloadInstalled(): Promise<void> {
 
 export function setQuery(query: string): void {
   if (state.query !== query) set({ query });
+}
+
+/** Sort the list again, from what is already loaded: no request, and nothing is read twice. */
+export function setOrder(order: LibraryOrder): void {
+  if (state.order === order) return;
+  set({ order, idx: orderIndexed(state.idx, state.counted ? order : "catalog") });
 }
 
 export function setSource(source: string): void {

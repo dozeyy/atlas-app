@@ -11,14 +11,18 @@ import {
   INSTALLED_HEAD,
   buildList,
   buildRows,
+  hasInstalls,
   indexEntries,
   insideWords,
+  installsWords,
+  orderIndexed,
   installBlock,
   installSummary,
   isStale,
   changedCount,
   entryTopic,
   mpId,
+  MORE_HEAD,
   parseGithub,
   rowName,
   searchEntries,
@@ -281,5 +285,96 @@ describe("Library words", () => {
     expect(toolkitIdFor(items, "C:\\Users\\me\\.claude\\agents\\rev.md")).toBe("agent:2");
     expect(toolkitIdFor(items, "C:\\elsewhere")).toBeNull();
     expect(toolkitIdFor(items, null)).toBeNull();
+  });
+});
+
+describe("Library order: most installed first", () => {
+  const OFFICIAL = "claude-plugins-official";
+  const e = (name: string, installs?: number, marketplace = OFFICIAL, pos?: number): CatalogEntry => ({ ...entry(name, "", marketplace), ...(installs != null ? { installs } : {}), ...(pos != null ? { pos } : {}) });
+  const names = (xs: { e: CatalogEntry }[]) => xs.map((x) => x.e.name);
+
+  it("sorts by count, puts plugins with no count after, and breaks every tie by the catalog's order", () => {
+    const list = [e("n1", undefined, DIRECTORY, 0), e("low", 10, OFFICIAL, 1), e("n2", undefined, DIRECTORY, 2), e("high", 9000, OFFICIAL, 3), e("tieB", 500, OFFICIAL, 5), e("tieA", 500, OFFICIAL, 4), e("zero", 0, OFFICIAL, 6)];
+    const idx = indexEntries(list);
+    expect(names(orderIndexed(idx, "popular"))).toEqual(["high", "tieA", "tieB", "low", "zero", "n1", "n2"]);
+    // "Catalog order" puts everything back, from the same array, without reading anything again.
+    expect(names(orderIndexed(orderIndexed(idx, "popular"), "catalog"))).toEqual(["n1", "low", "n2", "high", "tieA", "tieB", "zero"]);
+    // The input is not touched.
+    expect(names(idx)).toEqual(list.map((x) => x.name));
+  });
+
+  it("is stable and idempotent: the same rows come back however often it runs, and in whatever order they arrive", () => {
+    const list = [e("a", 5, OFFICIAL, 0), e("b", 5, OFFICIAL, 1), e("c", undefined, DIRECTORY, 2), e("d", 5, OFFICIAL, 3), e("f", undefined, DIRECTORY, 4)];
+    const once = names(orderIndexed(indexEntries(list), "popular"));
+    expect(once).toEqual(["a", "b", "d", "c", "f"]);
+    expect(names(orderIndexed(orderIndexed(indexEntries(list), "popular"), "popular"))).toEqual(once);
+    expect(names(orderIndexed(indexEntries(list.slice().reverse()), "popular"))).toEqual(once);
+  });
+
+  it("an entry with no position keeps its place in the array", () => {
+    const idx = indexEntries([e("x"), e("y", 3), e("z"), e("w", 3)]);
+    expect(names(orderIndexed(idx, "popular"))).toEqual(["y", "w", "x", "z"]);
+    expect(names(orderIndexed(idx, "catalog"))).toEqual(["x", "y", "z", "w"]);
+  });
+
+  it("knows when there are counts at all", () => {
+    expect(hasInstalls([e("a"), e("b")])).toBe(false);
+    expect(hasInstalls([e("a"), e("b", 0)])).toBe(true);
+  });
+
+  it("sorts the whole captured catalog once in a few milliseconds", () => {
+    const captured = fixture().map((x, i) => ({ ...x, pos: i, ...(i % 11 === 0 ? { installs: (i * 7919) % 100_000 } : {}) }));
+    const idx = indexEntries(captured);
+    const t = performance.now();
+    const sorted = orderIndexed(idx, "popular");
+    const ms = performance.now() - t;
+    expect(sorted).toHaveLength(captured.length);
+    expect(ms).toBeLessThan(100);
+    const counted = sorted.filter((x) => x.e.installs != null);
+    expect(counted.every((x, i) => i === 0 || (counted[i - 1]!.e.installs as number) >= (x.e.installs as number))).toBe(true);
+    expect(sorted.slice(counted.length).every((x) => x.e.installs == null)).toBe(true);
+  });
+
+  it("writes a count short: 12k installs, 1.2M installs, 1 install, nothing for none", () => {
+    expect(installsWords(undefined)).toBe("");
+    expect(installsWords(0)).toBe("");
+    expect(installsWords(1)).toBe("1 install");
+    expect(installsWords(12)).toBe("12 installs");
+    expect(installsWords(999)).toBe("999 installs");
+    expect(installsWords(1000)).toBe("1k installs");
+    expect(installsWords(3474)).toBe("3.5k installs");
+    expect(installsWords(12_480)).toBe("12k installs");
+    expect(installsWords(477_558)).toBe("478k installs");
+    expect(installsWords(999_499)).toBe("999k installs");
+    expect(installsWords(999_500)).toBe("1M installs");
+    expect(installsWords(1_266_133)).toBe("1.3M installs");
+  });
+
+  it("under All it is one list across marketplaces: what you have first, then the rest under one heading, each row naming its source", () => {
+    const hot = e("hot", 900, OFFICIAL, 5);
+    const warm = e("warm", 40, OFFICIAL, 6);
+    const d1 = e("dir-1", undefined, DIRECTORY, 0);
+    const mine = e("mine", undefined, "community", 9);
+    const idx = orderIndexed(indexEntries([d1, hot, warm, mine]), "popular");
+    const have: InstalledRow = { kind: "plugin", id: d1.pluginId, name: "dir-1", itemKind: "", enabled: true, version: "1.0.0", path: null, repo: "", backupId: "b1", changed: false };
+    const list = buildList({ idx, installed: [have], source: ALL, query: "", order: "popular" });
+    expect(list.rows.map((r) => rowName(r))).toEqual(["dir-1", "hot", "warm", "mine"]);
+    expect(list.heads).toEqual([
+      { at: 0, label: INSTALLED_HEAD },
+      { at: 1, label: MORE_HEAD },
+    ]);
+    expect(list.showSource).toBe(true);
+    // Nothing installed: one run, no heading, and still the popular order.
+    const bare = buildList({ idx, installed: [], source: ALL, query: "", order: "popular" });
+    expect(bare.rows.map((r) => rowName(r))).toEqual(["hot", "warm", "dir-1", "mine"]);
+    expect(bare.heads).toEqual([]);
+    // One marketplace on its own keeps the order and needs no source on the row; typed words still rank by match.
+    expect(buildRows({ idx, installed: [], source: mpId(OFFICIAL), query: "", order: "popular" }).map((r) => rowName(r))).toEqual(["hot", "warm"]);
+    expect(buildRows({ idx, installed: [], source: ALL, query: "wa", order: "popular" }).map((r) => rowName(r))).toEqual(["warm"]);
+    // The catalog order is what it was: the directory under its own heading, then the others.
+    const back = buildList({ idx: orderIndexed(idx, "catalog"), installed: [have], source: ALL, query: "", order: "catalog" });
+    expect(back.rows.map((r) => rowName(r))).toEqual(["dir-1", "hot", "warm", "mine"]);
+    expect(back.heads.map((h) => h.label)).toEqual([INSTALLED_HEAD, OFFICIAL, "community"]);
+    expect(back.showSource).toBe(false);
   });
 });

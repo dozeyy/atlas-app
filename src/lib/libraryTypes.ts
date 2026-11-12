@@ -16,6 +16,10 @@ export interface CatalogEntry {
   version: string;
   /** Installing it runs a command: Atlas does not offer it. (The full source stays in Rust.) */
   byCommand: boolean;
+  /** People who installed it, from Claude Code's own plugin cache. Most marketplaces have no count. */
+  installs?: number;
+  /** Where the catalog itself lists it (0 first); "Catalog order" sorts on this. */
+  pos?: number;
 }
 
 /** Every entry, slim: sent after the first rows are painted. */
@@ -32,7 +36,7 @@ export interface MarketplaceInfo {
 }
 
 export interface CatalogView {
-  /** Every entry, or (when `partial`) the first page in the list's order. */
+  /** Every entry, or (when `partial`) the first page, in the order the list opens in (most installs first when counts exist). */
   entries: CatalogEntry[];
   /** The whole catalog's size and its size per marketplace (the source rail). */
   total: number;

@@ -89,12 +89,24 @@ const FLAGGED: SafetyReport = {
   files: 5,
 };
 
+/** Install counts the preview shows with `?installs=1` (a test sets `mock.installs` itself). The real ones come from Claude Code's plugin cache. */
+export const SEED_INSTALLS: Record<string, number> = {
+  "frontend-design@anthropic-plugin-directory": 428_976,
+  "code-review@anthropic-plugin-directory": 291_204,
+  "github@anthropic-plugin-directory": 96_310,
+  "playwright@anthropic-plugin-directory": 54_872,
+  "commit-commands@anthropic-plugin-directory": 12_480,
+  "typescript-lsp@anthropic-plugin-directory": 3_474,
+  "hookify@anthropic-plugin-directory": 847,
+  "plugin-dev@anthropic-plugin-directory": 12,
+};
+
 const fromUrl = () => {
   try {
     const q = new URLSearchParams(window.location.search);
-    return { offline: q.get("library") === "offline", empty: q.get("library") === "empty", cli: q.get("cli") !== "0", flagged: q.get("flagged") === "1" };
+    return { offline: q.get("library") === "offline", empty: q.get("library") === "empty", cli: q.get("cli") !== "0", flagged: q.get("flagged") === "1", installs: q.get("installs") === "1" };
   } catch {
-    return { offline: false, empty: false, cli: true, flagged: false };
+    return { offline: false, empty: false, cli: true, flagged: false, installs: false };
   }
 };
 
@@ -118,6 +130,8 @@ export class MockLibrary {
   /** Plugin ids that fail to install, for the error sentence. */
   failInstall = new Set<string>();
   marketplaces: { name: string; source: string; installLocation: string | null }[] = [];
+  /** Plugin id -> installs. Empty (the default): no counts, the catalog's own order, nothing extra on the wire. */
+  installs: Record<string, number> = {};
   private tokens = new Map<string, LibraryDetail>();
   private n = 0;
   private progress = new Set<(p: LibraryProgress) => void>();
@@ -129,6 +143,7 @@ export class MockLibrary {
     this.empty = u.empty;
     if (u.empty) this.entries = [];
     this.flagged = u.flagged;
+    if (u.installs) this.installs = { ...SEED_INSTALLS };
   }
 
   private wait = (ms = this.delay) => new Promise<void>((r) => setTimeout(r, ms));
@@ -137,7 +152,13 @@ export class MockLibrary {
   }
 
   private view(): CatalogView {
-    const slim = this.entries.map(({ source: _source, ...e }) => e);
+    let slim: CatalogEntry[] = this.entries.map(({ source: _source, ...e }) => e);
+    // Like the real backend: with counts, each row carries its count and its catalog position, and the
+    // list opens most installs first (stable: no count after a count, ties in catalog order).
+    if (Object.keys(this.installs).length) {
+      const keyed = slim.map((e, pos) => ({ ...e, pos, ...(this.installs[e.pluginId] != null ? { installs: this.installs[e.pluginId] } : {}) }));
+      slim = keyed.sort((a, b) => (a.installs != null && b.installs != null ? b.installs - a.installs : a.installs != null ? -1 : b.installs != null ? 1 : 0));
+    }
     const counts: Record<string, number> = {};
     for (const e of slim) counts[e.marketplace] = (counts[e.marketplace] ?? 0) + 1;
     return {
@@ -162,7 +183,8 @@ export class MockLibrary {
     const v = this.view();
     // Like the real backend: past one page, the first call carries only the first rows.
     if (v.entries.length > this.firstPage) {
-      const first = v.entries.slice().sort((a, b) => a.name.localeCompare(b.name)).slice(0, this.firstPage);
+      // The first page is the first rows of the list's own order.
+      const first = v.entries.slice(0, this.firstPage);
       return { ...v, entries: first, partial: true };
     }
     return v;
