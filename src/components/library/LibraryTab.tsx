@@ -1,17 +1,18 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowsClockwise, GithubLogo, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowsClockwise, ArrowsDownUp, GithubLogo, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
 import { Button, IconButton } from "../controls";
+import { ChoiceList, OptionField, OptionsMenu } from "../OptionsMenu";
 import { EmptyState } from "../EmptyState";
 import { SelectField } from "../usage/fields";
 import { AddFromGitHub } from "./AddFromGitHub";
 import { LibraryList, ListSkeleton, type RowActions } from "./LibraryList";
 import { LibrarySheet, type SheetTarget } from "./LibrarySheet";
 import { SourceRail } from "./SourceRail";
-import { NO_CLI, OFFICIAL_CATALOG, OFFLINE, buildList, changedCount, sourceOptions, toolkitIdFor, updatedWords, type LibraryRow } from "../../lib/library";
+import { NO_CLI, OFFICIAL_CATALOG, OFFLINE, buildList, changedCount, sourceOptions, toolkitIdFor, updatedWords, type LibraryOrder, type LibraryRow } from "../../lib/library";
 import { openToolkitItemNext, openToolkitTabNext } from "../../lib/nav";
 import { exact } from "../../lib/usage";
-import { addOfficialCatalog, checkThenInstall, openLibrary, refreshLibrary, reportFirstRows, setQuery, setSource, useLibrary } from "../../state/libraryStore";
+import { addOfficialCatalog, checkThenInstall, openLibrary, refreshLibrary, reportFirstRows, setOrder, setQuery, setSource, useLibrary } from "../../state/libraryStore";
 import { useSetup } from "../../state/setupStore";
 import { pushToast } from "../../state/toastStore";
 
@@ -30,6 +31,11 @@ function useWide(px: number): boolean {
   }, [q]);
   return wide;
 }
+
+const ORDERS: { value: LibraryOrder; label: string }[] = [
+  { value: "popular", label: "Most installed" },
+  { value: "catalog", label: "Catalog order" },
+];
 
 /**
  * True when the reason reads like the network: the sentence the catalog call gives for it, or the
@@ -61,7 +67,11 @@ export function LibraryTab() {
   }, []);
 
   const query = useDeferredValue(lib.query);
-  const { rows, heads, showSource } = useMemo(() => buildList({ idx: lib.idx, installed: lib.installed, source: lib.source, query }), [lib.idx, lib.installed, lib.source, query]);
+  // `lib.idx` is sorted once when the data loads or the choice changes; with no counts anywhere it is catalog order.
+  // While only the first rows are here they are in popular order whatever was chosen; the choice
+  // applies when the whole list lands (a moment).
+  const order: LibraryOrder = lib.counted ? (lib.view?.partial ? "popular" : lib.order) : "catalog";
+  const { rows, heads, showSource } = useMemo(() => buildList({ idx: lib.idx, installed: lib.installed, source: lib.source, query, order }), [lib.idx, lib.installed, lib.source, query, order]);
   const options = useMemo(
     () => sourceOptions(lib.view?.total ?? 0, lib.view?.counts ?? {}, lib.view?.marketplaces ?? [], lib.installed.length, changedCount(lib.idx, lib.installed)),
     [lib.view, lib.idx, lib.installed],
@@ -306,6 +316,15 @@ export function LibraryTab() {
             </button>
           )}
         </div>
+        {lib.counted && (
+          <OptionsMenu label="Sort" status={ORDERS.find((o) => o.value === lib.order)?.label} icon={<ArrowsDownUp size={18} aria-hidden="true" />} width={200}>
+            {(close) => (
+              <OptionField label="Order">
+                <ChoiceList label="Sort order" value={lib.order} choices={ORDERS} onChange={setOrder} onPick={close} />
+              </OptionField>
+            )}
+          </OptionsMenu>
+        )}
         {!wide && <SelectField label="Source" value={lib.source} onChange={setSource} options={options.map((o) => ({ value: o.id, label: loading ? o.label : `${o.label} ${exact(o.count)}${o.flag ? `, ${o.flag.short}` : ""}` }))} />}
         <Button onClick={() => setAdding(true)}>
           <GithubLogo size={16} aria-hidden="true" className="ico" />

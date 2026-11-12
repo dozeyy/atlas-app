@@ -81,14 +81,60 @@ export function searchEntries(idx: Indexed[], query: string): CatalogEntry[] {
 /**
  * Nothing typed: the catalog's own order. That is the order each marketplace lists its plugins in
  * (the directory's is ranked, its most used first), the directory before the marketplaces the
- * user added. The page carries no install count, so this is the one real "most popular" signal
- * it has; nothing is invented.
+ * user added. This is the "Catalog order" choice; with install counts the list opens in
+ * "popular" order instead (see `orderIndexed`).
  */
 export function catalogOrder(idx: Indexed[]): CatalogEntry[] {
   const first: CatalogEntry[] = [];
   const rest: CatalogEntry[] = [];
   for (const x of idx) (x.e.marketplace === DIRECTORY ? first : rest).push(x.e);
   return first.concat(rest);
+}
+
+// ---- order -------------------------------------------------------------------------------------
+
+/** "popular": most installs first, then what has no count, each in catalog order. "catalog": the catalog's own order. */
+export type LibraryOrder = "popular" | "catalog";
+
+/** Some plugin has an install count: only then is there a popular order to offer. */
+export const hasInstalls = (entries: readonly CatalogEntry[]): boolean => entries.some((e) => e.installs != null);
+
+/**
+ * The list in one of its two orders, stable: equal counts and plugins with no count keep the
+ * catalog's order (`pos`; the array order for an entry that carries none). Done once when the data
+ * lands or the choice changes, never per render. Returns a new array.
+ */
+export function orderIndexed(idx: readonly Indexed[], order: LibraryOrder): Indexed[] {
+  const at = (x: Indexed, i: number) => x.e.pos ?? i;
+  const cmp = (a: Indexed, ai: number, b: Indexed, bi: number): number => {
+    if (order === "catalog") return at(a, ai) - at(b, bi);
+    const x = a.e.installs;
+    const y = b.e.installs;
+    if (x != null && y != null && x !== y) return y - x;
+    if ((x != null) !== (y != null)) return x != null ? -1 : 1;
+    return at(a, ai) - at(b, bi);
+  };
+  // Rust already sends the rows in popular order, so the usual answer is "nothing to do": one O(n)
+  // pass proves it and the 4,000-row sort is skipped. A stable sort of sorted rows is the same rows.
+  let sorted = true;
+  for (let i = 1; i < idx.length && sorted; i++) sorted = cmp(idx[i - 1], i - 1, idx[i], i) <= 0;
+  if (sorted) return idx.slice();
+  const place = new Map<Indexed, number>();
+  idx.forEach((x, i) => place.set(x, i));
+  return idx.slice().sort((a, b) => cmp(a, place.get(a) as number, b, place.get(b) as number));
+}
+
+/** "12k installs", "1.2M installs", "1 install": a short count for a row's quiet side. Empty for none. */
+export function installsWords(n: number | undefined): string {
+  if (n == null || !(n >= 1)) return "";
+  const round = Math.round(n);
+  const trim = (v: number) => v.toFixed(1).replace(/\.0$/, "");
+  let figure: string;
+  if (round < 1000) figure = String(round);
+  else if (round < 10_000) figure = `${trim(round / 1000)}k`;
+  else if (round < 999_500) figure = `${Math.round(round / 1000)}k`;
+  else figure = `${trim(round / 1_000_000)}M`;
+  return `${figure} ${round === 1 ? "install" : "installs"}`;
 }
 
 // ---- sources -----------------------------------------------------------------------------------
@@ -169,16 +215,19 @@ export function installedById(rows: InstalledRow[]): Map<string, InstalledRow> {
 }
 
 export interface RowInput {
+  /** The catalog, already in `order` (the store sorts it once). */
   idx: Indexed[];
   installed: InstalledRow[];
   source: string;
   query: string;
+  /** How `idx` is ordered. Default "catalog". */
+  order?: LibraryOrder;
 }
 
 const plain = (s: string) => tokens(s);
 
 /** What the list shows for the chosen source and the typed words. */
-export function buildRows({ idx, installed, source, query }: RowInput): LibraryRow[] {
+export function buildRows({ idx, installed, source, query, order = "catalog" }: RowInput): LibraryRow[] {
   const have = installedById(installed);
   if (source === INSTALLED) {
     const byId = new Map(idx.map((x) => [x.e.pluginId, x.e]));
@@ -198,13 +247,16 @@ export function buildRows({ idx, installed, source, query }: RowInput): LibraryR
   const scope = source.startsWith("mp:") ? idx.filter((x) => x.e.marketplace === source.slice(3)) : idx;
   // Typed words rank by match; nothing typed keeps the catalog's own order (see catalogOrder).
   const typed = tokens(query).length > 0;
-  const list = typed ? searchEntries(scope, query) : catalogOrder(scope);
+  // Popular: `idx` already is in that order (sorted once, stable), across every marketplace.
+  const popular = order === "popular";
+  const list = typed ? searchEntries(scope, query) : popular ? scope.map((x) => x.e) : catalogOrder(scope);
   const rows: LibraryRow[] = list.map((entry) => ({ type: "plugin", key: entry.pluginId, entry, installed: have.get(entry.pluginId) ?? null }));
   if (source !== ALL || typed) return rows;
   // All, nothing typed: what is installed leads (what changed first), then each marketplace as one
   // run, the directory before the others in the rail's order. Inside a run the catalog's order holds
   // (the sort is stable), so buildList can put one heading over each.
   const rank = (r: LibraryRow) => (r.type === "plugin" && r.installed ? (r.installed.changed ? 0 : 1) : 2);
+  if (popular) return rows.sort((x, y) => rank(x) - rank(y));
   const market = (r: LibraryRow) => (r.type === "plugin" ? r.entry.marketplace : "");
   return rows.sort((x, y) => {
     const d = rank(x) - rank(y);
@@ -234,21 +286,25 @@ export interface ListModel {
 }
 
 export const INSTALLED_HEAD = "Installed";
+/** Under All in popular order, the one run after what is installed: it spans every marketplace. */
+export const MORE_HEAD = "More plugins";
 
 /** The rows, and what frames them: headings under All, the source on a row only where it adds something. */
 export function buildList(input: RowInput): ListModel {
   const rows = buildRows(input);
   const typed = tokens(input.query).length > 0;
   if (input.source !== ALL || typed) return { rows, heads: [], showSource: input.source === ALL || input.source === INSTALLED };
+  const popular = input.order === "popular";
   const heads: ListHead[] = [];
   let last: string | null = null;
   rows.forEach((r, at) => {
     if (r.type !== "plugin") return;
-    const label = r.installed ? INSTALLED_HEAD : sourceCaption(r.entry.marketplace);
+    const label = r.installed ? INSTALLED_HEAD : popular ? MORE_HEAD : sourceCaption(r.entry.marketplace);
     if (label !== last) heads.push({ at, label });
     last = label;
   });
-  return { rows, heads: heads.length > 1 ? heads : [], showSource: false };
+  // One list across marketplaces has no heading that names them, so a row outside the directory names its own.
+  return { rows, heads: heads.length > 1 ? heads : [], showSource: popular };
 }
 
 export function rowName(r: LibraryRow): string {

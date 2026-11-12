@@ -38,6 +38,7 @@ import {
   TOPIC_WORD,
   entryTopic,
   installBlock,
+  installsWords,
   itemWord,
   sourceCaption,
   tokens,
@@ -46,6 +47,7 @@ import {
   type Topic,
 } from "../../lib/library";
 import type { InstalledRow, ItemKind } from "../../lib/libraryTypes";
+import { exact } from "../../lib/usage";
 import { removeItem, setPluginEnabled, uninstallPlugin, type LibraryState } from "../../state/libraryStore";
 
 const OVERSCAN = 6;
@@ -256,6 +258,8 @@ function Row({
   let name = "";
   let second = "";
   let source = "";
+  let installs = "";
+  let installsExact = "";
   let version = "";
   let kind: ItemKind | "more" | null = null;
   let state: TileState = "none";
@@ -280,6 +284,8 @@ function Row({
     // Most plugins come from the directory: saying so on every row says nothing.
     source = entry.marketplace === DIRECTORY ? "" : sourceCaption(entry.marketplace);
     version = entry.version;
+    installs = installsWords(entry.installs);
+    installsExact = entry.installs ? `${exact(entry.installs)} people installed this` : "";
     state = tileState(installed);
     topic = entryTopic(entry);
     ask = `Uninstall ${name}?`;
@@ -370,7 +376,9 @@ function Row({
   // Widths here are the list's own (it is the container), not the window's: an open sidebar or
   // the source rail narrows the list, and the row follows. The source gives way first, sooner on
   // a row that carries the "Changed" chip and its button.
-  const sourceFrom = confirm || !source || !showSource ? "" : changed ? "@min-[860px]:block" : "@min-[620px]:block";
+  // The right-hand side says where it comes from (only when nothing above does) and how many installed it.
+  const side = showSource ? source : "";
+  const sideFrom = confirm || (!side && !installs) ? "" : changed ? "@min-[860px]:flex" : "@min-[620px]:flex";
   // What the row no longer spells out stays one hover away, with the name.
   const about = [name, version ? `Version ${version}` : "", row.type === "plugin" ? `From ${sourceCaption(row.entry.marketplace)}` : ""].filter(Boolean).join("\n");
   // A reason that is this row's own takes the second line. The one every row shares (no Claude
@@ -412,8 +420,18 @@ function Row({
             {own ? second2 : marked(second2, words)}
           </span>
         </span>
-        <span title={source} className={`hidden max-w-[168px] shrink-0 truncate text-right text-caption text-ink-2 ${sourceFrom}`}>
-          {source}
+        <span className={`hidden max-w-[240px] shrink-0 items-baseline justify-end gap-3 text-caption text-ink-2 ${sideFrom}`}>
+          {side && (
+            <span title={side} className="min-w-0 truncate">
+              {side}
+            </span>
+          )}
+          {installs && (
+            // A fixed width keeps the source in one column down the list, whatever the count says.
+            <span title={installsExact} className="w-20 shrink-0 text-right tabular-nums">
+              {installs}
+            </span>
+          )}
         </span>
       </button>
       {/* Only the controls take the pointer: the gaps and the chips between them still open the row. */}

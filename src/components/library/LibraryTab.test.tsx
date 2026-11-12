@@ -9,6 +9,7 @@ import { dismissPageToasts, resetToasts } from "../../state/toastStore";
 import { closePalette } from "../../state/paletteStore";
 import { setBackend } from "../../lib/ipc";
 import { MockBackend } from "../../lib/mock";
+import { SEED_INSTALLS } from "../../lib/mockLibrary";
 import { clearPendingToolkitItem, clearPendingToolkitTab } from "../../lib/nav";
 import { COMMAND_SOURCE, NO_CLI, OFFLINE } from "../../lib/library";
 import { looksOffline } from "./LibraryTab";
@@ -76,17 +77,17 @@ describe("Library tab: opening", () => {
 
   it("paints the first page at once, counts the whole catalog, and filters over all of it once the rest arrives", async () => {
     mount((b) => {
-      b.library.firstPage = 3;
+      b.library.firstPage = 2;
     });
     await openLibraryTab();
-    // A name that is not among the first three alphabetically: it arrives with the rest.
+    // A name that is not among the first two rows: it arrives with the rest.
     await userEvent.type(screen.getByRole("searchbox", { name: "Search plugins and skills" }), "pdf");
     expect(await row("pdf-tools")).toBeInTheDocument();
     expect(lib().calls.filter((c) => c === "catalog")).toHaveLength(1);
     expect(lib().calls.filter((c) => c === "catalog-all")).toHaveLength(1);
     // The first answer carries three rows but the whole catalog's size and per-source counts.
     const first = await lib().libraryCatalog();
-    expect(first.entries).toHaveLength(3);
+    expect(first.entries).toHaveLength(2);
     expect(first.partial).toBe(true);
     expect(first.total).toBe(lib().entries.length);
     expect(Object.values(first.counts).reduce((a, b) => a + b, 0)).toBe(first.total);
@@ -461,5 +462,111 @@ describe("Quick jump: Library", () => {
     await userEvent.keyboard("{Enter}");
     expect(await screen.findByRole("searchbox", { name: "Search plugins and skills" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Library" })).toHaveAttribute("aria-checked", "true");
+  });
+});
+
+describe("Library tab: most installed first", () => {
+  const DIR = "anthropic-plugin-directory";
+  const shown = () => Array.from(document.querySelectorAll("[data-row]")).map((el) => (el.getAttribute("data-row") ?? "").replace(`@${DIR}`, ""));
+  const counted = (b: MockBackend) => {
+    b.library.installs = { ...SEED_INSTALLS };
+  };
+
+  it("opens most installed first, each row says how many, and plugins with no count follow in catalog order", async () => {
+    mount(counted);
+    await openLibraryTab();
+    expect(await row("frontend-design")).toBeInTheDocument();
+    const ids = shown();
+    expect(ids.slice(0, 8)).toEqual(["frontend-design", "code-review", "github", "playwright", "commit-commands", "typescript-lsp", "hookify", "plugin-dev"]);
+    // Then what has no count, as the catalog lists it (pdf-tools came before security-guidance there).
+    expect(ids.slice(8, 11)).toEqual(["pdf-tools", "security-guidance", "feature-dev"]);
+    expect(screen.getByText("429k installs")).toBeInTheDocument();
+    expect(screen.getByText("12 installs")).toBeInTheDocument();
+    expect(screen.getByText("429k installs")).toHaveAttribute("title", "428,976 people installed this");
+  });
+
+  it("the Sort control (the one Sessions uses) puts the catalog's own order back, and back again", async () => {
+    mount(counted);
+    await openLibraryTab();
+    await row("frontend-design");
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Most installed" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Catalog order" }));
+    // The seed's own order: frontend-design, code-review, pdf-tools, commit-commands...
+    await waitFor(() => expect(shown().slice(0, 4)).toEqual(["frontend-design", "code-review", "pdf-tools", "commit-commands"]));
+    // The count stays on the row whatever the order.
+    expect(screen.getByText("429k installs")).toBeInTheDocument();
+    expect(lib().calls.filter((c) => c === "catalog")).toHaveLength(1); // sorting asks for nothing
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Catalog order" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Most installed" }));
+    await waitFor(() => expect(shown().slice(0, 3)).toEqual(["frontend-design", "code-review", "github"]));
+  });
+
+  it("offers no Sort and no counts when Claude Code's cache has none, and the order is the catalog's", async () => {
+    mount();
+    await openLibraryTab();
+    await row("frontend-design");
+    expect(screen.queryByRole("button", { name: /^Sort/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/ installs?$/)).not.toBeInTheDocument();
+    expect(shown().slice(0, 3)).toEqual(["frontend-design", "code-review", "pdf-tools"]);
+  });
+
+  it("the first rows do not move when the rest of the catalog lands or the list is refreshed", async () => {
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    mount((b) => {
+      counted(b);
+      b.library.firstPage = 4;
+      const all = b.library.libraryCatalogAll.bind(b.library);
+      b.library.libraryCatalogAll = async () => {
+        await gate;
+        return all();
+      };
+    });
+    await openLibraryTab();
+    await row("frontend-design");
+    const first = shown();
+    expect(first).toEqual(["frontend-design", "code-review", "github", "playwright"]);
+    release();
+    await waitFor(() => expect(shown().length).toBeGreaterThan(4));
+    expect(shown().slice(0, 4)).toEqual(first);
+    await userEvent.click(screen.getByRole("button", { name: "Refresh the plugin catalog" }));
+    await waitFor(() => expect(lib().calls).toContain("refresh"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh the plugin catalog" })).toBeEnabled());
+    expect(shown().slice(0, 8)).toEqual(["frontend-design", "code-review", "github", "playwright", "commit-commands", "typescript-lsp", "hookify", "plugin-dev"]);
+  });
+
+  it("a choice made while only the first rows are here waits for the whole list, so nothing jumps twice", async () => {
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    mount((b) => {
+      counted(b);
+      b.library.firstPage = 4;
+      const all = b.library.libraryCatalogAll.bind(b.library);
+      b.library.libraryCatalogAll = async () => {
+        await gate;
+        return all();
+      };
+    });
+    await openLibraryTab();
+    await row("frontend-design");
+    const first = shown();
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Most installed" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Catalog order" }));
+    expect(shown()).toEqual(first); // the four rows stay as they were
+    release();
+    await waitFor(() => expect(shown().slice(0, 4)).toEqual(["frontend-design", "code-review", "pdf-tools", "commit-commands"]));
+    expect(screen.getByRole("button", { name: "Sort, Catalog order" })).toBeInTheDocument();
+  });
+
+  it("under All with something installed: it leads, then one run across marketplaces under 'More plugins'", async () => {
+    mount((b) => {
+      counted(b);
+      b.library.installed = [{ kind: "plugin", id: `playwright@${DIR}`, name: "playwright", itemKind: "", enabled: true, version: "1.0.0", path: null, repo: "", backupId: "b1", changed: false }];
+    });
+    await openLibraryTab();
+    await row("frontend-design");
+    expect(shown().slice(0, 3)).toEqual(["playwright", "frontend-design", "code-review"]);
+    expect(screen.getByText("Installed", { selector: "span.font-semibold" })).toBeInTheDocument();
+    expect(screen.getByText("More plugins")).toBeInTheDocument();
   });
 });

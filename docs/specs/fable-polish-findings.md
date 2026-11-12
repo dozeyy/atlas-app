@@ -148,7 +148,7 @@ Engine and data (Rust):
 4. **`review_rule::rule_slug` cuts a rule's name in the middle of a word.** Cut at a word end.
 5. **The scan writes "1 skills" and "Shadowed".** The pages fix both on the way in ("1 skill", plain words for the state); the scan should count and name them right.
 6. **`humanize_type` writes "Ui".** The pages fix known short words where they know a name came from a type; the map, the Tokens tab and Now do not get that hint, so a name source on those rows (or the fix in the backend) would finish it.
-7. **Library popularity.** Read `unique_installs` from Claude Code's plugin cache and sort by it; send the first page in catalog order so the first rows do not reshuffle.
+7. **Library popularity.** (Built: `crates/core/src/library/popularity.rs`, spec section 9 in `skill-library.md`.) Read `unique_installs` from Claude Code's plugin cache and sort by it; send the first page in catalog order so the first rows do not reshuffle.
 8. **Library "update available".** No such state in the data; with a version check the Installed rail gets a dot and the row an Update button.
 9. **Library contents counts per entry** (skills, agents, hooks inside), so a row can say what it holds before the sheet opens.
 10. **Top lists ordered by cost.** The page shows tokens and sorts what it gets, but the top four by cost are not always the top four by tokens.
