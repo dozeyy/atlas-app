@@ -20,6 +20,7 @@ import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
 import { openSessionNext } from "../lib/nav";
 import { useDaily } from "../lib/useDaily";
+import { useDayChange, useToday } from "../lib/today";
 import { cacheNotReady, useFetched, useLiveReload, useReadyRetry, useUsageStatus } from "../lib/useUsage";
 import {
   bin,
@@ -34,7 +35,7 @@ import {
   weekdayInitial,
 } from "../lib/dashboardModel";
 import { usualDay } from "../lib/chartPaths";
-import { addDays, addKinds, compact, formatUsd, headline, kindsOf, kindsSpeech, localDay, mergeModelRows, modelChoices, NO_KINDS, plural, tokenHint, tokensTip } from "../lib/usage";
+import { addDays, addKinds, compact, formatUsd, headline, kindsOf, kindsSpeech, mergeModelRows, modelChoices, NO_KINDS, plural, tokenHint, tokensTip } from "../lib/usage";
 import type { BarDatum } from "../components/charts/Bars";
 import type { Dashboard as DashboardData, Timeline, UsageStatus } from "../lib/types";
 
@@ -207,7 +208,10 @@ export function Dashboard() {
   const now = useNow();
 
   const data = dash.data;
-  const today = data?.todayDate || localDay(new Date(now));
+  // One shared "today" (flips at local midnight and when a hidden window wakes on a later day).
+  // The engine's own todayDate in `data` is only as new as its last answer, so it is not used here.
+  const today = useToday();
+  useDayChange(() => dash.reload(true));
   const projectSeries = useFetched<Timeline>(
     () => backend.usageTimeline({ from: addDays(today, -29), to: today, bucket: "day", groupBy: "project" }),
     [cfg?.projectsDir ?? null, today, data?.month.sessions ?? 0],

@@ -4,6 +4,7 @@ import { Card } from "../controls";
 import { Skeleton } from "./StateBlocks";
 import { getBackend } from "../../lib/ipc";
 import { LIFETIME_NOTE, lifetimeView } from "../../lib/lifetimeModel";
+import { useDayChange } from "../../lib/today";
 import { compact, exact } from "../../lib/usage";
 import { useFetched, useLiveReload } from "../../lib/useUsage";
 
@@ -31,6 +32,7 @@ export function LifetimeStrip({ streak }: { streak: number | null }) {
   const backend = getBackend();
   const life = useFetched(() => backend.usageLifetime(), []);
   useLiveReload(life.reload);
+  useDayChange(() => life.reload(true)); // "today" in the totals moves at midnight
   const view = useMemo(() => (life.data ? lifetimeView(life.data, streak ?? 0) : null), [life.data, streak]);
 
   if (life.error || (life.data && !view)) return null;
