@@ -315,6 +315,8 @@ pub struct SettingsOverview {
     pub cleanup_unknown: bool,
     /// Why Atlas can't change that setting (plain words), or None when it can.
     pub cleanup_locked: Option<String>,
+    /// A project whose own settings file keeps chats for a different time (a quiet note), or None.
+    pub cleanup_note: Option<String>,
     pub history_bytes: u64,
     pub history_versions: u32,
     pub history_items: u32,
@@ -362,6 +364,7 @@ pub async fn settings_overview(app: AppHandle, state: Shared<'_>, hub: State<'_,
             cleanup_days: retention.as_ref().and_then(|r| r.days),
             cleanup_invalid: retention.as_ref().is_some_and(|r| r.invalid),
             cleanup_unknown: retention.as_ref().is_some_and(|r| r.unknown),
+            cleanup_note: retention.as_ref().and_then(|r| r.project_note.clone()),
             cleanup_locked: retention.and_then(|r| r.locked),
             history_bytes,
             history_versions,

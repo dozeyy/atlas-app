@@ -319,35 +319,71 @@ fn managed_settings_still_win_when_the_users_file_is_broken() {
 }
 
 #[test]
-fn a_project_settings_file_overrides_the_users_and_says_where_it_came_from() {
+fn a_project_that_sets_its_own_value_is_a_note_and_never_locks_the_picker() {
     let fx = Fx::new();
     fx.write(format!("{{\"{KEY}\": 365}}").as_bytes());
     let t = fx._t.path().join("projects");
-    let (p1, p2) = (t.join("alpha"), t.join("beta"));
+    let (p1, p2, p3) = (t.join("alpha"), t.join("beta"), t.join("gamma"));
     put(&p1.join(".claude").join("settings.json"), &format!("{{\"{KEY}\": 60}}"));
     put(&p2.join(".claude").join("settings.json"), "{ broken");
     let projects = vec![p2.clone(), p1.clone()];
     let r = inspect(&fx.dir, Some(&fx.managed), &projects);
-    assert_eq!((r.days, r.invalid, r.unknown), (Some(60), false, false));
-    let why = r.locked.unwrap();
-    assert!(why.contains("alpha") && why.contains("60 days"), "{why}");
-    // Refused, nothing written, no backup.
-    let original = fx.bytes();
-    let e = set_days(&fx.dir, Some(&fx.managed), &projects, &fx.backups, YEAR_DAYS).unwrap_err();
-    assert!(matches!(e, WriteError::Refused(_)));
-    assert_eq!(fx.bytes(), original);
-    assert_eq!(fx.backup_count(), 0);
+    // The user's value is still the one shown, and the picker is still open.
+    assert_eq!((r.days, r.invalid, r.unknown, r.locked.clone()), (Some(365), false, false, None));
+    assert_eq!(r.project_note.as_deref(), Some("alpha keeps chats for 60 days; its own settings file sets that."));
+    // So it can be changed, and only the user's file is written.
+    assert!(fx.set(FOREVER_DAYS).is_ok());
+    assert_eq!(fx.json()[KEY], 3650);
+    assert!(inspect(&fx.dir, Some(&fx.managed), &projects).project_note.is_some());
 
-    // A project's local file beats its shared one; managed settings beat both.
+    // The first project that sets it is named, with a count of the rest; local beats shared inside one project.
     put(&p1.join(".claude").join("settings.local.json"), &format!("{{\"{KEY}\": 7}}"));
-    assert_eq!(inspect(&fx.dir, Some(&fx.managed), &projects).days, Some(7));
-    put(&fx.managed.join("managed-settings.json"), &format!("{{\"{KEY}\": 14}}"));
-    assert_eq!(inspect(&fx.dir, Some(&fx.managed), &projects).days, Some(14));
+    put(&p3.join(".claude").join("settings.local.json"), &format!("{{\"{KEY}\": 1}}"));
+    let projects = vec![p2.clone(), p1.clone(), p3.clone()];
+    let note = inspect(&fx.dir, Some(&fx.managed), &projects).project_note.unwrap();
+    assert_eq!(note, "alpha keeps chats for 7 days; its own settings file sets that (and 1 more).");
+    // A project value Claude Code would reject is not worth a note.
+    put(&p3.join(".claude").join("settings.local.json"), &format!("{{\"{KEY}\": 0}}"));
+    put(&p1.join(".claude").join("settings.local.json"), "{}");
+    put(&p1.join(".claude").join("settings.json"), "{}");
+    assert!(inspect(&fx.dir, Some(&fx.managed), &projects).project_note.is_none());
 
-    // A project whose file can't be read does not lock anything.
+    // Managed settings still lock, and then the note is not shown at all.
+    put(&p1.join(".claude").join("settings.json"), &format!("{{\"{KEY}\": 60}}"));
+    put(&fx.managed.join("managed-settings.json"), &format!("{{\"{KEY}\": 14}}"));
+    let r = inspect(&fx.dir, Some(&fx.managed), &projects);
+    assert_eq!(r.days, Some(14));
+    assert!(r.locked.is_some() && r.project_note.is_none());
+}
+
+#[test]
+fn the_home_folder_as_a_project_does_not_make_the_users_own_file_a_project_file() {
+    // ~/.claude is the Claude folder and ~ is a project (Claude Code was run there).
+    let t = tempfile::tempdir().unwrap();
+    let home = t.path().join("home");
+    let dir = home.join(".claude");
+    put(&dir.join("settings.json"), &format!("{{\"{KEY}\": 365}}"));
+    let backups = t.path().join("data").join("backups");
+    let managed = t.path().join("managed");
+    let r = inspect(&dir, Some(&managed), std::slice::from_ref(&home));
+    assert_eq!((r.days, r.locked, r.project_note), (Some(365), None, None), "its own file is not a project override");
+    assert!(set_days(&dir, Some(&managed), std::slice::from_ref(&home), &backups, FOREVER_DAYS).is_ok());
+    let now: Value = serde_json::from_slice(&fs::read(dir.join("settings.json")).unwrap()).unwrap();
+    assert_eq!(now[KEY], 3650);
+    // The same folder's separate local file is a real project file and is only a note.
+    put(&dir.join("settings.local.json"), &format!("{{\"{KEY}\": 45}}"));
+    let r = inspect(&dir, Some(&managed), std::slice::from_ref(&home));
+    assert_eq!((r.days, r.locked), (Some(3650), None));
+    assert_eq!(r.project_note.as_deref(), Some("home keeps chats for 45 days; its own settings file sets that."));
+}
+
+#[test]
+fn a_project_whose_file_can_not_be_read_changes_nothing() {
     let fx = Fx::new();
-    assert!(inspect(&fx.dir, Some(&fx.managed), &[p2]).locked.is_none());
-    assert!(set_days(&fx.dir, Some(&fx.managed), &[], &fx.backups, YEAR_DAYS).is_ok());
+    let p = fx._t.path().join("projects").join("beta");
+    put(&p.join(".claude").join("settings.json"), "{ broken");
+    let r = inspect(&fx.dir, Some(&fx.managed), &[p]);
+    assert_eq!((r.locked, r.project_note), (None, None));
 }
 
 #[test]

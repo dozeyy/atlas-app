@@ -270,6 +270,26 @@ describe("Settings", () => {
     expect(screen.queryByRole("radiogroup", { name: "Keep saved sessions" })).toBeNull();
   });
 
+  it("Keep saved sessions: a project that sets its own time is a quiet note; the picker stays open and keeps the user's value", async () => {
+    const backend = mount((b) => {
+      b.retention.days = 365;
+      b.retention.note = "proj-alpha keeps chats for 60 days; its own settings file sets that (and 2 more).";
+    });
+    await openFolder();
+    expect(await screen.findByText("proj-alpha keeps chats for 60 days; its own settings file sets that (and 2 more).")).toBeInTheDocument();
+    expect(checkedOf(await keepGroup())).toEqual(["1 year"]);
+    const set = vi.spyOn(backend, "retentionSet");
+    await userEvent.click(within(await keepGroup()).getByRole("radio", { name: "Forever" }));
+    await waitFor(() => expect(set).toHaveBeenCalledWith(3650));
+  });
+
+  it("Keep saved sessions: no note line when no project sets it", async () => {
+    mount();
+    await openFolder();
+    await keepGroup();
+    expect(screen.queryByText(/its own settings file sets that/)).toBeNull();
+  });
+
   it("Text size: Default and Larger, saved, and the page is told before anything else paints", async () => {
     mount();
     const group = await screen.findByRole("radiogroup", { name: "Text size" });

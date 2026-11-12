@@ -301,7 +301,7 @@ export class MockBackend {
   historyOpenFolder: Backend["historyOpenFolder"] = () => this.history.historyOpenFolder();
   onHistoryChanged: Backend["onHistoryChanged"] = (cb) => this.history.onHistoryChanged(cb);
   /** How long Claude Code keeps sessions, as the stand-in's settings file holds it. Tests set these. */
-  retention: { days: number | null; invalid: boolean; unknown: boolean; locked: string | null } = { days: null, invalid: false, unknown: false, locked: null };
+  retention: { days: number | null; invalid: boolean; unknown: boolean; locked: string | null; note: string | null } = { days: null, invalid: false, unknown: false, locked: null, note: null };
   private retentionBackups = new Map<string, { days: number | null; invalid: boolean }>();
   settingsOverview: Backend["settingsOverview"] = async () => ({
     ...(await this.history.settingsOverview()),
@@ -309,6 +309,7 @@ export class MockBackend {
     cleanupInvalid: this.retention.invalid,
     cleanupUnknown: this.retention.unknown,
     cleanupLocked: this.retention.locked,
+    cleanupNote: this.retention.note,
     keepVersions: this.info.settings.historyKeepVersions,
   });
   retentionSet: Backend["retentionSet"] = async (days) => {

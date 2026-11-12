@@ -274,6 +274,7 @@ export class MockHistory {
       cleanupInvalid: false,
       cleanupUnknown: false,
       cleanupLocked: null,
+      cleanupNote: null,
       historyBytes: 61_440,
       historyVersions: 14,
       historyItems: 9,

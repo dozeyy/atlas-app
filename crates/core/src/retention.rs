@@ -36,10 +36,9 @@ pub const PICKS: [u32; 3] = [DEFAULT_DAYS, YEAR_DAYS, FOREVER_DAYS];
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Retention {
-    /// A whole number of days, 1 or more, from the file that wins (managed settings, then a
-    /// project's local file, then its shared file, then the user's file). None when nothing sets it
-    /// (Claude Code then uses `DEFAULT_DAYS`), when the winning value is not valid, or when it can't
-    /// be known (`unknown`).
+    /// A whole number of days, 1 or more, from managed settings when they set it, else the user's
+    /// file. None when nothing sets it (Claude Code then uses `DEFAULT_DAYS`), when the value is
+    /// not valid, or when it can't be known (`unknown`).
     pub days: Option<u32>,
     /// The winning value is there but is not a whole number of days, 1 or more. Claude Code will not accept it.
     pub invalid: bool,
@@ -47,6 +46,9 @@ pub struct Retention {
     pub unknown: bool,
     /// Why Atlas can't change it (plain words), or None when it can.
     pub locked: Option<String>,
+    /// Plain words naming a project whose own settings file sets a different value. Only a note:
+    /// it doesn't lock the picker or change `days`. None when no project does.
+    pub project_note: Option<String>,
 }
 
 /// The JSON object in a settings file. A file that is missing, empty or only whitespace has
@@ -87,19 +89,39 @@ fn managed_value(managed_dir: &Path) -> Option<Value> {
     files.iter().filter_map(|f| read_object(f).ok().flatten()).filter_map(|m| m.get(KEY).cloned()).next_back()
 }
 
-/// The first project settings file that sets the key (a project's local file before its shared
-/// one) and the value. Claude Code lists the key as settable from any file, and the project it was
-/// started in beats the user's file.
-fn project_value(projects: &[PathBuf]) -> Option<(PathBuf, Value)> {
+/// The projects whose own settings files set the key to a valid number of days, as (project
+/// folder, days), in the order given (a project's local file before its shared one, one entry per
+/// project). Claude Code lists the key as settable from any file, so the project it was started
+/// in beats the user's file; Atlas can't know which project that is, so these are only a note.
+/// A project file that is the user's own settings file (the home folder is a project, and its
+/// `.claude/settings.json` is the Claude folder's) is not a project file.
+fn project_overrides(projects: &[PathBuf], user_file: &Path) -> Vec<(PathBuf, u32)> {
+    let user = fs::canonicalize(user_file).unwrap_or_else(|_| user_file.to_path_buf());
+    let mut out = Vec::new();
     for dir in projects {
         for name in ["settings.local.json", "settings.json"] {
             let f = dir.join(".claude").join(name);
-            if let Some(v) = read_object(&f).ok().flatten().and_then(|m| m.get(KEY).cloned()) {
-                return Some((f, v));
+            if fs::canonicalize(&f).unwrap_or_else(|_| f.clone()) == user {
+                continue;
+            }
+            if let Some(d) = read_object(&f).ok().flatten().and_then(|m| m.get(KEY).and_then(days_of)) {
+                out.push((dir.clone(), d));
+                break;
             }
         }
     }
-    None
+    out
+}
+
+/// The quiet line under the picker: the first project that sets its own value, and how many more do.
+fn override_note(over: &[(PathBuf, u32)]) -> Option<String> {
+    let (dir, days) = over.first()?;
+    let name = dir.file_name().map_or_else(|| dir.to_string_lossy().into_owned(), |n| n.to_string_lossy().into_owned());
+    let more = match over.len() - 1 {
+        0 => String::new(),
+        n => format!(" (and {n} more)"),
+    };
+    Some(format!("{name} keeps chats for {}; its own settings file sets that{more}.", plain_days(*days)))
 }
 
 fn plain_days(d: u32) -> String {
@@ -107,10 +129,11 @@ fn plain_days(d: u32) -> String {
 }
 
 /// What Claude Code will use and whether Atlas may change the user's file. `projects` are the
-/// folders of the projects Atlas knows about; their `.claude` settings files override the user's.
+/// folders of the projects Atlas knows about; their `.claude` settings files can override the
+/// user's for a chat started there, which `project_note` says.
 pub fn inspect(config_dir: &Path, managed_dir: Option<&Path>, projects: &[PathBuf]) -> Retention {
     let file = config_dir.join("settings.json");
-    let mut out = Retention { days: None, invalid: false, unknown: false, locked: None };
+    let mut out = Retention { days: None, invalid: false, unknown: false, locked: None, project_note: None };
 
     // The user's own file: what the picker would change.
     let user = read_object(&file);
@@ -144,14 +167,10 @@ pub fn inspect(config_dir: &Path, managed_dir: Option<&Path>, projects: &[PathBu
         out.invalid = out.days.is_none();
         out.unknown = false;
         out.locked = Some(format!("Your organization sets this to {}, so Atlas can't change it.", said(&v)));
-    } else if let Some((path, v)) = project_value(projects) {
-        out.days = days_of(&v);
-        out.invalid = out.days.is_none();
-        out.unknown = false;
-        let project = path.parent().and_then(|p| p.parent()).and_then(|p| p.file_name()).map(|n| format!(" in {}", n.to_string_lossy())).unwrap_or_default();
-        out.locked = Some(format!("A project's settings file{project} sets this to {}, so Atlas can't change it.", said(&v)));
     } else {
         out.locked = user_note;
+        // A project's own value doesn't lock the picker or replace the shown one: it is a note.
+        out.project_note = override_note(&project_overrides(projects, &file));
     }
     out
 }

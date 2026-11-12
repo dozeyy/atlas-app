@@ -137,6 +137,8 @@ export interface SettingsOverview {
   cleanupUnknown: boolean;
   /** Why Atlas can't change how long sessions are kept (plain words), or null when it can. */
   cleanupLocked: string | null;
+  /** A project whose own settings file sets a different time, in words (a quiet note under the picker), or null. */
+  cleanupNote: string | null;
   historyBytes: number;
   historyVersions: number;
   historyItems: number;

@@ -413,6 +413,9 @@ export function Settings() {
             )}
           </Row>
         )}
+        {ov?.cleanupNote && !ov.cleanupLocked && (
+          <p className="border-t border-line px-5 py-3 text-caption text-ink-2">{ov.cleanupNote}</p>
+        )}
         <Row label="Work on a copy" hint="Sandbox mode" tip="Atlas copies your Claude folder to a temporary place and only touches the copy. Your real files are never changed.">
           <Toggle label="Sandbox mode" checked={sb.enabled} onChange={(v) => void setSandbox(v)} />
         </Row>
