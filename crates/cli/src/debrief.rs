@@ -33,7 +33,7 @@ USAGE
   --project NAME   with --last: a project by name or folder instead of this folder's
   --cwd DIR        the folder that decides \"this project\" (default: $CLAUDE_PROJECT_DIR, else .)
   --config-dir DIR Claude config folder (default: $CLAUDE_CONFIG_DIR, else ~/.claude)
-  --cache-dir DIR  where the index lives (default: $ATLAS_USAGE_CACHE, else <local app data>/atlas/cli)
+  --cache-dir DIR  where the index lives (default: $ATLAS_USAGE_CACHE, else <local app data>/atlas/cli, or cli/roots/<id> for a --config-dir that is not your own)
 
 Exit codes: 0 done; 1 a problem reading; 2 a wrong option or no chat with that id.";
 

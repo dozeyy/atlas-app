@@ -36,7 +36,7 @@ offer-note    remembers your answer to an offer to make a skill: made (a skill w
               The answer is stored in Atlas's data folder as habits.json, ids only, never text.
 
 Options for both: --config-dir DIR (default: $CLAUDE_CONFIG_DIR, else ~/.claude),
---cache-dir DIR (default: $ATLAS_USAGE_CACHE, else <local app data>/atlas/cli),
+--cache-dir DIR (default: $ATLAS_USAGE_CACHE, else <local app data>/atlas/cli, or cli/roots/<id> for a --config-dir that is not your own),
 --data-dir DIR (Atlas's data folder; default like the app: $ATLAS_DATA_DIR, else the OS folder).";
 
 #[derive(Default)]
@@ -156,7 +156,7 @@ impl Ctx {
         let local = paths::local_data_dir(o.data_dir.as_deref(), atlas_env.as_deref(), &home, &here).ok_or("no local app data folder")?;
         let cache_dir = match o.cache_dir.clone().or_else(|| env_path("ATLAS_USAGE_CACHE")) {
             Some(d) => paths::absolutize(&d, &home, &here),
-            None => local.join("cli"),
+            None => paths::cli_cache_dir(&local, &root, env_cfg.as_deref(), &home, &here),
         };
         if atlas_core::usage::is_inside(&cache_dir, &root.projects_dir) || atlas_core::usage::is_inside(&cache_dir, &root.dir) || atlas_core::usage::is_inside(&data_dir, &root.dir) {
             return Err("the cache and data folders must not be inside the Claude config folder (it is read-only here)".into());
