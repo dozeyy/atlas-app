@@ -26,6 +26,9 @@ pub struct Usage {
     config_dir: PathBuf,
     /// `<local app data>/atlas`, the same folder the app and `atlas-usage` use.
     local_data: PathBuf,
+    /// Where this server keeps its index: `<local_data>/cli` for the default config root, a
+    /// per-root folder under it for any other (`atlas_core::paths::cli_cache_dir`).
+    cache_dir: PathBuf,
     /// Where the app's `settings.json` lives. "Count cache in token totals" is read from it on
     /// every call, so a long-lived server follows a toggle in the app without a restart.
     settings_dir: PathBuf,
@@ -33,8 +36,8 @@ pub struct Usage {
 }
 
 impl Usage {
-    pub fn new(projects_dir: PathBuf, config_dir: PathBuf, local_data: PathBuf, settings_dir: PathBuf) -> Usage {
-        Usage { projects_dir, config_dir, local_data, settings_dir, engine: Mutex::new(None) }
+    pub fn new(projects_dir: PathBuf, config_dir: PathBuf, local_data: PathBuf, cache_dir: PathBuf, settings_dir: PathBuf) -> Usage {
+        Usage { projects_dir, config_dir, local_data, cache_dir, settings_dir, engine: Mutex::new(None) }
     }
 
     fn engine(&self) -> Result<Arc<UsageEngine>, String> {
@@ -47,7 +50,7 @@ impl Usage {
         if !self.projects_dir.is_dir() {
             return Err("There are no Claude Code chats to read yet (the projects folder does not exist).".into());
         }
-        let cache_dir = self.local_data.join("cli");
+        let cache_dir = self.cache_dir.clone();
         if atlas_core::usage::is_inside(&cache_dir, &self.projects_dir) || atlas_core::usage::is_inside(&cache_dir, &self.config_dir) {
             return Err("Atlas's data folder must not be inside the Claude folder.".into());
         }

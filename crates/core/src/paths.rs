@@ -16,6 +16,7 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -136,6 +137,25 @@ pub fn local_data_dir(
     dirs::data_local_dir().map(|d| d.join("atlas"))
 }
 
+/// Where `atlas-usage` and `atlas-mcp` keep their index (`cache.sqlite`, `search.sqlite`,
+/// `pricing.json`) when no `--cache-dir` / `ATLAS_USAGE_CACHE` is given. The default config
+/// root (`CLAUDE_CONFIG_DIR`, else `~/.claude`) keeps `<local>/cli`, so nothing moves for real
+/// users. Any other root (a `--config-dir` fixture or copy) gets `<local>/cli/roots/<hash of the
+/// canonical root folder>`: the index keeps chats after their files vanish, so a root that is
+/// not the real one must never write into the real index.
+pub fn cli_cache_dir(local: &Path, root: &ConfigRoot, env: Option<&OsStr>, home: &Path, cwd: &Path) -> PathBuf {
+    let default = resolve_config_root(&ConfigInputs { flag: None, settings_override: None, env, home, cwd });
+    let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let (this, usual) = (canon(&root.dir), canon(&default.dir));
+    if root.source == ConfigSource::Default || root.source == ConfigSource::Env || this == usual {
+        return local.join("cli");
+    }
+    let mut h = Sha256::new();
+    h.update(this.to_string_lossy().as_bytes());
+    let hex: String = h.finalize().iter().take(8).map(|b| format!("{b:02x}")).collect();
+    local.join("cli").join("roots").join(hex)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,5 +272,34 @@ mod tests {
         if let Some(d) = data_dir(None, None, &home, &cwd) {
             assert!(d.ends_with("atlas"));
         }
+    }
+
+    #[test]
+    fn cli_cache_dir_is_the_old_folder_for_the_default_root_and_per_root_otherwise() {
+        let tmp = std::env::temp_dir().join("atlas-paths-cli-cache");
+        let (home, cwd, local) = (tmp.join("home"), tmp.join("cwd"), tmp.join("local"));
+        let fx = tmp.join("fixture-a");
+        let fx2 = tmp.join("fixture-b");
+        let env_dir = tmp.join("env-root");
+        for d in [&home, &cwd, &fx, &fx2, &env_dir] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let dir_for = |flag: Option<&Path>, env: Option<&OsStr>| {
+            let root = resolve_config_root(&inputs(flag, None, env, &home, &cwd));
+            cli_cache_dir(&local, &root, env, &home, &cwd)
+        };
+        // The default root and a CLAUDE_CONFIG_DIR root keep today's folder.
+        assert_eq!(dir_for(None, None), local.join("cli"));
+        let env = env_dir.as_os_str().to_os_string();
+        assert_eq!(dir_for(None, Some(&env)), local.join("cli"));
+        // A flag that names the very same root as the default does too.
+        assert_eq!(dir_for(Some(&env_dir), Some(&env)), local.join("cli"));
+        // Any other flag root gets its own folder, stable per root and different between roots.
+        let a = dir_for(Some(&fx), None);
+        assert_eq!(a.parent().unwrap(), local.join("cli").join("roots"));
+        assert_eq!(a, dir_for(Some(&fx), None));
+        assert_ne!(a, dir_for(Some(&fx2), None));
+        assert_ne!(a, local.join("cli"));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

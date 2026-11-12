@@ -47,7 +47,8 @@ OPTIONS
   --week-start mon|sun  default: the operating system's setting, like the app
   --config-dir DIR    Claude config folder (default: $CLAUDE_CONFIG_DIR, else ~/.claude)
   --cache-dir DIR     where the index lives (default: $ATLAS_USAGE_CACHE, else
-                      <local app data>/atlas/cli)
+                      <local app data>/atlas/cli, or cli/roots/<id>
+                      for a --config-dir that is not your own Claude folder)
 
 Tokens = input + output; the Settings option Count cache in token totals adds cache writes and reads.
 The one dollar figure is an estimate at API prices. Transcripts are only read, never written.";
@@ -269,7 +270,7 @@ fn open(c: &Common) -> Result<Ctx, String> {
     let app_dir = atlas_core::paths::local_data_dir(None, atlas_env.as_deref(), &home, &here).ok_or("no local app data folder")?;
     let cache_dir = match c.cache_dir.clone().or_else(|| env_path("ATLAS_USAGE_CACHE")) {
         Some(d) => atlas_core::paths::absolutize(&d, &home, &here),
-        None => app_dir.join("cli"),
+        None => atlas_core::paths::cli_cache_dir(&app_dir, &root, env_cfg.as_deref(), &home, &here),
     };
     if atlas_core::usage::is_inside(&cache_dir, &root.projects_dir) || atlas_core::usage::is_inside(&cache_dir, &root.dir) {
         return Err("the cache folder must not be inside the Claude config folder (it is read-only here)".into());
