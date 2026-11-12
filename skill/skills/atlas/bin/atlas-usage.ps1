@@ -20,14 +20,19 @@
 # Signature: on a download the release's SHA256SUMS.txt and SHA256SUMS.txt.sig are fetched too. The
 # signature must be made by the Atlas update key below (checked by a small Ed25519 + BLAKE2b-512
 # verifier compiled here, no packages) and the list must give the program the pinned hash, or the
-# download is deleted. If the verifier cannot be compiled, the pin alone decides, quietly;
-# launcher-doctor says which.
+# download is deleted. Only the "ED" form (Ed25519 over the file's BLAKE2b-512) is accepted. If the
+# verifier cannot be compiled, the pin alone decides, quietly; launcher-doctor says which.
+# A saved copy that cannot be read to hash it is never run: it is deleted and fetched again.
+# Arguments reach the program unchanged, empty ones and embedded quotes too (PowerShell before 7.3
+# mangles those, so there the program is started directly with each argument quoted).
 # Exit code 3 = the launcher itself failed (one plain line on stderr); 4 = the program found is too old
 # for repeats / offer-note / debrief.
 # ATLAS_USAGE_BIN = a program file to run instead of searching (no checksum check: your choice).
 # ATLAS_USAGE_LAUNCHER_VERBOSE=1 names the copy used.
 # Test aid: ATLAS_USAGE_TEST_SOURCE = a local folder, or an http://127.0.0.1 / localhost
-# address, that stands in for the release (the pinned hash still applies). Only together with it,
+# address, that stands in for the release (the pinned hash still applies). A network path
+# (\\host\share, //host, a mapped network drive) is refused: the stand-in must be on this computer.
+# Only together with it,
 # ATLAS_USAGE_TEST_PUBKEY replaces the update key, so tests can sign their own files. That grants
 # nothing: the stand-in release is local, its files must still match the pins, and whoever can set
 # these variables can already set ATLAS_USAGE_BIN. Downloads from GitHub always use the real key.
@@ -175,9 +180,29 @@ $want = ''
 if ($version -and $asset) { $want = Get-Pin $version $asset }
 
 # The stand-in release (tests only), and the key its signature must come from.
+# A network share is not on this computer: refused before anything touches it.
+function Test-NetworkPath([string]$p) {
+    if ($p.StartsWith('\\') -or $p.StartsWith('//')) { return $true }
+    if ($onWindows) {
+        try {
+            $full = [IO.Path]::GetFullPath($p)
+            if ($full.StartsWith('\\')) { return $true }
+            $root = [IO.Path]::GetPathRoot($full)
+            if ($root -and (New-Object IO.DriveInfo $root).DriveType -eq [IO.DriveType]::Network) { return $true }
+        } catch { return $true }
+    }
+    return $false
+}
 $src = $env:ATLAS_USAGE_TEST_SOURCE
-$srcIsDir = [bool]($src -and (Test-Path -LiteralPath $src -PathType Container))
-$srcIsLoopback = [bool]($src -and -not $srcIsDir -and (Test-Loopback $src))
+$srcIsDir = $false
+$srcIsLoopback = $false
+if ($src) {
+    if (Test-Loopback $src) { $srcIsLoopback = $true }
+    elseif (-not (Test-NetworkPath $src) -and (Test-Path -LiteralPath $src -PathType Container)) { $srcIsDir = $true }
+    if (-not ($srcIsDir -or $srcIsLoopback)) {
+        Exit-Launcher "ATLAS_USAGE_TEST_SOURCE ($src) must be a folder on this computer or an http://127.0.0.1 or http://localhost address; network paths are refused. Fix it or unset it."
+    }
+}
 $pubKey = $PubKey
 $keyName = 'the Atlas release key'
 if (($srcIsDir -or $srcIsLoopback) -and $env:ATLAS_USAGE_TEST_PUBKEY) {
@@ -413,14 +438,12 @@ public static class AtlasMinisign {
             sig = Convert.FromBase64String(sl[1].Trim());
         } catch (Exception) { return "cannot read the signature file"; }
         if (sig.Length != 74) return "the signature has the wrong length";
-        bool prehashed;
-        if (sig[0] == (byte)'E' && sig[1] == (byte)'D') prehashed = true;
-        else if (sig[0] == (byte)'E' && sig[1] == (byte)'d') prehashed = false;
-        else return "unknown signature algorithm";
+        // Only "ED" (prehashed with BLAKE2b-512); the legacy unhashed "Ed" form is refused.
+        if (sig[0] != (byte)'E' || sig[1] != (byte)'D') return "not an ED (prehashed) signature";
         if (!Same(sig, 2, raw, 2, 8)) return "the signature was made by a different key";
         byte[] s64 = new byte[64];
         Array.Copy(sig, 10, s64, 0, 64);
-        byte[] signedData = prehashed ? Blake2b512(data) : data;
+        byte[] signedData = Blake2b512(data);
         if (!Ed25519(pk, signedData, s64)) return "the signature does not match this file";
         string tc = sl.Length > 2 ? sl[2] : "";
         const string prefix = "trusted comment: ";
@@ -525,9 +548,42 @@ function Invoke-Program([string]$path) {
             }
         }
     }
-    try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { $null = $_ } # bars are UTF-8
-    & $path @rest
-    exit $LASTEXITCODE
+    if ($PSVersionTable.PSVersion -ge [version]'7.3') {
+        try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { $null = $_ } # bars are UTF-8
+        & $path @rest
+        exit $LASTEXITCODE
+    }
+    # Older PowerShell drops empty arguments and passes embedded quotes unescaped: start the program
+    # directly instead. It shares this console and these stdin/stdout/stderr handles, so its output
+    # goes out byte for byte.
+    $psi = New-Object Diagnostics.ProcessStartInfo $path
+    $psi.UseShellExecute = $false
+    $psi.Arguments = ConvertTo-CommandLine $rest
+    $proc = [Diagnostics.Process]::Start($psi)
+    $proc.WaitForExit()
+    exit $proc.ExitCode
+}
+
+# One command line from separate arguments, quoted the way Windows programs split them again
+# (CommandLineToArgvW / the C runtime): backslashes count only before a quote.
+function ConvertTo-CommandLine([string[]]$list) {
+    $parts = foreach ($a in $list) {
+        if ($a.Length -gt 0 -and $a -notmatch '[\s"]') { $a; continue }
+        $sb = New-Object Text.StringBuilder
+        [void]$sb.Append('"')
+        $bs = 0
+        foreach ($c in $a.ToCharArray()) {
+            if ($c -eq [char]92) { $bs++; continue }
+            if ($c -eq [char]34) { [void]$sb.Append([char]92, 2 * $bs + 1) }
+            elseif ($bs) { [void]$sb.Append([char]92, $bs) }
+            [void]$sb.Append($c)
+            $bs = 0
+        }
+        [void]$sb.Append([char]92, 2 * $bs)
+        [void]$sb.Append('"')
+        $sb.ToString()
+    }
+    return ($parts -join ' ')
 }
 
 function Select-Program([string]$path, [string]$label) { # the copy to run (launcher-doctor stops here)
@@ -562,15 +618,16 @@ function Test-CurrentEnough([string]$path, [string]$label) {
 function Test-CacheOk([string]$path) {
     if (-not $want) { return $true }
     $h = Get-Hash $path
-    if (-not $h) { return $true } # cannot hash it: trusted, as it was checked when saved
-    if ($h -ceq $want) { return $true }
+    if ($h -and $h -ceq $want) { return $true }
+    # Changed, or not readable (no read permission, locked by another program): never run it.
+    if ($h) { $why = 'did not match the checksum pinned in this plugin' } else { $why = 'could not be read to check it' }
     if ($doctor) {
-        Write-Report 'saved copy' "$path (does NOT match its pin; it would be fetched again)"
+        Write-Report 'saved copy' "$path ($why; it would be fetched again)"
         return $false
     }
     Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
     $script:memoPath = $null
-    Write-Note 'the saved copy of the program did not match the checksum pinned in this plugin, so it was deleted. Fetching it again.'
+    Write-Note "the saved copy of the program $why, so it was deleted. Fetching it again."
     return $false
 }
 
@@ -648,17 +705,27 @@ if (-not $want) {
 }
 
 try { New-Item -ItemType Directory -Force -Path $cacheRoot -ErrorAction Stop | Out-Null } catch { Exit-Launcher "cannot write to $binDir. $Hint" }
-# Work folders of runs that were killed mid-download: remove the ones older than an hour.
+# The longest a download takes: three files (program, list, signature), each up to 4 tries of 20 s
+# to connect + 300 s, about 64 minutes. A lock or work folder older than about twice that was left
+# by a run that was killed.
+$staleMinutes = 130
+# Work folders of runs that were killed mid-download.
 Get-ChildItem -LiteralPath $cacheRoot -Directory -Force -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name.StartsWith('.dl') -and $_.LastWriteTime -lt (Get-Date).AddHours(-1) } |
+    Where-Object { $_.Name.StartsWith('.dl') -and $_.LastWriteTime -lt (Get-Date).AddMinutes(-$staleMinutes) } |
     ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 
 $lock = Join-Path $cacheRoot ".lock-$version"
+$lockOwner = Join-Path $lock 'owner'
+$token = [guid]::NewGuid().ToString('N')
 $script:locked = $false
 $script:work = ''
+function Read-Owner([string]$file) { try { return [IO.File]::ReadAllText($file).Trim() } catch { return '' } }
 function Clear-Download {
     if ($script:work) { Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue }
-    if ($script:locked) { Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue }
+    # Only this run's own lock: a run that took over a stale lock holds a different token.
+    if ($script:locked -and (Read-Owner $lockOwner) -ceq $token) {
+        Remove-Item -LiteralPath $lock -Recurse -Force -ErrorAction SilentlyContinue
+    }
     $script:work = ''; $script:locked = $false
 }
 
@@ -667,17 +734,29 @@ function Clear-Download {
 function Invoke-Download {
 try {
     # One download at a time per version: a second run waits for the first instead of fetching too.
-    # A lock older than 10 minutes was left by a run that was killed, and is taken over.
+    # The lock folder holds this run's token. A stale lock is renamed first (atomic) and deleted only
+    # if it still holds the token that was judged stale; otherwise another run had just taken it,
+    # and it is put back.
     $waited = 0
     while ($waited -lt 330) {
         try {
             New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
+            try { [IO.File]::WriteAllText($lockOwner, "$token`n") } catch { $null = $_ }
             $script:locked = $true
             break
         } catch { $null = $_ }
         $li = Get-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
-        if ($li -and $li.LastWriteTime -lt (Get-Date).AddMinutes(-10)) {
-            Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
+        if ($li -and $li.LastWriteTime -lt (Get-Date).AddMinutes(-$staleMinutes)) {
+            $oldOwner = Read-Owner $lockOwner
+            $grave = Join-Path $cacheRoot ".dl.stale-lock.$token"
+            $moved = $false
+            try { [IO.Directory]::Move($lock, $grave); $moved = $true } catch { $null = $_ }
+            if ($moved) {
+                if ((Read-Owner (Join-Path $grave 'owner')) -cne $oldOwner -and -not (Test-Path -LiteralPath $lock)) {
+                    try { [IO.Directory]::Move($grave, $lock) } catch { $null = $_ }
+                }
+                Remove-Item -LiteralPath $grave -Recurse -Force -ErrorAction SilentlyContinue
+            }
             $waited++
             continue
         }
@@ -737,8 +816,17 @@ try {
                 try {
                     $code = [int]$resp.StatusCode
                     if ($code -ge 200 -and $code -lt 300) {
+                        # At most 300 s per try, like curl --max-time 300.
                         $fs = [IO.File]::Create($dest)
-                        try { $resp.GetResponseStream().CopyTo($fs) } finally { $fs.Dispose() }
+                        try {
+                            $st = $resp.GetResponseStream()
+                            $buf = New-Object byte[] 65536
+                            $sw = [Diagnostics.Stopwatch]::StartNew()
+                            while (($n = $st.Read($buf, 0, $buf.Length)) -gt 0) {
+                                $fs.Write($buf, 0, $n)
+                                if ($sw.Elapsed.TotalSeconds -gt 300) { throw 'the download took too long' }
+                            }
+                        } finally { $fs.Dispose() }
                         return $true
                     } elseif ($code -ge 300 -and $code -lt 400 -and $resp.Headers['Location']) {
                         $u = (New-Object Uri ((New-Object Uri $u), [string]$resp.Headers['Location'])).AbsoluteUri
@@ -830,9 +918,16 @@ try {
     # Atomic rename into place. If another run got there first, its copy is just as good.
     if (-not $onWindows) { & chmod +x $file 2>$null }
     try { New-Item -ItemType Directory -Force -Path $verDir -ErrorAction Stop | Out-Null } catch { $null = $_ }
-    try { Move-Item -LiteralPath $file -Destination $cached -Force -ErrorAction Stop }
-    catch { if (-not (Test-Path -LiteralPath $cached -PathType Leaf)) { Exit-Launcher "cannot save the program to $binDir. $Hint" } }
-    try { [IO.File]::WriteAllText((Join-Path $verDir 'signature'), "$signed`n") } catch { $null = $_ }
+    $saved = $false
+    try { Move-Item -LiteralPath $file -Destination $cached -Force -ErrorAction Stop; $saved = $true } catch { $null = $_ }
+    $script:memoPath = $null
+    if ($saved) {
+        try { [IO.File]::WriteAllText((Join-Path $verDir 'signature'), "$signed`n") } catch { $null = $_ }
+    } else {
+        # Another run saved it first: its copy runs only if it matches the pin too.
+        if (-not (Test-Path -LiteralPath $cached -PathType Leaf)) { Exit-Launcher "cannot save the program to $binDir. $Hint" }
+        if ((Get-Hash $cached) -cne $want) { Exit-Launcher "cannot save the program to $binDir, and the copy already there does not match its pin. $Hint" }
+    }
 
     # Drop only versions OLDER than this one (compared as versions, not strings): another plugin
     # version sharing this folder keeps its own copy. Work folders and the lock start with a dot and

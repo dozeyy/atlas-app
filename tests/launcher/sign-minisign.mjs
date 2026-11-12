@@ -6,6 +6,8 @@
 //   node sign-minisign.mjs sign <dir> <file> [comment]   writes <file>.sig
 //   node sign-minisign.mjs sums <dir> <folder>   writes <folder>/SHA256SUMS.txt for every other
 //                                                 file there (sha256sum format) and signs it
+//   node sign-minisign.mjs sums-legacy <dir> <folder>   the same, signed in the legacy unhashed
+//                                                 "Ed" form, which the launchers must refuse
 import { createHash, createPrivateKey, generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -19,15 +21,15 @@ function loadKey() {
   return { key, id };
 }
 
-function signFile(file, comment) {
+function signFile(file, comment, legacy = false) {
   const { key, id } = loadKey();
-  const hash = createHash("blake2b512").update(readFileSync(file)).digest();
-  const sig = sign(null, hash, key);
+  const data = readFileSync(file);
+  const sig = sign(null, legacy ? data : createHash("blake2b512").update(data).digest(), key);
   const tc = comment ?? `timestamp:${Math.floor(Date.now() / 1000)}\tfile:${basename(file)}`;
   const glob = sign(null, Buffer.concat([sig, Buffer.from(tc, "utf8")]), key);
   const text =
     "untrusted comment: signature from tauri secret key\n" +
-    b64(Buffer.concat([Buffer.from("ED"), id, sig])) + "\n" +
+    b64(Buffer.concat([Buffer.from(legacy ? "Ed" : "ED"), id, sig])) + "\n" +
     "trusted comment: " + tc + "\n" +
     b64(glob) + "\n";
   writeFileSync(file + ".sig", b64(Buffer.from(text, "utf8")));
@@ -45,14 +47,14 @@ if (cmd === "keygen") {
   process.stdout.write(b64(Buffer.from(text, "utf8")));
 } else if (cmd === "sign") {
   signFile(a, b);
-} else if (cmd === "sums") {
+} else if (cmd === "sums" || cmd === "sums-legacy") {
   const names = readdirSync(a)
     .filter((n) => !n.startsWith("SHA256SUMS.txt") && statSync(join(a, n)).isFile())
     .sort();
   const lines = names.map((n) => createHash("sha256").update(readFileSync(join(a, n))).digest("hex") + "  " + n + "\n");
   writeFileSync(join(a, "SHA256SUMS.txt"), lines.join(""));
-  signFile(join(a, "SHA256SUMS.txt"));
+  signFile(join(a, "SHA256SUMS.txt"), undefined, cmd === "sums-legacy");
 } else {
-  console.error("usage: keygen <dir> | sign <dir> <file> [comment] | sums <dir> <folder>");
+  console.error("usage: keygen <dir> | sign <dir> <file> [comment] | sums|sums-legacy <dir> <folder>");
   process.exit(2);
 }

@@ -58,6 +58,7 @@ case "\$1 \$2" in
   "repeats --help") echo "usage: repeats, offer-note"; exit 0 ;;
   "debrief --help") echo "what this chat's helpers did"; exit 0 ;;
 esac
+[ "\$1" = args ] && { for a; do printf '[%s]' "\$a"; done; echo; exit 0; }
 [ -n "\$FAKE_LOG" ] && echo run >>"\$FAKE_LOG"
 echo "fake $2 \$*"
 EOF
@@ -88,11 +89,16 @@ command -v gh >/dev/null 2>&1 && ln -s /bin/false "$T/emptybin/gh"
 # An openssl that can do nothing: the launcher must fall back to the pin alone.
 printf '#!/bin/sh\nexit 1\n' >"$T/noverifier/openssl" && chmod +x "$T/noverifier/openssl"
 # Each run signs the stand-in release first (NOSIGN=1 keeps hand-made files as they are).
+# Settings come as assignments before the call (DATA=... run week). A POSIX shell may keep those
+# after a function returns (bash 3.2 as sh on macOS does), so run clears them before it returns.
 run() { # extra env assignments are given through env
   if [ -z "$NOSIGN" ] && [ -d "$REL" ]; then node "$signer" sums "$T/key" "$REL"; fi
   env -i PATH="${RUNPATH:-$BASEPATH}" HOME="$T/home" TMPDIR="$T" CLAUDE_PLUGIN_DATA="${DATA-$T/data}" \
     ATLAS_USAGE_TEST_SOURCE="${SRC-$REL}" ATLAS_USAGE_TEST_PUBKEY="${KEY-$TESTKEY}" ATLAS_USAGE_LAUNCHER_VERBOSE=1 \
     FAKE_LOG="$FAKE_LOG" ${EXTRA:+"$EXTRA"} "$SHELL_UNDER_TEST" "$L" "$@" >"$T/out" 2>"$T/err"
+  run_rc=$?
+  unset NOSIGN RUNPATH DATA SRC KEY FAKE_LOG EXTRA
+  return $run_rc
 }
 
 # --- 1. first run downloads, checks the pin, saves, runs with the arguments unchanged
@@ -319,6 +325,23 @@ if has_out "checked on download with openssl"; then
   check "no list: exit 3" [ "$rc" = 3 ]
   check "no list: says the download failed" has_err "could not download"
   check "no list: nothing saved" [ ! -e "$T/data20/cache/1.0.0/$exe" ]
+  # the legacy unhashed "Ed" form, even when its signature is good, is refused
+  sigsetup 24
+  node "$signer" sums-legacy "$T/key" "$REL"
+  NOSIGN=1 DATA=$T/data24 run week
+  rc=$?; refused "legacy Ed signature" "$T/data24" "not signed by the Atlas key"
+  # an openssl without pkeyutl -rawin (1.1.1) fails the self-test: the pin alone decides
+  mkdir -p "$T/oldssl"
+  # shellcheck disable=SC2016 # the $ signs belong to the script being written
+  printf '#!/bin/sh\nfor a; do [ "$a" = -rawin ] && { echo "pkeyutl: Unknown option: -rawin" >&2; exit 1; }; done\nexec "%s" "$@"\n' \
+    "$(command -v openssl)" >"$T/oldssl/openssl" && chmod +x "$T/oldssl/openssl"
+  sigsetup 25
+  RUNPATH=$T/oldssl:$BASEPATH DATA=$T/data25 run week; rc=$?
+  check "openssl 1.1.1 (no -rawin): exit 0" [ "$rc" = 0 ]
+  check "openssl 1.1.1 (no -rawin): runs on the pin" has_out "fake v1 week"
+  check "openssl 1.1.1 (no -rawin): recorded unchecked" grep -qx unchecked "$T/data25/cache/1.0.0/signature"
+  RUNPATH=$T/oldssl:$BASEPATH DATA=$T/data25 run launcher-doctor
+  check "openssl 1.1.1 (no -rawin): doctor says not checked" has_out "NOT checked on this computer"
   # the test key counts only together with a stand-in release
   SRC='' DATA=$T/data20 run launcher-doctor
   check "test key: ignored without a stand-in release" has_out "against the Atlas release key"
@@ -339,6 +362,65 @@ check "no verifier: recorded" grep -qx unchecked "$T/data21/cache/1.0.0/signatur
 RUNPATH=$T/noverifier:$BASEPATH DATA=$T/data21 run launcher-doctor
 check "no verifier: doctor says so" has_out "NOT checked on this computer"
 check "no verifier: doctor on the saved copy" has_out "not checked when it was saved"
+
+# --- 16. a saved copy that cannot be read to hash it is never run: deleted and fetched again
+setup 22 1.0.0
+fake "$REL/$asset" v1
+pin 1.0.0 "$asset" "$REL/$asset"
+DATA=$T/data22 run week
+chmod 111 "$T/data22/cache/1.0.0/$exe"
+if [ -r "$T/data22/cache/1.0.0/$exe" ]; then
+  printf 'note mode 111 leaves the file readable here (Windows or root): unreadable copy not tested\n'
+else
+  DATA=$T/data22 run today; rc=$?
+  check "unreadable cache: exit 0" [ "$rc" = 0 ]
+  check "unreadable cache: refetched and run" has_out "fake v1 today"
+  check "unreadable cache: says so" has_err "could not be read to check it"
+fi
+
+# --- 17. the copy cannot be replaced (folder read-only): the one already there runs only if it matches
+setup 23 1.0.0
+fake "$REL/$asset" v1
+pin 1.0.0 "$asset" "$REL/$asset"
+DATA=$T/data23 run week
+printf '#!/bin/sh\necho tampered\n' >"$T/data23/cache/1.0.0/$exe"
+chmod 555 "$T/data23/cache/1.0.0"
+if [ -w "$T/data23/cache/1.0.0" ]; then
+  printf 'note mode 555 leaves the folder writable here (Windows or root): unreplaceable copy not tested\n'
+else
+  DATA=$T/data23 run today; rc=$?
+  check "unreplaceable copy: exit 3" [ "$rc" = 3 ]
+  check "unreplaceable copy: not run" sh -c "! grep -q tampered '$T/out'"
+  check "unreplaceable copy: says so" has_err "the copy already there does not match its pin"
+fi
+chmod 755 "$T/data23/cache/1.0.0"
+
+# --- 18. the stand-in release must be on this computer: a network path is refused
+setup 26 1.0.0
+fake "$REL/$asset" v1
+pin 1.0.0 "$asset" "$REL/$asset"
+SRC=//localhost/share DATA=$T/data26 run week; rc=$?
+check "network stand-in: exit 3" [ "$rc" = 3 ]
+check "network stand-in: says so" has_err "network paths are refused"
+check "network stand-in: nothing saved" [ ! -e "$T/data26/cache/1.0.0/$exe" ]
+
+# --- 19. arguments reach the program unchanged: empty ones, spaces, quotes, backslashes
+# shellcheck disable=SC1003 # a trailing backslash inside single quotes, on purpose
+DATA=$T/data26 run args '' 'a "b" c' 'x\' 'tail\"q'; rc=$?
+check "arguments: exit 0" [ "$rc" = 0 ]
+check "arguments: unchanged" grep -qxF '[args][][a "b" c][x\][tail\"q]' "$T/out"
+
+# --- 20. a lock left by a killed run is taken over, and only this run's own lock is removed
+setup 27 1.0.0
+fake "$REL/$asset" v1
+pin 1.0.0 "$asset" "$REL/$asset"
+mkdir -p "$T/data27/cache/.lock-1.0.0"
+echo someone-else >"$T/data27/cache/.lock-1.0.0/owner"
+touch -t 202001010000 "$T/data27/cache/.lock-1.0.0"
+DATA=$T/data27 run week; rc=$?
+check "stale lock: taken over, runs" has_out "fake v1 week"
+check "stale lock: no lock left" sh -c "! ls -a '$T/data27/cache' | grep -q '^\\.lock'"
+check "stale lock: no work folder left" sh -c "! ls -a '$T/data27/cache' | grep -q '^\\.dl'"
 
 printf '\n%s passed, %s failed (%s)\n' "$passed" "$failed" "$SHELL_UNDER_TEST"
 [ "$failed" = 0 ]

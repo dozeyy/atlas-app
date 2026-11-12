@@ -19,14 +19,18 @@
 # line = no download. Old lines stay in checksums.txt on purpose: they name old builds.
 # Exit code 3 = the launcher itself failed (one plain line on stderr); 4 = the program found is too old
 # for repeats / offer-note / debrief.
-# Signature: on a download, when openssl here can check Ed25519 (OpenSSL 1.1.1 or later), the
+# Signature: on a download, when openssl here can check Ed25519 (OpenSSL 3.0 or later), the
 # release's SHA256SUMS.txt and SHA256SUMS.txt.sig are fetched too. The signature must be made by the
 # Atlas update key below and the list must give the program the pinned hash, or the download is
-# deleted. Without such an openssl the pin alone decides, quietly; launcher-doctor says which.
+# deleted. Only the "ED" form (Ed25519 over the file's BLAKE2b-512) is accepted. Without such an
+# openssl (1.1.1 has no pkeyutl -rawin, LibreSSL no BLAKE2b) the pin alone decides, quietly;
+# launcher-doctor says which. A self-test against a known answer decides "such an openssl".
+# A saved copy that cannot be read to hash it is never run: it is deleted and fetched again.
 # ATLAS_USAGE_BIN = a program file to run instead of searching (no checksum check: your choice).
 # ATLAS_USAGE_LAUNCHER_VERBOSE=1 names the copy used.
 # Test aid: ATLAS_USAGE_TEST_SOURCE = a local folder, or an http://127.0.0.1 / localhost
-# address, that stands in for the release (the pinned hash still applies). Only together with it,
+# address, that stands in for the release (the pinned hash still applies). A network path
+# (//host/share, \\host\share) is refused: the stand-in must be on this computer. Only together with it,
 # ATLAS_USAGE_TEST_PUBKEY replaces the update key, so tests can sign their own files. That grants
 # nothing: the stand-in release is local, its files must still match the pins, and whoever can set
 # these variables can already set ATLAS_USAGE_BIN. Downloads from GitHub always use the real key.
@@ -146,7 +150,8 @@ minisign_ok() { # scratch folder, file, signature file
   printf '\060\052\060\005\006\003\053\145\160\003\041\000' >"$ms/pub.der" # Ed25519 key header
   slice "$ms/pub.raw" 10 32 "$ms/pk"
   cat "$ms/pk" >>"$ms/pub.der"
-  # The signature: line 2 is "Ed"/"ED", the key id, then 64 bytes; line 3 the trusted comment,
+  # The signature: line 2 is "ED" (the legacy unhashed "Ed" is refused), the key id, then 64 bytes;
+  # line 3 the trusted comment,
   # line 4 the signature of (those 64 bytes + the comment).
   tr -d '\r\n' <"$3" >"$ms/sigfile.b64" && b64d "$ms/sigfile.b64" "$ms/sig.txt" || return 1
   sed -n '2p' "$ms/sig.txt" | tr -d '\r\n' >"$ms/sig2.b64" && b64d "$ms/sig2.b64" "$ms/sig.raw" || return 1
@@ -156,7 +161,6 @@ minisign_ok() { # scratch folder, file, signature file
   slice "$ms/sig.raw" 10 64 "$ms/sig"
   case $ms_alg in
     4544) openssl dgst -blake2b512 -binary -out "$ms/msg" "$2" >/dev/null 2>&1 || return 1 ;; # "ED"
-    4564) cp "$2" "$ms/msg" || return 1 ;;                                                  # "Ed"
     *) return 1 ;;
   esac
   ed_verify "$ms/pub.der" "$ms/msg" "$ms/sig" || return 1
@@ -285,8 +289,21 @@ want=
 
 # The stand-in release (tests only), and the key its signature must come from.
 src=$ATLAS_USAGE_TEST_SOURCE
-src_test=
-if [ -n "$src" ] && { [ -d "$src" ] || loopback_ok "$src"; }; then src_test=1; fi
+src_test='' src_dir='' src_loop=''
+if [ -n "$src" ]; then
+  case $src in
+    //* | \\\\*) ;; # a network share is not on this computer
+    *)
+      if loopback_ok "$src"; then
+        src_loop=1
+      elif [ -d "$src" ]; then
+        src_dir=1
+      fi
+      ;;
+  esac
+  [ -n "$src_dir$src_loop" ] || fail "ATLAS_USAGE_TEST_SOURCE ($src) must be a folder on this computer or an http://127.0.0.1 or http://localhost address; network paths are refused. Fix it or unset it."
+  src_test=1
+fi
 pubkey=$PUBKEY
 keyname="the Atlas release key"
 if [ -n "$src_test" ] && [ -n "$ATLAS_USAGE_TEST_PUBKEY" ]; then
@@ -335,7 +352,7 @@ if [ -n "$doctor" ]; then
   if [ -n "$dtmp" ] && verifier_ok "$dtmp"; then
     report "signature" "checked on download with openssl, against $keyname"
   else
-    report "signature" "NOT checked on this computer (openssl here cannot check Ed25519; needs OpenSSL 1.1.1 or later). The pinned checksum still applies."
+    report "signature" "NOT checked on this computer (openssl here cannot check Ed25519; needs OpenSSL 3.0 or later). The pinned checksum still applies."
   fi
   [ -n "$dtmp" ] && rm -rf "$dtmp"
 fi
@@ -405,15 +422,26 @@ current_enough() { # path label
 # A saved copy runs only if it still matches its pin; one that does not is deleted.
 cache_ok() { # path
   [ -n "$want" ] || return 0
-  hash_into "$1"
-  [ -n "$memo_h" ] || return 0 # no tool to check it: trusted, as it was checked when saved
-  [ "$memo_h" = "$want" ] && return 0
-  if [ -n "$doctor" ]; then
-    report "saved copy" "$1 (does NOT match its pin; it would be fetched again)"
+  if [ -z "$(sha_tool)" ]; then
+    [ -n "$doctor" ] || fail "no tool to check the saved program (need sha256sum, shasum or openssl)."
+    report "saved copy" "$1 (cannot be checked: no sha256sum, shasum or openssl)"
     return 1
   fi
-  rm -f "$1"
-  note "the saved copy of the program did not match the checksum pinned in this plugin, so it was deleted. Fetching it again."
+  hash_into "$1"
+  [ "$memo_h" = "$want" ] && return 0
+  # Changed, or not readable (no read permission, locked): never run it.
+  if [ -n "$memo_h" ]; then
+    co_why="did not match the checksum pinned in this plugin"
+  else
+    co_why="could not be read to check it"
+  fi
+  if [ -n "$doctor" ]; then
+    report "saved copy" "$1 ($co_why; it would be fetched again)"
+    return 1
+  fi
+  rm -f "$1" 2>/dev/null
+  memo_p=
+  note "the saved copy of the program $co_why, so it was deleted. Fetching it again."
   return 1
 }
 
@@ -494,17 +522,26 @@ if [ -z "$want" ]; then
 fi
 
 mkdir -p "$cacheroot" 2>/dev/null || fail "cannot write to $bindir. $hint"
-# Work folders of runs that were killed mid-download: remove the ones older than an hour.
-find "$cacheroot" -maxdepth 1 -type d -name '.dl*' -mmin +60 -exec rm -rf {} + >/dev/null 2>&1
+# The longest a download takes: three files (program, list, signature), each up to 4 curl tries of
+# 20 s to connect + 300 s, about 64 minutes. A lock or work folder older than about twice that was
+# left by a run that was killed.
+stale_min=130
+# Work folders of runs that were killed mid-download.
+find "$cacheroot" -maxdepth 1 -type d -name '.dl*' -mmin +$stale_min -exec rm -rf {} + >/dev/null 2>&1
 
 # One download at a time per version: a second run waits for the first instead of fetching too.
-# A lock older than 10 minutes was left by a run that was killed, and is taken over.
+# The lock folder holds this run's token, so a run only ever removes its own lock. A stale lock is
+# renamed first (atomic) and deleted only if it still holds the token that was judged stale;
+# otherwise another run had just taken it, and it is put back.
 lock=$cacheroot/.lock-$version
+token=$$.$(date +%s 2>/dev/null).$(od -An -N4 -tx4 /dev/urandom 2>/dev/null | tr -d ' \n')
 locked=
 work=
 cleanup() {
   [ -n "$work" ] && rm -rf "$work"
-  [ -n "$locked" ] && rmdir "$lock" 2>/dev/null
+  if [ -n "$locked" ] && [ "$(cat "$lock/owner" 2>/dev/null)" = "$token" ]; then
+    rm -f "$lock/owner" && rmdir "$lock" 2>/dev/null
+  fi
   work='' locked=''
 }
 trap cleanup EXIT
@@ -512,11 +549,19 @@ trap 'exit 130' HUP INT TERM
 waited=0
 while [ "$waited" -lt 330 ]; do
   if mkdir "$lock" 2>/dev/null; then
+    printf '%s\n' "$token" >"$lock/owner" 2>/dev/null
     locked=1
     break
   fi
-  if [ -n "$(find "$lock" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
-    rmdir "$lock" 2>/dev/null
+  if [ -n "$(find "$lock" -maxdepth 0 -mmin +$stale_min 2>/dev/null)" ]; then
+    old_owner=$(cat "$lock/owner" 2>/dev/null)
+    grave=$cacheroot/.dl.stale-lock.$token
+    if mv "$lock" "$grave" 2>/dev/null; then
+      if [ "$(cat "$grave/owner" 2>/dev/null)" != "$old_owner" ] && [ ! -e "$lock" ]; then
+        mv "$grave" "$lock" 2>/dev/null
+      fi
+      rm -rf "$grave"
+    fi
     waited=$((waited + 1))
     continue
   fi
@@ -566,9 +611,9 @@ fetch() { # url dest secure(1=https only)
 }
 
 get() { # release file name -> $work/<name>, from the stand-in release or from GitHub
-  if [ -n "$src" ] && [ -d "$src" ]; then
+  if [ -n "$src_dir" ]; then
     cp "$src/$1" "$work/$1" 2>/dev/null
-  elif [ -n "$src" ] && loopback_ok "$src"; then
+  elif [ -n "$src_loop" ]; then
     fetch "${src%/}/$1" "$work/$1" 0
   else
     fetch "https://github.com/$REPO/releases/download/v$version/$1" "$work/$1" 1 && return 0
@@ -638,8 +683,15 @@ fi
 # Atomic rename into place. If another run got there first, its copy is just as good.
 chmod +x "$work/$asset" 2>/dev/null
 mkdir -p "$verdir" 2>/dev/null
-mv -f "$work/$asset" "$cached" 2>/dev/null || [ -f "$cached" ] || fail "cannot save the program to $bindir. $hint"
-printf '%s\n' "$signed" >"$verdir/signature" 2>/dev/null
+memo_p=
+if mv -f "$work/$asset" "$cached" 2>/dev/null; then
+  printf '%s\n' "$signed" >"$verdir/signature" 2>/dev/null
+else
+  # Another run saved it first: its copy runs only if it matches the pin too.
+  [ -f "$cached" ] || fail "cannot save the program to $bindir. $hint"
+  hash_into "$cached"
+  [ "$memo_h" = "$want" ] || fail "cannot save the program to $bindir, and the copy already there does not match its pin. $hint"
+fi
 
 # Drop only versions OLDER than this one (compared as versions, not strings): another plugin
 # version sharing this folder keeps its own copy. Work folders and the lock start with a dot and

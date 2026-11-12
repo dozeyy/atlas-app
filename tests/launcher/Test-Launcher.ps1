@@ -22,6 +22,12 @@ public static class FAKECLASS {
         bool old = FAKEOLD;
         if (!old && a.Length >= 2 && a[0] == "repeats" && a[1] == "--help") { Console.WriteLine("usage: repeats, offer-note"); return 0; }
         if (!old && a.Length >= 2 && a[0] == "debrief" && a[1] == "--help") { Console.WriteLine("what this chat's helpers did"); return 0; }
+        if (a.Length > 0 && a[0] == "args") { // each argument in brackets, to see their bounds
+            var sb = new System.Text.StringBuilder();
+            foreach (string x in a) sb.Append("[" + x + "]");
+            Console.WriteLine(sb.ToString());
+            return 0;
+        }
         string log = Environment.GetEnvironmentVariable("FAKE_LOG");
         if (!old && !string.IsNullOrEmpty(log)) File.AppendAllText(log, "run\n");
         Console.WriteLine("fake " + id + " " + string.Join(" ", a));
@@ -126,6 +132,7 @@ function Write-Fake([string]$file, [string]$id, [switch]$Old) {
         } else {
             $text = "#!/bin/sh`ncase `"`$1 `$2`" in`n  `"repeats --help`") echo `"usage: repeats, offer-note`"; exit 0 ;;`n" +
                 "  `"debrief --help`") echo `"what this chat's helpers did`"; exit 0 ;;`nesac`n" +
+                "[ `"`$1`" = args ] && { for a; do printf '[%s]' `"`$a`"; done; echo; exit 0; }`n" +
                 "[ -n `"`$FAKE_LOG`" ] && echo run >>`"`$FAKE_LOG`"`necho `"fake $id `$*`"`n"
         }
         [IO.File]::WriteAllText($file, $text)
@@ -161,7 +168,22 @@ if ($onWindows) {
     if (Get-Command gh -ErrorAction SilentlyContinue) { & ln -s /bin/false (Join-Path $emptyBin 'gh') }
 }
 
-function Quote([string]$a) { return '"' + $a.Replace('"', '\"') + '"' }
+# One argument quoted the way Windows programs (and .NET on Unix) split a command line again.
+function Quote([string]$a) {
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.Append('"')
+    $bs = 0
+    foreach ($c in $a.ToCharArray()) {
+        if ($c -eq [char]92) { $bs++; continue }
+        if ($c -eq [char]34) { [void]$sb.Append([char]92, 2 * $bs + 1) }
+        elseif ($bs) { [void]$sb.Append([char]92, $bs) }
+        [void]$sb.Append($c)
+        $bs = 0
+    }
+    [void]$sb.Append([char]92, 2 * $bs)
+    [void]$sb.Append('"')
+    return $sb.ToString()
+}
 # Starts the launcher with a clean environment. $o: Data, Src, Key, RunPath, Extra (hashtable),
 # Out / Err file names. Returns the process (already finished unless -NoWait).
 function Invoke-Launcher([hashtable]$o, [string[]]$argv, [switch]$NoWait) {
@@ -471,6 +493,11 @@ if (Test-Out 'checked on download with the built-in verifier') {
     Test-Check 'no list: exit 3' { $rc -eq 3 }
     Test-Check 'no list: says the download failed' { Test-Err 'could not download' }
     Test-Check 'no list: nothing saved' { -not (Test-Path -LiteralPath (Join-Path $T "data20/cache/1.0.0/$exe")) }
+    # the legacy unhashed "Ed" form, even when its signature is good, is refused
+    Initialize-SigCase 24
+    Invoke-Sign @('sums-legacy', (Join-Path $T 'key'), $REL)
+    $rc = Invoke-Run @{ Data = (Join-Path $T 'data24'); NoSign = 1 } @('week')
+    Test-Refused 'legacy Ed signature' (Join-Path $T 'data24') 'not signed by the Atlas key'
     # the test key counts only together with a stand-in release
     $null = Invoke-Run @{ Data = (Join-Path $T 'data20'); Src = '' } @('launcher-doctor')
     Test-Check 'test key: ignored without a stand-in release' { Test-Out 'against the Atlas release key' }
@@ -480,6 +507,89 @@ if (Test-Out 'checked on download with the built-in verifier') {
 # No verifier: PowerShell always carries its own (compiled from C# in the launcher), so the
 # pin-only path is tested in test-launcher.sh, where openssl can be taken away.
 [Console]::Out.WriteLine('note the no-verifier checks live in test-launcher.sh: PowerShell always has its verifier')
+
+# --- 16. a saved copy that cannot be read to hash it is never run
+Initialize-Plugin 22 '1.0.0'
+Write-Fake (Join-Path $REL $asset) 'v1'
+Add-Pin '1.0.0' $asset (Join-Path $REL $asset)
+$null = Invoke-Run @{ Data = (Join-Path $T 'data22') } @('week')
+$c22 = Join-Path $T "data22/cache/1.0.0/$exe"
+if ($onWindows) {
+    # Held open by another program with no sharing: it cannot be read, deleted or replaced.
+    $hold = [IO.File]::Open($c22, 'Open', 'Read', 'None')
+    try { $rc = Invoke-Run @{ Data = (Join-Path $T 'data22') } @('today') } finally { $hold.Dispose() }
+    Test-Check 'unreadable cache: exit 3' { $rc -eq 3 }
+    Test-Check 'unreadable cache: not run' { -not (Test-Out 'fake v1') }
+    Test-Check 'unreadable cache: says so' { Test-Err 'could not be read to check it' }
+} else {
+    & chmod 111 $c22
+    $rcRead = $true
+    try { [IO.File]::ReadAllBytes($c22) | Out-Null } catch { $rcRead = $false }
+    if ($rcRead) {
+        [Console]::Out.WriteLine('note mode 111 leaves the file readable here (root): unreadable copy not tested')
+    } else {
+        $rc = Invoke-Run @{ Data = (Join-Path $T 'data22') } @('today')
+        Test-Check 'unreadable cache: exit 0' { $rc -eq 0 }
+        Test-Check 'unreadable cache: refetched and run' { Test-Out 'fake v1 today' }
+        Test-Check 'unreadable cache: says so' { Test-Err 'could not be read to check it' }
+    }
+}
+
+# --- 17. the copy cannot be replaced: the one already there runs only if it matches its pin
+Initialize-Plugin 23 '1.0.0'
+Write-Fake (Join-Path $REL $asset) 'v1'
+Add-Pin '1.0.0' $asset (Join-Path $REL $asset)
+$null = Invoke-Run @{ Data = (Join-Path $T 'data23') } @('week')
+$c23 = Join-Path $T "data23/cache/1.0.0/$exe"
+Write-Fake $c23 'tampered'
+$tested23 = $true
+if ($onWindows) {
+    # Held open for reading only: it can be hashed and run, but not deleted or replaced.
+    $hold = [IO.File]::Open($c23, 'Open', 'Read', 'Read')
+    try { $rc = Invoke-Run @{ Data = (Join-Path $T 'data23') } @('today') } finally { $hold.Dispose() }
+} else {
+    $d23 = Join-Path $T 'data23/cache/1.0.0'
+    & chmod 555 $d23
+    $probe = Join-Path $d23 'probe'
+    try { [IO.File]::WriteAllText($probe, ''); Remove-Item -LiteralPath $probe -Force; $tested23 = $false } catch { $null = $_ }
+    if ($tested23) { $rc = Invoke-Run @{ Data = (Join-Path $T 'data23') } @('today') }
+    & chmod 755 $d23
+}
+if ($tested23) {
+    Test-Check 'unreplaceable copy: exit 3' { $rc -eq 3 }
+    Test-Check 'unreplaceable copy: not run' { -not (Test-Out 'fake tampered') }
+    Test-Check 'unreplaceable copy: says so' { Test-Err 'the copy already there does not match its pin' }
+} else {
+    [Console]::Out.WriteLine('note mode 555 leaves the folder writable here (root): unreplaceable copy not tested')
+}
+
+# --- 18. the stand-in release must be on this computer: a network path is refused
+Initialize-Plugin 26 '1.0.0'
+Write-Fake (Join-Path $REL $asset) 'v1'
+Add-Pin '1.0.0' $asset (Join-Path $REL $asset)
+foreach ($unc in '\\localhost\share', '//localhost/share') {
+    $rc = Invoke-Run @{ Src = $unc; Data = (Join-Path $T 'data26') } @('week')
+    Test-Check "network stand-in ${unc}: exit 3" { $rc -eq 3 }
+    Test-Check "network stand-in ${unc}: says so" { Test-Err 'network paths are refused' }
+}
+Test-Check 'network stand-in: nothing saved' { -not (Test-Path -LiteralPath (Join-Path $T "data26/cache/1.0.0/$exe")) }
+
+# --- 19. arguments reach the program unchanged: empty ones, spaces, quotes, backslashes
+$rc = Invoke-Run @{ Data = (Join-Path $T 'data26') } @('args', '', 'a "b" c', 'x\', 'tail\"q')
+Test-Check 'arguments: exit 0' { $rc -eq 0 }
+Test-Check 'arguments: unchanged' { (Read-Text (Join-Path $T 'out')).Trim() -ceq '[args][][a "b" c][x\][tail\"q]' }
+
+# --- 20. a lock left by a killed run is taken over, and only this run's own lock is removed
+Initialize-Plugin 27 '1.0.0'
+Write-Fake (Join-Path $REL $asset) 'v1'
+Add-Pin '1.0.0' $asset (Join-Path $REL $asset)
+$lk = Join-Path $T 'data27/cache/.lock-1.0.0'
+New-Item -ItemType Directory -Force -Path $lk | Out-Null
+[IO.File]::WriteAllText((Join-Path $lk 'owner'), "someone-else`n")
+(Get-Item -LiteralPath $lk).LastWriteTime = (Get-Date).AddDays(-1)
+$rc = Invoke-Run @{ Data = (Join-Path $T 'data27') } @('week')
+Test-Check 'stale lock: taken over, runs' { Test-Out 'fake v1 week' }
+Test-Check 'stale lock: no lock or work folder left' { @(Get-ChildItem -LiteralPath (Join-Path $T 'data27/cache') -Force | Where-Object { $_.Name.StartsWith('.') }).Count -eq 0 }
 
 Remove-Item -LiteralPath $T -Recurse -Force -ErrorAction SilentlyContinue
 [Console]::Out.WriteLine('')

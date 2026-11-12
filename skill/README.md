@@ -74,8 +74,9 @@ falls back to an older saved copy, or an older copy it passed over, and says so.
 and `SHA256SUMS.txt.sig`. The list must be signed by the Atlas release key (the same key the
 app's updater trusts) and must give the program the pinned hash. If not, the download is
 deleted and not run. The pin still decides first: the signature can only add a refusal. On
-Windows, PowerShell checks the signature itself. On macOS and Linux it needs OpenSSL 1.1.1 or
-later. Without it (macOS's own LibreSSL can't check these signatures), the pin alone decides.
+Windows, PowerShell checks the signature itself. On macOS and Linux it needs OpenSSL 3.0 or
+later. Without it (OpenSSL 1.1.1 and macOS's own LibreSSL can't check these signatures), the
+pin alone decides.
 The design is in `docs/specs/launcher-signing.md`.
 
 **Which copy is it using?** Run the launcher with `launcher-doctor`, or ask Claude to. It lists
