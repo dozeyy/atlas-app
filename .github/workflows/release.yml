@@ -347,7 +347,7 @@ jobs:
           fi
           ldd "$bin" 2>&1 || true
           cache="$(mktemp -d)"
-          out="$(docker run --rm -v "$PWD/$(dirname "$bin"):/b:ro" -v "$PWD/fixtures/claude-usage:/cfg:ro" -v "$cache:/cache" alpine:3.20 \n            sh -c 'cat /etc/alpine-release >&2; /b/atlas-usage all --json --config-dir /cfg --cache-dir /cache')"
+          out="$(docker run --rm -v "$PWD/$(dirname "$bin"):/b:ro" -v "$PWD/fixtures/claude-usage:/cfg:ro" -v "$cache:/cache" alpine:3.20 sh -c 'cat /etc/alpine-release >&2; /b/atlas-usage all --json --config-dir /cfg --cache-dir /cache')"
           echo "$out" | head -n 3
           echo "$out" | grep -q '"label": "All time"' || { echo "::error::$bin did not report usage on Alpine."; exit 1; }
 
