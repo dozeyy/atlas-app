@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { resolve } from "node:path";
@@ -309,6 +309,23 @@ describe("Library order: most installed first", () => {
     expect(once).toEqual(["a", "b", "d", "c", "f"]);
     expect(names(orderIndexed(orderIndexed(indexEntries(list), "popular"), "popular"))).toEqual(once);
     expect(names(orderIndexed(indexEntries(list.slice().reverse()), "popular"))).toEqual(once);
+  });
+
+  it("rows already in popular order are not sorted again (one pass proves it), and rows that are not still are", () => {
+    const list = [e("a", 9, OFFICIAL, 0), e("b", 5, OFFICIAL, 1), e("c", 5, OFFICIAL, 2), e("d", undefined, DIRECTORY, 3)];
+    const idx = indexEntries(list);
+    const spy = vi.spyOn(Array.prototype, "sort");
+    try {
+      const out = orderIndexed(idx, "popular");
+      expect(spy).not.toHaveBeenCalled();
+      expect(out).not.toBe(idx);
+      expect(names(out)).toEqual(["a", "b", "c", "d"]);
+      // One row out of place: the sort runs and fixes it.
+      expect(names(orderIndexed(indexEntries([list[1], list[0], list[2], list[3]]), "popular"))).toEqual(["a", "b", "c", "d"]);
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("an entry with no position keeps its place in the array", () => {

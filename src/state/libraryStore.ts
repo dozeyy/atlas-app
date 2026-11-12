@@ -65,13 +65,15 @@ function set(next: Partial<LibraryState>) {
  * `setOrder`): the rows are drawn from this array as it is. With no install counts anywhere the
  * order is the catalog's own whatever was chosen.
  */
-function arrange(entries: CatalogEntry[], order: LibraryOrder): { idx: Indexed[]; counted: boolean } {
+function arrange(entries: CatalogEntry[], order: LibraryOrder, partial = false): { idx: Indexed[]; counted: boolean } {
   const counted = hasInstalls(entries);
-  return { idx: orderIndexed(indexEntries(entries), counted ? order : "catalog"), counted };
+  // The first rows are only the head of the popular list: a catalog-order sort of them would be
+  // re-sorted against the whole list a moment later. A chosen order waits for the whole list.
+  return { idx: orderIndexed(indexEntries(entries), counted && !partial ? order : counted ? "popular" : "catalog"), counted };
 }
 
 function setView(view: CatalogView) {
-  set({ view, ...arrange(view.entries, state.order), error: null });
+  set({ view, ...arrange(view.entries, state.order, view.partial), error: null });
   if (view.partial) void loadRest(view);
 }
 
@@ -170,6 +172,8 @@ export function setQuery(query: string): void {
 /** Sort the list again, from what is already loaded: no request, and nothing is read twice. */
 export function setOrder(order: LibraryOrder): void {
   if (state.order === order) return;
+  // Only the first rows are here: keep the choice, and `loadRest` applies it when the whole list lands.
+  if (state.view?.partial) return void set({ order });
   set({ order, idx: orderIndexed(state.idx, state.counted ? order : "catalog") });
 }
 

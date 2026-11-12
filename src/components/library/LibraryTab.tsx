@@ -68,7 +68,9 @@ export function LibraryTab() {
 
   const query = useDeferredValue(lib.query);
   // `lib.idx` is sorted once when the data loads or the choice changes; with no counts anywhere it is catalog order.
-  const order: LibraryOrder = lib.counted ? lib.order : "catalog";
+  // While only the first rows are here they are in popular order whatever was chosen; the choice
+  // applies when the whole list lands (a moment).
+  const order: LibraryOrder = lib.counted ? (lib.view?.partial ? "popular" : lib.order) : "catalog";
   const { rows, heads, showSource } = useMemo(() => buildList({ idx: lib.idx, installed: lib.installed, source: lib.source, query, order }), [lib.idx, lib.installed, lib.source, query, order]);
   const options = useMemo(
     () => sourceOptions(lib.view?.total ?? 0, lib.view?.counts ?? {}, lib.view?.marketplaces ?? [], lib.installed.length, changedCount(lib.idx, lib.installed)),
@@ -315,10 +317,10 @@ export function LibraryTab() {
           )}
         </div>
         {lib.counted && (
-          <OptionsMenu label="Sort" status={ORDERS.find((o) => o.value === order)?.label} icon={<ArrowsDownUp size={18} aria-hidden="true" />} width={200}>
+          <OptionsMenu label="Sort" status={ORDERS.find((o) => o.value === lib.order)?.label} icon={<ArrowsDownUp size={18} aria-hidden="true" />} width={200}>
             {(close) => (
               <OptionField label="Order">
-                <ChoiceList label="Sort order" value={order} choices={ORDERS} onChange={setOrder} onPick={close} />
+                <ChoiceList label="Sort order" value={lib.order} choices={ORDERS} onChange={setOrder} onPick={close} />
               </OptionField>
             )}
           </OptionsMenu>

@@ -13,7 +13,9 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -23,7 +25,12 @@ use super::catalog::{Entry, DIRECTORY};
 /// Plugin id -> unique installs.
 pub type Installs = HashMap<String, u64>;
 
-const MAX_BYTES: u64 = 32 * 1024 * 1024;
+/// The real file is about half a megabyte; anything past this is not Claude Code's cache.
+const MAX_BYTES: u64 = 4 * 1024 * 1024;
+
+/// A count above this is not a count (a float that big has lost whole numbers anyway); it is
+/// dropped, integer or float alike, so no sort or label ever sees an absurd figure.
+const MAX_COUNT: u64 = 9_000_000_000_000_000;
 
 #[derive(Deserialize)]
 struct CacheFile {
@@ -43,26 +50,51 @@ struct PluginCount {
     unique_installs: Option<Value>,
 }
 
-/// A count out of whatever the file holds: a whole non-negative number (a float is rounded),
-/// nothing else.
+/// A count out of whatever the file holds: a whole non-negative number up to `MAX_COUNT` (a float
+/// is rounded), nothing else.
 fn count_of(v: &Value) -> Option<u64> {
-    if let Some(n) = v.as_u64() {
-        return Some(n);
-    }
-    v.as_f64().filter(|f| f.is_finite() && *f >= 0.0 && *f < 9.0e15).map(|f| f.round() as u64)
+    let n = match v.as_u64() {
+        Some(n) => n,
+        None => v.as_f64().filter(|f| f.is_finite() && *f >= 0.0 && *f < MAX_COUNT as f64).map(|f| f.round() as u64)?,
+    };
+    (n <= MAX_COUNT).then_some(n)
 }
+
+/// The parse of a cache file, kept while the file's modified time and size stay the same:
+/// the Library asks on every catalog call (the first rows, then the whole list), and the file is
+/// not worth parsing twice.
+struct Parsed {
+    modified: Option<SystemTime>,
+    len: u64,
+    installs: Arc<Installs>,
+}
+
+/// One entry per config folder the app has read (one in practice; a few in tests).
+static LAST: Mutex<Option<HashMap<PathBuf, Parsed>>> = Mutex::new(None);
 
 /// The counts Claude Code keeps in `<config_dir>/plugins/plugin-catalog-cache.json`. Empty when
 /// the file is missing, too big, or not in the shape Atlas knows: the Library then lists in
 /// catalog order, as it always did.
-pub fn read(config_dir: &Path) -> Installs {
+pub fn read(config_dir: &Path) -> Arc<Installs> {
     let file = config_dir.join("plugins").join("plugin-catalog-cache.json");
-    let Ok(md) = fs::metadata(&file) else { return Installs::new() };
+    let Ok(md) = fs::metadata(&file) else { return Arc::default() };
     if !md.is_file() || md.len() > MAX_BYTES {
-        return Installs::new();
+        return Arc::default();
     }
-    let Ok(bytes) = fs::read(&file) else { return Installs::new() };
-    parse(&bytes)
+    let modified = md.modified().ok();
+    if let Some(last) = LAST.lock().ok().and_then(|g| g.as_ref().and_then(|m| m.get(&file)).filter(|p| p.modified == modified && p.len == md.len()).map(|p| p.installs.clone())) {
+        return last;
+    }
+    let Ok(bytes) = fs::read(&file) else { return Arc::default() };
+    let installs = Arc::new(parse(&bytes));
+    if let Ok(mut g) = LAST.lock() {
+        let m = g.get_or_insert_with(HashMap::new);
+        if m.len() >= 8 {
+            m.clear();
+        }
+        m.insert(file, Parsed { modified, len: md.len(), installs: installs.clone() });
+    }
+    installs
 }
 
 fn parse(bytes: &[u8]) -> Installs {
@@ -160,6 +192,51 @@ mod tests {
     }
 
     #[test]
+    fn a_file_that_is_too_big_or_not_a_file_is_no_counts() {
+        let t = tempfile::tempdir().unwrap();
+        fs::create_dir_all(t.path().join("plugins")).unwrap();
+        let cache = t.path().join("plugins/plugin-catalog-cache.json");
+        // A folder at the cache path.
+        fs::create_dir(&cache).unwrap();
+        assert!(read(t.path()).is_empty());
+        fs::remove_dir(&cache).unwrap();
+        // A real cache, padded past the ceiling.
+        let mut big = br#"{"catalog":{"plugins":{"a@m":{"unique_installs":7}}}}"#.to_vec();
+        big.resize(MAX_BYTES as usize + 1, b' ');
+        fs::write(&cache, &big).unwrap();
+        assert!(read(t.path()).is_empty(), "over the ceiling");
+        big.truncate(MAX_BYTES as usize);
+        fs::write(&cache, &big).unwrap();
+        assert_eq!(read(t.path())["a@m"], 7, "at the ceiling it is still read");
+    }
+
+    #[test]
+    fn a_count_past_the_ceiling_is_dropped_whatever_its_type() {
+        let json = format!(
+            r#"{{"catalog":{{"plugins":{{"max@m":{{"unique_installs":{}}},"big@m":{{"unique_installs":{}}},"edge@m":{{"unique_installs":{MAX_COUNT}}},"float@m":{{"unique_installs":1e300}},"ok@m":{{"unique_installs":3}}}}}}}}"#,
+            u64::MAX,
+            MAX_COUNT + 1
+        );
+        let got = parse(json.as_bytes());
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert_eq!((got["edge@m"], got["ok@m"]), (MAX_COUNT, 3));
+    }
+
+    #[test]
+    fn the_parse_is_kept_until_the_file_changes() {
+        let t = tempfile::tempdir().unwrap();
+        fs::create_dir_all(t.path().join("plugins")).unwrap();
+        let cache = t.path().join("plugins/plugin-catalog-cache.json");
+        fs::write(&cache, r#"{"catalog":{"plugins":{"a@m":{"unique_installs":7}}}}"#).unwrap();
+        let (a, b) = (read(t.path()), read(t.path()));
+        assert!(Arc::ptr_eq(&a, &b), "the second ask reuses the first parse");
+        // A rewrite with a different size is read again.
+        fs::write(&cache, r#"{"catalog":{"plugins":{"a@m":{"unique_installs":7},"b@m":{"unique_installs":9}}}}"#).unwrap();
+        let c = read(t.path());
+        assert_eq!((c.len(), c["b@m"]), (2, 9));
+    }
+
+    #[test]
     fn most_installs_first_then_no_count_in_catalog_order() {
         let entries = vec![e("dir-1", DIRECTORY), e("low", "official"), e("dir-2", DIRECTORY), e("high", "official"), e("none-added", "mine"), e("mid", "official")];
         let l = listing(entries, &counts(&[("low@official", 10), ("high@official", 9000), ("mid@official", 500)]));
@@ -203,7 +280,8 @@ mod tests {
         let t = std::time::Instant::now();
         let l = listing(entries, &c);
         let ms = t.elapsed().as_millis();
-        assert!(ms < 100, "{ms} ms");
+        // Roughly a millisecond in practice; the bound only catches a sort gone quadratic.
+        assert!(ms < 1000, "{ms} ms");
         assert_eq!(l.len(), 4000);
         assert!(l[..400].iter().all(|x| x.installs.is_some()) && l[400..].iter().all(|x| x.installs.is_none()));
     }

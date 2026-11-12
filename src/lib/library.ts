@@ -105,17 +105,23 @@ export const hasInstalls = (entries: readonly CatalogEntry[]): boolean => entrie
  * lands or the choice changes, never per render. Returns a new array.
  */
 export function orderIndexed(idx: readonly Indexed[], order: LibraryOrder): Indexed[] {
-  const at = new Map<Indexed, number>();
-  idx.forEach((x, i) => at.set(x, x.e.pos ?? i));
-  const pos = (x: Indexed) => at.get(x) as number;
-  if (order === "catalog") return idx.slice().sort((a, b) => pos(a) - pos(b));
-  return idx.slice().sort((a, b) => {
+  const at = (x: Indexed, i: number) => x.e.pos ?? i;
+  const cmp = (a: Indexed, ai: number, b: Indexed, bi: number): number => {
+    if (order === "catalog") return at(a, ai) - at(b, bi);
     const x = a.e.installs;
     const y = b.e.installs;
     if (x != null && y != null && x !== y) return y - x;
     if ((x != null) !== (y != null)) return x != null ? -1 : 1;
-    return pos(a) - pos(b);
-  });
+    return at(a, ai) - at(b, bi);
+  };
+  // Rust already sends the rows in popular order, so the usual answer is "nothing to do": one O(n)
+  // pass proves it and the 4,000-row sort is skipped. A stable sort of sorted rows is the same rows.
+  let sorted = true;
+  for (let i = 1; i < idx.length && sorted; i++) sorted = cmp(idx[i - 1], i - 1, idx[i], i) <= 0;
+  if (sorted) return idx.slice();
+  const place = new Map<Indexed, number>();
+  idx.forEach((x, i) => place.set(x, i));
+  return idx.slice().sort((a, b) => cmp(a, place.get(a) as number, b, place.get(b) as number));
 }
 
 /** "12k installs", "1.2M installs", "1 install": a short count for a row's quiet side. Empty for none. */

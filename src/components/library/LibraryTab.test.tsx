@@ -535,6 +535,29 @@ describe("Library tab: most installed first", () => {
     expect(shown().slice(0, 8)).toEqual(["frontend-design", "code-review", "github", "playwright", "commit-commands", "typescript-lsp", "hookify", "plugin-dev"]);
   });
 
+  it("a choice made while only the first rows are here waits for the whole list, so nothing jumps twice", async () => {
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    mount((b) => {
+      counted(b);
+      b.library.firstPage = 4;
+      const all = b.library.libraryCatalogAll.bind(b.library);
+      b.library.libraryCatalogAll = async () => {
+        await gate;
+        return all();
+      };
+    });
+    await openLibraryTab();
+    await row("frontend-design");
+    const first = shown();
+    await userEvent.click(screen.getByRole("button", { name: "Sort, Most installed" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Catalog order" }));
+    expect(shown()).toEqual(first); // the four rows stay as they were
+    release();
+    await waitFor(() => expect(shown().slice(0, 4)).toEqual(["frontend-design", "code-review", "pdf-tools", "commit-commands"]));
+    expect(screen.getByRole("button", { name: "Sort, Catalog order" })).toBeInTheDocument();
+  });
+
   it("under All with something installed: it leads, then one run across marketplaces under 'More plugins'", async () => {
     mount((b) => {
       counted(b);
