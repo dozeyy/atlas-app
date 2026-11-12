@@ -1,6 +1,6 @@
 //! Tauri commands: the only door between the page and Rust.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use atlas_core::settings::Theme;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
@@ -9,6 +9,11 @@ use tauri_plugin_dialog::DialogExt;
 use crate::state::{AppInfo, AppState, SettingsPatch};
 
 type Shared<'a> = State<'a, Arc<AppState>>;
+
+/// A zoom change is saved and applied to the window as one step. `update_settings` runs on a
+/// worker thread, so two quick key presses could otherwise finish out of order and leave the
+/// saved value, the window and the page showing different zooms.
+static ZOOM_LOCK: Mutex<()> = Mutex::new(());
 
 /// System follows the OS; Light / Silver / Dark pin the window (and so Mica / vibrancy and the
 /// title bar). Silver is a light grey, so its window is a light one.
@@ -41,6 +46,8 @@ pub fn update_settings(app: AppHandle, state: Shared, patch: SettingsPatch) -> A
     let shortcuts = patch.show_shortcuts;
     let count = patch.count_cache_in_totals;
     let zoom = patch.zoom_percent;
+    // Held until the window has the zoom that was saved (a poisoned lock is still a lock).
+    let _zoom_step = zoom.is_some().then(|| ZOOM_LOCK.lock().unwrap_or_else(|e| e.into_inner()));
     let info = state.update_settings(patch);
     // Every total, ranking and readout counts the new way from the next question on; the page
     // is told to ask again (`usage://changed`), the tray and the Now tab re-send theirs.

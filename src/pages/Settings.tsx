@@ -281,7 +281,7 @@ export function Settings() {
   const indexing = status?.state === "indexing";
   // Keep saved sessions: Claude Code's own `cleanupPeriodDays`, changed through the one write path.
   const [keepBusy, setKeepBusy] = useState(false);
-  const keepNow = keepChoice(ov?.cleanupDays ?? null, ov?.cleanupInvalid ?? false);
+  const keepNow = keepChoice(ov?.cleanupDays ?? null, ov?.cleanupInvalid ?? false, ov?.cleanupUnknown ?? false);
   const setKeep = async (value: string) => {
     const days = Number(value);
     if (keepBusy || value === keepNow.value || !Number.isInteger(days)) return;

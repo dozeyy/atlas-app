@@ -28,6 +28,14 @@ describe("keepChoice", () => {
   });
 });
 
+describe("keepChoice when the file can't be read", () => {
+  it("says Unknown and selects nothing", () => {
+    const c = keepChoice(null, false, true);
+    expect(c.label).toBe("Unknown");
+    expect(c.value).toBe("");
+  });
+});
+
 describe("keepToast", () => {
   it("says what Claude Code will do", () => {
     expect(keepToast(3650)).toMatch(/forever/);

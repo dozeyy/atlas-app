@@ -10,9 +10,9 @@ export function stepZoom(current: number, dir: "in" | "out"): number {
   return [...ZOOM_LEVELS].reverse().find((l) => l < current) ?? ZOOM_LEVELS[0];
 }
 
-/** The nearest step (what Rust saves). */
+/** The nearest step (what Rust saves); nonsense, 0 included, becomes 100. */
 export function snapZoom(n: number): number {
-  if (!Number.isFinite(n)) return DEFAULT_ZOOM;
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_ZOOM;
   return ZOOM_LEVELS.reduce((best, l) => (Math.abs(l - n) < Math.abs(best - n) ? l : best), DEFAULT_ZOOM as number);
 }
 

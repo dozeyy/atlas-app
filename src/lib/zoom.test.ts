@@ -29,6 +29,8 @@ describe("snapZoom", () => {
     expect(snapZoom(1000)).toBe(200);
     expect(snapZoom(1)).toBe(80);
     expect(snapZoom(NaN)).toBe(100);
+    expect(snapZoom(0)).toBe(100);
+    expect(snapZoom(-30)).toBe(100);
   });
 });
 

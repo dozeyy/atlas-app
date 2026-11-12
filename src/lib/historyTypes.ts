@@ -133,6 +133,8 @@ export interface SettingsOverview {
   cleanupDays: number | null;
   /** The file holds a value Claude Code does not accept for that setting. */
   cleanupInvalid: boolean;
+  /** The user's settings file can't be read as JSON, so what it says is not known. */
+  cleanupUnknown: boolean;
   /** Why Atlas can't change how long sessions are kept (plain words), or null when it can. */
   cleanupLocked: string | null;
   historyBytes: number;

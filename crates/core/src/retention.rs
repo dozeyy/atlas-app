@@ -31,61 +31,127 @@ pub const FOREVER_DAYS: u32 = 3650;
 /// The only values Atlas ever writes.
 pub const PICKS: [u32; 3] = [DEFAULT_DAYS, YEAR_DAYS, FOREVER_DAYS];
 
-/// What Settings shows for the key.
+/// What Settings shows for the key: what Claude Code will actually use, not just what the user's
+/// own file says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Retention {
-    /// A whole number of days, 1 or more, set in the file. None when the key is missing or not valid.
+    /// A whole number of days, 1 or more, from the file that wins (managed settings, then a
+    /// project's local file, then its shared file, then the user's file). None when nothing sets it
+    /// (Claude Code then uses `DEFAULT_DAYS`), when the winning value is not valid, or when it can't
+    /// be known (`unknown`).
     pub days: Option<u32>,
-    /// The key is there but is not a whole number of days, 1 or more. Claude Code will not accept it.
+    /// The winning value is there but is not a whole number of days, 1 or more. Claude Code will not accept it.
     pub invalid: bool,
+    /// The user's settings file can't be read as JSON, so what it says is not known.
+    pub unknown: bool,
     /// Why Atlas can't change it (plain words), or None when it can.
     pub locked: Option<String>,
 }
 
-fn read_json(p: &Path) -> Option<Value> {
-    let bytes = fs::read(p).ok()?;
+/// The JSON object in a settings file. A file that is missing, empty or only whitespace has
+/// nothing in it (`Ok(None)`); one that is not valid JSON, or not an object, is `InvalidData`.
+fn read_object(p: &Path) -> Result<Option<serde_json::Map<String, Value>>, std::io::Error> {
+    let bytes = match fs::read(p) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
     let s = String::from_utf8_lossy(&bytes);
-    serde_json::from_str(s.trim_start_matches('\u{feff}')).ok()
+    let text = s.trim_start_matches('\u{feff}');
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    match serde_json::from_str::<Value>(text) {
+        Ok(Value::Object(m)) => Ok(Some(m)),
+        _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "not a JSON object")),
+    }
 }
 
-/// Does an organisation's managed settings set the key? Those files win over the user's, so a
-/// change here would silently do nothing.
-fn managed_sets_key(managed_dir: &Path) -> bool {
+/// The valid number of days a value stands for, if it is one.
+fn days_of(v: &Value) -> Option<u32> {
+    v.as_u64().filter(|d| *d >= 1).map(|d| d.min(u32::MAX as u64) as u32)
+}
+
+/// The value an organisation's managed settings give the key, if they set it: the base file, then
+/// the drop-in files in name order, the last one that sets it winning. Managed settings win over
+/// every other file. (Policy delivered through the registry, MDM or the claude.ai console is not
+/// readable from here.)
+fn managed_value(managed_dir: &Path) -> Option<Value> {
     let mut files = vec![managed_dir.join("managed-settings.json")];
     if let Ok(rd) = fs::read_dir(managed_dir.join("managed-settings.d")) {
-        files.extend(rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "json")));
+        let mut drops: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "json")).collect();
+        drops.sort();
+        files.extend(drops);
     }
-    files.iter().any(|f| read_json(f).is_some_and(|v| v.get(KEY).is_some()))
+    files.iter().filter_map(|f| read_object(f).ok().flatten()).filter_map(|m| m.get(KEY).cloned()).next_back()
 }
 
-/// Read the key and decide whether Atlas may change it.
-pub fn inspect(config_dir: &Path, managed_dir: Option<&Path>) -> Retention {
-    let file = config_dir.join("settings.json");
-    let mut out = Retention { days: None, invalid: false, locked: None };
-    if managed_dir.is_some_and(managed_sets_key) {
-        out.locked = Some("Your organization sets this, so Atlas can't change it.".into());
-    }
-    match fs::read(&file) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(_) => out.locked = out.locked.or(Some("Atlas can't read your Claude Code settings file.".into())),
-        Ok(bytes) => {
-            let s = String::from_utf8_lossy(&bytes);
-            match serde_json::from_str::<Value>(s.trim_start_matches('\u{feff}')) {
-                Ok(Value::Object(m)) => {
-                    if let Some(v) = m.get(KEY) {
-                        match v.as_u64().filter(|d| *d >= 1) {
-                            Some(d) => out.days = Some(d.min(u32::MAX as u64) as u32),
-                            None => out.invalid = true,
-                        }
-                    }
-                }
-                _ => out.locked = out.locked.or(Some("Your Claude Code settings file isn't valid JSON, so Atlas won't touch it.".into())),
-            }
-            if fs::metadata(&file).is_ok_and(|m| m.permissions().readonly()) {
-                out.locked = out.locked.or(Some("Your Claude Code settings file is read-only.".into()));
+/// The first project settings file that sets the key (a project's local file before its shared
+/// one) and the value. Claude Code lists the key as settable from any file, and the project it was
+/// started in beats the user's file.
+fn project_value(projects: &[PathBuf]) -> Option<(PathBuf, Value)> {
+    for dir in projects {
+        for name in ["settings.local.json", "settings.json"] {
+            let f = dir.join(".claude").join(name);
+            if let Some(v) = read_object(&f).ok().flatten().and_then(|m| m.get(KEY).cloned()) {
+                return Some((f, v));
             }
         }
+    }
+    None
+}
+
+fn plain_days(d: u32) -> String {
+    if d == 1 { "1 day".into() } else { format!("{d} days") }
+}
+
+/// What Claude Code will use and whether Atlas may change the user's file. `projects` are the
+/// folders of the projects Atlas knows about; their `.claude` settings files override the user's.
+pub fn inspect(config_dir: &Path, managed_dir: Option<&Path>, projects: &[PathBuf]) -> Retention {
+    let file = config_dir.join("settings.json");
+    let mut out = Retention { days: None, invalid: false, unknown: false, locked: None };
+
+    // The user's own file: what the picker would change.
+    let user = read_object(&file);
+    let mut user_note: Option<String> = None;
+    match &user {
+        Ok(m) => {
+            if let Some(v) = m.as_ref().and_then(|m| m.get(KEY)) {
+                match days_of(v) {
+                    Some(d) => out.days = Some(d),
+                    None => out.invalid = true,
+                }
+            }
+            if fs::metadata(&file).is_ok_and(|m| m.permissions().readonly()) {
+                user_note = Some("Your Claude Code settings file is read-only.".into());
+            }
+        }
+        Err(e) => {
+            out.unknown = true;
+            user_note = Some(if e.kind() == std::io::ErrorKind::InvalidData {
+                "Your Claude Code settings file isn't valid JSON, so Atlas won't touch it.".into()
+            } else {
+                "Atlas can't read your Claude Code settings file.".into()
+            });
+        }
+    }
+
+    // Higher files win; the first one that sets the key is what Claude Code uses.
+    let said = |v: &Value| days_of(v).map_or("a value it won't accept".to_string(), plain_days);
+    if let Some(v) = managed_dir.and_then(managed_value) {
+        out.days = days_of(&v);
+        out.invalid = out.days.is_none();
+        out.unknown = false;
+        out.locked = Some(format!("Your organization sets this to {}, so Atlas can't change it.", said(&v)));
+    } else if let Some((path, v)) = project_value(projects) {
+        out.days = days_of(&v);
+        out.invalid = out.days.is_none();
+        out.unknown = false;
+        let project = path.parent().and_then(|p| p.parent()).and_then(|p| p.file_name()).map(|n| format!(" in {}", n.to_string_lossy())).unwrap_or_default();
+        out.locked = Some(format!("A project's settings file{project} sets this to {}, so Atlas can't change it.", said(&v)));
+    } else {
+        out.locked = user_note;
     }
     out
 }
@@ -107,9 +173,16 @@ pub struct Changed {
 }
 
 /// Set `cleanupPeriodDays` to one of `PICKS` in `<config_dir>/settings.json`.
-pub fn set_days(config_dir: &Path, managed_dir: Option<&Path>, backups: &Path, days: u32) -> Res<Changed> {
+pub fn set_days(config_dir: &Path, managed_dir: Option<&Path>, projects: &[PathBuf], backups: &Path, days: u32) -> Res<Changed> {
+    set_days_hooked(config_dir, managed_dir, projects, backups, days, || {})
+}
+
+/// `set_days` with a hook that runs after the file has been read and before anything is written.
+/// Tests use it to change the file in that gap, as Claude Code can; nothing else needs it.
+#[doc(hidden)]
+pub fn set_days_hooked(config_dir: &Path, managed_dir: Option<&Path>, projects: &[PathBuf], backups: &Path, days: u32, between: impl FnOnce()) -> Res<Changed> {
     assert_safe(days)?;
-    let now = inspect(config_dir, managed_dir);
+    let now = inspect(config_dir, managed_dir, projects);
     if let Some(why) = now.locked {
         return Err(WriteError::Refused(why));
     }
@@ -130,6 +203,7 @@ pub fn set_days(config_dir: &Path, managed_dir: Option<&Path>, backups: &Path, d
         },
         |before, _, style| {
             assert_safe(days)?;
+            between();
             set_member(before, KEY, &days.to_string(), style)
         },
     )?;
@@ -253,8 +327,11 @@ pub(crate) fn set_member(before: Option<&[u8]>, key: &str, value: &str, style: &
     let nl = if style.crlf { "\r\n" } else { "\n" };
     let indent = String::from_utf8_lossy(&style.indent).into_owned();
     let member = format!("\"{key}\": {value}");
-    let Some(b) = before else {
-        return Ok(format!("{{{nl}{indent}{member}{nl}}}{nl}").into_bytes());
+    let blank = |b: &[u8]| String::from_utf8_lossy(b).trim_start_matches('\u{feff}').trim().is_empty();
+    let Some(b) = before.filter(|b| !blank(b)) else {
+        // Not there, or empty: a small new object (keeping a BOM the empty file had).
+        let bom = if before.is_some_and(|b| b.starts_with(&[0xEF, 0xBB, 0xBF])) { "\u{feff}" } else { "" };
+        return Ok(format!("{bom}{{{nl}{indent}{member}{nl}}}{nl}").into_bytes());
     };
     let bom = if b.starts_with(&[0xEF, 0xBB, 0xBF]) { 3 } else { 0 };
     let odd = || WriteError::Refused("Atlas could not find its place in your Claude Code settings file, so nothing was changed.".to_string());
@@ -349,7 +426,7 @@ mod tests {
         let dup = "{\"cleanupPeriodDays\": 1, \"cleanupPeriodDays\": 2}";
         assert!(set_member(Some(dup.as_bytes()), KEY, "30", &st()).is_err());
         assert!(set_member(Some(b"[1]"), KEY, "30", &st()).is_err());
-        assert!(set_member(Some(b""), KEY, "30", &st()).is_err());
+        assert!(set_member(Some(b"nope"), KEY, "30", &st()).is_err());
     }
 
     #[test]

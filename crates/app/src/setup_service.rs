@@ -306,7 +306,8 @@ pub async fn retention_set(app: AppHandle, state: Info<'_>, hub: Hub<'_>, days: 
     blocking(move || {
         let _lock = write_lock(&st)?;
         let i = st.setup_inputs(false).ok_or_else(|| "Your Claude folder is not ready yet.".to_string())?;
-        let out = atlas_core::retention::set_days(&i.root.dir, i.managed_dir.as_deref(), &backups_dir(&st), days).map_err(|e| e.message())?;
+        let projects = hub.current(&app, &st).map(|d| d.watched_projects().to_vec()).unwrap_or_default();
+        let out = atlas_core::retention::set_days(&i.root.dir, i.managed_dir.as_deref(), &projects, &backups_dir(&st), days).map_err(|e| e.message())?;
         if out.backup_id.is_some() {
             hub.refresh(&app, &st);
         }

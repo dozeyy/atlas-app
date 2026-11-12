@@ -16,12 +16,14 @@ export interface KeepChoice {
 }
 
 /**
- * What the picker shows for what the file says. A missing key is Claude Code's default of 30 days.
+ * What the picker shows for what Claude Code will use. A missing key is Claude Code's default of 30 days.
  * A value that is not one of the picks (90 days, say) gets its own selected option, so Atlas never
  * pretends it is something else and never changes it unless the user picks another.
  */
-export function keepChoice(days: number | null, invalid: boolean): KeepChoice {
+export function keepChoice(days: number | null, invalid: boolean, unknown = false): KeepChoice {
   const options: { days: number; label: string }[] = KEEP_PICKS.map((p) => ({ days: p.days, label: p.label }));
+  // The settings file can't be read, so what Claude Code uses is not known: show nothing as chosen.
+  if (unknown) return { value: "", options: options.map(asOption), label: "Unknown" };
   if (invalid) return { value: "", options: options.map(asOption), label: "Not a value Claude Code accepts" };
   const now = days ?? 30;
   let at = options.find((o) => o.days === now);

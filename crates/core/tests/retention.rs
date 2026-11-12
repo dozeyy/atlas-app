@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use atlas_core::retention::{inspect, set_days, FOREVER_DAYS, KEY, PICKS, YEAR_DAYS};
+use atlas_core::retention::{inspect, set_days, set_days_hooked, FOREVER_DAYS, KEY, PICKS, YEAR_DAYS};
 use atlas_core::setup_write::{list_backups_detailed, restore_any, Confine, WriteError};
 use serde_json::Value;
 
@@ -39,7 +39,7 @@ impl Fx {
         fs::write(self.file(), b).unwrap();
     }
     fn set(&self, days: u32) -> Result<atlas_core::retention::Changed, WriteError> {
-        set_days(&self.dir, Some(&self.managed), &self.backups, days)
+        set_days(&self.dir, Some(&self.managed), &[], &self.backups, days)
     }
     fn confine(&self) -> Confine {
         Confine::new(&self.dir, &self.dir.join(".claude.json"), [])
@@ -69,7 +69,7 @@ fn missing_key_reads_as_the_default_and_a_pick_adds_only_that_key() {
     let fx = Fx::new();
     let original = fx.bytes();
     assert!(fx.json().get(KEY).is_none(), "the fixture must start without the key");
-    let r = inspect(&fx.dir, Some(&fx.managed));
+    let r = inspect(&fx.dir, Some(&fx.managed), &[]);
     assert_eq!((r.days, r.invalid, r.locked), (None, false, None));
     assert_eq!(fx.bytes(), original, "reading changes nothing");
 
@@ -85,7 +85,7 @@ fn missing_key_reads_as_the_default_and_a_pick_adds_only_that_key() {
     let mut old_keys: Vec<String> = serde_json::from_slice::<Value>(&original).unwrap().as_object().unwrap().keys().cloned().collect();
     old_keys.push(KEY.into());
     assert_eq!(keys, old_keys);
-    assert_eq!(inspect(&fx.dir, Some(&fx.managed)).days, Some(365));
+    assert_eq!(inspect(&fx.dir, Some(&fx.managed), &[]).days, Some(365));
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn existing_values_are_shown_as_they_are_and_replaced_in_place() {
     for (text, shows) in [("30", 30u32), ("365", 365), ("3650", 3650), ("90", 90)] {
         let fx = Fx::new();
         fx.write(format!("{{\n  \"a\": [1,   2],\n  \"{KEY}\": {text},\n  \"z\": \"last\"\n}}\n").as_bytes());
-        let r = inspect(&fx.dir, Some(&fx.managed));
+        let r = inspect(&fx.dir, Some(&fx.managed), &[]);
         assert_eq!((r.days, r.invalid), (Some(shows), false), "{text}");
         // Not touched until the user picks.
         assert_eq!(fx.backup_count(), 0);
@@ -155,7 +155,7 @@ fn undo_after_replacing_a_custom_value_brings_the_custom_value_back() {
     assert_eq!(fx.json()[KEY], 365);
     restore_any(&fx.backups, &id, &fx.confine()).unwrap();
     assert_eq!(fx.bytes(), original);
-    assert_eq!(inspect(&fx.dir, Some(&fx.managed)).days, Some(90));
+    assert_eq!(inspect(&fx.dir, Some(&fx.managed), &[]).days, Some(90));
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn bom_crlf_tabs_unknown_keys_and_odd_spacing_survive() {
 fn a_missing_file_is_created_and_undo_removes_it_again() {
     let fx = Fx::new();
     fs::remove_file(fx.file()).unwrap();
-    let r = inspect(&fx.dir, Some(&fx.managed));
+    let r = inspect(&fx.dir, Some(&fx.managed), &[]);
     assert_eq!((r.days, r.invalid, r.locked), (None, false, None));
     let id = fx.set(YEAR_DAYS).unwrap().backup_id.unwrap();
     assert_eq!(String::from_utf8(fx.bytes()).unwrap(), "{\n  \"cleanupPeriodDays\": 365\n}\n");
@@ -185,7 +185,7 @@ fn a_value_claude_code_would_reject_is_flagged_and_a_pick_repairs_it() {
     for bad in ["0", "-5", "\"30\"", "1.5", "null", "true", "[30]"] {
         let fx = Fx::new();
         fx.write(format!("{{\"{KEY}\": {bad}}}\n").as_bytes());
-        let r = inspect(&fx.dir, Some(&fx.managed));
+        let r = inspect(&fx.dir, Some(&fx.managed), &[]);
         assert_eq!((r.days, r.invalid), (None, true), "{bad}");
         fx.set(YEAR_DAYS).unwrap();
         assert_eq!(fx.json()[KEY], 365, "{bad}");
@@ -218,7 +218,7 @@ fn a_managed_setting_unreadable_or_read_only_file_is_left_alone_with_a_reason() 
     fs::create_dir_all(&fx.managed).unwrap();
     fs::write(fx.managed.join("managed-settings.json"), format!("{{\"{KEY}\": 14}}")).unwrap();
     let original = fx.bytes();
-    let r = inspect(&fx.dir, Some(&fx.managed));
+    let r = inspect(&fx.dir, Some(&fx.managed), &[]);
     assert!(r.locked.as_deref().unwrap().contains("organization"));
     assert!(matches!(fx.set(YEAR_DAYS), Err(WriteError::Refused(_))));
     assert_eq!(fx.bytes(), original);
@@ -228,26 +228,27 @@ fn a_managed_setting_unreadable_or_read_only_file_is_left_alone_with_a_reason() 
     let fx = Fx::new();
     fs::create_dir_all(fx.managed.join("managed-settings.d")).unwrap();
     fs::write(fx.managed.join("managed-settings.d").join("10-org.json"), format!("{{\"{KEY}\": 14}}")).unwrap();
-    assert!(inspect(&fx.dir, Some(&fx.managed)).locked.is_some());
+    assert!(inspect(&fx.dir, Some(&fx.managed), &[]).locked.is_some());
 
     // A managed file that does not set it does not lock.
     let fx = Fx::new();
     fs::create_dir_all(&fx.managed).unwrap();
     fs::write(fx.managed.join("managed-settings.json"), "{\"model\": \"x\"}").unwrap();
-    assert!(inspect(&fx.dir, Some(&fx.managed)).locked.is_none());
+    assert!(inspect(&fx.dir, Some(&fx.managed), &[]).locked.is_none());
 
     // The settings file is not JSON: refuse, change nothing.
     let fx = Fx::new();
     fx.write(b"{ not json");
-    let r = inspect(&fx.dir, Some(&fx.managed));
+    let r = inspect(&fx.dir, Some(&fx.managed), &[]);
     assert!(r.locked.is_some());
+    assert_eq!((r.days, r.invalid, r.unknown), (None, false, true), "what it says is not known, so no 30 days is shown");
     assert!(matches!(fx.set(YEAR_DAYS), Err(WriteError::Refused(_))));
     assert_eq!(fx.bytes(), b"{ not json");
 
     // Not an object.
     let fx = Fx::new();
     fx.write(b"[1, 2]");
-    assert!(inspect(&fx.dir, Some(&fx.managed)).locked.is_some());
+    assert!(inspect(&fx.dir, Some(&fx.managed), &[]).locked.is_some());
     assert!(fx.set(YEAR_DAYS).is_err());
     assert_eq!(fx.bytes(), b"[1, 2]");
 
@@ -257,7 +258,7 @@ fn a_managed_setting_unreadable_or_read_only_file_is_left_alone_with_a_reason() 
     perms.set_readonly(true);
     fs::set_permissions(fx.file(), perms.clone()).unwrap();
     let original = fx.bytes();
-    assert!(inspect(&fx.dir, Some(&fx.managed)).locked.as_deref().unwrap().contains("read-only"));
+    assert!(inspect(&fx.dir, Some(&fx.managed), &[]).locked.as_deref().unwrap().contains("read-only"));
     assert!(fx.set(YEAR_DAYS).is_err());
     assert_eq!(fx.bytes(), original);
     #[allow(clippy::permissions_set_readonly_false)]
@@ -272,4 +273,150 @@ fn a_file_that_lists_the_key_twice_is_not_guessed_at() {
     fx.write(src.as_bytes());
     assert!(fx.set(YEAR_DAYS).is_err());
     assert_eq!(fx.bytes(), src.as_bytes());
+}
+
+// ---- what Claude Code will actually use (managed and project files win over the user's file) ----
+
+fn put(path: &Path, text: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+#[test]
+fn managed_settings_show_their_own_value_not_the_users() {
+    let fx = Fx::new();
+    fx.write(format!("{{\"{KEY}\": 365}}").as_bytes());
+    put(&fx.managed.join("managed-settings.json"), &format!("{{\"{KEY}\": 14}}"));
+    let r = inspect(&fx.dir, Some(&fx.managed), &[]);
+    assert_eq!((r.days, r.invalid, r.unknown), (Some(14), false, false), "14 wins over the user's 365");
+    assert!(r.locked.as_deref().unwrap().contains("14 days"), "{:?}", r.locked);
+
+    // A drop-in is read after the base file, in name order; the last one that sets it wins.
+    put(&fx.managed.join("managed-settings.d").join("10-a.json"), &format!("{{\"{KEY}\": 20}}"));
+    put(&fx.managed.join("managed-settings.d").join("20-b.json"), &format!("{{\"{KEY}\": 1}}"));
+    put(&fx.managed.join("managed-settings.d").join("30-c.json"), "{\"model\": \"x\"}");
+    let r = inspect(&fx.dir, Some(&fx.managed), &[]);
+    assert_eq!(r.days, Some(1));
+    assert!(r.locked.as_deref().unwrap().contains("1 day,"), "{:?}", r.locked);
+
+    // A managed value Claude Code rejects is shown as rejected, never as the user's value.
+    put(&fx.managed.join("managed-settings.json"), &format!("{{\"{KEY}\": 0}}"));
+    fs::remove_dir_all(fx.managed.join("managed-settings.d")).unwrap();
+    let r = inspect(&fx.dir, Some(&fx.managed), &[]);
+    assert_eq!((r.days, r.invalid), (None, true));
+    assert!(r.locked.is_some());
+}
+
+#[test]
+fn managed_settings_still_win_when_the_users_file_is_broken() {
+    let fx = Fx::new();
+    fx.write(b"{ not json");
+    put(&fx.managed.join("managed-settings.json"), &format!("{{\"{KEY}\": 14}}"));
+    let r = inspect(&fx.dir, Some(&fx.managed), &[]);
+    assert_eq!((r.days, r.unknown), (Some(14), false));
+    assert!(r.locked.as_deref().unwrap().contains("organization"));
+    assert_eq!(fx.bytes(), b"{ not json", "reading changes nothing");
+}
+
+#[test]
+fn a_project_settings_file_overrides_the_users_and_says_where_it_came_from() {
+    let fx = Fx::new();
+    fx.write(format!("{{\"{KEY}\": 365}}").as_bytes());
+    let t = fx._t.path().join("projects");
+    let (p1, p2) = (t.join("alpha"), t.join("beta"));
+    put(&p1.join(".claude").join("settings.json"), &format!("{{\"{KEY}\": 60}}"));
+    put(&p2.join(".claude").join("settings.json"), "{ broken");
+    let projects = vec![p2.clone(), p1.clone()];
+    let r = inspect(&fx.dir, Some(&fx.managed), &projects);
+    assert_eq!((r.days, r.invalid, r.unknown), (Some(60), false, false));
+    let why = r.locked.unwrap();
+    assert!(why.contains("alpha") && why.contains("60 days"), "{why}");
+    // Refused, nothing written, no backup.
+    let original = fx.bytes();
+    let e = set_days(&fx.dir, Some(&fx.managed), &projects, &fx.backups, YEAR_DAYS).unwrap_err();
+    assert!(matches!(e, WriteError::Refused(_)));
+    assert_eq!(fx.bytes(), original);
+    assert_eq!(fx.backup_count(), 0);
+
+    // A project's local file beats its shared one; managed settings beat both.
+    put(&p1.join(".claude").join("settings.local.json"), &format!("{{\"{KEY}\": 7}}"));
+    assert_eq!(inspect(&fx.dir, Some(&fx.managed), &projects).days, Some(7));
+    put(&fx.managed.join("managed-settings.json"), &format!("{{\"{KEY}\": 14}}"));
+    assert_eq!(inspect(&fx.dir, Some(&fx.managed), &projects).days, Some(14));
+
+    // A project whose file can't be read does not lock anything.
+    let fx = Fx::new();
+    assert!(inspect(&fx.dir, Some(&fx.managed), &[p2]).locked.is_none());
+    assert!(set_days(&fx.dir, Some(&fx.managed), &[], &fx.backups, YEAR_DAYS).is_ok());
+}
+
+#[test]
+fn an_empty_or_blank_settings_file_counts_as_missing_and_undo_puts_the_blank_file_back() {
+    for blank in ["", "  \n", "\u{feff}", "\u{feff}\r\n\t "] {
+        let fx = Fx::new();
+        fx.write(blank.as_bytes());
+        let r = inspect(&fx.dir, Some(&fx.managed), &[]);
+        assert_eq!((r.days, r.invalid, r.unknown, r.locked), (None, false, false, None), "{blank:?}");
+        let id = fx.set(YEAR_DAYS).unwrap().backup_id.unwrap();
+        let out = String::from_utf8(fx.bytes()).unwrap();
+        assert!(out.trim_start_matches('\u{feff}').starts_with('{') && out.contains("\"cleanupPeriodDays\": 365"), "{out:?}");
+        assert_eq!(out.starts_with('\u{feff}'), blank.starts_with('\u{feff}'), "a BOM the file had is kept");
+        let parsed: Value = serde_json::from_str(out.trim_start_matches('\u{feff}')).unwrap();
+        assert_eq!(parsed[KEY], 365);
+        restore_any(&fx.backups, &id, &fx.confine()).unwrap();
+        assert_eq!(fx.bytes(), blank.as_bytes(), "Undo gives back the blank file exactly");
+    }
+}
+
+/// Make a symlink to `target` at `link`; false when this machine won't (Windows without developer
+/// mode or admin). The test then says so and returns: skipped, never faked.
+fn try_symlink(target: &Path, link: &Path) -> bool {
+    #[cfg(unix)]
+    let r = std::os::unix::fs::symlink(target, link);
+    #[cfg(windows)]
+    let r = std::os::windows::fs::symlink_file(target, link);
+    r.is_ok()
+}
+
+#[test]
+fn a_symlinked_settings_file_is_written_through_and_the_link_survives() {
+    let fx = Fx::new();
+    let real = fx._t.path().join("dotfiles").join("claude-settings.json");
+    fs::create_dir_all(real.parent().unwrap()).unwrap();
+    fs::rename(fx.file(), &real).unwrap();
+    if !try_symlink(&real, &fx.file()) {
+        eprintln!("skipped: this machine can't create symlinks (Windows needs developer mode or admin)");
+        return;
+    }
+    let original = fs::read(&real).unwrap();
+    let r = inspect(&fx.dir, Some(&fx.managed), &[]);
+    assert_eq!((r.days, r.locked), (None, None));
+    let id = fx.set(FOREVER_DAYS).unwrap().backup_id.unwrap();
+    assert!(fs::symlink_metadata(fx.file()).unwrap().file_type().is_symlink(), "the link is still a link");
+    let through: Value = serde_json::from_slice(&fs::read(&real).unwrap()).unwrap();
+    assert_eq!(through[KEY], 3650, "the file the link points at has the value");
+    assert_eq!(fx.json()[KEY], 3650, "and so does reading it through the link");
+    only_the_key_added(&original, &fs::read(&real).unwrap(), 3650);
+    // Undo goes through the link too.
+    restore_any(&fx.backups, &id, &fx.confine()).unwrap();
+    assert!(fs::symlink_metadata(fx.file()).unwrap().file_type().is_symlink());
+    assert_eq!(fs::read(&real).unwrap(), original);
+}
+
+#[test]
+fn a_file_changed_between_reading_and_writing_is_refused_and_not_overwritten() {
+    let fx = Fx::new();
+    let theirs = b"{\n  \"model\": \"changed-by-claude-code\"\n}\n".to_vec();
+    let (file, their_write) = (fx.file(), theirs.clone());
+    let e = set_days_hooked(&fx.dir, Some(&fx.managed), &[], &fx.backups, YEAR_DAYS, move || fs::write(&file, &their_write).unwrap()).unwrap_err();
+    match e {
+        WriteError::Refused(m) => assert!(m.contains("changed the file"), "{m}"),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    assert_eq!(fx.bytes(), theirs, "the other writer's file is exactly as they left it");
+    assert_eq!(fx.backup_count(), 0, "a refused write leaves no backup behind");
+    // Nothing is stuck: trying again now works, on top of their change.
+    assert!(fx.set(YEAR_DAYS).is_ok());
+    assert_eq!(fx.json()[KEY], 365);
+    assert_eq!(fx.json()["model"], "changed-by-claude-code");
 }

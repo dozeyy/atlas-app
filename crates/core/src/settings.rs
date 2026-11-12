@@ -49,6 +49,9 @@ pub const DEFAULT_ZOOM: u32 = 100;
 
 /// The nearest step: a hand-edited 137 becomes 125, nonsense becomes 100.
 pub fn snap_zoom(n: u32) -> u32 {
+    if n == 0 {
+        return DEFAULT_ZOOM;
+    }
     ZOOM_LEVELS.iter().copied().min_by_key(|l| l.abs_diff(n)).unwrap_or(DEFAULT_ZOOM)
 }
 
@@ -424,7 +427,7 @@ mod tests {
         // An off-step zoom snaps to the nearest step.
         assert_eq!(Settings::from_json(r#"{"zoomPercent":137}"#).unwrap().zoom_percent, 125);
         assert_eq!(Settings::from_json(r#"{"zoomPercent":5000}"#).unwrap().zoom_percent, 200);
-        assert_eq!(Settings::from_json(r#"{"zoomPercent":0}"#).unwrap().zoom_percent, 80);
+        assert_eq!(Settings::from_json(r#"{"zoomPercent":0}"#).unwrap().zoom_percent, 100);
         assert_eq!(Settings::from_json(r#"{"zoomPercent":-3}"#).unwrap().zoom_percent, 100);
 
         let dir = tempfile::tempdir().unwrap();

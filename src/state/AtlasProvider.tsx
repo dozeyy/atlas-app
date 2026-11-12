@@ -148,19 +148,48 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     [backend, run],
   );
 
+  // Zoom changes go to Rust one at a time, in key order. `zoomNow` is the level the last key press
+  // asked for (a fast next press steps from it, not from the last saved value); `zoomSaved` is the
+  // last level Rust confirmed, which the page falls back to if a save fails.
+  const zoomNow = useRef(info.settings.zoomPercent);
+  const zoomSaved = useRef(info.settings.zoomPercent);
+  const zoomPending = useRef(0);
+  const zoomSeq = useRef(0);
+  const zoomQueue = useRef<Promise<void>>(Promise.resolve());
+  if (zoomPending.current === 0) {
+    zoomNow.current = info.settings.zoomPercent;
+    zoomSaved.current = info.settings.zoomPercent;
+  }
+
   const setZoom = useCallback(
     (percent: number) => {
       const p = snapZoom(percent);
+      const mine = ++zoomSeq.current;
+      zoomNow.current = p;
+      zoomPending.current += 1;
       applyZoomVar(p); // the window's minimum size follows at once; Rust zooms the webview and saves
-      void run(backend.updateSettings({ zoomPercent: p }));
+      zoomQueue.current = zoomQueue.current.then(async () => {
+        try {
+          const next = await backend.updateSettings({ zoomPercent: p });
+          zoomSaved.current = next.settings.zoomPercent;
+          accept(next);
+        } catch (e) {
+          console.error("[atlas] command failed", e);
+          if (mine === zoomSeq.current) {
+            // Nothing newer is waiting: put the page back on what is actually saved.
+            zoomNow.current = zoomSaved.current;
+            applyZoomVar(zoomSaved.current);
+          }
+        } finally {
+          zoomPending.current -= 1;
+        }
+      });
     },
-    [backend, run],
+    [backend, accept],
   );
 
   // Ctrl/Cmd + plus, minus and 0: zoom in, out and back to 100 %. The webview's own zoom keys are
   // off, so these are the only ones; the level is saved and comes back on the next start.
-  const zoomNow = useRef(info.settings.zoomPercent);
-  zoomNow.current = info.settings.zoomPercent;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const act = zoomKeyAction(e, info.platform);
@@ -169,8 +198,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       const cur = zoomNow.current ?? DEFAULT_ZOOM;
       const next = act === "reset" ? DEFAULT_ZOOM : stepZoom(cur, act);
       if (next !== cur) {
-        zoomNow.current = next; // held keys step from here, not from the last saved value
-        setZoom(next);
+        setZoom(next); // sets `zoomNow`, so held keys step from here
       }
     };
     window.addEventListener("keydown", onKey);

@@ -247,6 +247,29 @@ describe("Settings", () => {
     expect(set).not.toHaveBeenCalled();
   });
 
+  it("Keep saved sessions: when managed settings say 14 the read-only line says 14 days, not what the user's file says", async () => {
+    mount((b) => {
+      b.retention.days = 14; // the value that wins, from the managed file (the user's own file says 365)
+      b.retention.locked = "Your organization sets this to 14 days, so Atlas can't change it.";
+    });
+    await openFolder();
+    expect(await screen.findByText("Your organization sets this to 14 days, so Atlas can't change it.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Keep saved sessions: 14 days")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Keep saved sessions: 30 days")).toBeNull();
+  });
+
+  it("Keep saved sessions: a settings file that can't be read shows Unknown, not 30 days", async () => {
+    mount((b) => {
+      b.retention.days = null;
+      b.retention.unknown = true;
+      b.retention.locked = "Your Claude Code settings file isn't valid JSON, so Atlas won't touch it.";
+    });
+    await openFolder();
+    expect(await screen.findByText(/isn't valid JSON/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Keep saved sessions: Unknown")).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Keep saved sessions" })).toBeNull();
+  });
+
   it("Text size: Default and Larger, saved, and the page is told before anything else paints", async () => {
     mount();
     const group = await screen.findByRole("radiogroup", { name: "Text size" });

@@ -2291,9 +2291,11 @@ pub fn edit_json_text(
     let sig = file_sig(file);
     let before = fs::read(file).ok();
     let style = before.as_deref().map(detect_style).unwrap_or_default();
+    // A file that is missing, empty or only whitespace has nothing in it: it counts as `{}`.
+    let blank = |b: &[u8]| String::from_utf8_lossy(b).trim_start_matches('\u{feff}').trim().is_empty();
     let mut root = match &before {
-        Some(b) => parse_json_bytes(b).map_err(|e| WriteError::Refused(format!("The file can't be read as JSON ({e}), so nothing was changed.")))?,
-        None => Value::Object(Map::new()),
+        Some(b) if !blank(b) => parse_json_bytes(b).map_err(|e| WriteError::Refused(format!("The file can't be read as JSON ({e}), so nothing was changed.")))?,
+        _ => Value::Object(Map::new()),
     };
     if !root.is_object() {
         return refuse("The file is not a JSON object, so nothing was changed.");

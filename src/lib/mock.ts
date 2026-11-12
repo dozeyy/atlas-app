@@ -301,12 +301,13 @@ export class MockBackend {
   historyOpenFolder: Backend["historyOpenFolder"] = () => this.history.historyOpenFolder();
   onHistoryChanged: Backend["onHistoryChanged"] = (cb) => this.history.onHistoryChanged(cb);
   /** How long Claude Code keeps sessions, as the stand-in's settings file holds it. Tests set these. */
-  retention: { days: number | null; invalid: boolean; locked: string | null } = { days: null, invalid: false, locked: null };
+  retention: { days: number | null; invalid: boolean; unknown: boolean; locked: string | null } = { days: null, invalid: false, unknown: false, locked: null };
   private retentionBackups = new Map<string, { days: number | null; invalid: boolean }>();
   settingsOverview: Backend["settingsOverview"] = async () => ({
     ...(await this.history.settingsOverview()),
     cleanupDays: this.retention.days,
     cleanupInvalid: this.retention.invalid,
+    cleanupUnknown: this.retention.unknown,
     cleanupLocked: this.retention.locked,
     keepVersions: this.info.settings.historyKeepVersions,
   });
