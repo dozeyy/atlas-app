@@ -572,3 +572,14 @@ unDots, one dot per N runs above 48, chip "1 dot = N runs"). No recorded "new ci
 
 ## 2026-11-10 - 0.1.8: flipped chart tips sit under the item
 - TipAt has yBelow: Bars use the baseline, HeatGrid the cell bottom, Ridge the point +10, so a tip that opens below never covers what is hovered. Checked headless (Chromium, 1280x520, highest item scrolled to the page top). Released and published 0.1.8.
+
+2026-11-10 — backed up to private GitHub atlas-app-backup (remote backup; all branches + backup/wip-*)
+
+## 2026-11-11 - 0.1.9: launcher port + signing, new targets, lifetime row, retention picker, text size, popular Library, CLI cache scope
+- Launcher: `atlas-usage.ps1` ports the sh launcher; both check the pin AND the minisign "ED" signature on SHA256SUMS.txt (signature can only refuse; legacy "Ed" refused). No pin = no saved copy runs. Hash from stdin (GNU sha256sum prefixes `\` when the path has a backslash, proven). Stale lock: rename, re-judge the renamed folder's own mtime, put back with mkdir, never mv onto a lock. PS < 7.3 starts the program via ProcessStartInfo with CRT quoting (`& exe @args` drops empty args). macOS bash 3.2 keeps `VAR=x func` assignments after the call: tests unset them. pwsh on Unix needs `Get-Item -Force` for dot folders. CI `.github/workflows/launcher.yml` (sh/bash ubuntu+macos, ShellCheck, pwsh Linux, PS 5.1, PSScriptAnalyzer) green on run 43167187669.
+- Release: atlas-usage for linux arm64, linux x64 musl (static, alpine smoke) and windows arm64 (smoke on windows-11-arm); publish needs exactly 12 build files; pins cover 6 files; publish-public requires 15 assets.
+- Dashboard "All time" row: `lifetime()` = `scope_totals(.., full=false)`, equal to the CLI `all` scope (crates/cli/tests/lifetime.rs). Streaks show only when daily.today equals lifetime today; midnight timer silent while hidden; row reloads at most every 5 s.
+- Settings: "Keep chats for" writes only `cleanupPeriodDays` (30/365/3650) in the user file; managed settings lock it, a project value is only a note; project files equal to the user file (home as project) are skipped by canonical path. Text size + Ctrl/Cmd +/-/0 zoom (`zoomPercent`), saves serialised (ZOOM_LOCK + frontend queue). History page still has no Undo (toast only, by design).
+- Library: most installed first from `<config>/plugins/plugin-catalog-cache.json` `unique_installs` (official marketplace only); a chosen order waits for the full list; corrupt/missing cache = catalog order, no Sort control.
+- Root cause (proven): the CLI cache ignored `--config-dir`, so a fixture run polluted the real index (15 sessions, 17 files). Fix `paths::cli_cache_dir` (non-default roots use `cli/roots/<hash>`, also atlas-mcp). Cleaned with `tools/forget-fixture-chats.py --apply`; backup `%LOCALAPPDATA%\atlas\cli\cache.sqlite.bak-20261111`.
+- Verifier tip: drive Atlas with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` plus PrintWindow captures.
