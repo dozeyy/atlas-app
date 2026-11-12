@@ -26,11 +26,13 @@
 # openssl (1.1.1 has no pkeyutl -rawin, LibreSSL no BLAKE2b) the pin alone decides, quietly;
 # launcher-doctor says which. A self-test against a known answer decides "such an openssl".
 # A saved copy that cannot be read to hash it is never run: it is deleted and fetched again.
+# Without a pinned line for this version, no saved copy is run at all.
 # ATLAS_USAGE_BIN = a program file to run instead of searching (no checksum check: your choice).
 # ATLAS_USAGE_LAUNCHER_VERBOSE=1 names the copy used.
 # Test aid: ATLAS_USAGE_TEST_SOURCE = a local folder, or an http://127.0.0.1 / localhost
 # address, that stands in for the release (the pinned hash still applies). A network path
-# (//host/share, \\host\share) is refused: the stand-in must be on this computer. Only together with it,
+# (//host/share, \\host\share, on Windows a mapped network drive or a link to a share)
+# is refused: the stand-in must be on this computer. Only together with it,
 # ATLAS_USAGE_TEST_PUBKEY replaces the update key, so tests can sign their own files. That grants
 # nothing: the stand-in release is local, its files must still match the pins, and whoever can set
 # these variables can already set ATLAS_USAGE_BIN. Downloads from GitHub always use the real key.
@@ -94,11 +96,13 @@ sha_tool() {
   fi
 }
 
+# Read from stdin: given a file name with a backslash in it, GNU sha256sum puts a backslash
+# in front of the hash.
 sha256_of() {
   case $(sha_tool) in
-    sha256sum) sha256sum "$1" | cut -d' ' -f1 ;;
-    shasum) shasum -a 256 "$1" | cut -d' ' -f1 ;;
-    openssl) openssl dgst -sha256 "$1" | sed 's/^.*= //' ;;
+    sha256sum) sha256sum <"$1" | cut -d' ' -f1 ;;
+    shasum) shasum -a 256 <"$1" | cut -d' ' -f1 ;;
+    openssl) openssl dgst -sha256 <"$1" | sed 's/^.*= //' ;;
     *) return 1 ;;
   esac
 }
@@ -288,6 +292,23 @@ want=
 [ -n "$version" ] && [ -n "$asset" ] && want=$(pin_for "$version" "$asset")
 
 # The stand-in release (tests only), and the key its signature must come from.
+# Windows: a folder that is a link to a share (//host/...), or on a mapped network drive as
+# "net use" lists it ("Z:  \\host\share"). Without net on PATH only the link check applies.
+on_network_drive() { # folder
+  nd_real=$(cd "$1" 2>/dev/null && pwd -P) || return 0
+  case $nd_real in //*) return 0 ;; esac
+  command -v cygpath >/dev/null 2>&1 || return 1
+  nd_win=$(cygpath -w "$nd_real" 2>/dev/null) || return 0
+  case $nd_win in
+    [A-Za-z]:*) ;;
+    *) return 0 ;; # \\host\share or \\?\UNC\...
+  esac
+  command -v net >/dev/null 2>&1 || return 1
+  nd_drive=$(printf '%s' "$nd_win" | cut -c1-2)
+  net use 2>/dev/null | awk -v d="$nd_drive" 'BEGIN { s = sprintf("%c%c", 92, 92) }
+    { for (i = 1; i < NF; i++) if (toupper($i) == toupper(d) && index($(i + 1), s) == 1) f = 1 }
+    END { exit !f }'
+}
 src=$ATLAS_USAGE_TEST_SOURCE
 src_test='' src_dir='' src_loop=''
 if [ -n "$src" ]; then
@@ -296,7 +317,7 @@ if [ -n "$src" ]; then
     *)
       if loopback_ok "$src"; then
         src_loop=1
-      elif [ -d "$src" ]; then
+      elif [ -d "$src" ] && { [ -z "$win" ] || ! on_network_drive "$src"; }; then
         src_dir=1
       fi
       ;;
@@ -312,6 +333,8 @@ fi
 
 # Where saved copies live.
 bindir=$CLAUDE_PLUGIN_DATA
+# On Windows it may come as C:\...; written the way this shell writes paths.
+[ -n "$win" ] && [ -n "$bindir" ] && bindir=$(winpath "$bindir")
 if [ -z "$bindir" ]; then
   case $os in
     Darwin) [ -n "$HOME" ] && bindir=$HOME/Library/Caches/atlas/skill ;;
@@ -421,7 +444,12 @@ current_enough() { # path label
 
 # A saved copy runs only if it still matches its pin; one that does not is deleted.
 cache_ok() { # path
-  [ -n "$want" ] || return 0
+  # No pin for this version (checksums.txt missing, cut short or without this line): nothing was
+  # downloaded without one, so whatever is in the folder is not run.
+  if [ -z "$want" ]; then
+    report "saved copy" "$1 (not run: v$version has no pinned checksum to check it against)"
+    return 1
+  fi
   if [ -z "$(sha_tool)" ]; then
     [ -n "$doctor" ] || fail "no tool to check the saved program (need sha256sum, shasum or openssl)."
     report "saved copy" "$1 (cannot be checked: no sha256sum, shasum or openssl)"
@@ -531,8 +559,9 @@ find "$cacheroot" -maxdepth 1 -type d -name '.dl*' -mmin +$stale_min -exec rm -r
 
 # One download at a time per version: a second run waits for the first instead of fetching too.
 # The lock folder holds this run's token, so a run only ever removes its own lock. A stale lock is
-# renamed first (atomic) and deleted only if it still holds the token that was judged stale;
-# otherwise another run had just taken it, and it is put back.
+# renamed first (atomic) and judged again by the renamed folder's own time, since another run may
+# have replaced it with a fresh lock in between. A fresh one is put back only where there is no lock
+# (a new folder, never a move onto one); a stale one is deleted.
 lock=$cacheroot/.lock-$version
 token=$$.$(date +%s 2>/dev/null).$(od -An -N4 -tx4 /dev/urandom 2>/dev/null | tr -d ' \n')
 locked=
@@ -554,11 +583,10 @@ while [ "$waited" -lt 330 ]; do
     break
   fi
   if [ -n "$(find "$lock" -maxdepth 0 -mmin +$stale_min 2>/dev/null)" ]; then
-    old_owner=$(cat "$lock/owner" 2>/dev/null)
     grave=$cacheroot/.dl.stale-lock.$token
     if mv "$lock" "$grave" 2>/dev/null; then
-      if [ "$(cat "$grave/owner" 2>/dev/null)" != "$old_owner" ] && [ ! -e "$lock" ]; then
-        mv "$grave" "$lock" 2>/dev/null
+      if [ -z "$(find "$grave" -maxdepth 0 -mmin +$stale_min 2>/dev/null)" ] && mkdir "$lock" 2>/dev/null; then
+        mv "$grave/owner" "$lock/owner" 2>/dev/null
       fi
       rm -rf "$grave"
     fi

@@ -23,6 +23,7 @@
 # download is deleted. Only the "ED" form (Ed25519 over the file's BLAKE2b-512) is accepted. If the
 # verifier cannot be compiled, the pin alone decides, quietly; launcher-doctor says which.
 # A saved copy that cannot be read to hash it is never run: it is deleted and fetched again.
+# Without a pinned line for this version, no saved copy is run at all.
 # Arguments reach the program unchanged, empty ones and embedded quotes too (PowerShell before 7.3
 # mangles those, so there the program is started directly with each argument quoted).
 # Exit code 3 = the launcher itself failed (one plain line on stderr); 4 = the program found is too old
@@ -616,7 +617,12 @@ function Test-CurrentEnough([string]$path, [string]$label) {
 
 # A saved copy runs only if it still matches its pin; one that does not is deleted.
 function Test-CacheOk([string]$path) {
-    if (-not $want) { return $true }
+    # No pin for this version (checksums.txt missing, cut short or without this line): nothing was
+    # downloaded without one, so whatever is in the folder is not run.
+    if (-not $want) {
+        if ($doctor) { Write-Report 'saved copy' "$path (not run: v$version has no pinned checksum to check it against)" }
+        return $false
+    }
     $h = Get-Hash $path
     if ($h -and $h -ceq $want) { return $true }
     # Changed, or not readable (no read permission, locked by another program): never run it.
@@ -734,9 +740,10 @@ function Clear-Download {
 function Invoke-Download {
 try {
     # One download at a time per version: a second run waits for the first instead of fetching too.
-    # The lock folder holds this run's token. A stale lock is renamed first (atomic) and deleted only
-    # if it still holds the token that was judged stale; otherwise another run had just taken it,
-    # and it is put back.
+    # The lock folder holds this run's token. A stale lock is renamed first (atomic) and judged again
+    # by the renamed folder's own time, since another run may have replaced it with a fresh lock in
+    # between. A fresh one is put back only where there is no lock (a new folder, never a move onto
+    # one); a stale one is deleted.
     $waited = 0
     while ($waited -lt 330) {
         try {
@@ -747,13 +754,15 @@ try {
         } catch { $null = $_ }
         $li = Get-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
         if ($li -and $li.LastWriteTime -lt (Get-Date).AddMinutes(-$staleMinutes)) {
-            $oldOwner = Read-Owner $lockOwner
             $grave = Join-Path $cacheRoot ".dl.stale-lock.$token"
             $moved = $false
             try { [IO.Directory]::Move($lock, $grave); $moved = $true } catch { $null = $_ }
             if ($moved) {
-                if ((Read-Owner (Join-Path $grave 'owner')) -cne $oldOwner -and -not (Test-Path -LiteralPath $lock)) {
-                    try { [IO.Directory]::Move($grave, $lock) } catch { $null = $_ }
+                $gi = Get-Item -LiteralPath $grave -Force -ErrorAction SilentlyContinue
+                if ($gi -and $gi.LastWriteTime -ge (Get-Date).AddMinutes(-$staleMinutes)) {
+                    $made = $false
+                    try { New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null; $made = $true } catch { $null = $_ }
+                    if ($made) { try { [IO.File]::Move((Join-Path $grave 'owner'), $lockOwner) } catch { $null = $_ } }
                 }
                 Remove-Item -LiteralPath $grave -Recurse -Force -ErrorAction SilentlyContinue
             }

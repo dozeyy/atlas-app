@@ -422,5 +422,94 @@ check "stale lock: taken over, runs" has_out "fake v1 week"
 check "stale lock: no lock left" sh -c "! ls -a '$T/data27/cache' | grep -q '^\\.lock'"
 check "stale lock: no work folder left" sh -c "! ls -a '$T/data27/cache' | grep -q '^\\.dl'"
 
+# --- 21. no pinned line for this version (list cut short mid-update): the saved copy is not run
+setup 28 1.0.0
+fake "$REL/$asset" v1
+pin 1.0.0 "$asset" "$REL/$asset"
+DATA=$T/data28 run week
+fake "$T/data28/cache/1.0.0/$exe" tampered
+printf '# test pins\n' >"$PINS"
+DATA=$T/data28 run today; rc=$?
+check "no pin: exit 3" [ "$rc" = 3 ]
+check "no pin: saved copy not run" sh -c "! grep -q 'fake tampered' '$T/out'"
+check "no pin: says so" has_err "has no pinned build yet"
+DATA=$T/data28 run launcher-doctor
+check "no pin: doctor says the saved copy is not run" has_out "not run: v1.0.0 has no pinned checksum"
+
+# --- 22. a backslash in the data folder (C:\... on Windows): hashes still match
+setup 29 1.0.0
+fake "$REL/$asset" v1
+pin 1.0.0 "$asset" "$REL/$asset"
+case $exe in
+  *.exe) d29=$(cygpath -w "$T/data29") ;;
+  *) d29="$T/data\s29" ;;
+esac
+DATA=$d29 run week; rc=$?
+check "backslash data folder: exit 0" [ "$rc" = 0 ]
+check "backslash data folder: downloads and runs" has_out "fake v1 week"
+DATA=$d29 run today
+check "backslash data folder: saved copy runs" has_out "fake v1 today"
+check "backslash data folder: nothing deleted" sh -c "! grep -q 'did not match' '$T/err'"
+
+# --- 23. a stale lock replaced by another run's fresh lock just before the takeover: kept
+setup 30 1.0.0
+fake "$REL/$asset" v1
+pin 1.0.0 "$asset" "$REL/$asset"
+realfind=$(PATH=$BASEPATH command -v find)
+mkdir -p "$T/racebin"
+# Stands in for the race: when the launcher finds the lock stale, another run swaps in a fresh
+# lock of its own right then. On the next look it records whether its lock survived, and ends.
+cat >"$T/racebin/find" <<EOF
+#!/bin/sh
+case "\$1" in */.lock-*) ;; *) exec "$realfind" "\$@" ;; esac
+st="$T/race-state"
+if [ ! -e "\$st" ]; then
+  out=\$("$realfind" "\$@")
+  if [ -n "\$out" ]; then
+    rm -rf "\$1" && mkdir "\$1" && echo other-run >"\$1/owner" && echo raced >"\$st"
+    printf '%s\n' "\$out"
+  fi
+  exit 0
+fi
+if [ "\$(cat "\$st")" = raced ]; then
+  if [ "\$(cat "\$1/owner" 2>/dev/null)" = other-run ]; then echo intact >"\$st"; rm -rf "\$1"; else echo lost >"\$st"; fi
+fi
+exec "$realfind" "\$@"
+EOF
+chmod +x "$T/racebin/find"
+mkdir -p "$T/data30/cache/.lock-1.0.0"
+echo killed-run >"$T/data30/cache/.lock-1.0.0/owner"
+touch -t 202001010000 "$T/data30/cache/.lock-1.0.0"
+RUNPATH=$T/racebin:$BASEPATH DATA=$T/data30 run week; rc=$?
+check "lock race: exit 0" [ "$rc" = 0 ]
+check "lock race: runs" has_out "fake v1 week"
+check "lock race: the other run's fresh lock was kept" grep -qx intact "$T/race-state"
+check "lock race: no lock or work folder left" sh -c "! ls -a '$T/data30/cache' | grep -q '^\\.lock\\|^\\.dl'"
+
+# --- 24. Windows: a stand-in folder on a mapped network drive is refused
+case $exe in
+  *.exe)
+    setup 31 1.0.0
+    fake "$REL/$asset" v1
+    pin 1.0.0 "$asset" "$REL/$asset"
+    drv=$(cygpath -w "$REL" | cut -c1-2)
+    mkdir -p "$T/netbin"
+    cat >"$T/netbin/net" <<EOF
+#!/bin/sh
+bs=\$(printf '\134')
+echo "Status       Local     Remote                    Network"
+printf '%s\n' "OK           $drv        \$bs\${bs}server\${bs}share         Microsoft Windows Network"
+EOF
+    chmod +x "$T/netbin/net"
+    RUNPATH=$T/netbin:$BASEPATH DATA=$T/data31 run week; rc=$?
+    check "mapped network drive: exit 3" [ "$rc" = 3 ]
+    check "mapped network drive: says so" has_err "network paths are refused"
+    printf '#!/bin/sh\necho "There are no entries in the list."\n' >"$T/netbin/net"
+    RUNPATH=$T/netbin:$BASEPATH DATA=$T/data31 run week; rc=$?
+    check "local drive (net lists nothing): runs" has_out "fake v1 week"
+    ;;
+  *) printf 'note mapped network drives are a Windows case: not tested here\n' ;;
+esac
+
 printf '\n%s passed, %s failed (%s)\n' "$passed" "$failed" "$SHELL_UNDER_TEST"
 [ "$failed" = 0 ]

@@ -591,6 +591,20 @@ $rc = Invoke-Run @{ Data = (Join-Path $T 'data27') } @('week')
 Test-Check 'stale lock: taken over, runs' { Test-Out 'fake v1 week' }
 Test-Check 'stale lock: no lock or work folder left' { @(Get-ChildItem -LiteralPath (Join-Path $T 'data27/cache') -Force | Where-Object { $_.Name.StartsWith('.') }).Count -eq 0 }
 
+# --- 21. no pinned line for this version (list cut short mid-update): the saved copy is not run
+Initialize-Plugin 28 '1.0.0'
+Write-Fake (Join-Path $REL $asset) 'v1'
+Add-Pin '1.0.0' $asset (Join-Path $REL $asset)
+$null = Invoke-Run @{ Data = (Join-Path $T 'data28') } @('week')
+Write-Fake (Join-Path $T "data28/cache/1.0.0/$exe") 'tampered'
+[IO.File]::WriteAllText($PINS, "# test pins`n")
+$rc = Invoke-Run @{ Data = (Join-Path $T 'data28') } @('today')
+Test-Check 'no pin: exit 3' { $rc -eq 3 }
+Test-Check 'no pin: saved copy not run' { -not (Test-Out 'fake tampered') }
+Test-Check 'no pin: says so' { Test-Err 'has no pinned build yet' }
+$null = Invoke-Run @{ Data = (Join-Path $T 'data28') } @('launcher-doctor')
+Test-Check 'no pin: doctor says the saved copy is not run' { Test-Out 'not run: v1.0.0 has no pinned checksum' }
+
 Remove-Item -LiteralPath $T -Recurse -Force -ErrorAction SilentlyContinue
 [Console]::Out.WriteLine('')
 [Console]::Out.WriteLine("$($script:passed) passed, $($script:failed) failed ($shellName)")
