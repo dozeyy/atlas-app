@@ -271,6 +271,10 @@ export class MockHistory {
     return {
       claudeSettingsFile: "C:/Users/you/.claude/settings.json",
       cleanupDays: 30,
+      cleanupInvalid: false,
+      cleanupUnknown: false,
+      cleanupLocked: null,
+      cleanupNote: null,
       historyBytes: 61_440,
       historyVersions: 14,
       historyItems: 9,

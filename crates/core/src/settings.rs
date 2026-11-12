@@ -33,6 +33,28 @@ pub enum Theme {
     Dark,
 }
 
+/// Settings > Appearance > Text size. Larger adds about 2 px to body and caption text (the whole
+/// ramp steps up with it, in `tokens.css`); layout and spacing stay as they are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TextSize {
+    #[default]
+    Default,
+    Larger,
+}
+
+/// The webview zoom steps (percent) Ctrl/Cmd + and - walk through, like a browser's.
+pub const ZOOM_LEVELS: [u32; 8] = [80, 90, 100, 110, 125, 150, 175, 200];
+pub const DEFAULT_ZOOM: u32 = 100;
+
+/// The nearest step: a hand-edited 137 becomes 125, nonsense becomes 100.
+pub fn snap_zoom(n: u32) -> u32 {
+    if n == 0 {
+        return DEFAULT_ZOOM;
+    }
+    ZOOM_LEVELS.iter().copied().min_by_key(|l| l.abs_diff(n)).unwrap_or(DEFAULT_ZOOM)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum View {
@@ -75,6 +97,11 @@ pub struct Settings {
     /// instead of input + output (default off). Only the headline total changes; dollars always
     /// price every kind. See `usage::count`.
     pub count_cache_in_totals: bool,
+    /// Text size (default Default). Applied on `<html>` before the first paint.
+    pub text_size: TextSize,
+    /// Webview zoom in percent, one of `ZOOM_LEVELS` (default 100). Rust applies it to the
+    /// window before it is shown.
+    pub zoom_percent: u32,
     /// Keys this version does not know, kept as they were.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -95,6 +122,8 @@ impl Default for Settings {
             mcp_auto_connect: true,
             history_keep_versions: DEFAULT_KEEP_VERSIONS,
             count_cache_in_totals: false,
+            text_size: TextSize::Default,
+            zoom_percent: DEFAULT_ZOOM,
             extra: Map::new(),
         }
     }
@@ -107,7 +136,7 @@ pub fn clamp_keep_versions(n: u32) -> u32 {
     n.clamp(10, 200)
 }
 
-const KNOWN: [&str; 12] = [
+const KNOWN: [&str; 14] = [
     "schemaVersion",
     "theme",
     "lastView",
@@ -120,6 +149,8 @@ const KNOWN: [&str; 12] = [
     "mcpAutoConnect",
     "historyKeepVersions",
     "countCacheInTotals",
+    "textSize",
+    "zoomPercent",
 ];
 
 impl Settings {
@@ -154,6 +185,11 @@ impl Settings {
             .unwrap_or(d.history_keep_versions);
         let count_cache_in_totals =
             take("countCacheInTotals").and_then(|v| v.as_bool()).unwrap_or(d.count_cache_in_totals);
+        let text_size = take("textSize").and_then(|v| serde_json::from_value(v).ok()).unwrap_or(d.text_size);
+        let zoom_percent = take("zoomPercent")
+            .and_then(|v| v.as_u64())
+            .map(|n| snap_zoom(n.min(u32::MAX as u64) as u32))
+            .unwrap_or(d.zoom_percent);
         for k in KNOWN {
             map.remove(k);
         }
@@ -170,6 +206,8 @@ impl Settings {
             mcp_auto_connect,
             history_keep_versions,
             count_cache_in_totals,
+            text_size,
+            zoom_percent,
             extra: map,
         })
     }
@@ -374,6 +412,31 @@ mod tests {
     fn bom_and_blank_override_are_tolerated() {
         let s = Settings::from_json("\u{feff}{\"configDirOverride\":\"  \"}").unwrap();
         assert_eq!(s.config_dir_override, None);
+    }
+
+    #[test]
+    fn text_size_and_zoom_default_and_persist() {
+        let d = Settings::default();
+        assert_eq!((d.text_size, d.zoom_percent), (TextSize::Default, 100));
+        // A file from before these keys existed reads as the defaults (no schema bump needed).
+        let old = Settings::from_json(r#"{"schemaVersion":1,"theme":"dark","showShortcuts":true}"#).unwrap();
+        assert_eq!((old.text_size, old.zoom_percent, old.theme), (TextSize::Default, 100, Theme::Dark));
+        // Bad values keep the other fields and fall back on their own.
+        let bad = Settings::from_json(r#"{"textSize":"huge","zoomPercent":"big","theme":"silver"}"#).unwrap();
+        assert_eq!((bad.text_size, bad.zoom_percent, bad.theme), (TextSize::Default, 100, Theme::Silver));
+        // An off-step zoom snaps to the nearest step.
+        assert_eq!(Settings::from_json(r#"{"zoomPercent":137}"#).unwrap().zoom_percent, 125);
+        assert_eq!(Settings::from_json(r#"{"zoomPercent":5000}"#).unwrap().zoom_percent, 200);
+        assert_eq!(Settings::from_json(r#"{"zoomPercent":0}"#).unwrap().zoom_percent, 100);
+        assert_eq!(Settings::from_json(r#"{"zoomPercent":-3}"#).unwrap().zoom_percent, 100);
+
+        let dir = tempfile::tempdir().unwrap();
+        save(dir.path(), &Settings { text_size: TextSize::Larger, zoom_percent: 125, ..Settings::default() }).unwrap();
+        let back = load(dir.path()).settings;
+        assert_eq!((back.text_size, back.zoom_percent), (TextSize::Larger, 125));
+        let text = fs::read_to_string(path_in(dir.path())).unwrap();
+        assert!(text.contains("\"textSize\": \"larger\"") && text.contains("\"zoomPercent\": 125"), "{text}");
+        assert!(back.extra.is_empty(), "known keys must not leak into extra");
     }
 
     #[test]

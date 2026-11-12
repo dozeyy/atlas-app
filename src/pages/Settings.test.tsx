@@ -170,10 +170,150 @@ describe("Settings", () => {
     expect(reindex).toHaveBeenLastCalledWith("full");
   });
 
-  it("shows how long Claude Code keeps its sessions", async () => {
+  const openFolder = async () => userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude folder" }));
+  const keepGroup = async () => screen.findByRole("radiogroup", { name: "Keep saved sessions" });
+  const checkedOf = (g: HTMLElement) => within(g).getAllByRole("radio").filter((r) => r.getAttribute("aria-checked") === "true").map((r) => r.textContent);
+
+  it("Keep saved sessions: a missing value reads as Claude Code's default of 30 days", async () => {
     mount();
-    await userEvent.click(within(await screen.findByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Claude folder" }));
-    expect(await screen.findByText(/Claude Code keeps sessions for/)).toBeInTheDocument();
+    await openFolder();
+    const g = await keepGroup();
+    expect(within(g).getAllByRole("radio").map((r) => r.textContent)).toEqual(["30 days", "1 year", "Forever"]);
+    expect(checkedOf(g)).toEqual(["30 days"]);
+    expect(screen.getByText(/drop out of search, resume and Wrapped/)).toBeInTheDocument();
+  });
+
+  it("Keep saved sessions: 365 and Forever (3650) show as their own picks", async () => {
+    mount((b) => (b.retention.days = 365));
+    await openFolder();
+    expect(checkedOf(await keepGroup())).toEqual(["1 year"]);
+    cleanup();
+    mount((b) => (b.retention.days = 3650));
+    await openFolder();
+    expect(checkedOf(await keepGroup())).toEqual(["Forever"]);
+  });
+
+  it("Keep saved sessions: a custom value (90) is its own selected option and is not changed on its own", async () => {
+    const backend = mount((b) => (b.retention.days = 90));
+    const set = vi.spyOn(backend, "retentionSet");
+    await openFolder();
+    const g = await keepGroup();
+    expect(within(g).getAllByRole("radio").map((r) => r.textContent)).toEqual(["30 days", "90 days", "1 year", "Forever"]);
+    expect(checkedOf(g)).toEqual(["90 days"]);
+    expect(set).not.toHaveBeenCalled();
+    expect(backend.retention.days).toBe(90);
+  });
+
+  it("Keep saved sessions: picking Forever asks for 3650 (never 0), says so, and Undo puts the old value back", async () => {
+    const backend = mount();
+    const set = vi.spyOn(backend, "retentionSet");
+    await openFolder();
+    await userEvent.click(within(await keepGroup()).getByRole("radio", { name: "Forever" }));
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(set).toHaveBeenCalledWith(3650);
+    expect(backend.retention.days).toBe(3650);
+    expect(await screen.findByText("Saved sessions will be kept forever (3,650 days).")).toBeInTheDocument();
+    await waitFor(() => expect(checkedOf(screen.getByRole("radiogroup", { name: "Keep saved sessions" }))).toEqual(["Forever"]));
+
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(backend.retention.days).toBeNull());
+    await waitFor(() => expect(checkedOf(screen.getByRole("radiogroup", { name: "Keep saved sessions" }))).toEqual(["30 days"]));
+  });
+
+  it("Keep saved sessions: a value Claude Code would reject selects nothing and says so; picking fixes it", async () => {
+    const backend = mount((b) => {
+      b.retention.days = 0;
+      b.retention.invalid = true;
+    });
+    await openFolder();
+    const g = await keepGroup();
+    expect(checkedOf(g)).toEqual([]);
+    expect(screen.getByText(/holds a value Claude Code won't accept/)).toBeInTheDocument();
+    await userEvent.click(within(g).getByRole("radio", { name: "30 days" }));
+    await waitFor(() => expect(backend.retention.days).toBe(30));
+    expect(backend.retention.invalid).toBe(false);
+  });
+
+  it("Keep saved sessions: when the setting is managed it is a read-only line with the reason, no picker", async () => {
+    const backend = mount((b) => {
+      b.retention.days = 90;
+      b.retention.locked = "Your organisation sets this, so Atlas cannot change it.";
+    });
+    const set = vi.spyOn(backend, "retentionSet");
+    await openFolder();
+    expect(await screen.findByText("Your organisation sets this, so Atlas cannot change it.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Keep saved sessions: 90 days")).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Keep saved sessions" })).toBeNull();
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("Keep saved sessions: when managed settings say 14 the read-only line says 14 days, not what the user's file says", async () => {
+    mount((b) => {
+      b.retention.days = 14; // the value that wins, from the managed file (the user's own file says 365)
+      b.retention.locked = "Your organization sets this to 14 days, so Atlas can't change it.";
+    });
+    await openFolder();
+    expect(await screen.findByText("Your organization sets this to 14 days, so Atlas can't change it.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Keep saved sessions: 14 days")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Keep saved sessions: 30 days")).toBeNull();
+  });
+
+  it("Keep saved sessions: a settings file that can't be read shows Unknown, not 30 days", async () => {
+    mount((b) => {
+      b.retention.days = null;
+      b.retention.unknown = true;
+      b.retention.locked = "Your Claude Code settings file isn't valid JSON, so Atlas won't touch it.";
+    });
+    await openFolder();
+    expect(await screen.findByText(/isn't valid JSON/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Keep saved sessions: Unknown")).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Keep saved sessions" })).toBeNull();
+  });
+
+  it("Keep saved sessions: a project that sets its own time is a quiet note; the picker stays open and keeps the user's value", async () => {
+    const backend = mount((b) => {
+      b.retention.days = 365;
+      b.retention.note = "proj-alpha keeps chats for 60 days; its own settings file sets that (and 2 more).";
+    });
+    await openFolder();
+    expect(await screen.findByText("proj-alpha keeps chats for 60 days; its own settings file sets that (and 2 more).")).toBeInTheDocument();
+    expect(checkedOf(await keepGroup())).toEqual(["1 year"]);
+    const set = vi.spyOn(backend, "retentionSet");
+    await userEvent.click(within(await keepGroup()).getByRole("radio", { name: "Forever" }));
+    await waitFor(() => expect(set).toHaveBeenCalledWith(3650));
+  });
+
+  it("Keep saved sessions: no note line when no project sets it", async () => {
+    mount();
+    await openFolder();
+    await keepGroup();
+    expect(screen.queryByText(/its own settings file sets that/)).toBeNull();
+  });
+
+  it("Text size: Default and Larger, saved, and the page is told before anything else paints", async () => {
+    mount();
+    const group = await screen.findByRole("radiogroup", { name: "Text size" });
+    expect(checkedOf(group)).toEqual(["Default"]);
+    expect(document.documentElement.dataset.text).toBeUndefined();
+    await userEvent.click(within(group).getByRole("radio", { name: "Larger" }));
+    await waitFor(() => expect(document.documentElement.dataset.text).toBe("larger"));
+    expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").textSize).toBe("larger");
+    await userEvent.click(within(screen.getByRole("radiogroup", { name: "Text size" })).getByRole("radio", { name: "Default" }));
+    await waitFor(() => expect(document.documentElement.dataset.text).toBeUndefined());
+  });
+
+  it("Zoom: steps up and down, remembered, and Reset goes back to 100%", async () => {
+    mount();
+    const zoom = await screen.findByRole("group", { name: "Zoom" });
+    expect(within(zoom).getByText("100%")).toBeInTheDocument();
+    expect(within(zoom).getByRole("button", { name: "Reset" })).toBeDisabled();
+    await userEvent.click(within(zoom).getByRole("button", { name: "Zoom in" }));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Zoom" })).getByText("110%")).toBeInTheDocument());
+    expect(JSON.parse(localStorage.getItem("atlas.mock.settings") ?? "{}").zoomPercent).toBe(110);
+    expect(document.documentElement.style.getPropertyValue("--zoom")).toBe("1.1");
+    await userEvent.click(within(screen.getByRole("group", { name: "Zoom" })).getByRole("button", { name: "Reset" }));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Zoom" })).getByText("100%")).toBeInTheDocument());
+    expect(document.documentElement.style.getPropertyValue("--zoom")).toBe("1");
   });
 
   it("Claude Code section is one switch, on by default, and the state is read back each time", async () => {

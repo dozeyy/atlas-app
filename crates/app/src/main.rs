@@ -181,6 +181,7 @@ fn main() {
             setup_service::setup_save,
             setup_service::setup_delete,
             setup_service::setup_undo,
+            setup_service::retention_set,
             setup_service::setup_create_draft,
             setup_service::setup_create,
             setup_service::setup_validate_draft,
@@ -279,6 +280,10 @@ fn main() {
                 .min_inner_size(MIN_WIDTH, MIN_HEIGHT)
                 .build()?;
             commands::apply_window_theme(&window, info.settings.theme);
+            // The saved zoom, before the page is shown.
+            if info.settings.zoom_percent != atlas_core::settings::DEFAULT_ZOOM {
+                commands::apply_zoom(&window, info.settings.zoom_percent);
+            }
             if intro_on {
                 eprintln!("[atlas] intro: main window built at {}", intro::stamp(app.handle()));
             }

@@ -140,7 +140,7 @@
   align-items: center;
   gap: 12px;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 600;
 }
 .hx-before::after {
@@ -255,9 +255,9 @@
 }
 .hx-diff {
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 400;
-  line-height: 20px;
+  line-height: calc(20px * var(--ts));
   border: 1px solid var(--line);
   border-radius: var(--r-control);
   background: var(--surface);
@@ -330,7 +330,7 @@
   background: var(--raised);
   color: var(--ink-2);
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   text-align: left;
   cursor: pointer;
 }
@@ -395,5 +395,11 @@
   min-width: 3.5ch;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+.st-zoom-value {
+  min-width: 5ch;
+}
+.st-zoom-value + .btn-icon + .btn {
+  margin-left: 8px;
 }
 }

@@ -120,11 +120,25 @@ export interface DiffArgs {
   context?: number;
 }
 
+/** What Keep sessions longer did: the days written and the backup Undo uses (null = nothing needed writing). */
+export interface RetentionChanged {
+  days: number;
+  backupId: string | null;
+}
+
 /** Facts the Settings page shows that are not settings. */
 export interface SettingsOverview {
   claudeSettingsFile: string | null;
   /** How many days Claude Code keeps its session files (its own setting), when it says. */
   cleanupDays: number | null;
+  /** The file holds a value Claude Code does not accept for that setting. */
+  cleanupInvalid: boolean;
+  /** The user's settings file can't be read as JSON, so what it says is not known. */
+  cleanupUnknown: boolean;
+  /** Why Atlas can't change how long sessions are kept (plain words), or null when it can. */
+  cleanupLocked: string | null;
+  /** A project whose own settings file sets a different time, in words (a quiet note under the picker), or null. */
+  cleanupNote: string | null;
   historyBytes: number;
   historyVersions: number;
   historyItems: number;

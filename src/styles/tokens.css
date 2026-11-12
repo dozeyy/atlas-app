@@ -344,8 +344,15 @@
   --shell-row-gap: 8px; /* between the four in the open row (sets --sidebar-w above) */
   --sidebar-w-collapsed: 76px; /* a 2 x 2 square of 32 px buttons: 4 + 32 + 4 + 32 + 4 */
   /* Same numbers as MIN_WIDTH / MIN_HEIGHT in crates/app/src/main.rs. */
-  --window-min-w: 900px;
-  --window-min-h: 600px;
+  --window-min-w: calc(900px / var(--zoom, 1));
+  --window-min-h: calc(600px / var(--zoom, 1));
+  /* Text size (Settings > Appearance): every text size and line height below and in the screen
+     files is `calc(Npx * var(--ts))`. Larger is about +2 px on body text (14 to 16). The scale is set
+     on <html> before the first paint (theme.ts applyBoot), so there is no flash. */
+  --ts: 1;
+}
+:root[data-text="larger"] {
+  --ts: 1.15;
 }
 
 /* macOS: the top strip only holds the traffic lights (Will, 2026-11-10), so it is the system's
@@ -446,17 +453,17 @@ html[data-platform="macos"] {
   --shadow-accent: var(--shadow-accent);
 
   /* Ramp: 12 caption, 14 body, 16 body-large, 20 subtitle, 28 title, 40 display. */
-  --text-caption: 12px;
-  --text-caption--line-height: 16px;
-  --text-body: 14px;
-  --text-body--line-height: 20px;
-  --text-lead: 16px;
-  --text-lead--line-height: 24px;
-  --text-subtitle: 20px;
-  --text-subtitle--line-height: 28px;
-  --text-title: 28px;
-  --text-title--line-height: 34px;
-  --text-display: 40px;
-  --text-display--line-height: 46px;
+  --text-caption: calc(12px * var(--ts));
+  --text-caption--line-height: calc(16px * var(--ts));
+  --text-body: calc(14px * var(--ts));
+  --text-body--line-height: calc(20px * var(--ts));
+  --text-lead: calc(16px * var(--ts));
+  --text-lead--line-height: calc(24px * var(--ts));
+  --text-subtitle: calc(20px * var(--ts));
+  --text-subtitle--line-height: calc(28px * var(--ts));
+  --text-title: calc(28px * var(--ts));
+  --text-title--line-height: calc(34px * var(--ts));
+  --text-display: calc(40px * var(--ts));
+  --text-display--line-height: calc(46px * var(--ts));
 
 }

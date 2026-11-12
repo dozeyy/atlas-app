@@ -181,6 +181,9 @@ pub struct SettingsPatch {
     pub mcp_auto_connect: Option<bool>,
     pub history_keep_versions: Option<u32>,
     pub count_cache_in_totals: Option<bool>,
+    pub text_size: Option<settings::TextSize>,
+    /// Webview zoom in percent; snapped to the nearest step.
+    pub zoom_percent: Option<u32>,
 }
 
 impl AppState {
@@ -458,6 +461,14 @@ impl AppState {
             if let Some(c) = patch.count_cache_in_totals {
                 changed |= inner.settings.count_cache_in_totals != c;
                 inner.settings.count_cache_in_totals = c;
+            }
+            if let Some(t) = patch.text_size {
+                changed |= inner.settings.text_size != t;
+                inner.settings.text_size = t;
+            }
+            if let Some(z) = patch.zoom_percent.map(settings::snap_zoom) {
+                changed |= inner.settings.zoom_percent != z;
+                inner.settings.zoom_percent = z;
             }
             changed
         };
@@ -863,6 +874,18 @@ mod tests {
         let info = state.update_settings(SettingsPatch { mcp_auto_connect: Some(false), ..Default::default() });
         assert!(!info.settings.mcp_auto_connect);
         assert!(!settings::load(&tmp.path().join("data")).settings.mcp_auto_connect);
+    }
+
+    #[test]
+    fn text_size_and_zoom_are_saved_and_a_zoom_snaps_to_a_step() {
+        let (tmp, state) = fixture(false);
+        let info = state.update_settings(SettingsPatch { text_size: Some(settings::TextSize::Larger), zoom_percent: Some(137), ..Default::default() });
+        assert_eq!((info.settings.text_size, info.settings.zoom_percent), (settings::TextSize::Larger, 125));
+        let saved = settings::load(&tmp.path().join("data")).settings;
+        assert_eq!((saved.text_size, saved.zoom_percent), (settings::TextSize::Larger, 125));
+        // Something else changing leaves them as they were.
+        let info = state.update_settings(SettingsPatch { show_shortcuts: Some(true), ..Default::default() });
+        assert_eq!((info.settings.text_size, info.settings.zoom_percent), (settings::TextSize::Larger, 125));
     }
 
     #[test]

@@ -2,6 +2,7 @@
 
 /** "system" follows the OS (Light or Dark); the other three are pinned. */
 export type Theme = "system" | "light" | "silver" | "dark";
+export type TextSize = "default" | "larger";
 export type View = "dashboard" | "now" | "sessions" | "setup" | "history" | "wrapped" | "settings";
 export type Platform = "windows" | "macos" | "linux";
 export type ConfigSource = "flag" | "settings" | "env" | "default" | "sandbox";
@@ -25,6 +26,10 @@ export interface Settings {
   historyKeepVersions: number;
   /** Token totals also count what Claude saves and re-reads every reply (cache writes and reads). Default off. */
   countCacheInTotals: boolean;
+  /** Text size: Larger adds about 2 px to body and caption text. */
+  textSize: TextSize;
+  /** Webview zoom in percent (one of the steps in zoom.ts; default 100). */
+  zoomPercent: number;
 }
 
 export interface ConfigView {

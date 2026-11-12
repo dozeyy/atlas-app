@@ -22,6 +22,7 @@ import type {
   SearchStatus,
   SessionPage,
   SessionQuery,
+  TextSize,
   Theme,
   Timeline,
   TranscriptPage,
@@ -52,6 +53,7 @@ import type {
   HistoryOverview,
   ItemDetail,
   SettingsOverview,
+  RetentionChanged,
 } from "./historyTypes";
 import type { NowFinished, NowSnapshot } from "./nowTypes";
 import type { UpdateInfo, UpdateProgress } from "./updateTypes";
@@ -133,6 +135,10 @@ export interface SettingsPatch {
   historyKeepVersions?: number;
   /** Count cache writes and reads in token totals. Off by default; the numbers refetch when it changes. */
   countCacheInTotals?: boolean;
+  /** Text size. Applied on <html> at once; saved by Rust. */
+  textSize?: TextSize;
+  /** Webview zoom in percent. Rust snaps it to a step, applies it to the window and saves it. */
+  zoomPercent?: number;
 }
 
 export interface Backend {
@@ -265,6 +271,8 @@ export interface Backend {
   onHistoryChanged(cb: () => void): Promise<Unlisten>;
   /** Sizes and Claude Code's own cleanup setting, for the Settings page. */
   settingsOverview(): Promise<SettingsOverview>;
+  /** Keep Claude Code's saved sessions for 30 days, 365 days or 3650 ("forever"). Nothing else, never 0. */
+  retentionSet(days: number): Promise<RetentionChanged>;
   /** Windows: whether Atlas is on the desktop; null when there is nothing to offer (other systems, a build without a Start menu entry). */
   desktopShortcut(): Promise<boolean | null>;
   /** Put Atlas on the desktop or take it away; resolves with the new state, rejects with one plain sentence. */
@@ -416,6 +424,7 @@ const tauriBackend: Backend = {
   },
   onHistoryChanged: (cb) => listen(HISTORY_EVENT, () => cb()),
   settingsOverview: () => invoke<SettingsOverview>("settings_overview"),
+  retentionSet: (days) => invoke<RetentionChanged>("retention_set", { days }),
   desktopShortcut: () => invoke<boolean | null>("desktop_shortcut"),
   setDesktopShortcut: (on) => invoke<boolean>("set_desktop_shortcut", { on }),
   updateCheck: () => invoke<UpdateInfo | null>("update_check"),

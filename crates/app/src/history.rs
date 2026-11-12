@@ -306,8 +306,17 @@ pub fn history_open_folder(state: Shared) -> Result<(), String> {
 pub struct SettingsOverview {
     /// Claude Code's own settings file, shown as a path only.
     pub claude_settings_file: Option<String>,
-    /// How many days Claude Code keeps its chat logs before clearing them (its own setting).
+    /// How many days Claude Code keeps its chat logs before clearing them (its own setting);
+    /// None when the file does not say (Claude Code then uses 30).
     pub cleanup_days: Option<u32>,
+    /// The file says something Claude Code does not accept for that setting.
+    pub cleanup_invalid: bool,
+    /// Your settings file can't be read as JSON, so what it says is not known.
+    pub cleanup_unknown: bool,
+    /// Why Atlas can't change that setting (plain words), or None when it can.
+    pub cleanup_locked: Option<String>,
+    /// A project whose own settings file keeps chats for a different time (a quiet note), or None.
+    pub cleanup_note: Option<String>,
     pub history_bytes: u64,
     pub history_versions: u32,
     pub history_items: u32,
@@ -318,18 +327,17 @@ pub struct SettingsOverview {
 
 /// Facts the Settings page shows that are not settings: sizes, and what Claude Code itself is set to.
 #[tauri::command]
-pub async fn settings_overview(state: Shared<'_>) -> Result<SettingsOverview, String> {
-    let st = state.inner().clone();
+pub async fn settings_overview(app: AppHandle, state: Shared<'_>, hub: State<'_, Arc<SetupHub>>) -> Result<SettingsOverview, String> {
+    let (st, hub) = (state.inner().clone(), hub.inner().clone());
     blocking(move || {
         let info = st.info();
         let dir = info.config.as_ref().map(|c| PathBuf::from(&c.dir));
         let settings_path = dir.as_ref().map(|d| d.join("settings.json")).filter(|p| p.is_file());
-        let cleanup_days = settings_path
-            .as_ref()
-            .and_then(|p| std::fs::read(p).ok())
-            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-            .and_then(|v| v.get("cleanupPeriodDays").and_then(|d| d.as_u64()))
-            .map(|d| d.min(u32::MAX as u64) as u32);
+        // Settings files inside the projects Atlas knows about can override the user's file.
+        let retention = dir.as_ref().map(|d| {
+            let projects = hub.current(&app, &st).map(|disc| disc.watched_projects().to_vec()).unwrap_or_default();
+            atlas_core::retention::inspect(d, atlas_core::setup::default_managed_dir().as_deref(), &projects)
+        });
         let (history_bytes, history_versions, history_items, paused) = match st.history.store(&st) {
             Some((store, _)) => {
                 let o = query::overview(&store, now_ms(), 0, st.history_keep());
@@ -353,7 +361,11 @@ pub async fn settings_overview(state: Shared<'_>) -> Result<SettingsOverview, St
             .unwrap_or(0);
         Ok(SettingsOverview {
             claude_settings_file: settings_path.map(|p| p.to_string_lossy().into_owned()),
-            cleanup_days,
+            cleanup_days: retention.as_ref().and_then(|r| r.days),
+            cleanup_invalid: retention.as_ref().is_some_and(|r| r.invalid),
+            cleanup_unknown: retention.as_ref().is_some_and(|r| r.unknown),
+            cleanup_note: retention.as_ref().and_then(|r| r.project_note.clone()),
+            cleanup_locked: retention.and_then(|r| r.locked),
             history_bytes,
             history_versions,
             history_items,

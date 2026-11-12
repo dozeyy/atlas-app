@@ -22,6 +22,7 @@ pub mod pending;
 pub mod proc;
 pub mod quit_signal;
 pub mod readout;
+pub mod retention;
 pub mod review_rule;
 pub mod redact;
 pub mod sandbox;

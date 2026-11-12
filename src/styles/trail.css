@@ -16,34 +16,34 @@
   letter-spacing: -0.01em;
 }
 .d-hero {
-  font-size: 56px;
-  line-height: 56px;
+  font-size: calc(56px * var(--ts));
+  line-height: calc(56px * var(--ts));
   font-weight: 760;
   letter-spacing: -0.02em;
 }
 .d-title {
-  font-size: 32px;
-  line-height: 38px;
+  font-size: calc(32px * var(--ts));
+  line-height: calc(38px * var(--ts));
   font-weight: 720;
 }
 .d-stat {
-  font-size: 28px;
-  line-height: 32px;
+  font-size: calc(28px * var(--ts));
+  line-height: calc(32px * var(--ts));
   font-weight: 760;
 }
 .d-tile {
-  font-size: 24px;
-  line-height: 26px;
+  font-size: calc(24px * var(--ts));
+  line-height: calc(26px * var(--ts));
   font-weight: 760;
 }
 .d-figure {
-  font-size: 20px;
-  line-height: 24px;
+  font-size: calc(20px * var(--ts));
+  line-height: calc(24px * var(--ts));
   font-weight: 720;
 }
 .d-small {
-  font-size: 15px;
-  line-height: 20px;
+  font-size: calc(15px * var(--ts));
+  line-height: calc(20px * var(--ts));
   font-weight: 700;
 }
 
@@ -429,7 +429,7 @@
   height: 24px;
   padding: 0 8px;
   border-radius: var(--r-pill);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 600;
   background: var(--raised);
   color: var(--ink-2);
@@ -483,9 +483,9 @@
   border-radius: 999px;
   background: var(--accent);
   color: var(--on-accent, #fff);
-  font-size: 11px;
+  font-size: calc(11px * var(--ts));
   font-weight: 700;
-  line-height: 16px;
+  line-height: calc(16px * var(--ts));
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -520,7 +520,7 @@
   border-radius: var(--r-control);
   background: none;
   color: var(--ink);
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
@@ -539,7 +539,7 @@ html.reduced .app-menu {
 }
 .app-menu-hint {
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
 }
 /* ---- Quick jump (Ctrl+K) ------------------------------------------------------------------- */
 .qj-root {
@@ -587,7 +587,7 @@ html.reduced .app-menu {
   border: 0;
   background: none;
   color: var(--ink);
-  font-size: 16px;
+  font-size: calc(16px * var(--ts));
   outline: none;
 }
 .qj-input::placeholder {
@@ -601,8 +601,8 @@ html.reduced .app-menu {
   background: var(--raised);
   color: var(--ink-2);
   font: inherit;
-  font-size: 12px;
-  line-height: 20px;
+  font-size: calc(12px * var(--ts));
+  line-height: calc(20px * var(--ts));
   white-space: nowrap;
 }
 .qj-list {
@@ -667,11 +667,11 @@ html.reduced .app-menu {
 }
 .qj-title {
   color: var(--ink);
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
 }
 .qj-sub {
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
 }
 .qj-hit {
   font-weight: 700;
@@ -679,13 +679,13 @@ html.reduced .app-menu {
 .qj-meta {
   flex: none;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
 }
 .qj-none {
   margin: 0;
   padding: 24px 16px;
   color: var(--ink-2);
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   text-align: center;
 }
 .options-panel {
@@ -926,7 +926,7 @@ html.reduced .side-main {
   padding: 4px 10px;
   border-radius: var(--r-control);
   font-size: var(--text-caption);
-  line-height: 16px;
+  line-height: calc(16px * var(--ts));
   font-weight: 600;
   color: var(--ink-2);
   transition:
@@ -984,19 +984,19 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
 }
 .pick-kicker {
   font-size: var(--text-caption);
-  line-height: 16px;
+  line-height: calc(16px * var(--ts));
   font-weight: 600;
   color: var(--accent-text);
 }
 .pick-title {
-  font-size: 18px;
-  line-height: 26px;
+  font-size: calc(18px * var(--ts));
+  line-height: calc(26px * var(--ts));
   font-weight: 700;
   color: var(--ink);
 }
 .pick-meta {
   font-size: var(--text-caption);
-  line-height: 16px;
+  line-height: calc(16px * var(--ts));
   color: var(--ink-2);
 }
 .pick-main > .pick-meta {
@@ -1051,15 +1051,15 @@ html[data-input="keyboard"] .pick:has(.pick-main:focus-visible) {
   border-radius: var(--r-card) var(--r-card) 0 0;
 }
 .day-name {
-  font-size: 13px;
-  line-height: 20px;
+  font-size: calc(13px * var(--ts));
+  line-height: calc(20px * var(--ts));
   font-weight: 700;
   color: var(--ink);
 }
 .day-count,
 .day-total {
   font-size: var(--text-caption);
-  line-height: 16px;
+  line-height: calc(16px * var(--ts));
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
 }
@@ -1129,8 +1129,8 @@ html[data-input="keyboard"] .folder-head:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: calc(13px * var(--ts));
+  line-height: calc(20px * var(--ts));
   font-weight: 700;
   color: var(--ink);
 }
@@ -1139,7 +1139,7 @@ html[data-input="keyboard"] .folder-head:focus-visible {
 .folder-total {
   flex: none;
   font-size: var(--text-caption);
-  line-height: 16px;
+  line-height: calc(16px * var(--ts));
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1601,15 +1601,15 @@ html[data-platform="macos"] .side {
 }
 .tip .t1,
 .tip .t3 {
-  font-size: 12px;
-  line-height: 16px;
+  font-size: calc(12px * var(--ts));
+  line-height: calc(16px * var(--ts));
   opacity: 0.72;
 }
 .tip .t-rows {
   display: grid;
   margin: 3px 0 2px;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: calc(12px * var(--ts));
+  line-height: calc(18px * var(--ts));
   font-variant-numeric: tabular-nums;
   opacity: 0.86;
 }
@@ -1628,8 +1628,8 @@ html[data-platform="macos"] .side {
   font-family: var(--font-display);
   font-variation-settings: var(--display-axes);
   font-weight: 720;
-  font-size: 17px;
-  line-height: 22px;
+  font-size: calc(17px * var(--ts));
+  line-height: calc(22px * var(--ts));
 }
 
 /* ---- Toasts (components/Toasts.tsx) -------------------------------------------------------
@@ -1726,8 +1726,8 @@ html[data-platform="macos"] .side {
   background: var(--tip-bg);
   color: var(--tip-ink);
   box-shadow: var(--shadow-pop);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: calc(13px * var(--ts));
+  line-height: calc(18px * var(--ts));
   overflow-wrap: anywhere;
   white-space: pre-line;
   opacity: 0;
@@ -1756,8 +1756,8 @@ html[data-platform="macos"] .side {
   grid-template-columns: auto auto;
   column-gap: 20px;
   margin-top: 4px;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: calc(12px * var(--ts));
+  line-height: calc(18px * var(--ts));
   font-variant-numeric: tabular-nums;
 }
 .tt-rows[hidden] {
@@ -1775,8 +1775,8 @@ html[data-platform="macos"] .side {
 .tt-rest {
   display: block;
   margin-top: 2px;
-  font-size: 12px;
-  line-height: 16px;
+  font-size: calc(12px * var(--ts));
+  line-height: calc(16px * var(--ts));
   opacity: 0.74;
 }
 .tt-rest[hidden] {
@@ -1873,7 +1873,7 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
   stroke-dasharray: 2 4;
 }
 .axis-label {
-  font-size: 11px;
+  font-size: calc(11px * var(--ts));
   fill: var(--ink-2);
 }
 .base-line {
@@ -1906,7 +1906,7 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
   stroke-dasharray: 2 3;
 }
 .ridge-day {
-  font-size: 11px;
+  font-size: calc(11px * var(--ts));
   fill: var(--ink-2);
   text-anchor: middle;
 }
@@ -1959,7 +1959,7 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
   stroke-width: 2;
 }
 .today-label {
-  font-size: 11px;
+  font-size: calc(11px * var(--ts));
   font-weight: 600;
   fill: var(--accent-text);
 }
@@ -1971,8 +1971,8 @@ html[data-input="keyboard"] .chart-focus:focus-visible {
   justify-content: flex-end;
   gap: 4px;
   margin-top: 8px;
-  font-size: 11px;
-  line-height: 20px;
+  font-size: calc(11px * var(--ts));
+  line-height: calc(20px * var(--ts));
   color: var(--ink-2);
   pointer-events: none;
 }
@@ -2443,7 +2443,7 @@ html.reduced .nav-item:active .nav-face {
   overflow: hidden;
   white-space: nowrap;
   font-size: var(--text-body);
-  line-height: 20px;
+  line-height: calc(20px * var(--ts));
   color: var(--ink-2);
 }
 .sd-line > span {
@@ -2477,7 +2477,7 @@ html.reduced .nav-item:active .nav-face {
 .rcpt-head {
   margin-bottom: 6px;
   font-size: var(--text-caption);
-  line-height: 16px;
+  line-height: calc(16px * var(--ts));
   font-weight: 600;
   color: var(--ink-2);
 }
@@ -2753,7 +2753,7 @@ html[data-input="keyboard"] .clamp-more:focus-visible {
   fill: var(--raised);
 }
 .map-plus {
-  font-size: 13px;
+  font-size: calc(13px * var(--ts));
   font-weight: 600;
   fill: var(--ink-2);
   pointer-events: none;
@@ -2770,7 +2770,7 @@ html[data-input="keyboard"] .clamp-more:focus-visible {
   opacity: 1;
 }
 .map-name {
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 600;
   fill: var(--ink-2);
   paint-order: stroke;
@@ -2791,7 +2791,7 @@ html[data-input="keyboard"] .clamp-more:focus-visible {
   fill: var(--ink);
 }
 .map-rest-detail {
-  font-size: 11px;
+  font-size: calc(11px * var(--ts));
   fill: var(--ink-2);
   paint-order: stroke;
   stroke: var(--bg);
@@ -2813,12 +2813,12 @@ html[data-input="keyboard"] .clamp-more:focus-visible {
   stroke: var(--line-strong);
 }
 .map-plate-name {
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 600;
   fill: var(--ink);
 }
 .map-plate-detail {
-  font-size: 11px;
+  font-size: calc(11px * var(--ts));
   fill: var(--ink-2);
 }
 @keyframes map-plate-in {
@@ -2869,7 +2869,7 @@ html[data-input="keyboard"] .map-key-btn:focus-visible {
   min-width: 0;
   gap: 4px 16px;
   font-size: var(--text-caption);
-  line-height: 16px;
+  line-height: calc(16px * var(--ts));
   color: var(--ink-2);
   white-space: nowrap;
 }
@@ -3054,13 +3054,13 @@ html[data-input="keyboard"] .upd-btn:focus-visible {
 }
 .upd-title {
   margin: 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   font-weight: 600;
   color: var(--ink);
 }
 .upd-sub {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts));
   line-height: 1.4;
   color: var(--ink-2);
 }
