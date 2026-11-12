@@ -403,9 +403,36 @@ jobs:
           if-no-files-found: error
           path: out/*
 
+  windows-arm64-smoke:
+    name: atlas-usage (Windows arm64, run)
+    needs: windows-arm64
+    # A native Windows on Arm runner: the file the publish job releases (the artifact of
+    # `windows-arm64`, not a rebuild) runs here once against the fixture transcripts.
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: fixtures/claude-usage
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: files-windows-arm64
+          path: bin
+
+      - name: Run it on the fixture transcripts
+        shell: pwsh
+        run: |
+          'PROCESSOR_ARCHITECTURE = ' + $env:PROCESSOR_ARCHITECTURE
+          $exe = (Resolve-Path 'bin/atlas-usage-windows-arm64.exe').Path
+          $out = & $exe all --json --config-dir fixtures/claude-usage --cache-dir (Join-Path $env:RUNNER_TEMP 'atlas-cache') | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "atlas-usage exited with $LASTEXITCODE" }
+          ($out -split "`n" | Select-Object -First 3) -join "`n"
+          if ($out -notmatch '"label": "All time"') { throw 'atlas-usage did not report usage.' }
+
   publish:
     name: Publish
-    needs: [versions, gate, windows, macos, linux-cli, linux-arm64, linux-musl, windows-arm64]
+    needs: [versions, gate, windows, macos, linux-cli, linux-arm64, linux-musl, windows-arm64, windows-arm64-smoke]
     # Only a v* tag whose commit is on main's history (decided once, in the gate job).
     if: needs.gate.outputs.official == 'true'
     runs-on: ubuntu-latest
@@ -445,11 +472,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in Atlas-Setup-Windows-x64.exe "Atlas_${VERSION}_x64-setup.exe" "Atlas_${VERSION}_x64-setup.exe.sig" \
-                   Atlas-macOS.dmg Atlas.app.tar.gz Atlas.app.tar.gz.sig \
-                   atlas-usage-windows-x64.exe atlas-usage-macos-universal atlas-usage-linux-x64                    atlas-usage-linux-arm64 atlas-usage-linux-x64-musl atlas-usage-windows-arm64.exe; do
+          expected="Atlas-Setup-Windows-x64.exe Atlas_${VERSION}_x64-setup.exe Atlas_${VERSION}_x64-setup.exe.sig
+          Atlas-macOS.dmg Atlas.app.tar.gz Atlas.app.tar.gz.sig
+          atlas-usage-windows-x64.exe atlas-usage-macos-universal atlas-usage-linux-x64
+          atlas-usage-linux-arm64 atlas-usage-linux-x64-musl atlas-usage-windows-arm64.exe"
+          for f in $expected; do
             [ -s "dist/$f" ] || { echo "::error::dist/$f is missing or empty."; exit 1; }
           done
+          # Nothing else may be in dist either: SHA256SUMS.txt lists and the staged release uploads
+          # whatever is there, so an extra file would be signed and staged unseen.
+          extra="$(cd dist && ls -A | grep -v -x -F -f <(printf '%s\n' $expected) || true)"
+          [ -z "$extra" ] || { echo "::error::unexpected files in dist (expected exactly 12): $extra"; exit 1; }
           ls -l dist
 
       # The build jobs signed with a key that no longer exists. These two files are what the in-app
@@ -552,7 +585,8 @@ jobs:
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/pin"
-          cp dist/atlas-usage-windows-x64.exe dist/atlas-usage-macos-universal dist/atlas-usage-linux-x64              dist/atlas-usage-linux-arm64 dist/atlas-usage-linux-x64-musl dist/atlas-usage-windows-arm64.exe "$RUNNER_TEMP/pin/"
+          cp dist/atlas-usage-windows-x64.exe dist/atlas-usage-macos-universal dist/atlas-usage-linux-x64 \
+             dist/atlas-usage-linux-arm64 dist/atlas-usage-linux-x64-musl dist/atlas-usage-windows-arm64.exe "$RUNNER_TEMP/pin/"
           # Never -Force: a version that is pinned with other hashes stops here, loudly.
           pwsh tools/pin-skill-checksums.ps1 -Dir "$RUNNER_TEMP/pin" -Version "$VERSION"
           git add "$sums"
