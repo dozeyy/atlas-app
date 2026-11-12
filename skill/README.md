@@ -22,6 +22,9 @@ index lives in Atlas's own data folder (`%LOCALAPPDATA%\atlas\cli` on Windows,
   Activity is a bar per day up to 14 days; from 15 days to 12 weeks it is the app's terrain
   grid (a cell per day, 7 days per row, today bottom-right, `▲` on the busiest day); longer
   ranges are a bar per week, then per month.
+- `/atlas all time` (or "what are my all-time stats") - every chat Atlas has counted. The
+  index keeps a chat's numbers after Claude Code deletes its transcript (`cleanupPeriodDays`),
+  so all-time totals keep growing; only chats deleted before Atlas first ran are missing.
 - `/atlas this project` (or `project last week`) - the same, for the current folder's project.
 - `/atlas last week vs this week` - side by side with the change, by model and by project.
 
@@ -47,21 +50,51 @@ In Claude Code:
 Then type `/atlas`. There is no binary to set up: the plugin's launcher uses the first of
 these it finds:
 
-1. `atlas-usage` on your PATH.
-2. A copy it saved earlier (in `cache/<plugin version>/`, in the plugin's data folder when
-   the shell has one, else inside the plugin's own folder).
-3. The Atlas app's copy, next to `atlas.exe` in its install folder (by default
+1. `ATLAS_USAGE_BIN`, if you set it: the path of a program file to run instead of searching.
+   It is run as-is with no checksum check, so only point it at a build you trust.
+2. `atlas-usage` on your PATH.
+3. A copy it saved earlier, in `cache/<plugin version>/` inside its data folder. That is the
+   plugin's data folder when the shell has one, otherwise a per-user cache folder:
+   `%LOCALAPPDATA%\atlas\skill` on Windows, `~/Library/Caches/atlas/skill` on macOS,
+   `~/.cache/atlas/skill` on Linux. A saved copy is checked against its pinned hash every time.
+4. The Atlas app's copy, next to `atlas.exe` in its install folder (by default
    `%LOCALAPPDATA%\Atlas\atlas-usage.exe`, Windows).
-4. Otherwise it downloads the right build for your computer, once, after the first release
-   exists: from the release tagged `v<plugin version>` of `dozeyy/atlas`, over HTTPS. The plugin ships `skill/skills/atlas/bin/checksums.txt`, a list of
-   `<version> <file> <sha256>` lines fixed when that version was released. The download runs
-   only if its SHA-256 equals the pinned line; otherwise it is deleted and never run. A plugin
-   version with no pinned line downloads nothing: the launcher says to update the plugin.
+5. Otherwise it downloads the right build for your computer, once: from the release tagged
+   `v<plugin version>` of `dozeyy/atlas`, over HTTPS. The plugin ships
+   `skill/skills/atlas/bin/checksums.txt`, a list of `<version> <file> <sha256>` lines fixed
+   when that version was released. The download runs only if its SHA-256 equals the pinned
+   line. Otherwise it is deleted and never run. A plugin version with no pinned line downloads
+   nothing, and the launcher says to update the plugin.
+
+A copy on PATH or in the app that is the pinned build of an older plugin version is passed
+over. Your own builds (hashes not in the list) still run. If the download fails, the launcher
+falls back to an older saved copy, or an older copy it passed over, and says so.
+
+**Signature check:** on a download, the launcher also fetches the release's `SHA256SUMS.txt`
+and `SHA256SUMS.txt.sig`. The list must be signed by the Atlas release key (the same key the
+app's updater trusts) and must give the program the pinned hash. If not, the download is
+deleted and not run. The pin still decides first: the signature can only add a refusal. On
+Windows, PowerShell checks the signature itself. On macOS and Linux it needs OpenSSL 1.1.1 or
+later. Without it (macOS's own LibreSSL can't check these signatures), the pin alone decides.
+The design is in `docs/specs/launcher-signing.md`.
+
+**Which copy is it using?** Run the launcher with `launcher-doctor`, or ask Claude to. It lists
+each place it looks, what it found there, whether the signature can be checked here, and which
+copy it would run. It runs nothing and downloads nothing.
+
+```
+sh skill/skills/atlas/bin/atlas-usage.sh launcher-doctor
+powershell -NoProfile -ExecutionPolicy Bypass -File skill/skills/atlas/bin/atlas-usage.ps1 launcher-doctor
+```
 
 If the download cannot work (offline, or no build for this computer yet), the launcher prints
-one line saying what to do. The plugin version, the app version and the
-release tag are one number. The saved copy lives in a folder named after it, so updating the
-plugin fetches the matching build by itself and removes the older folder.
+one line saying what to do. The plugin version, the app version and the release tag are one
+number. The saved copy lives in a folder named after it, so updating the plugin fetches the
+matching build by itself and removes the older folder.
+
+**Uninstall:** `/plugin uninstall atlas@atlas`. The launcher's saved copies stay in the
+per-user cache folder above (`%LOCALAPPDATA%\atlas\skill`, `~/Library/Caches/atlas/skill` or
+`~/.cache/atlas/skill`); delete that folder too if you want them gone.
 
 **Fallback, by hand** (no plugin): the program comes from the release downloads (the launcher
 fetches it and checks it for you) or ships with the Atlas app. Take a build from the

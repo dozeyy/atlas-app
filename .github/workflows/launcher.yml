@@ -1,0 +1,101 @@
+name: launcher
+
+# The skill's atlas-usage launchers (skill/skills/atlas/bin): the sh tests under sh and bash on
+# Linux and macOS, the PowerShell tests under pwsh on Linux and Windows PowerShell 5.1 on Windows,
+# ShellCheck on the sh files and PSScriptAnalyzer on the .ps1 files. No network in the tests: a
+# local folder stands in for the release and is signed with a throwaway key made at test time.
+
+on:
+  push:
+    paths:
+      - "skill/**"
+      - "tests/launcher/**"
+      - ".github/workflows/launcher.yml"
+  pull_request:
+    paths:
+      - "skill/**"
+      - "tests/launcher/**"
+      - ".github/workflows/launcher.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sh:
+    name: sh tests (${{ matrix.os }}, ${{ matrix.shell }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        shell: [sh, bash]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      # macOS ships LibreSSL, which cannot check Ed25519: the sh run there covers the launcher with
+      # no signature check (pinned checksum only); the bash run puts Homebrew's OpenSSL 3 first so
+      # the signature check runs there too.
+      - name: OpenSSL 3 for the macOS bash run
+        if: runner.os == 'macOS' && matrix.shell == 'bash'
+        run: |
+          brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+          echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
+      - name: Tests
+        env:
+          ATLAS_TEST_REQUIRE_SIGNATURE: ${{ (runner.os == 'Linux' || matrix.shell == 'bash') && '1' || '' }}
+        run: |
+          openssl version || true
+          sh tests/launcher/test-launcher.sh ${{ matrix.shell }}
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: ShellCheck
+        run: |
+          shellcheck --version
+          shellcheck skill/skills/atlas/bin/atlas-usage.sh tests/launcher/test-launcher.sh
+
+  powershell:
+    name: PowerShell tests (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: pwsh on Linux
+            os: ubuntu-latest
+          - name: Windows PowerShell 5.1
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: Tests (pwsh)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: pwsh -NoProfile -File tests/launcher/Test-Launcher.ps1
+      - name: Tests (powershell 5.1)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\launcher\Test-Launcher.ps1
+
+  psscriptanalyzer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: PSScriptAnalyzer (fails on Error)
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
+          $files = @('skill/skills/atlas/bin/atlas-usage.ps1', 'tests/launcher/Test-Launcher.ps1')
+          $found = foreach ($f in $files) { Invoke-ScriptAnalyzer -Path $f -Severity Error, Warning }
+          $found | ForEach-Object { "{0}:{1} {2} {3}: {4}" -f $_.ScriptName, $_.Line, $_.Severity, $_.RuleName, $_.Message }
+          $errors = @($found | Where-Object Severity -eq 'Error').Count
+          "errors: $errors, warnings: " + @($found | Where-Object Severity -eq 'Warning').Count
+          if ($errors) { exit 1 }
