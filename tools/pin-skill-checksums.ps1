@@ -1,8 +1,11 @@
 # Pins a release build's atlas-usage hashes into the plugin.
 #   pwsh tools/pin-skill-checksums.ps1 -Dir <folder with the built atlas-usage-* files> -Version <x.y.z> [-Force]
-# Hashes the three built files directly (Get-FileHash), so nothing a release page says is read.
+# Hashes the six built files directly (Get-FileHash), so nothing a release page says is read:
+#   atlas-usage-windows-x64.exe  atlas-usage-windows-arm64.exe  atlas-usage-macos-universal
+#   atlas-usage-linux-x64  atlas-usage-linux-arm64  atlas-usage-linux-x64-musl
 # Writes "<version> <asset> <sha256>" lines into skill/skills/atlas/bin/checksums.txt, keeping the
-# other versions' lines. LF endings, no BOM.
+# other versions' lines (never pruned: an older plugin's launcher still looks its own version up;
+# versions pinned before the three newer files existed keep their three lines). LF endings, no BOM.
 #  - -Version must equal the version in skill/.claude-plugin/plugin.json.
 #  - A version that is already pinned with different hashes is refused unless -Force.
 # The launcher trusts only that file, so run this from a trusted checkout, on the files the same
@@ -27,7 +30,8 @@ if ($pj -notmatch '"version"\s*:\s*"([^"]*)"') { throw "no version in $PluginJso
 $pluginVersion = [string]$Matches[1]
 if ($pluginVersion -cne $Version) { throw "-Version $Version is not the plugin version $pluginVersion (plugin.json); bump them together" }
 
-$wanted = @('atlas-usage-windows-x64.exe', 'atlas-usage-macos-universal', 'atlas-usage-linux-x64')
+$wanted = @('atlas-usage-windows-x64.exe', 'atlas-usage-macos-universal', 'atlas-usage-linux-x64',
+    'atlas-usage-linux-arm64', 'atlas-usage-linux-x64-musl', 'atlas-usage-windows-arm64.exe')
 $new = [ordered]@{}
 foreach ($a in $wanted) {
     $p = Join-Path $Dir $a

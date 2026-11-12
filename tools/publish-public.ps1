@@ -12,12 +12,12 @@
 #   - the update public key in crates/app/tauri.conf.json on origin/main (read from git, not the
 #     staging copy), used for REAL Ed25519 signature checks of SHA256SUMS.txt (signed by CI with the
 #     update key), and of each update bundle against its .sig;
-#   - the three atlas-usage-* hashes pinned in skill/skills/atlas/bin/checksums.txt on origin/main.
+#   - the six atlas-usage-* hashes pinned in skill/skills/atlas/bin/checksums.txt on origin/main.
 #
 # What it does, in order (each step stops the whole run on a failure):
 #   1. Downloads the staged release's assets from dozeyy/atlas-app into a temp folder.
 #   2. Reads the plugin from origin/main of this repo (not your working tree).
-#   3. Verifies, and refuses on any mismatch: all 12 files present and non-empty; the signature on
+#   3. Verifies, and refuses on any mismatch: all 15 files present and non-empty; the signature on
 #      SHA256SUMS.txt; every file against SHA256SUMS.txt (so the installers, dmg and latest.json are
 #      covered); the atlas-usage-* files against the plugin pins; each update bundle's .sig against
 #      the bundle; latest.json (version, four platforms, URLs on dozeyy/atlas, signatures equal the
@@ -136,6 +136,7 @@ try {
     $names = @('Atlas-Setup-Windows-x64.exe', "Atlas_${Version}_x64-setup.exe", "Atlas_${Version}_x64-setup.exe.sig",
         'Atlas-macOS.dmg', 'Atlas.app.tar.gz', 'Atlas.app.tar.gz.sig',
         'atlas-usage-windows-x64.exe', 'atlas-usage-macos-universal', 'atlas-usage-linux-x64',
+        'atlas-usage-linux-arm64', 'atlas-usage-linux-x64-musl', 'atlas-usage-windows-arm64.exe',
         'SHA256SUMS.txt', 'SHA256SUMS.txt.sig', 'latest.json')
     foreach ($n in $names) {
         $p = Join-Path $dist $n
@@ -159,14 +160,15 @@ try {
         if ((Sha (Join-Path $dist $n)) -cne $sums[$n]) { Fail "$n does not match the signed SHA256SUMS.txt. Nothing was published." }
     }
 
-    # the plugin's pins (on main, a second anchor) for the three atlas-usage files
+    # the plugin's pins (on main, a second anchor) for the six atlas-usage files
     $pinned = @{}
     foreach ($line in [IO.File]::ReadAllLines($pins)) {
         if ($line -match '^\s*#' -or $line.Trim() -eq '') { continue }
         $f = $line.Trim() -split '\s+'
         if ($f.Count -ge 3 -and $f[0] -ceq $Version) { $pinned[$f[1]] = $f[2].ToLowerInvariant() }
     }
-    foreach ($a in @('atlas-usage-windows-x64.exe', 'atlas-usage-macos-universal', 'atlas-usage-linux-x64')) {
+    foreach ($a in @('atlas-usage-windows-x64.exe', 'atlas-usage-macos-universal', 'atlas-usage-linux-x64',
+            'atlas-usage-linux-arm64', 'atlas-usage-linux-x64-musl', 'atlas-usage-windows-arm64.exe')) {
         if (-not $pinned.ContainsKey($a)) { Fail "checksums.txt on origin/main has no pinned line for $Version $a (the pin step of the release did not finish; pin by hand, push, then rerun)." }
         if ((Sha (Join-Path $dist $a)) -cne $pinned[$a]) { Fail "$a does not match the hash pinned in checksums.txt. Nothing was published." }
     }
