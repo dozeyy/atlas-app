@@ -306,6 +306,13 @@ pub async fn usage_timeline(
     blocking(state.usage.engine(), move |e| e.timeline(&args)).await
 }
 
+/// The Dashboard's "All time" row: totals since the first recorded day (same core call as the
+/// `atlas-usage` CLI's `all` scope).
+#[tauri::command]
+pub async fn usage_lifetime(state: Shared<'_>) -> Result<atlas_core::usage::query::Lifetime, String> {
+    blocking(state.usage.engine(), |e| e.lifetime()).await
+}
+
 #[tauri::command]
 pub async fn sessions_list(state: Shared<'_>, query: SessionQuery) -> Result<SessionPage, String> {
     blocking(state.usage.engine(), move |e| e.sessions_list(&query)).await

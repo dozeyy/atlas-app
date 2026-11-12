@@ -253,6 +253,7 @@ export class MockBackend {
   usageStatus = () => this.usage.usageStatus();
   usageDashboard = () => this.usage.usageDashboard();
   usageTimeline: Backend["usageTimeline"] = (a) => this.usage.usageTimeline(a);
+  usageLifetime = () => this.usage.usageLifetime();
   sessionsList: Backend["sessionsList"] = (q) => this.usage.sessionsList(q);
   sessionDetail: Backend["sessionDetail"] = (id) => this.usage.sessionDetail(id);
   agentDetail: Backend["agentDetail"] = (s, a) => this.usage.agentDetail(s, a);

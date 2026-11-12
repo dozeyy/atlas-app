@@ -181,8 +181,15 @@ def append_live(path, sid, cwd, model, now, waiting):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    live = "--live" in sys.argv[1:]
+    argv = sys.argv[1:]
+    # `--days N`: how far back the history goes (default 91; a longer one shows the "All time" row).
+    days_back = 91
+    if "--days" in argv:
+        i = argv.index("--days")
+        days_back = int(argv[i + 1])
+        del argv[i : i + 2]
+    args = [a for a in argv if not a.startswith("--")]
+    live = "--live" in argv
     if not args:
         sys.exit(__doc__)
     out = os.path.abspath(args[0])
@@ -199,7 +206,7 @@ def main():
     latest = now - datetime.timedelta(minutes=5)
     today = []  # (path, sid, cwd, model) of today's chats, for --live
     n_sess = 0
-    for back in range(0, 91):
+    for back in range(0, days_back):
         day = now - datetime.timedelta(days=back)
         weekend = day.astimezone().weekday() >= 5
         streak_zone = back <= 11  # an unbroken run of active days ending today

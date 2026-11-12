@@ -1175,6 +1175,18 @@ html[data-input="keyboard"] .folder-head:focus-visible {
   }
 }
 
+/* The Dashboard's right column is a full 1280x800 screen with the "All time" row under it, so a
+   short window lists two recent chats there instead of three (the third row is back from 880 px
+   of window height, and in the stacked layouts, which scroll). `dash` is the page's own container
+   (Dashboard.tsx), so the width asked about is the page's, not the card's. */
+@media (max-height: 879px) {
+  @container dash (min-width: 900px) {
+    .dash-recent .session-grid > li:nth-child(n + 3) {
+      display: none;
+    }
+  }
+}
+
 /* ---- Session rows in columns (container = the page, so the sidebar's width counts) ---------- */
 .session-grid {
   display: grid;

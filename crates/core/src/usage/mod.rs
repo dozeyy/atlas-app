@@ -427,6 +427,12 @@ impl UsageEngine {
         self.read(|c, x| query::scope_report(c, x, a))
     }
 
+    /// Everything since the first recorded day (the Dashboard's "All time" row): `scope_report`
+    /// over `first_day()..today`, the CLI's `all` scope, plus the busiest day and the active days.
+    pub fn lifetime(&self) -> Result<query::Lifetime, String> {
+        self.read(query::lifetime)
+    }
+
     /// Every token counted in the ledger so far, all models and days, as the Dashboard counts
     /// tokens (the "Count cache in token totals" rule). It is the setup program's live line
     /// while it reads. One scan of the small hourly table; 0 while the cache is not ready.

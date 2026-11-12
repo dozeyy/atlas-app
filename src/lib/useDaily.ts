@@ -6,7 +6,8 @@
 import { useEffect, useRef, useState } from "react";
 import { getBackend } from "./ipc";
 import { longestStreak, streakLength } from "./chartPaths";
-import { addDays, headline, localDay } from "./usage";
+import { addDays, headline } from "./usage";
+import { useToday } from "./today";
 import type { TimelinePoint } from "./types";
 
 export interface Daily {
@@ -22,6 +23,8 @@ export interface Daily {
 
 const DAYS = 365;
 const cache = new Map<string, Promise<Daily>>();
+/** The day every entry in `cache` was asked for; a new day starts the cache over. */
+let cacheDay = "";
 const listeners = new Set<() => void>();
 
 export function dailyKey(today: string, scope: string | null): string {
@@ -52,6 +55,11 @@ function build(today: string, points: TimelinePoint[]): Daily {
 
 export function fetchDaily(today: string, scope: string | null): Promise<Daily> {
   const k = dailyKey(today, scope);
+  if (today !== cacheDay) {
+    // A new day: yesterday's answers will not be asked for again.
+    cache.clear();
+    cacheDay = today;
+  }
   let p = cache.get(k);
   if (!p) {
     p = getBackend()
@@ -72,8 +80,12 @@ export function invalidateDaily(): void {
 /**
  * The shared daily picture. `scope` is the Claude folder so a folder switch refetches.
  * Returns null until the first answer; errors leave it null (the chip simply stays away).
+ * The numbers shown stay on screen while the new day's answer is on its way.
  */
 export function useDaily(scope: string | null): Daily | null {
+  // The day comes from the shared signal, so the picture is asked for again at local midnight
+  // (and when a hidden window is shown on a later day), not only when usage changes.
+  const today = useToday();
   const [data, setData] = useState<Daily | null>(null);
   const [tick, setTick] = useState(0);
   const seq = useRef(0);
@@ -108,7 +120,7 @@ export function useDaily(scope: string | null): Daily | null {
     }
     const id = ++seq.current;
     let retry: ReturnType<typeof setTimeout> | undefined;
-    fetchDaily(localDay(new Date()), scope)
+    fetchDaily(today, scope)
       .then((d) => {
         if (id === seq.current) {
           tries.current = 0;
@@ -127,7 +139,7 @@ export function useDaily(scope: string | null): Daily | null {
       seq.current++;
       if (retry) clearTimeout(retry);
     };
-  }, [scope, tick]);
+  }, [scope, tick, today]);
 
   return data;
 }

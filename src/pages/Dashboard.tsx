@@ -12,6 +12,7 @@ import { Sparkline } from "../components/charts/Sparkline";
 import { StackBar } from "../components/charts/StackBar";
 import type { StackItem } from "../components/charts/StackBar";
 import { ActivityCard } from "../components/usage/ActivityCard";
+import { LifetimeStrip } from "../components/usage/LifetimeStrip";
 
 import { SessionGrid, SessionLine } from "../components/usage/SessionList";
 import { Skeleton } from "../components/usage/StateBlocks";
@@ -19,6 +20,7 @@ import { useAtlas } from "../state/AtlasProvider";
 import { getBackend } from "../lib/ipc";
 import { openSessionNext } from "../lib/nav";
 import { useDaily } from "../lib/useDaily";
+import { useDayChange, useToday } from "../lib/today";
 import { cacheNotReady, useFetched, useLiveReload, useReadyRetry, useUsageStatus } from "../lib/useUsage";
 import {
   bin,
@@ -33,7 +35,7 @@ import {
   weekdayInitial,
 } from "../lib/dashboardModel";
 import { usualDay } from "../lib/chartPaths";
-import { addDays, addKinds, compact, formatUsd, headline, kindsOf, kindsSpeech, localDay, mergeModelRows, modelChoices, NO_KINDS, plural, tokenHint, tokensTip } from "../lib/usage";
+import { addDays, addKinds, compact, formatUsd, headline, kindsOf, kindsSpeech, mergeModelRows, modelChoices, NO_KINDS, plural, tokenHint, tokensTip } from "../lib/usage";
 import type { BarDatum } from "../components/charts/Bars";
 import type { Dashboard as DashboardData, Timeline, UsageStatus } from "../lib/types";
 
@@ -206,7 +208,10 @@ export function Dashboard() {
   const now = useNow();
 
   const data = dash.data;
-  const today = data?.todayDate || localDay(new Date(now));
+  // One shared "today" (flips at local midnight and when a hidden window wakes on a later day).
+  // The engine's own todayDate in `data` is only as new as its last answer, so it is not used here.
+  const today = useToday();
+  useDayChange(() => dash.reload(true));
   const projectSeries = useFetched<Timeline>(
     () => backend.usageTimeline({ from: addDays(today, -29), to: today, bucket: "day", groupBy: "project" }),
     [cfg?.projectsDir ?? null, today, data?.month.sessions ?? 0],
@@ -280,7 +285,7 @@ export function Dashboard() {
   const updated = updatedText(dash.at, now);
 
   return (
-    <div className="@container">
+    <div className="@container/dash">
       <PageTitle title="Dashboard" />
       {/* With nothing to show under it, a failed engine is the page's one calm message, not a band over a blank page. */}
       {!(engineDown && !data) && <IndexProgress status={status} progress={progress} onRetry={reindex} />}
@@ -336,13 +341,15 @@ export function Dashboard() {
                     <span className="text-lead font-semibold text-ink-2">tokens</span>
                     <span className="sr-only">{kindsSpeech(kindsOf(data.week.tokens))}</span>
                   </div>
-                  <div className="text-body text-ink-2">
-                    {plural(data.week.sessions, "session")}
-                    {projects.count ? ` · ${plural(projects.count, "project")}` : ""}
-                  </div>
-                  <div className="mt-1 flex items-center gap-2 text-caption text-ink-2">
-                    {updated && <span>{updated}</span>}
-                    <AboutNumbers data={data} status={status} />
+                  <div className="flex flex-wrap items-center gap-x-3 text-body text-ink-2">
+                    <span>
+                      {plural(data.week.sessions, "session")}
+                      {projects.count ? ` · ${plural(projects.count, "project")}` : ""}
+                    </span>
+                    <span className="flex items-center gap-2 text-caption">
+                      {updated && <span>{updated}</span>}
+                      <AboutNumbers data={data} status={status} />
+                    </span>
                   </div>
                 </div>
                 {week && (
@@ -388,7 +395,7 @@ export function Dashboard() {
                       <li
                         key={p.projectKey}
                         title={p.path}
-                        className="grid grid-cols-[minmax(0,1fr)_56px_52px] items-center gap-3 rounded-control px-2 py-2 transition-colors duration-[var(--dur-fast)] hover:bg-raised"
+                        className="grid grid-cols-[minmax(0,1fr)_56px_52px] items-center gap-3 rounded-control px-2 py-1.5 transition-colors duration-[var(--dur-fast)] hover:bg-raised"
                       >
                         <span className="flex min-w-0 items-center gap-2 font-semibold text-ink">
                           <FolderSimple size={16} aria-hidden="true" className="shrink-0 text-ink-2" />
@@ -482,7 +489,7 @@ export function Dashboard() {
               </Card>
             </section>
 
-          <section aria-label="Recent sessions" className="rise @container order-6 min-w-0 @[600px]:col-span-2" style={{ ["--i" as string]: 7 }}>
+          <section aria-label="Recent sessions" className="rise @container order-6 min-w-0 @[600px]:col-span-2 dash-recent" style={{ ["--i" as string]: 7 }}>
             <div className="mb-3 flex items-center justify-between gap-4">
               <h2 className="h-section">Recent sessions</h2>
               <Button onClick={() => setView("sessions")}>
@@ -500,6 +507,9 @@ export function Dashboard() {
               </SessionGrid>
             </Card>
           </section>
+          </div>
+          <div className="order-7 min-w-0 @[600px]:col-span-2">
+            <LifetimeStrip daily={daily} />
           </div>
         </div>
       )}

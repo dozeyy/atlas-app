@@ -22,7 +22,8 @@ import { PAGE, useSessionPages } from "../lib/useSessionPages";
 import { groupByDay, groupByFolder, shareOfMax } from "../lib/sessionBrowse";
 import { readFolded, readGrouping, writeFolded, writeGrouping } from "../lib/sessionPrefs";
 import type { Grouping } from "../lib/sessionPrefs";
-import { addDays, compact, exact, formatWhen, localDay, modelChoices, plural, sumKinds, tokensTip } from "../lib/usage";
+import { addDays, compact, exact, formatWhen, modelChoices, plural, sumKinds, tokensTip } from "../lib/usage";
+import { useToday } from "../lib/today";
 import type { SessionQuery, SessionRow } from "../lib/types";
 
 /** Empty, no-match and error take the room the list would: the state never floats over a blank page. */
@@ -152,28 +153,31 @@ export function Sessions() {
     e.preventDefault();
   };
   const typed = text.trim();
+  const today = useToday();
   const titleQ = useDebounced(typed, TITLE_DEBOUNCE_MS);
   const chat = useChatSearch(text);
 
   const options = useFetched(() => backend.usageFilterOptions(), [info.config?.projectsDir ?? null]);
   useLiveReload(options.reload);
 
+  // Only a "last N days" filter depends on the date; "All" does not reload at midnight.
+  const spanDays = SPANS.find((s) => s.value === span)?.days ?? 0;
+  const spanFrom = spanDays > 0 ? addDays(today, -spanDays) : null;
   const query = useMemo<SessionQuery>(() => {
-    const days = SPANS.find((s) => s.value === span)?.days ?? 0;
     return {
       text: titleQ || null,
       // Chats whose messages match are listed too, whatever their title says.
       alsoIds: chat.ids,
       projects: project ? [project] : [],
       models: model ? model.split(MODEL_SEP) : [],
-      from: days > 0 ? addDays(localDay(new Date()), -days) : null,
+      from: spanFrom,
       to: null,
       includeMissing: true,
       sort: SORTS[sortKey].sort,
       dir: SORTS[sortKey].dir,
       limit: PAGE,
     };
-  }, [titleQ, chat.ids, project, model, span, sortKey]);
+  }, [titleQ, chat.ids, project, model, spanFrom, sortKey]);
 
   // Every page on screen comes from one loader: a refresh (a chat changed on disk, an indexing
   // pass ended) reads the same number of pages again, so "Show more" is never undone by it.

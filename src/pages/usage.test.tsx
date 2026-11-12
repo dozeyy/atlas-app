@@ -5,6 +5,7 @@ import { App } from "../App";
 import { AtlasProvider } from "../state/AtlasProvider";
 import { setBackend } from "../lib/ipc";
 import { openSessionNext } from "../lib/nav";
+import { invalidateDaily } from "../lib/useDaily";
 import { MockBackend } from "../lib/mock";
 import { addDays, compact, headline, localDay } from "../lib/usage";
 import type { Scenario } from "../lib/mockUsage";
@@ -88,6 +89,88 @@ describe("Dashboard", () => {
     expect(live).toHaveTextContent(/(Sun|Mon|Tue|Wed|Thu|Fri|Sat),/);
     await userEvent.keyboard("{Escape}");
     expect(live).toBeEmptyDOMElement();
+  });
+
+  describe("All time", () => {
+    it("is one row on the Dashboard with the lifetime numbers from the engine", async () => {
+      const backend = mount();
+      const life = await backend.usageLifetime();
+      const row = await screen.findByRole("region", { name: "All time" });
+      // The section is there while its numbers load.
+      expect(await within(row).findByText(compact(life.total.tokens.total))).toBeInTheDocument();
+      expect(within(row).getByText(life.total.sessions === 1 ? "session" : "sessions")).toBeInTheDocument();
+      expect(within(row).getByText(/^Since [A-Z][a-z]{2} \d{1,2}, \d{4}$/)).toBeInTheDocument();
+      expect(within(row).getByText(/busiest day, /)).toBeInTheDocument();
+      expect(within(row).getByText("favorite model")).toBeInTheDocument();
+      // The note on the section.
+      expect(within(row).getByLabelText(/Counted since Atlas first read your chats\./)).toHaveAttribute("title", "Counted since Atlas first read your chats.");
+      // Tokens first: the full breakdown is the figure's hover, the dollar figure only an estimate in it.
+      const tokens = within(row).getByText(compact(life.total.tokens.total));
+      expect(tokens.getAttribute("title")).toMatch(/^All time\n[\d,]+ tokens\nInput\t/);
+      expect(tokens.getAttribute("title")).toMatch(/estimate, not a bill/);
+      expect(row.textContent).not.toMatch(/\$|!/);
+    });
+
+    it("shows the very streak the roll card shows, and a record that is never lower", async () => {
+      mount();
+      const row = await screen.findByRole("region", { name: "All time" });
+      await waitFor(() => expect(row.querySelector('[title^="Days in a row"]')).not.toBeNull());
+      const roll = screen.getByRole("region", { name: "On a roll" });
+      const rollNumber = Number(within(roll).getByText(/^\d+$/).textContent);
+      const streak = row.querySelector('[title^="Days in a row"]') as HTMLElement;
+      expect(Number(streak.textContent)).toBe(rollNumber);
+      const longest = row.querySelector('[title^="Your longest streak"]') as HTMLElement;
+      expect(Number(longest.textContent)).toBeGreaterThanOrEqual(rollNumber);
+    });
+
+    it("shows the totals even when the daily picture fails, and leaves the streak figures out", async () => {
+      invalidateDaily(); // an earlier test's answer would otherwise be served from the shared cache
+      const backend = new MockBackend();
+      const real = backend.usage.usageTimeline.bind(backend.usage);
+      // The 365-day question (the streak) fails; the Dashboard's other questions work.
+      backend.usage.usageTimeline = async (a) => {
+        if (a.bucket === "day" && !a.groupBy && a.from === addDays(a.to, -364)) throw new Error("no daily");
+        return real(a);
+      };
+      localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "dashboard" }));
+      setBackend(backend);
+      render(
+        <AtlasProvider>
+          <App />
+        </AtlasProvider>,
+      );
+      const row = await screen.findByRole("region", { name: "All time" });
+      await waitFor(() => expect(within(row).getByText("sessions")).toBeInTheDocument());
+      expect(within(row).queryByRole("status")).toBeNull();
+      expect(row.querySelector('[title^="Days in a row"]')).toBeNull();
+      expect(row.querySelector('[title^="Your longest streak"]')).toBeNull();
+      expect(within(row).getByText(/^Since /)).toBeInTheDocument();
+    });
+
+    it("asks the engine once for the totals, not once per render", async () => {
+      const backend = new MockBackend();
+      let calls = 0;
+      const real = backend.usage.usageLifetime.bind(backend.usage);
+      backend.usage.usageLifetime = async () => {
+        calls += 1;
+        return real();
+      };
+      localStorage.setItem("atlas.mock.settings", JSON.stringify({ lastView: "dashboard" }));
+      setBackend(backend);
+      render(
+        <AtlasProvider>
+          <App />
+        </AtlasProvider>,
+      );
+      await screen.findByRole("region", { name: "All time" });
+      expect(calls).toBe(1);
+    });
+
+    it("is not on the page when there is no usage", async () => {
+      mount("empty");
+      await screen.findByText("No Claude Code usage found yet");
+      expect(screen.queryByRole("region", { name: "All time" })).toBeNull();
+    });
   });
 
   it("shows a designed empty state when there is no usage, without implying a failure", async () => {
